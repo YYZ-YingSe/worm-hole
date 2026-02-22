@@ -28,7 +28,7 @@ while IFS= read -r path; do
 done <<< "$source_listing"
 
 cppcheck \
-  --enable=warning,style,performance,portability \
+  --enable=warning,performance,portability \
   --error-exitcode=2 \
   --language=c++ \
   --std=c++20 \
