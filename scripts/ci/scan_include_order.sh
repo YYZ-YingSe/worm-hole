@@ -6,6 +6,9 @@ cd "$ROOT"
 
 status=0
 
+include_angle_regex='^[[:space:]]*#include[[:space:]]+<'
+include_quote_regex='^[[:space:]]*#include[[:space:]]+"'
+
 file_listing="$(git ls-files 'include/wh/**/*.hpp' 'include/wh/**/*.h' 'src/**/*.cpp' 'src/**/*.cc' 'src/**/*.cxx' 2>/dev/null || true)"
 if [[ -z "$file_listing" ]]; then
   echo "[include-order] SKIP no source files"
@@ -22,13 +25,13 @@ while IFS= read -r file; do
     line_no=$((line_no + 1))
     [[ "$line" =~ ^[[:space:]]*#include[[:space:]]+ ]] || continue
 
-    if [[ "$line" =~ ^[[:space:]]*#include[[:space:]]+< ]]; then
+    if [[ "$line" =~ $include_angle_regex ]]; then
       if [[ "$line" =~ (rapidjson|boost|stdexec) ]]; then
         include_class=2
       else
         include_class=1
       fi
-    elif [[ "$line" =~ ^[[:space:]]*#include[[:space:]]+\" ]]; then
+    elif [[ "$line" =~ $include_quote_regex ]]; then
       if [[ "$line" =~ (thirdy_party|rapidjson|boost|stdexec) ]]; then
         include_class=2
       else
