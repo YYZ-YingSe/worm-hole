@@ -25,15 +25,27 @@ for cmd in "${required_cmds[@]}"; do
 done
 
 build_dir="build/coverage"
-cmake -S . -B "$build_dir" -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DWH_BUILD_TESTING=ON \
-  -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON \
-  -DWH_THIRDY_PARTY_DIR="${WH_THIRDY_PARTY_DIR:-${ROOT}/thirdy_party}" \
-  -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
+cmake_args=(
+  -DCMAKE_BUILD_TYPE=Debug
+  -DWH_BUILD_TESTING=ON
+  -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON
+  -DWH_THIRDY_PARTY_DIR="${WH_THIRDY_PARTY_DIR:-${ROOT}/thirdy_party}"
+  -DCMAKE_CXX_COMPILER="${CXX:-clang++}"
   -DCMAKE_CXX_FLAGS="--coverage -O0 -g"
+)
 
+if command -v ccache >/dev/null 2>&1; then
+  echo "[coverage] ccache enabled"
+  ccache -z >/dev/null 2>&1 || true
+  cmake_args+=( -DCMAKE_CXX_COMPILER_LAUNCHER=ccache )
+fi
+
+cmake -S . -B "$build_dir" -G Ninja "${cmake_args[@]}"
 cmake --build "$build_dir" --parallel
+
+if command -v ccache >/dev/null 2>&1; then
+  ccache -s || true
+fi
 
 if ctest --test-dir "$build_dir" -N 2>/dev/null | rg -q 'Total Tests:[[:space:]]*[1-9]'; then
   ctest --test-dir "$build_dir" --output-on-failure --timeout 120

@@ -12,7 +12,7 @@ while IFS= read -r path; do
     echo "[naming] FAIL uppercase path: $path"
     status=1
   fi
-done < <(git ls-files | rg '^(include/wh|src|tests)/' || true)
+done < <(git ls-files | rg '^(include/wh|src|tests)/' | rg -v '(^|/)CMakeLists\.txt$' || true)
 
 # token 命名：禁止 useCamelCase / use-xxx
 if [[ -d include/wh ]]; then

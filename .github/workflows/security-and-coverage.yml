@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   security-events: write
 
 concurrency:
@@ -40,17 +41,18 @@ jobs:
 
       - name: Initialize CodeQL
         if: steps.detect_build.outputs.has_build == '1'
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: cpp
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
         if: steps.detect_build.outputs.has_build == '1'
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Analyze
         if: steps.detect_build.outputs.has_build == '1'
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
 
       - name: Skip reason
         if: steps.detect_build.outputs.has_build == '0'
@@ -85,6 +87,12 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/coverage-${{ runner.os }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: "750M"
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,7 +108,16 @@ jobs:
             clang \
             cmake \
             ninja-build \
-            gcovr
+            gcovr \
+            ccache
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-coverage-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_coverage_gate.sh') }}
+          restore-keys: |
+            ccache-coverage-${{ runner.os }}-
 
       - name: Run coverage gate
         env:
