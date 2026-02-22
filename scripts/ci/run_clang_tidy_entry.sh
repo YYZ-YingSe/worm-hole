@@ -6,6 +6,11 @@ cd "$ROOT"
 
 strict_mode="${WH_CI_STRICT:-0}"
 
+if [[ "${RUNNER_OS:-}" == "macOS" ]]; then
+  echo "[clang-tidy] SKIP macOS runner (toolchain mismatch risk); enforced on ubuntu-latest"
+  exit 0
+fi
+
 if ! command -v clang-tidy >/dev/null 2>&1; then
   if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
     echo "[clang-tidy] FAIL clang-tidy not installed in strict mode"
@@ -26,7 +31,14 @@ compile_db="$build_dir/compile_commands.json"
 
 if [[ ! -f "$compile_db" ]]; then
   if [[ -f CMakeLists.txt ]] && command -v cmake >/dev/null 2>&1; then
-    cmake -S . -B "$build_dir" -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null
+    cmake -S . -B "$build_dir" -G Ninja \
+      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+      -DCMAKE_C_COMPILER="${CC:-clang}" \
+      -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
+      -DWH_BUILD_TESTING=ON \
+      -DWH_WARNINGS_AS_ERRORS=OFF \
+      -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON \
+      -DWH_THIRDY_PARTY_DIR="${WH_THIRDY_PARTY_DIR:-${ROOT}/thirdy_party}" >/dev/null
   else
     if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
       echo "[clang-tidy] FAIL compile_commands.json missing and cannot auto-generate"
