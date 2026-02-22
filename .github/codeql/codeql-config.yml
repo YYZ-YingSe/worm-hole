@@ -1,0 +1,10 @@
+name: worm-hole-codeql-config
+
+paths:
+  - include
+  - src
+
+paths-ignore:
+  - thirdy_party/**
+  - tests/**
+  - build/**

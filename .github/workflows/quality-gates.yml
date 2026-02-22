@@ -19,6 +19,12 @@ jobs:
   gates:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/quality-gates-${{ runner.os }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: "750M"
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -44,14 +50,23 @@ jobs:
             cppcheck \
             shellcheck \
             cmake \
-            ninja-build
+            ninja-build \
+            ccache
 
       - name: Install required tools (macos)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ripgrep llvm cppcheck shellcheck cmake ninja
+          brew install ripgrep llvm cppcheck shellcheck cmake ninja ccache
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-quality-gates-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_phase01_gates.sh', 'scripts/ci/run_cmake_build_and_test.sh') }}
+          restore-keys: |
+            ccache-quality-gates-${{ runner.os }}-
 
       - name: Run quality gates
         env:

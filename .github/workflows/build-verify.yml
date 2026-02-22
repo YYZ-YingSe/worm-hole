@@ -19,6 +19,12 @@ jobs:
   build-test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/build-test-${{ runner.os }}-${{ matrix.build_type }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: "750M"
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -40,14 +46,24 @@ jobs:
             ripgrep \
             clang \
             cmake \
-            ninja-build
+            ninja-build \
+            ccache
 
       - name: Install required tools (macos)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ripgrep llvm cmake ninja
+          brew install ripgrep llvm cmake ninja ccache
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_cmake_build_and_test.sh') }}
+          restore-keys: |
+            ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}-
+            ccache-build-test-${{ runner.os }}-
 
       - name: Guard branch policy
         run: bash scripts/ci/guard_branch_policy.sh
@@ -65,6 +81,12 @@ jobs:
   sanitizer-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/sanitizer-${{ runner.os }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: "750M"
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,7 +101,16 @@ jobs:
             ripgrep \
             clang \
             cmake \
-            ninja-build
+            ninja-build \
+            ccache
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-sanitizer-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_sanitizer_smoke.sh') }}
+          restore-keys: |
+            ccache-sanitizer-${{ runner.os }}-
 
       - name: Guard branch policy
         run: bash scripts/ci/guard_branch_policy.sh
