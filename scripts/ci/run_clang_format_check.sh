@@ -21,6 +21,11 @@ if ! command -v "$formatter_bin" >/dev/null 2>&1; then
   exit 0
 fi
 
+if [[ ! -f .clang-format ]]; then
+  echo "[clang-format] FAIL missing .clang-format in repo root"
+  exit 1
+fi
+
 echo "[clang-format] using: $formatter_bin"
 "$formatter_bin" --version
 
@@ -30,5 +35,5 @@ while IFS= read -r path; do
   source_files+=("$path")
 done <<< "$source_listing"
 
-"$formatter_bin" --dry-run --Werror "${source_files[@]}"
+"$formatter_bin" --style=file --fallback-style=none --dry-run --Werror "${source_files[@]}"
 echo "[clang-format] PASS"
