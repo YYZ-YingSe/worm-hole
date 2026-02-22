@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/build-test-${{ runner.os }}-${{ matrix.build_type }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/build-test-${{ matrix.os }}-${{ matrix.build_type }}
       CCACHE_COMPRESS: "true"
       CCACHE_MAXSIZE: "750M"
       CCACHE_BASEDIR: ${{ github.workspace }}
@@ -82,7 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/sanitizer-${{ runner.os }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/sanitizer
       CCACHE_COMPRESS: "true"
       CCACHE_MAXSIZE: "750M"
       CCACHE_BASEDIR: ${{ github.workspace }}

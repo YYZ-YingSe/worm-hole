@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/quality-gates-${{ runner.os }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/quality-gates-${{ matrix.os }}
       CCACHE_COMPRESS: "true"
       CCACHE_MAXSIZE: "750M"
       CCACHE_BASEDIR: ${{ github.workspace }}
