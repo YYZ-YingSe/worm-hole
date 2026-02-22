@@ -30,9 +30,14 @@ if [[ "${WH_CI_WERROR:-1}" != "1" ]]; then
   warnings_as_errors="OFF"
 fi
 
+build_testing_flag="ON"
+if [[ "$enable_tests" != "1" ]]; then
+  build_testing_flag="OFF"
+fi
+
 cmake_args=(
   -DCMAKE_BUILD_TYPE="$build_type"
-  -DWH_BUILD_TESTING=$([[ "$enable_tests" == "1" ]] && echo ON || echo OFF)
+  -DWH_BUILD_TESTING="$build_testing_flag"
   -DWH_WARNINGS_AS_ERRORS="$warnings_as_errors"
   -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON
   -DWH_THIRDY_PARTY_DIR="${WH_THIRDY_PARTY_DIR:-${ROOT}/thirdy_party}"

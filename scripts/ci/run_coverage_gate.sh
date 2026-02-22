@@ -70,6 +70,8 @@ if command -v llvm-cov >/dev/null 2>&1; then
     --xml-pretty \
     --output "$report_xml" \
     --exclude '(^|/)thirdy_party/' \
+    --exclude-directories '(.*/)?thirdy_party(/.*)?' \
+    --gcov-ignore-errors all \
     --print-summary
 else
   gcovr \
@@ -77,6 +79,8 @@ else
     --xml-pretty \
     --output "$report_xml" \
     --exclude '(^|/)thirdy_party/' \
+    --exclude-directories '(.*/)?thirdy_party(/.*)?' \
+    --gcov-ignore-errors all \
     --print-summary
 fi
 
