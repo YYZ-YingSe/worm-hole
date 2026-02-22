@@ -1,0 +1,43 @@
+# docs
+docs/
+
+# build outputs
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# test artifacts
+Testing/
+*.gcno
+*.gcda
+*.gcov
+
+# object / library / binary
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# editor / system
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# local ssh material
+.ssh/

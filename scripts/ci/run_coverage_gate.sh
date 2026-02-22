@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT"
+
+strict_mode="${WH_CI_STRICT:-0}"
+coverage_min="${WH_COVERAGE_MIN_LINES:-0.70}"
+
+if [[ ! -f CMakeLists.txt ]]; then
+  echo "[coverage] SKIP no CMakeLists.txt"
+  exit 0
+fi
+
+required_cmds=(cmake ctest gcovr)
+for cmd in "${required_cmds[@]}"; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
+      echo "[coverage] FAIL missing required tool: $cmd"
+      exit 1
+    fi
+    echo "[coverage] SKIP missing required tool: $cmd"
+    exit 0
+  fi
+done
+
+build_dir="build/coverage"
+cmake -S . -B "$build_dir" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_C_COMPILER="${CC:-clang}" \
+  -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
+  -DCMAKE_C_FLAGS="--coverage -O0 -g" \
+  -DCMAKE_CXX_FLAGS="--coverage -O0 -g"
+
+cmake --build "$build_dir" --parallel
+
+if ctest --test-dir "$build_dir" -N 2>/dev/null | rg -q 'Total Tests:[[:space:]]*[1-9]'; then
+  ctest --test-dir "$build_dir" --output-on-failure --timeout 120
+else
+  echo "[coverage] SKIP no tests"
+  exit 0
+fi
+
+report_dir="$build_dir/reports"
+mkdir -p "$report_dir"
+report_xml="$report_dir/coverage.xml"
+
+# llvm + gcov 兼容方式
+if command -v llvm-cov >/dev/null 2>&1; then
+  gcovr \
+    --gcov-executable "llvm-cov gcov" \
+    --root . \
+    --xml-pretty \
+    --output "$report_xml" \
+    --print-summary
+else
+  gcovr \
+    --root . \
+    --xml-pretty \
+    --output "$report_xml" \
+    --print-summary
+fi
+
+if [[ ! -f "$report_xml" ]]; then
+  echo "[coverage] FAIL missing coverage report: $report_xml"
+  exit 1
+fi
+
+line_rate_raw="$(rg -o 'line-rate="[0-9.]+"' "$report_xml" | head -n1 | sed -E 's/line-rate="([0-9.]+)"/\1/')"
+if [[ -z "$line_rate_raw" ]]; then
+  echo "[coverage] FAIL cannot parse line-rate from report"
+  exit 1
+fi
+
+line_pct="$(awk -v r="$line_rate_raw" 'BEGIN { printf "%.2f", r*100 }')"
+min_pct="$(awk -v r="$coverage_min" 'BEGIN { printf "%.2f", r*100 }')"
+
+if awk -v cur="$line_rate_raw" -v min="$coverage_min" 'BEGIN { exit !(cur + 1e-9 >= min) }'; then
+  echo "[coverage] PASS line coverage ${line_pct}% (threshold ${min_pct}%)"
+else
+  echo "[coverage] FAIL line coverage ${line_pct}% below threshold ${min_pct}%"
+  exit 1
+fi

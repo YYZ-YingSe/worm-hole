@@ -1,0 +1,50 @@
+name: worm-hole-nightly-concurrency
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-concurrency-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install required tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ripgrep \
+            clang \
+            clang-tools \
+            cmake \
+            ninja-build
+
+      - name: Nightly ASan
+        run: bash scripts/nightly/run_asan.sh
+
+      - name: Nightly UBSan
+        run: bash scripts/nightly/run_ubsan.sh
+
+      - name: Nightly TSan
+        run: bash scripts/nightly/run_tsan.sh
+
+      - name: Nightly linearizability
+        run: bash scripts/nightly/run_linearizability.sh
+
+      - name: Nightly stress
+        run: bash scripts/nightly/run_stress.sh
+
+      - name: Nightly fuzz
+        run: bash scripts/nightly/run_fuzz.sh
