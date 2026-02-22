@@ -8,3 +8,4 @@ paths-ignore:
   - thirdy_party/**
   - tests/**
   - build/**
+  - "**/thirdy_party/**"

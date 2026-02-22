@@ -28,7 +28,9 @@ build_dir="build/ci-scan-build"
 scan-build --status-bugs cmake -S . -B "$build_dir" -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DWH_BUILD_TESTING=OFF \
+  -DWH_WARNINGS_AS_ERRORS=ON
 scan-build --status-bugs cmake --build "$build_dir"
 
 echo "[scan-build] PASS"

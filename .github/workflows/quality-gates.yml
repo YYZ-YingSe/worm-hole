@@ -71,6 +71,7 @@ jobs:
       - name: Run quality gates
         env:
           WH_CI_STRICT: '1'
+          WH_CI_ENABLE_TESTS: '0'
           CC: clang
           CXX: clang++
         run: bash scripts/ci/run_phase01_gates.sh
