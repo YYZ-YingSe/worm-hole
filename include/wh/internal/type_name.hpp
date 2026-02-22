@@ -18,8 +18,8 @@ using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<t>>;
   return ch >= '0' && ch <= '9';
 }
 
-[[nodiscard]] constexpr std::string_view
-trim_ascii_spaces(std::string_view value) noexcept {
+[[nodiscard]] constexpr std::string_view trim_ascii_spaces(
+    std::string_view value) noexcept {
   while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
     value.remove_prefix(1U);
   }
@@ -29,8 +29,8 @@ trim_ascii_spaces(std::string_view value) noexcept {
   return value;
 }
 
-[[nodiscard]] constexpr bool
-has_numeric_suffix(std::string_view value) noexcept {
+[[nodiscard]] constexpr bool has_numeric_suffix(
+    std::string_view value) noexcept {
   if (value.empty()) {
     return false;
   }
@@ -142,8 +142,8 @@ template <typename t>
   return type_alias<normalized_t>::value;
 }
 
-[[nodiscard]] constexpr std::uint64_t
-stable_name_hash(const std::string_view value) noexcept {
+[[nodiscard]] constexpr std::uint64_t stable_name_hash(
+    const std::string_view value) noexcept {
   std::uint64_t hash = 1469598103934665603ULL;
   for (const char ch : value) {
     hash ^= static_cast<std::uint64_t>(static_cast<unsigned char>(ch));
@@ -173,9 +173,9 @@ template <typename... ts> struct type_alias_registry {
       item{persistent_type_alias<ts>(), persistent_type_hash<ts>()}...,
   };
 
-  [[nodiscard]] static constexpr std::optional<std::uint64_t>
-  find_hash(const std::string_view alias) noexcept {
-    for (const auto &entry : entries) {
+  [[nodiscard]] static constexpr std::optional<std::uint64_t> find_hash(
+      const std::string_view alias) noexcept {
+    for (const auto& entry : entries) {
       if (entry.first == alias) {
         return entry.second;
       }
@@ -183,9 +183,9 @@ template <typename... ts> struct type_alias_registry {
     return std::nullopt;
   }
 
-  [[nodiscard]] static constexpr std::string_view
-  find_alias(const std::uint64_t hash) noexcept {
-    for (const auto &entry : entries) {
+  [[nodiscard]] static constexpr std::string_view find_alias(
+      const std::uint64_t hash) noexcept {
+    for (const auto& entry : entries) {
       if (entry.second == hash) {
         return entry.first;
       }
@@ -198,8 +198,8 @@ template <typename... ts>
 constexpr std::array<typename type_alias_registry<ts...>::item, sizeof...(ts)>
     type_alias_registry<ts...>::entries;
 
-[[nodiscard]] constexpr std::string_view
-stable_function_name(const std::string_view runtime_name) noexcept {
+[[nodiscard]] constexpr std::string_view stable_function_name(
+    const std::string_view runtime_name) noexcept {
   const auto trimmed = detail::trim_ascii_spaces(runtime_name);
   if (trimmed.empty()) {
     return {};
@@ -216,8 +216,8 @@ stable_function_name(const std::string_view runtime_name) noexcept {
   return trimmed;
 }
 
-[[nodiscard]] constexpr std::string_view
-stable_runtime_type_name(const std::string_view runtime_name) noexcept {
+[[nodiscard]] constexpr std::string_view stable_runtime_type_name(
+    const std::string_view runtime_name) noexcept {
   const auto trimmed = detail::trim_ascii_spaces(runtime_name);
   if (trimmed.empty()) {
     return {};
