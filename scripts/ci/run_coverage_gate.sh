@@ -62,26 +62,40 @@ report_dir="$build_dir/reports"
 mkdir -p "$report_dir"
 report_xml="$report_dir/coverage.xml"
 
-# llvm + gcov 兼容方式
-if command -v llvm-cov >/dev/null 2>&1; then
-  gcovr \
-    --gcov-executable "llvm-cov gcov" \
-    --root . \
-    --xml-pretty \
-    --output "$report_xml" \
-    --exclude '(^|/)thirdy_party/' \
-    --exclude-directories '(.*/)?thirdy_party(/.*)?' \
-    --gcov-ignore-errors all \
-    --print-summary
-else
-  gcovr \
-    --root . \
-    --xml-pretty \
-    --output "$report_xml" \
-    --exclude '(^|/)thirdy_party/' \
-    --exclude-directories '(.*/)?thirdy_party(/.*)?' \
-    --gcov-ignore-errors all \
-    --print-summary
+gcovr_args=(
+  --root .
+  --xml-pretty
+  --output "$report_xml"
+  --exclude '(^|/)thirdy_party/'
+  --exclude-directories '(.*/)?thirdy_party(/.*)?'
+  --gcov-ignore-errors all
+  -j 1
+  --print-summary
+)
+
+gcov_exec=""
+cxx_major=""
+if command -v "${CXX:-clang++}" >/dev/null 2>&1; then
+  cxx_major="$("${CXX:-clang++}" --version | rg -o '[0-9]+' | head -n1 || true)"
+fi
+if [[ -n "$cxx_major" ]] && command -v "llvm-cov-$cxx_major" >/dev/null 2>&1; then
+  gcov_exec="llvm-cov-$cxx_major gcov"
+elif command -v llvm-cov >/dev/null 2>&1; then
+  gcov_exec="llvm-cov gcov"
+fi
+
+if [[ -n "$gcov_exec" ]]; then
+  echo "[coverage] gcov executable: $gcov_exec"
+  gcovr_args+=( --gcov-executable "$gcov_exec" )
+fi
+
+if ! gcovr "${gcovr_args[@]}"; then
+  if command -v gcov >/dev/null 2>&1; then
+    echo "[coverage] WARN gcovr failed with ${gcov_exec:-default}; retrying with gcov"
+    gcovr "${gcovr_args[@]}" --gcov-executable gcov
+  else
+    exit 1
+  fi
 fi
 
 if [[ ! -f "$report_xml" ]]; then
