@@ -24,19 +24,18 @@ if ! command -v cmake >/dev/null 2>&1 || ! command -v ctest >/dev/null 2>&1; the
 fi
 
 cxx_compiler="${CXX:-clang++}"
-
-warning_flags='-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wnon-virtual-dtor -Wold-style-cast'
-if [[ "${WH_CI_WERROR:-1}" == "1" ]]; then
-  warning_flags="$warning_flags -Werror"
+warnings_as_errors="ON"
+if [[ "${WH_CI_WERROR:-1}" != "1" ]]; then
+  warnings_as_errors="OFF"
 fi
 
 cmake -S . -B "$build_dir" -G Ninja \
   -DCMAKE_BUILD_TYPE="$build_type" \
   -DWH_BUILD_TESTING=ON \
+  -DWH_WARNINGS_AS_ERRORS="$warnings_as_errors" \
   -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON \
   -DWH_THIRDY_PARTY_DIR="${WH_THIRDY_PARTY_DIR:-${ROOT}/thirdy_party}" \
-  -DCMAKE_CXX_COMPILER="$cxx_compiler" \
-  -DCMAKE_CXX_FLAGS="$warning_flags"
+  -DCMAKE_CXX_COMPILER="$cxx_compiler"
 
 cmake --build "$build_dir" --parallel
 
