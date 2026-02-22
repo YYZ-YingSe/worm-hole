@@ -18,13 +18,13 @@ TEST_CASE("type_utils optional_result_sender traits",
 
 TEST_CASE("type_utils default_instance builds writable pointer chains",
           "[core][type_utils][branch]") {
-  auto* first_level = wh::core::default_instance<int*>();
+  auto *first_level = wh::core::default_instance<int *>();
   REQUIRE(first_level != nullptr);
   *first_level = 7;
   REQUIRE(*first_level == 7);
   delete first_level;
 
-  auto* second_level = wh::core::default_instance<int**>();
+  auto *second_level = wh::core::default_instance<int **>();
   REQUIRE(second_level != nullptr);
   REQUIRE(*second_level != nullptr);
   **second_level = 11;

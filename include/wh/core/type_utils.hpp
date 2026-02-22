@@ -180,10 +180,10 @@ template <typename t> struct default_instance_factory {
   }
 };
 
-template <typename t> struct default_instance_factory<t*> {
-  [[nodiscard]] static auto make() -> t* {
+template <typename t> struct default_instance_factory<t *> {
+  [[nodiscard]] static auto make() -> t * {
     using pointee_t = std::remove_cv_t<t>;
-    auto* value = new pointee_t(default_instance_factory<pointee_t>::make());
+    auto *value = new pointee_t(default_instance_factory<pointee_t>::make());
     return value;
   }
 };
@@ -194,7 +194,7 @@ template <typename t>
 }
 
 template <typename value_t>
-[[nodiscard]] auto wrap_unique(value_t&& value)
+[[nodiscard]] auto wrap_unique(value_t &&value)
     -> std::unique_ptr<remove_cvref_t<value_t>> {
   using normalized_t = remove_cvref_t<value_t>;
   return std::make_unique<normalized_t>(std::forward<value_t>(value));
@@ -204,7 +204,7 @@ template <typename first_t, typename second_t>
 using pair_type = std::pair<first_t, second_t>;
 
 template <typename sequence_t>
-[[nodiscard]] auto reverse_copy(const sequence_t& sequence)
+[[nodiscard]] auto reverse_copy(const sequence_t &sequence)
     -> std::vector<typename sequence_t::value_type> {
   std::vector<typename sequence_t::value_type> output;
   output.reserve(sequence.size());
@@ -215,9 +215,9 @@ template <typename sequence_t>
 }
 
 template <typename map_out_t, typename map_in_t>
-[[nodiscard]] auto map_copy_as(const map_in_t& input) -> map_out_t {
+[[nodiscard]] auto map_copy_as(const map_in_t &input) -> map_out_t {
   map_out_t output;
-  for (const auto& [key, value] : input) {
+  for (const auto &[key, value] : input) {
     output.insert_or_assign(key, value);
   }
   return output;
