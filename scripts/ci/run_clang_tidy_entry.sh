@@ -15,7 +15,7 @@ if ! command -v clang-tidy >/dev/null 2>&1; then
   exit 0
 fi
 
-source_listing="$(git ls-files '*.hpp' '*.h' '*.cpp' '*.cc' '*.cxx')"
+source_listing="$(git ls-files '*.hpp' '*.h' '*.cpp' '*.cc' '*.cxx' | rg -v '^thirdy_party/' || true)"
 if [[ -z "$source_listing" ]]; then
   echo "[clang-tidy] SKIP no source files"
   exit 0

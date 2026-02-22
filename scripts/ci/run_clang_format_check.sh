@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-source_listing="$(git ls-files '*.hpp' '*.h' '*.cpp' '*.cc' '*.cxx' '*.ipp')"
+source_listing="$(git ls-files '*.hpp' '*.h' '*.cpp' '*.cc' '*.cxx' '*.ipp' | rg -v '^thirdy_party/' || true)"
 if [[ -z "$source_listing" ]]; then
   echo "[clang-format] SKIP no source files"
   exit 0

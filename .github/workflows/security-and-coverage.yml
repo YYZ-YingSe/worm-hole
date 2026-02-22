@@ -27,36 +27,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
 
-      - name: Detect build project
-        id: detect_build
-        run: |
-          if [[ -f CMakeLists.txt ]]; then
-            echo "has_build=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_build=0" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Initialize CodeQL
-        if: steps.detect_build.outputs.has_build == '1'
         uses: github/codeql-action/init@v4
         with:
           languages: cpp
+          build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
 
-      - name: Autobuild
-        if: steps.detect_build.outputs.has_build == '1'
-        uses: github/codeql-action/autobuild@v4
-
       - name: Analyze
-        if: steps.detect_build.outputs.has_build == '1'
         uses: github/codeql-action/analyze@v4
-
-      - name: Skip reason
-        if: steps.detect_build.outputs.has_build == '0'
-        run: echo "[codeql] SKIP no CMakeLists.txt"
 
   sca:
     runs-on: ubuntu-latest
@@ -65,7 +47,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
 
       - name: Run dependency review (PR only)
@@ -83,6 +65,7 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '1'
+          skip-dirs: thirdy_party,build
 
   coverage:
     runs-on: ubuntu-latest

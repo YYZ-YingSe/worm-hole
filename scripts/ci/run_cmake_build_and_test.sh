@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 strict_mode="${WH_CI_STRICT:-0}"
+enable_tests="${WH_CI_ENABLE_TESTS:-1}"
 build_type="${WH_CI_BUILD_TYPE:-Debug}"
 build_type_lc="$(printf '%s' "$build_type" | tr '[:upper:]' '[:lower:]')"
 build_dir="build/ci-${build_type_lc}"
@@ -31,7 +32,7 @@ fi
 
 cmake_args=(
   -DCMAKE_BUILD_TYPE="$build_type"
-  -DWH_BUILD_TESTING=ON
+  -DWH_BUILD_TESTING=$([[ "$enable_tests" == "1" ]] && echo ON || echo OFF)
   -DWH_WARNINGS_AS_ERRORS="$warnings_as_errors"
   -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON
   -DWH_THIRDY_PARTY_DIR="${WH_THIRDY_PARTY_DIR:-${ROOT}/thirdy_party}"
@@ -49,6 +50,11 @@ cmake --build "$build_dir" --parallel
 
 if command -v ccache >/dev/null 2>&1; then
   ccache -s || true
+fi
+
+if [[ "$enable_tests" != "1" ]]; then
+  echo "[build-verify] PASS build only (tests disabled by WH_CI_ENABLE_TESTS) ($build_type)"
+  exit 0
 fi
 
 if ctest --test-dir "$build_dir" -N 2>/dev/null | rg -q 'Total Tests:[[:space:]]*[1-9]'; then

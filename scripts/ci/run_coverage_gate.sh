@@ -69,12 +69,14 @@ if command -v llvm-cov >/dev/null 2>&1; then
     --root . \
     --xml-pretty \
     --output "$report_xml" \
+    --exclude '(^|/)thirdy_party/' \
     --print-summary
 else
   gcovr \
     --root . \
     --xml-pretty \
     --output "$report_xml" \
+    --exclude '(^|/)thirdy_party/' \
     --print-summary
 fi
 
