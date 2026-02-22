@@ -3,9 +3,9 @@ name: worm-hole-codeql-config
 paths:
   - include
   - src
+  - tests
 
 paths-ignore:
   - thirdy_party/**
-  - tests/**
   - build/**
   - "**/thirdy_party/**"
