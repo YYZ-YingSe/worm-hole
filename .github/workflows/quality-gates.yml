@@ -45,13 +45,13 @@ jobs:
             ripgrep \
             clang \
             clang-tidy \
-            clang-format \
             clang-tools \
             cppcheck \
             shellcheck \
             cmake \
             ninja-build \
-            ccache
+            ccache \
+            python3-pip
 
       - name: Install required tools (macos)
         if: runner.os == 'macOS'
@@ -59,6 +59,13 @@ jobs:
           brew update
           brew install ripgrep llvm cppcheck shellcheck cmake ninja ccache
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: Pin clang-format version
+        run: |
+          python3 -m pip install --user --upgrade pip
+          python3 -m pip install --user clang-format==21.1.8
+          USER_BIN="$(python3 -c 'import site; print(site.USER_BASE)')/bin"
+          echo "$USER_BIN" >> "$GITHUB_PATH"
 
       - name: Restore ccache
         uses: actions/cache@v4
@@ -72,6 +79,7 @@ jobs:
         env:
           WH_CI_STRICT: '1'
           WH_CI_ENABLE_TESTS: '0'
+          WH_CLANG_FORMAT_BIN: clang-format
           CC: clang
           CXX: clang++
         run: bash scripts/ci/run_phase01_gates.sh

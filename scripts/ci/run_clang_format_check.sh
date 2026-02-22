@@ -10,7 +10,9 @@ if [[ -z "$source_listing" ]]; then
   exit 0
 fi
 
-if ! command -v clang-format >/dev/null 2>&1; then
+formatter_bin="${WH_CLANG_FORMAT_BIN:-clang-format}"
+
+if ! command -v "$formatter_bin" >/dev/null 2>&1; then
   if [[ -n "${CI:-}" ]]; then
     echo "[clang-format] FAIL clang-format not installed in CI"
     exit 1
@@ -19,11 +21,14 @@ if ! command -v clang-format >/dev/null 2>&1; then
   exit 0
 fi
 
+echo "[clang-format] using: $formatter_bin"
+"$formatter_bin" --version
+
 source_files=()
 while IFS= read -r path; do
   [[ -n "$path" ]] || continue
   source_files+=("$path")
 done <<< "$source_listing"
 
-clang-format --dry-run --Werror "${source_files[@]}"
+"$formatter_bin" --dry-run --Werror "${source_files[@]}"
 echo "[clang-format] PASS"
