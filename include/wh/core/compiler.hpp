@@ -1,11 +1,11 @@
 #pragma once
 
 #include <bit>
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstdint>
-#include <concepts>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -59,15 +59,16 @@ inline constexpr std::size_t default_cacheline_size = 64U;
 #endif
 
 template <typename t>
-concept trivially_relocatable =
-    std::is_trivially_move_constructible_v<t> && std::is_trivially_destructible_v<t>;
+concept trivially_relocatable = std::is_trivially_move_constructible_v<t> &&
+                                std::is_trivially_destructible_v<t>;
 
 template <typename t>
 concept trivially_copyable_value = std::is_trivially_copyable_v<t>;
 
 template <typename condition_t>
   requires std::convertible_to<condition_t, bool>
-[[nodiscard]] inline constexpr bool predict_likely(condition_t&& value) noexcept {
+[[nodiscard]] inline constexpr bool
+predict_likely(condition_t &&value) noexcept {
   const bool raw = static_cast<bool>(std::forward<condition_t>(value));
 #if defined(__has_builtin)
 #if __has_builtin(__builtin_expect)
@@ -84,7 +85,8 @@ template <typename condition_t>
 
 template <typename condition_t>
   requires std::convertible_to<condition_t, bool>
-[[nodiscard]] inline constexpr bool predict_unlikely(condition_t&& value) noexcept {
+[[nodiscard]] inline constexpr bool
+predict_unlikely(condition_t &&value) noexcept {
   const bool raw = static_cast<bool>(std::forward<condition_t>(value));
 #if defined(__has_builtin)
 #if __has_builtin(__builtin_expect)
@@ -103,20 +105,22 @@ template <typename condition_t>
   return value != 0U && (value & (value - 1U)) == 0U;
 }
 
-[[nodiscard]] constexpr std::size_t align_up(const std::size_t value,
-                                             const std::size_t alignment) noexcept {
+[[nodiscard]] constexpr std::size_t
+align_up(const std::size_t value, const std::size_t alignment) noexcept {
   if (!is_power_of_two(alignment)) {
     return value;
   }
   return (value + alignment - 1U) & ~(alignment - 1U);
 }
 
-[[nodiscard]] constexpr std::size_t next_power_of_two(std::size_t value) noexcept {
+[[nodiscard]] constexpr std::size_t
+next_power_of_two(std::size_t value) noexcept {
   if (value <= 1U) {
     return 1U;
   }
   value -= 1U;
-  for (std::size_t shift = 1U; shift < (sizeof(std::size_t) * 8U); shift <<= 1U) {
+  for (std::size_t shift = 1U; shift < (sizeof(std::size_t) * 8U);
+       shift <<= 1U) {
     value |= value >> shift;
   }
   return value + 1U;
@@ -137,7 +141,7 @@ template <typename condition_t>
 
 template <typename condition_t>
   requires std::convertible_to<condition_t, bool>
-inline void assume(condition_t&& condition) noexcept {
+inline void assume(condition_t &&condition) noexcept {
   const bool raw = static_cast<bool>(std::forward<condition_t>(condition));
 #if defined(_MSC_VER)
   __assume(raw);
@@ -157,7 +161,8 @@ inline void assume(condition_t&& condition) noexcept {
 }
 
 inline void spin_pause() noexcept {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) ||             \
+    defined(_M_IX86)
 #if defined(_MSC_VER)
   _mm_pause();
 #else
@@ -168,20 +173,16 @@ inline void spin_pause() noexcept {
 #endif
 }
 
-[[noreturn]] inline void contract_violation(const char* kind,
-                                            const char* expression,
-                                            const char* file,
+[[noreturn]] inline void contract_violation(const char *kind,
+                                            const char *expression,
+                                            const char *file,
                                             const int line) noexcept {
-  std::fprintf(stderr,
-               "[wh-contract] %s failed: %s at %s:%d\n",
-               kind,
-               expression,
-               file,
-               line);
+  std::fprintf(stderr, "[wh-contract] %s failed: %s at %s:%d\n", kind,
+               expression, file, line);
   std::abort();
 }
 
-}  // namespace wh::core
+} // namespace wh::core
 
 #if defined(__has_cpp_attribute)
 #if __has_cpp_attribute(likely)
@@ -214,23 +215,29 @@ inline void spin_pause() noexcept {
 #define wh_cacheline_align
 #endif
 
-#define wh_precondition(expr)                                                       \
-  do {                                                                              \
-    if (!(expr)) wh_unlikely {                                                      \
-      ::wh::core::contract_violation("precondition", #expr, __FILE__, __LINE__);  \
-    }                                                                               \
+#define wh_precondition(expr)                                                  \
+  do {                                                                         \
+    if (!(expr))                                                               \
+      wh_unlikely {                                                            \
+        ::wh::core::contract_violation("precondition", #expr, __FILE__,        \
+                                       __LINE__);                              \
+      }                                                                        \
   } while (false)
 
-#define wh_postcondition(expr)                                                       \
-  do {                                                                               \
-    if (!(expr)) wh_unlikely {                                                       \
-      ::wh::core::contract_violation("postcondition", #expr, __FILE__, __LINE__);  \
-    }                                                                                \
+#define wh_postcondition(expr)                                                 \
+  do {                                                                         \
+    if (!(expr))                                                               \
+      wh_unlikely {                                                            \
+        ::wh::core::contract_violation("postcondition", #expr, __FILE__,       \
+                                       __LINE__);                              \
+      }                                                                        \
   } while (false)
 
-#define wh_invariant(expr)                                                       \
-  do {                                                                            \
-    if (!(expr)) wh_unlikely {                                                    \
-      ::wh::core::contract_violation("invariant", #expr, __FILE__, __LINE__);  \
-    }                                                                             \
+#define wh_invariant(expr)                                                     \
+  do {                                                                         \
+    if (!(expr))                                                               \
+      wh_unlikely {                                                            \
+        ::wh::core::contract_violation("invariant", #expr, __FILE__,           \
+                                       __LINE__);                              \
+      }                                                                        \
   } while (false)

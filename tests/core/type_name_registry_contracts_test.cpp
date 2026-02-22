@@ -10,23 +10,22 @@ namespace {
 struct alias_alpha {};
 struct alias_beta {};
 
-}  // namespace
+} // namespace
 
 namespace wh::internal {
 
-template <>
-struct type_alias<alias_alpha> {
+template <> struct type_alias<alias_alpha> {
   static constexpr std::string_view value{"alias_alpha"};
 };
 
-template <>
-struct type_alias<alias_beta> {
+template <> struct type_alias<alias_beta> {
   static constexpr std::string_view value{"alias_beta"};
 };
 
-}  // namespace wh::internal
+} // namespace wh::internal
 
-TEST_CASE("type_name alias registry resolves keys and aliases", "[core][type_name][condition]") {
+TEST_CASE("type_name alias registry resolves keys and aliases",
+          "[core][type_name][condition]") {
   using registry_t = wh::internal::type_alias_registry<alias_alpha, alias_beta>;
 
   static_assert(wh::internal::has_explicit_type_alias_v<alias_alpha>);
@@ -49,21 +48,25 @@ TEST_CASE("type_name alias registry resolves keys and aliases", "[core][type_nam
   REQUIRE(registry_t::find_alias(beta_hash) == "alias_beta");
 }
 
-TEST_CASE("type_name stable name normalization keeps branch behavior", "[core][type_name][branch]") {
-  REQUIRE(wh::internal::stable_function_name("  process_data  ") == "process_data");
-  REQUIRE(wh::internal::stable_runtime_type_name("  user_profile  ") == "user_profile");
+TEST_CASE("type_name stable name normalization keeps branch behavior",
+          "[core][type_name][branch]") {
+  REQUIRE(wh::internal::stable_function_name("  process_data  ") ==
+          "process_data");
+  REQUIRE(wh::internal::stable_runtime_type_name("  user_profile  ") ==
+          "user_profile");
 
   REQUIRE(wh::internal::stable_function_name("lambda_42").empty());
   REQUIRE(wh::internal::stable_runtime_type_name("handler_99").empty());
 }
 
-TEST_CASE("type_name missing lookup and type_key extreme paths", "[core][type_name][extreme]") {
+TEST_CASE("type_name missing lookup and type_key extreme paths",
+          "[core][type_name][extreme]") {
   using registry_t = wh::internal::type_alias_registry<alias_alpha, alias_beta>;
 
   REQUIRE_FALSE(registry_t::find_hash("missing_alias").has_value());
   REQUIRE(registry_t::find_alias(0xFFFFFFFFFFFFFFFFULL).empty());
 
   constexpr auto alpha_type_key = wh::core::make_type_key<alias_alpha>();
-  REQUIRE(alpha_type_key.value == wh::internal::persistent_type_hash<alias_alpha>());
+  REQUIRE(alpha_type_key.value ==
+          wh::internal::persistent_type_hash<alias_alpha>());
 }
-
