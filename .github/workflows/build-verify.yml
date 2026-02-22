@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-verify-${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}-${{ matrix.build_type }}
+  group: build-verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
