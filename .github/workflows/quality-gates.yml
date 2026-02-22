@@ -1,0 +1,58 @@
+name: worm-hole-quality-gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install required tools (ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ripgrep \
+            clang \
+            clang-tidy \
+            clang-format \
+            clang-tools \
+            cppcheck \
+            shellcheck \
+            cmake \
+            ninja-build
+
+      - name: Install required tools (macos)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install ripgrep llvm cppcheck shellcheck cmake ninja
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: Run quality gates
+        env:
+          WH_CI_STRICT: '1'
+          CC: clang
+          CXX: clang++
+        run: bash scripts/ci/run_phase01_gates.sh

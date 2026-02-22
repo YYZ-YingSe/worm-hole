@@ -1,0 +1,102 @@
+name: worm-hole-security-and-coverage
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: security-coverage-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect build project
+        id: detect_build
+        run: |
+          if [[ -f CMakeLists.txt ]]; then
+            echo "has_build=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_build=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Initialize CodeQL
+        if: steps.detect_build.outputs.has_build == '1'
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+
+      - name: Autobuild
+        if: steps.detect_build.outputs.has_build == '1'
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        if: steps.detect_build.outputs.has_build == '1'
+        uses: github/codeql-action/analyze@v3
+
+      - name: Skip reason
+        if: steps.detect_build.outputs.has_build == '0'
+        run: echo "[codeql] SKIP no CMakeLists.txt"
+
+  sca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run dependency review (PR only)
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+
+      - name: Run Trivy FS SCA
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          vuln-type: library
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install required tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ripgrep \
+            clang \
+            cmake \
+            ninja-build \
+            gcovr
+
+      - name: Run coverage gate
+        env:
+          WH_CI_STRICT: '1'
+          WH_COVERAGE_MIN_LINES: '0.70'
+          CC: clang
+          CXX: clang++
+        run: bash scripts/ci/run_coverage_gate.sh
