@@ -42,3 +42,4 @@ Testing/
 
 # local ssh material
 .ssh/
+.gh/
