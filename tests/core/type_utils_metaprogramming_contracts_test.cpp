@@ -25,8 +25,8 @@ struct sample_functor {
 
 TEST_CASE("type_utils metaprogramming traits contract",
           "[core][type_utils][condition]") {
-  static_assert(std::same_as<wh::core::type_of_t<const int &>, int>);
-  static_assert(std::same_as<decltype(wh::core::type_of<const int &>()),
+  static_assert(std::same_as<wh::core::type_of_t<const int&>, int>);
+  static_assert(std::same_as<decltype(wh::core::type_of<const int&>()),
                              wh::core::type_tag<int>>);
 
   static_assert(wh::core::container_like<std::vector<int>>);

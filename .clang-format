@@ -1,0 +1,5 @@
+BasedOnStyle: LLVM
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+PenaltyReturnTypeOnItsOwnLine: 1000000

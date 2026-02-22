@@ -62,7 +62,7 @@ TEST_CASE("reflect visit_field supports found and not_found branches",
   user_profile profile{.id = 1, .name = "alice"};
 
   const bool found_id =
-      wh::core::visit_field(field_map, "id", [&](const auto &binding) {
+      wh::core::visit_field(field_map, "id", [&](const auto& binding) {
         using field_t =
             typename std::remove_cvref_t<decltype(binding)>::value_type;
         if constexpr (std::is_same_v<field_t, int>) {
@@ -71,7 +71,7 @@ TEST_CASE("reflect visit_field supports found and not_found branches",
       });
 
   const bool found_missing =
-      wh::core::visit_field(field_map, "missing", [&](const auto &) {
+      wh::core::visit_field(field_map, "missing", [&](const auto&) {
         FAIL("missing field should not be visited");
       });
 
@@ -90,7 +90,7 @@ TEST_CASE("reflect key lookup stays stable", "[core][reflect][extreme]") {
 
   const auto key = wh::internal::stable_name_hash("name");
   const bool found_by_key =
-      wh::core::visit_field_by_key(field_map, key, [&](const auto &binding) {
+      wh::core::visit_field_by_key(field_map, key, [&](const auto& binding) {
         using field_t =
             typename std::remove_cvref_t<decltype(binding)>::value_type;
         if constexpr (std::is_same_v<field_t, std::string>) {
