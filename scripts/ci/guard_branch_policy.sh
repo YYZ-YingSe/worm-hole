@@ -8,8 +8,8 @@ head_ref="${GITHUB_HEAD_REF:-}"
 base_ref="${GITHUB_BASE_REF:-}"
 
 if [[ "$event_name" == "pull_request" ]]; then
-  if [[ -z "$head_ref" || ! "$head_ref" =~ ^feature/ ]]; then
-    echo "[branch-policy] FAIL pull_request head branch must be feature/*, got: ${head_ref:-<empty>}"
+  if [[ -z "$head_ref" || "$head_ref" != "feature" ]]; then
+    echo "[branch-policy] FAIL pull_request head branch must be feature, got: ${head_ref:-<empty>}"
     status=1
   fi
 

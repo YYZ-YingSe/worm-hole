@@ -27,9 +27,10 @@ done
 build_dir="build/coverage"
 cmake -S . -B "$build_dir" -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_C_COMPILER="${CC:-clang}" \
+  -DWH_BUILD_TESTING=ON \
+  -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON \
+  -DWH_THIRDY_PARTY_DIR="${WH_THIRDY_PARTY_DIR:-${ROOT}/thirdy_party}" \
   -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
-  -DCMAKE_C_FLAGS="--coverage -O0 -g" \
   -DCMAKE_CXX_FLAGS="--coverage -O0 -g"
 
 cmake --build "$build_dir" --parallel
@@ -37,6 +38,10 @@ cmake --build "$build_dir" --parallel
 if ctest --test-dir "$build_dir" -N 2>/dev/null | rg -q 'Total Tests:[[:space:]]*[1-9]'; then
   ctest --test-dir "$build_dir" --output-on-failure --timeout 120
 else
+  if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
+    echo "[coverage] FAIL no tests discovered in strict mode"
+    exit 1
+  fi
   echo "[coverage] SKIP no tests"
   exit 0
 fi

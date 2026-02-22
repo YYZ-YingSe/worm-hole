@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - 'feature/**'
+      - feature
   workflow_dispatch:
 
 permissions:
@@ -28,6 +28,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Install required tools (ubuntu)
         if: runner.os == 'Linux'
@@ -65,6 +68,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Install required tools
         run: |
