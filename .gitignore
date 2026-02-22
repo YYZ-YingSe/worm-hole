@@ -3,6 +3,7 @@ docs/
 
 # build outputs
 build/
+.cache/
 cmake-build-*/
 out/
 bin/

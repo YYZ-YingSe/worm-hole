@@ -1,0 +1,9 @@
+[submodule "thirdy_party/stdexec"]
+	path = thirdy_party/stdexec
+	url = https://github.com/NVIDIA/stdexec.git
+[submodule "thirdy_party/rapidjson"]
+	path = thirdy_party/rapidjson
+	url = https://github.com/Tencent/rapidjson.git
+[submodule "thirdy_party/catch2"]
+	path = thirdy_party/catch2
+	url = https://github.com/catchorg/Catch2.git

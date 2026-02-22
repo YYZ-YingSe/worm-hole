@@ -1,0 +1,6 @@
+# thirdy_party lock
+# generated_at=2026-02-22T20:35:32Z
+# format=path|remote_url|commit_sha|tree_sha
+thirdy_party/catch2|https://github.com/catchorg/Catch2.git|50e9dbfc4e17d5a26a53584c3fc66facf4197192|12872ac48b2b488574a10e2cb054ecad81bf067b
+thirdy_party/rapidjson|https://github.com/Tencent/rapidjson.git|24b5e7a8b27f42fa16b96fc70aade9106cf7102f|42220faaa684c14bfc42aeebc6d5006fb6c51eff
+thirdy_party/stdexec|https://github.com/NVIDIA/stdexec.git|d2909f06a8c3d4fa429b81079ce15c86015fb322|57b02b1987347170c314a4d652529548bbf05941
