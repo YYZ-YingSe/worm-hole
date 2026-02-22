@@ -67,8 +67,8 @@ concept trivially_copyable_value = std::is_trivially_copyable_v<t>;
 
 template <typename condition_t>
   requires std::convertible_to<condition_t, bool>
-[[nodiscard]] inline constexpr bool
-predict_likely(condition_t &&value) noexcept {
+[[nodiscard]] inline constexpr bool predict_likely(
+    condition_t&& value) noexcept {
   const bool raw = static_cast<bool>(std::forward<condition_t>(value));
 #if defined(__has_builtin)
 #if __has_builtin(__builtin_expect)
@@ -85,8 +85,8 @@ predict_likely(condition_t &&value) noexcept {
 
 template <typename condition_t>
   requires std::convertible_to<condition_t, bool>
-[[nodiscard]] inline constexpr bool
-predict_unlikely(condition_t &&value) noexcept {
+[[nodiscard]] inline constexpr bool predict_unlikely(
+    condition_t&& value) noexcept {
   const bool raw = static_cast<bool>(std::forward<condition_t>(value));
 #if defined(__has_builtin)
 #if __has_builtin(__builtin_expect)
@@ -105,16 +105,16 @@ predict_unlikely(condition_t &&value) noexcept {
   return value != 0U && (value & (value - 1U)) == 0U;
 }
 
-[[nodiscard]] constexpr std::size_t
-align_up(const std::size_t value, const std::size_t alignment) noexcept {
+[[nodiscard]] constexpr std::size_t align_up(
+    const std::size_t value, const std::size_t alignment) noexcept {
   if (!is_power_of_two(alignment)) {
     return value;
   }
   return (value + alignment - 1U) & ~(alignment - 1U);
 }
 
-[[nodiscard]] constexpr std::size_t
-next_power_of_two(std::size_t value) noexcept {
+[[nodiscard]] constexpr std::size_t next_power_of_two(
+    std::size_t value) noexcept {
   if (value <= 1U) {
     return 1U;
   }
@@ -141,7 +141,7 @@ next_power_of_two(std::size_t value) noexcept {
 
 template <typename condition_t>
   requires std::convertible_to<condition_t, bool>
-inline void assume(condition_t &&condition) noexcept {
+inline void assume(condition_t&& condition) noexcept {
   const bool raw = static_cast<bool>(std::forward<condition_t>(condition));
 #if defined(_MSC_VER)
   __assume(raw);
@@ -173,9 +173,9 @@ inline void spin_pause() noexcept {
 #endif
 }
 
-[[noreturn]] inline void contract_violation(const char *kind,
-                                            const char *expression,
-                                            const char *file,
+[[noreturn]] inline void contract_violation(const char* kind,
+                                            const char* expression,
+                                            const char* file,
                                             const int line) noexcept {
   std::fprintf(stderr, "[wh-contract] %s failed: %s at %s:%d\n", kind,
                expression, file, line);
