@@ -6,13 +6,27 @@ cd "$ROOT"
 
 status=0
 
-# 路径命名：源码和测试路径禁止大写
+# 路径命名：源码和测试路径禁止大写（跨平台处理 CRLF 输出差异）
 while IFS= read -r path; do
+  path="${path%$'\r'}"
+
+  case "$path" in
+    include/wh/*|src/*|tests/*)
+      ;;
+    *)
+      continue
+      ;;
+  esac
+
+  if [[ "$(basename "$path")" == "CMakeLists.txt" ]]; then
+    continue
+  fi
+
   if [[ "$path" =~ [A-Z] ]]; then
     echo "[naming] FAIL uppercase path: $path"
     status=1
   fi
-done < <(git ls-files | rg '^(include/wh|src|tests)/' | rg -v '(^|/)CMakeLists\.txt$' || true)
+done < <(git ls-files || true)
 
 # token 命名：禁止 useCamelCase / use-xxx
 if [[ -d include/wh ]]; then
@@ -32,6 +46,7 @@ fi
 
 # 测试文件命名必须功能导向：禁止 task/l/phase/阶段 等过程式名称
 while IFS= read -r test_path; do
+  test_path="${test_path%$'\r'}"
   filename="$(basename "$test_path")"
   if [[ "$filename" =~ (task[0-9]+|l[0-9]+|phase[0-9]+|阶段) ]]; then
     echo "[naming] FAIL process-style test filename: $test_path"
