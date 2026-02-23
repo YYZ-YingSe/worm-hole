@@ -30,6 +30,15 @@ if [[ -d include/wh ]]; then
   fi
 fi
 
+# 测试文件命名必须功能导向：禁止 task/l/phase/阶段 等过程式名称
+while IFS= read -r test_path; do
+  filename="$(basename "$test_path")"
+  if [[ "$filename" =~ (task[0-9]+|l[0-9]+|phase[0-9]+|阶段) ]]; then
+    echo "[naming] FAIL process-style test filename: $test_path"
+    status=1
+  fi
+done < <(git ls-files 'tests/**/*.cpp' 'tests/**/*.cc' 'tests/**/*.cxx' 'tests/**/*.hpp' 'tests/**/*.h' 2>/dev/null || true)
+
 if [[ $status -eq 0 ]]; then
   echo "[naming] PASS"
 fi
