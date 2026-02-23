@@ -15,6 +15,37 @@ if ! command -v cppcheck >/dev/null 2>&1; then
   exit 0
 fi
 
+if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+  probe_src="$(mktemp "${TMPDIR:-/tmp}/cppcheck-probe-XXXXXX.cpp")"
+  printf 'int main() { return 0; }
+' > "$probe_src"
+
+  probe_output=""
+  if ! probe_output="$(cppcheck --quiet --error-exitcode=2 --std=c++20 "$probe_src" 2>&1)"; then
+    rm -f "$probe_src"
+
+    if printf '%s
+' "$probe_output" | rg -q 'std\.cfg|installation is broken'; then
+      echo "[cppcheck] SKIP windows runner cppcheck package missing std.cfg"
+      exit 0
+    fi
+
+    if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
+      echo "[cppcheck] FAIL cppcheck probe failed on windows"
+      printf '%s
+' "$probe_output"
+      exit 1
+    fi
+
+    echo "[cppcheck] SKIP cppcheck probe failed on windows"
+    printf '%s
+' "$probe_output"
+    exit 0
+  fi
+
+  rm -f "$probe_src"
+fi
+
 source_listing="$(git ls-files 'include/wh/**/*.hpp' 'include/wh/**/*.h' 'src/**/*.cpp' 'src/**/*.cc' 'src/**/*.cxx' 'tests/**/*.cpp' 'tests/**/*.cc' 'tests/**/*.cxx' 2>/dev/null || true)"
 if [[ -z "$source_listing" ]]; then
   echo "[cppcheck] SKIP no source files"
