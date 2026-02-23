@@ -27,15 +27,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
           fetch-depth: 0
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: cpp
-          build-mode: none
+          build-mode: manual
           config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Build for CodeQL extraction
+        run: |
+          cmake -S . -B build/codeql \
+            -DWH_BUILD_TESTING=OFF \
+            -DWH_WARNINGS_AS_ERRORS=OFF \
+            -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON \
+            -DWH_THIRDY_PARTY_DIR="$GITHUB_WORKSPACE/thirdy_party"
+          cmake --build build/codeql --parallel
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
