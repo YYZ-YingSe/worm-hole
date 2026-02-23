@@ -17,29 +17,25 @@ fi
 
 if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
   probe_src="$(mktemp "${TMPDIR:-/tmp}/cppcheck-probe-XXXXXX.cpp")"
-  printf 'int main() { return 0; }
-' > "$probe_src"
+  printf 'int main() { return 0; }\n' > "$probe_src"
 
   probe_output=""
   if ! probe_output="$(cppcheck --quiet --error-exitcode=2 --std=c++20 "$probe_src" 2>&1)"; then
     rm -f "$probe_src"
 
-    if printf '%s
-' "$probe_output" | rg -q 'std\.cfg|installation is broken'; then
+    if printf '%s\n' "$probe_output" | rg -q 'std\.cfg|installation is broken'; then
       echo "[cppcheck] SKIP windows runner cppcheck package missing std.cfg"
       exit 0
     fi
 
     if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
       echo "[cppcheck] FAIL cppcheck probe failed on windows"
-      printf '%s
-' "$probe_output"
+      printf '%s\n' "$probe_output"
       exit 1
     fi
 
     echo "[cppcheck] SKIP cppcheck probe failed on windows"
-    printf '%s
-' "$probe_output"
+    printf '%s\n' "$probe_output"
     exit 0
   fi
 
