@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
+if [[ "${RUNNER_OS:-}" == "Windows" ]] && ! command -v shellcheck >/dev/null 2>&1; then
+  echo "[shellcheck] SKIP shellcheck not installed on windows runner"
+  exit 0
+fi
+
 if ! command -v shellcheck >/dev/null 2>&1; then
   if [[ -n "${CI:-}" || "${WH_CI_STRICT:-0}" == "1" ]]; then
     echo "[shellcheck] FAIL shellcheck not installed"

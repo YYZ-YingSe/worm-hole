@@ -11,6 +11,11 @@ if [[ "${RUNNER_OS:-}" == "macOS" ]]; then
   exit 0
 fi
 
+if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+  echo "[clang-tidy] SKIP windows runner (compile db/toolchain mismatch risk); enforced on ubuntu-latest"
+  exit 0
+fi
+
 if ! command -v clang-tidy >/dev/null 2>&1; then
   if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
     echo "[clang-tidy] FAIL clang-tidy not installed in strict mode"

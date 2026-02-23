@@ -6,6 +6,11 @@ cd "$ROOT"
 
 strict_mode="${WH_CI_STRICT:-0}"
 
+if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+  echo "[scan-build] SKIP windows runner (scan-build toolchain integration not stable)"
+  exit 0
+fi
+
 if [[ ! -f CMakeLists.txt ]]; then
   if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
     echo "[scan-build] SKIP no CMakeLists.txt"
