@@ -75,6 +75,44 @@ struct encode_only_point {
   return {};
 }
 
+struct tracked_raw_pointer_value {
+  static inline int live_count = 0;
+
+  int value{};
+
+  tracked_raw_pointer_value() {
+    ++live_count;
+  }
+
+  ~tracked_raw_pointer_value() {
+    --live_count;
+  }
+
+  tracked_raw_pointer_value(const tracked_raw_pointer_value &) = delete;
+  auto operator=(const tracked_raw_pointer_value &)
+      -> tracked_raw_pointer_value & = delete;
+  tracked_raw_pointer_value(tracked_raw_pointer_value &&) = delete;
+  auto operator=(tracked_raw_pointer_value &&)
+      -> tracked_raw_pointer_value & = delete;
+};
+
+[[maybe_unused]] auto wh_to_json(const tracked_raw_pointer_value &input,
+                                 wh::core::json_value &output,
+                                 wh::core::json_allocator &)
+    -> wh::core::result<void> {
+  output.SetInt(input.value);
+  return {};
+}
+
+auto wh_from_json(const wh::core::json_value &input,
+                  tracked_raw_pointer_value &output) -> wh::core::result<void> {
+  if (!input.IsInt()) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+  }
+  output.value = input.GetInt();
+  return {};
+}
+
 } // namespace
 
 TEST_CASE("json parsing helpers provide typed access and structured errors",
@@ -170,6 +208,35 @@ TEST_CASE("serialization handles containers pointers and codec constraints",
       wh::internal::to_json_value(one_way, arena.GetAllocator());
   REQUIRE(encoded_one_way.has_error());
   REQUIRE(encoded_one_way.error() == wh::core::errc::not_supported);
+}
+
+TEST_CASE("raw pointer deserialization releases previous allocation",
+          "[core][serialization][boundary]") {
+  tracked_raw_pointer_value::live_count = 0;
+
+  wh::core::json_document first_input;
+  first_input.Parse("1");
+  tracked_raw_pointer_value *output = nullptr;
+  const auto first_status = wh::internal::from_json(first_input, output);
+  REQUIRE(first_status.has_value());
+  REQUIRE(output != nullptr);
+  REQUIRE(output->value == 1);
+  REQUIRE(tracked_raw_pointer_value::live_count == 1);
+
+  wh::core::json_document second_input;
+  second_input.Parse("2");
+  const auto second_status = wh::internal::from_json(second_input, output);
+  REQUIRE(second_status.has_value());
+  REQUIRE(output != nullptr);
+  REQUIRE(output->value == 2);
+  REQUIRE(tracked_raw_pointer_value::live_count == 1);
+
+  wh::core::json_document null_input;
+  null_input.Parse("null");
+  const auto null_status = wh::internal::from_json(null_input, output);
+  REQUIRE(null_status.has_value());
+  REQUIRE(output == nullptr);
+  REQUIRE(tracked_raw_pointer_value::live_count == 0);
 }
 
 TEST_CASE("serialization registry keeps name type uniqueness and alias routing",

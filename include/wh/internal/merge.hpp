@@ -82,16 +82,12 @@ public:
     }
 
     using typed_merge_fn = typed_merge_fn_t<value_t>;
+    auto typed_function =
+        std::make_shared<typed_merge_fn>(std::move(function));
     auto [typed_iter, typed_inserted] =
-        typed_table_.emplace(type, typed_merge_fn{std::move(function)});
+        typed_table_.emplace(type, typed_function);
     if (!typed_inserted) {
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
-    }
-    const auto *typed_function =
-        std::any_cast<const typed_merge_fn>(&typed_iter->second);
-    if (typed_function == nullptr) {
-      typed_table_.erase(typed_iter);
-      return wh::core::result<void>::failure(wh::core::errc::internal_error);
     }
 
     auto [dynamic_iter, dynamic_inserted] =
@@ -161,16 +157,12 @@ public:
     }
 
     using typed_merge_fn = typed_merge_fn_t<value_t>;
+    auto typed_function_holder =
+        std::make_shared<typed_merge_fn>(std::move(typed_function));
     auto [typed_iter, typed_inserted] =
-        typed_table_.emplace(type, typed_merge_fn{std::move(typed_function)});
+        typed_table_.emplace(type, typed_function_holder);
     if (!typed_inserted) {
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
-    }
-    const auto *typed_function_ptr =
-        std::any_cast<const typed_merge_fn>(&typed_iter->second);
-    if (typed_function_ptr == nullptr) {
-      typed_table_.erase(typed_iter);
-      return wh::core::result<void>::failure(wh::core::errc::internal_error);
     }
 
     auto [dynamic_iter, dynamic_inserted] =
@@ -212,7 +204,6 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
     }
     static_cast<void>(dynamic_iter);
-    static_cast<void>(typed_function_ptr);
 
     return {};
   }
@@ -239,6 +230,10 @@ public:
     }
 
     if (values.size() == 1U) {
+      if (std::type_index(values.front().type()) != type) {
+        return wh::core::result<dynamic_merge_value>::failure(
+            wh::core::errc::type_mismatch);
+      }
       return values.front();
     }
 
@@ -316,7 +311,14 @@ private:
     if (iter == typed_table_.end()) {
       return nullptr;
     }
-    return std::any_cast<const typed_merge_fn_t<value_t>>(&iter->second);
+
+    const auto *holder =
+        std::any_cast<const std::shared_ptr<typed_merge_fn_t<value_t>>>(
+            &iter->second);
+    if (holder == nullptr || !(*holder)) {
+      return nullptr;
+    }
+    return holder->get();
   }
 
   std::unordered_map<std::type_index, dynamic_values_merge_function> table_{};

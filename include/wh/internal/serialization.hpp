@@ -376,6 +376,7 @@ auto from_json(const wh::core::json_value &input, type_t &output)
     } else if constexpr (detail::is_raw_pointer_v<normalized_t>) {
       using pointee_t = std::remove_pointer_t<normalized_t>;
       if (input.IsNull()) {
+        delete output;
         output = nullptr;
         return {};
       }
@@ -385,6 +386,7 @@ auto from_json(const wh::core::json_value &input, type_t &output)
         delete value;
         return decoded;
       }
+      delete output;
       output = value;
       return {};
     } else if constexpr (detail::is_std_array_v<normalized_t>) {
