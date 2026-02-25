@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 project(worm_hole VERSION 0.1.0 LANGUAGES CXX)
 
 include(CTest)
+include(CheckLibraryExists)
 
 option(WH_BUILD_TESTING "Build worm-hole tests" ON)
 option(WH_BUILD_BENCHMARKS "Build worm-hole benchmarks" OFF)
@@ -113,6 +114,13 @@ target_include_directories(
 
 target_compile_features(wh_core INTERFACE cxx_std_20)
 target_link_libraries(wh_core INTERFACE STDEXEC::stdexec rapidjson::rapidjson)
+
+if(UNIX AND NOT APPLE)
+  check_library_exists(atomic __atomic_is_lock_free "" WH_HAS_LIBATOMIC)
+  if(WH_HAS_LIBATOMIC)
+    target_link_libraries(wh_core INTERFACE atomic)
+  endif()
+endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

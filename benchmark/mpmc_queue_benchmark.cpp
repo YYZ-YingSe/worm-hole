@@ -27,9 +27,9 @@ template <typename queue_t> struct shared_queue_state {
 template <typename queue_t>
 void wait_for_threads(shared_queue_state<queue_t> &shared,
                       const std::uint32_t thread_count) {
-  const auto generation = shared.barrier_generation.load(std::memory_order_acquire);
-  if (shared.barrier_arrived.fetch_add(1U, std::memory_order_acq_rel) +
-          1U ==
+  const auto generation =
+      shared.barrier_generation.load(std::memory_order_acquire);
+  if (shared.barrier_arrived.fetch_add(1U, std::memory_order_acq_rel) + 1U ==
       thread_count) {
     shared.barrier_arrived.store(0U, std::memory_order_release);
     shared.barrier_generation.fetch_add(1U, std::memory_order_acq_rel);
@@ -60,7 +60,8 @@ void prepare_shared_queue(benchmark::State &state,
 }
 
 template <typename queue_t>
-void finalize_shared_queue(benchmark::State &state, shared_queue_state<queue_t> &shared) {
+void finalize_shared_queue(benchmark::State &state,
+                           shared_queue_state<queue_t> &shared) {
   wait_for_threads(shared, static_cast<std::uint32_t>(state.threads()));
   if (state.thread_index() == 0) {
     shared.ready.store(false, std::memory_order_release);
@@ -180,9 +181,8 @@ void BM_mpmc_handoff_latency(benchmark::State &state) {
     const auto samples = shared.latency_samples.load(std::memory_order_relaxed);
     if (samples > 0U) {
       const auto sum = shared.latency_sum_ns.load(std::memory_order_relaxed);
-      state.counters["avg_latency_ns"] =
-          benchmark::Counter(static_cast<double>(sum) /
-                             static_cast<double>(samples));
+      state.counters["avg_latency_ns"] = benchmark::Counter(
+          static_cast<double>(sum) / static_cast<double>(samples));
       state.counters["max_latency_ns"] = benchmark::Counter(static_cast<double>(
           shared.latency_max_ns.load(std::memory_order_relaxed)));
     }

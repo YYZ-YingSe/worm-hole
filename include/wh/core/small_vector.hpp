@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/result.hpp"
 
 namespace wh::core {
@@ -971,7 +972,8 @@ public:
     return std::vector<value_t>(data_, data_ + size_);
   }
 
-  [[nodiscard]] static auto from_std_vector(const std::vector<value_t> &values)
+  [[nodiscard]] static auto
+  from_std_vector_impl(const std::vector<value_t> &values)
       -> result<small_vector_impl> {
     small_vector_impl output;
     const std::size_t count = values.size();
@@ -1008,7 +1010,7 @@ private:
   pointer data_;
   std::size_t size_;
   std::size_t capacity_;
-  [[no_unique_address]] allocator_type allocator_{};
+  wh_no_unique_address allocator_type allocator_{};
 
   [[nodiscard]] auto allocator_equals(const allocator_type &other) const
       -> bool {
@@ -1459,9 +1461,8 @@ private:
 
   [[nodiscard]] auto ensure_capacity_for(const std::size_t additional)
       -> result<void> {
-    if (predict_likely(additional <= (capacity_ - size_))) {
-      return result<void>::success();
-    }
+    if (additional <= (capacity_ - size_))
+      wh_likely { return result<void>::success(); }
 
     const std::size_t max_items = static_cast<std::size_t>(max_size());
     if (size_ > max_items || additional > (max_items - size_)) {
@@ -1549,11 +1550,12 @@ private:
 
   template <typename... args_t>
   [[nodiscard]] auto append_one(args_t &&...args) noexcept -> result<void> {
-    if (predict_unlikely(size_ == capacity_)) {
-      return append_one_slow_path(std::forward<args_t>(args)...);
-    }
+    if (size_ == capacity_)
+      wh_unlikely {
+        return append_one_slow_path(std::forward<args_t>(args)...);
+      }
 
-    if constexpr (std::is_nothrow_constructible_v<value_t, args_t &&...>) {
+    if constexpr (std::is_nothrow_constructible_v<value_t, decltype(args)...>) {
       std::construct_at(data_ + size_, std::forward<args_t>(args)...);
     } else {
       try {
@@ -1575,7 +1577,7 @@ private:
       return growth.error();
     }
 
-    if constexpr (std::is_nothrow_constructible_v<value_t, args_t &&...>) {
+    if constexpr (std::is_nothrow_constructible_v<value_t, decltype(args)...>) {
       std::construct_at(data_ + size_, std::forward<args_t>(args)...);
     } else {
       try {
@@ -1963,7 +1965,7 @@ public:
 
   [[nodiscard]] static auto from_std_vector(const std::vector<value_t> &values)
       -> result<small_vector> {
-    auto converted = impl_type::from_std_vector(values);
+    auto converted = impl_type::from_std_vector_impl(values);
     if (converted.has_error()) {
       return result<small_vector>::failure(converted.error());
     }
