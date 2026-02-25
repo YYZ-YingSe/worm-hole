@@ -51,6 +51,7 @@ if command -v ccache >/dev/null 2>&1; then
 fi
 
 cmake -S . -B "$build_dir" -G Ninja "${cmake_args[@]}"
+bash scripts/ci/sync_compile_commands.sh "$build_dir"
 cmake --build "$build_dir" --parallel
 
 if command -v ccache >/dev/null 2>&1; then

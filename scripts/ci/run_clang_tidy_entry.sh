@@ -56,6 +56,8 @@ if [[ ! -f "$compile_db" ]]; then
   fi
 fi
 
+bash scripts/ci/sync_compile_commands.sh "$build_dir"
+
 checks="${WH_CLANG_TIDY_CHECKS:-clang-analyzer-*,bugprone-*,performance-*,portability-*,readability-*}"
 header_filter='^(include/wh|src|tests)/'
 tidy_config='{InheritParentConfig: false}'

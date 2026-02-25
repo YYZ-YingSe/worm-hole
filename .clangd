@@ -1,0 +1,12 @@
+CompileFlags:
+  CompilationDatabase: .
+
+---
+If:
+  PathMatch: ^include/wh/.*\.(h|hpp)$
+CompileFlags:
+  Add:
+    - -std=c++20
+    - -I/Users/wepie/WePlay_/worm-hole/include
+    - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/stdexec/include
+    - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/rapidjson/include
