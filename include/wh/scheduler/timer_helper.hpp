@@ -31,15 +31,15 @@ template <timed_scheduler_in_context context_t>
 }
 
 template <timed_scheduler_in_context context_t, typename duration_t>
-[[nodiscard]] constexpr auto
-schedule_after_context(const context_t &context, duration_t &&duration) {
+[[nodiscard]] constexpr auto schedule_after_context(const context_t &context,
+                                                    duration_t &&duration) {
   return exec::schedule_after(select_timer_scheduler(context),
                               std::forward<duration_t>(duration));
 }
 
 template <timed_scheduler_in_context context_t, typename deadline_t>
-[[nodiscard]] constexpr auto
-schedule_at_context(const context_t &context, deadline_t &&deadline) {
+[[nodiscard]] constexpr auto schedule_at_context(const context_t &context,
+                                                 deadline_t &&deadline) {
   return exec::schedule_at(select_timer_scheduler(context),
                            std::forward<deadline_t>(deadline));
 }
@@ -52,9 +52,8 @@ template <typename result_t, timed_scheduler_in_context context_t,
   return exec::when_any(
       std::forward<wait_sender_t>(wait_sender),
       schedule_after_context(context, std::forward<duration_t>(duration)) |
-          stdexec::then([]() noexcept {
-            return result_t::failure(errc::timeout);
-          }));
+          stdexec::then(
+              []() noexcept { return result_t::failure(errc::timeout); }));
 }
 
 template <typename result_t, timed_scheduler_in_context context_t,
@@ -65,9 +64,8 @@ template <typename result_t, timed_scheduler_in_context context_t,
   return exec::when_any(
       std::forward<wait_sender_t>(wait_sender),
       schedule_at_context(context, std::forward<deadline_t>(deadline)) |
-          stdexec::then([]() noexcept {
-            return result_t::failure(errc::timeout);
-          }));
+          stdexec::then(
+              []() noexcept { return result_t::failure(errc::timeout); }));
 }
 
 } // namespace wh::core

@@ -172,8 +172,8 @@ void BM_small_vector_emplace_back_non_trivial_reserved(
             element_count)));
 
     for (std::size_t index = 0U; index < element_count; ++index) {
-      static_cast<void>(output.emplace_back(
-          "payload_" + std::to_string(index), static_cast<std::uint32_t>(index)));
+      static_cast<void>(output.emplace_back("payload_" + std::to_string(index),
+                                            static_cast<std::uint32_t>(index)));
     }
 
     benchmark::DoNotOptimize(output.data());
@@ -388,7 +388,7 @@ void BM_small_vector_copy_construct_non_trivial(benchmark::State &state) {
   const auto element_count = static_cast<std::size_t>(state.range(0));
   const auto source_values = make_payload_input(element_count);
   wh::core::small_vector<non_trivial_value, 64U> source(source_values.begin(),
-                                                         source_values.end());
+                                                        source_values.end());
 
   for (auto _ : state) {
     wh::core::small_vector<non_trivial_value, 64U> output(source);
@@ -419,7 +419,7 @@ void BM_small_vector_copy_assign_non_trivial(benchmark::State &state) {
   const auto element_count = static_cast<std::size_t>(state.range(0));
   const auto source_values = make_payload_input(element_count);
   wh::core::small_vector<non_trivial_value, 64U> source(source_values.begin(),
-                                                         source_values.end());
+                                                        source_values.end());
 
   for (auto _ : state) {
     wh::core::small_vector<non_trivial_value, 64U> output;
@@ -451,8 +451,8 @@ void BM_small_vector_resize_grow_trivial(benchmark::State &state) {
 
   for (auto _ : state) {
     wh::core::small_vector<int, 64U> output;
-    static_cast<void>(output.resize(
-        static_cast<wh::core::small_vector<int, 64U>::size_type>(
+    static_cast<void>(
+        output.resize(static_cast<wh::core::small_vector<int, 64U>::size_type>(
             element_count)));
 
     benchmark::DoNotOptimize(output.data());
@@ -485,9 +485,8 @@ void BM_small_vector_clear_reuse_push_back(benchmark::State &state) {
   const auto element_count = static_cast<std::size_t>(state.range(0));
   const auto input = make_int_input(element_count);
   wh::core::small_vector<int, 64U> output;
-  static_cast<void>(
-      output.reserve(static_cast<wh::core::small_vector<int, 64U>::size_type>(
-          element_count)));
+  static_cast<void>(output.reserve(
+      static_cast<wh::core::small_vector<int, 64U>::size_type>(element_count)));
 
   for (auto _ : state) {
     output.clear();
@@ -609,10 +608,7 @@ BENCHMARK(BM_small_vector_copy_assign_non_trivial)
     ->Arg(2048)
     ->Arg(8192);
 
-BENCHMARK(BM_std_vector_resize_grow_trivial)
-    ->Arg(1024)
-    ->Arg(4096)
-    ->Arg(16384);
+BENCHMARK(BM_std_vector_resize_grow_trivial)->Arg(1024)->Arg(4096)->Arg(16384);
 BENCHMARK(BM_small_vector_resize_grow_trivial)
     ->Arg(1024)
     ->Arg(4096)

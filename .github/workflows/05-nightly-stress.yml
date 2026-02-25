@@ -1,4 +1,4 @@
-name: worm-hole-nightly-concurrency
+name: ci-05-nightly-stress
 
 on:
   schedule:
@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: nightly-concurrency-${{ github.workflow }}-${{ github.ref }}
+  group: nightly-stress-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  nightly:
+  stress-and-fuzz:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 

@@ -16,10 +16,15 @@ TEST_CASE("compiler alignment and power_of_two contracts",
 
 TEST_CASE("compiler branch prediction helpers keep boolean semantics",
           "[core][compiler][branch]") {
-  REQUIRE(wh::core::predict_likely(true));
-  REQUIRE_FALSE(wh::core::predict_likely(false));
-  REQUIRE(wh::core::predict_unlikely(true));
-  REQUIRE_FALSE(wh::core::predict_unlikely(false));
+  bool likely_taken = false;
+  if (true)
+    wh_likely { likely_taken = true; }
+  REQUIRE(likely_taken);
+
+  bool unlikely_taken = false;
+  if (true)
+    wh_unlikely { unlikely_taken = true; }
+  REQUIRE(unlikely_taken);
 }
 
 TEST_CASE("compiler next_power_of_two handles edge values",

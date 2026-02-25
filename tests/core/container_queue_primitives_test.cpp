@@ -117,7 +117,8 @@ template <typename value_t> struct queue_tracking_allocator {
   int id{0};
 
   queue_tracking_allocator() = default;
-  explicit queue_tracking_allocator(const int allocator_id) : id(allocator_id) {}
+  explicit queue_tracking_allocator(const int allocator_id)
+      : id(allocator_id) {}
 
   template <typename other_t>
   queue_tracking_allocator(const queue_tracking_allocator<other_t> &other)
@@ -583,11 +584,11 @@ TEST_CASE("mpmc_queue bounded custom allocator parity with folly",
     REQUIRE(queue.read_count() == 1U);
   }
 
-  REQUIRE(queue_allocator_counters::allocations.load(std::memory_order_relaxed) >
-          0U);
-  REQUIRE(queue_allocator_counters::allocations.load(std::memory_order_relaxed) ==
-          queue_allocator_counters::deallocations.load(
-              std::memory_order_relaxed));
+  REQUIRE(queue_allocator_counters::allocations.load(
+              std::memory_order_relaxed) > 0U);
+  REQUIRE(
+      queue_allocator_counters::allocations.load(std::memory_order_relaxed) ==
+      queue_allocator_counters::deallocations.load(std::memory_order_relaxed));
 }
 
 TEST_CASE("mpmc_queue multi-producer multi-consumer uniqueness",
