@@ -12,9 +12,14 @@ include(Catch)
 add_executable(
   wh_core_tests
   core/compiler_contracts_test.cpp
+  core/channel_contracts_test.cpp
+  core/container_queue_primitives_test.cpp
+  core/queue_completion_token_contracts_test.cpp
+  core/error_contracts_test.cpp
   core/type_utils_metaprogramming_contracts_test.cpp
   core/type_utils_default_instance_test.cpp
   core/reflect_field_access_test.cpp
+  core/result_contracts_test.cpp
   core/type_name_registry_contracts_test.cpp)
 
 target_link_libraries(wh_core_tests PRIVATE wh::core Catch2::Catch2WithMain)

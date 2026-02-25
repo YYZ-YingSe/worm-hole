@@ -18,13 +18,17 @@ TEST_CASE("type_utils optional_result_sender traits",
 
 TEST_CASE("type_utils default_instance builds writable pointer chains",
           "[core][type_utils][branch]") {
-  auto *first_level = wh::core::default_instance<int *>();
+  auto first_level_result = wh::core::default_instance<int *>();
+  REQUIRE(first_level_result.has_value());
+  auto *first_level = first_level_result.value();
   REQUIRE(first_level != nullptr);
   *first_level = 7;
   REQUIRE(*first_level == 7);
   delete first_level;
 
-  auto *second_level = wh::core::default_instance<int **>();
+  auto second_level_result = wh::core::default_instance<int **>();
+  REQUIRE(second_level_result.has_value());
+  auto *second_level = second_level_result.value();
   REQUIRE(second_level != nullptr);
   REQUIRE(*second_level != nullptr);
   **second_level = 11;
@@ -37,13 +41,16 @@ TEST_CASE("type_utils reverse_copy and map_copy_as handle edge collections",
           "[core][type_utils][extreme]") {
   const std::vector<int> empty_values;
   const auto reversed_empty = wh::core::reverse_copy(empty_values);
-  REQUIRE(reversed_empty.empty());
+  REQUIRE(reversed_empty.has_value());
+  REQUIRE(reversed_empty.value().empty());
 
   const std::vector<int> numbers{1, 2, 3, 4};
   const auto reversed_numbers = wh::core::reverse_copy(numbers);
-  REQUIRE(reversed_numbers == std::vector<int>({4, 3, 2, 1}));
+  REQUIRE(reversed_numbers.has_value());
+  REQUIRE(reversed_numbers.value() == std::vector<int>({4, 3, 2, 1}));
 
   const std::map<int, int> source{{1, 2}, {3, 4}};
   const auto copied = wh::core::map_copy_as<std::map<int, int>>(source);
-  REQUIRE(copied == source);
+  REQUIRE(copied.has_value());
+  REQUIRE(copied.value() == source);
 }

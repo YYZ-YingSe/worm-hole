@@ -5,6 +5,7 @@ project(worm_hole VERSION 0.1.0 LANGUAGES CXX)
 include(CTest)
 
 option(WH_BUILD_TESTING "Build worm-hole tests" ON)
+option(WH_BUILD_BENCHMARKS "Build worm-hole benchmarks" OFF)
 option(WH_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
 option(WH_REQUIRE_GIT_LOCKED_THIRDY_PARTY "Require git-locked thirdy_party deps" ON)
 
@@ -16,6 +17,7 @@ set(WH_THIRDY_PARTY_DIR
 set(WH_STDEXEC_DIR "${WH_THIRDY_PARTY_DIR}/stdexec" CACHE PATH "stdexec source directory")
 set(WH_RAPIDJSON_DIR "${WH_THIRDY_PARTY_DIR}/rapidjson" CACHE PATH "rapidjson source directory")
 set(WH_CATCH2_DIR "${WH_THIRDY_PARTY_DIR}/catch2" CACHE PATH "catch2 source directory")
+set(WH_BENCHMARK_DIR "${WH_THIRDY_PARTY_DIR}/benchmark" CACHE PATH "google benchmark source directory")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,6 +57,10 @@ if(BUILD_TESTING AND WH_BUILD_TESTING)
   wh_require_git_locked_dir("${WH_CATCH2_DIR}" "catch2")
 endif()
 
+if(WH_BUILD_BENCHMARKS)
+  wh_require_git_locked_dir("${WH_BENCHMARK_DIR}" "google benchmark")
+endif()
+
 set(wh_stdexec_header "${WH_STDEXEC_DIR}/include/stdexec/execution.hpp")
 if(NOT EXISTS "${wh_stdexec_header}")
   message(FATAL_ERROR
@@ -67,6 +73,15 @@ if(NOT EXISTS "${wh_rapidjson_header}")
   message(FATAL_ERROR
     "rapidjson header missing: ${wh_rapidjson_header}\n"
     "Hint: sync thirdy_party submodules or pass -DWH_RAPIDJSON_DIR=<path>")
+endif()
+
+if(WH_BUILD_BENCHMARKS)
+  set(wh_benchmark_header "${WH_BENCHMARK_DIR}/include/benchmark/benchmark.h")
+  if(NOT EXISTS "${wh_benchmark_header}")
+    message(FATAL_ERROR
+      "google benchmark header missing: ${wh_benchmark_header}\n"
+      "Hint: sync thirdy_party submodules or pass -DWH_BENCHMARK_DIR=<path>")
+  endif()
 endif()
 
 add_library(wh_stdexec INTERFACE)
@@ -105,6 +120,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
       wh_core
       INTERFACE
         --system-header-prefix=stdexec/
+        --system-header-prefix=exec/
         --system-header-prefix=rapidjson/)
   endif()
 
@@ -130,6 +146,10 @@ endif()
 
 if(BUILD_TESTING AND WH_BUILD_TESTING)
   add_subdirectory(tests)
+endif()
+
+if(WH_BUILD_BENCHMARKS)
+  add_subdirectory(benchmark)
 endif()
 
 install(DIRECTORY include/ DESTINATION include)
