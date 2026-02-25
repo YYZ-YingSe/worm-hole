@@ -1,11 +1,10 @@
-name: worm-hole-security-and-coverage
+name: ci-04-security-coverage
 
 on:
   pull_request:
   push:
     branches:
       - main
-      - feature
   schedule:
     - cron: '30 3 * * *'
   workflow_dispatch:
@@ -21,6 +20,7 @@ concurrency:
 
 jobs:
   codeql:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -78,6 +78,7 @@ jobs:
           skip-dirs: thirdy_party,build
 
   coverage:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

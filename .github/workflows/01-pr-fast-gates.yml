@@ -1,0 +1,56 @@
+name: ci-01-pr-fast-gates
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-fast-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install required tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ripgrep \
+            shellcheck \
+            python3 \
+            python3-venv
+
+      - name: Pin clang-format version
+        shell: bash
+        run: |
+          python3 -m venv .ci-venv-clang-format
+          source .ci-venv-clang-format/bin/activate
+          echo "$PWD/.ci-venv-clang-format/bin" >> "$GITHUB_PATH"
+          python -m pip install --upgrade pip
+          python -m pip install clang-format==21.1.8
+
+      - name: Run fast gates
+        env:
+          WH_CI_STRICT: '1'
+          WH_CLANG_FORMAT_BIN: clang-format
+        run: |
+          bash scripts/ci/guard_branch_policy.sh
+          bash scripts/ci/scan_secret_material.sh
+          bash scripts/ci/scan_naming.sh
+          bash scripts/ci/scan_blocking_calls.sh
+          bash scripts/ci/scan_api_signatures.sh
+          bash scripts/ci/scan_include_order.sh
+          bash scripts/ci/run_shellcheck.sh
+          bash scripts/ci/run_clang_format_check.sh
