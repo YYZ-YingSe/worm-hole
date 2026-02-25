@@ -56,8 +56,9 @@ TEST_CASE("type_utils metaprogramming traits contract",
 TEST_CASE("type_utils object helpers branch behavior",
           "[core][type_utils][branch]") {
   auto owned = wh::core::wrap_unique(std::tuple<int, int>{1, 2});
-  REQUIRE(std::get<0>(*owned) == 1);
-  REQUIRE(std::get<1>(*owned) == 2);
+  REQUIRE(owned.has_value());
+  REQUIRE(std::get<0>(*owned.value()) == 1);
+  REQUIRE(std::get<1>(*owned.value()) == 2);
 
   using return_t = wh::core::function_return_t<sample_functor>;
   REQUIRE((std::is_same_v<return_t, long>));
@@ -66,5 +67,6 @@ TEST_CASE("type_utils object helpers branch behavior",
 TEST_CASE("type_utils default instance for container edge path",
           "[core][type_utils][extreme]") {
   const auto values = wh::core::default_instance<std::vector<int>>();
-  REQUIRE(values.empty());
+  REQUIRE(values.has_value());
+  REQUIRE(values.value().empty());
 }

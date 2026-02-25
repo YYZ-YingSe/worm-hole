@@ -7,3 +7,6 @@
 [submodule "thirdy_party/catch2"]
 	path = thirdy_party/catch2
 	url = https://github.com/catchorg/Catch2.git
+[submodule "thirdy_party/benchmark"]
+	path = thirdy_party/benchmark
+	url = https://github.com/google/benchmark.git

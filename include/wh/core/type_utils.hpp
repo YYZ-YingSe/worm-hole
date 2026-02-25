@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <memory>
+#include <new>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -16,12 +17,10 @@
 #define wh_has_stdexec 0
 #endif
 
-#include "wh/core/compiler.hpp"
+#include "wh/core/result.hpp"
 #include "wh/internal/type_name.hpp"
 
 namespace wh::core {
-
-template <typename value_t, typename error_t> class result;
 
 template <typename t>
 using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<t>>;
@@ -173,31 +172,55 @@ using function_return_t =
     typename function_traits<remove_cvref_t<t>>::return_type;
 
 template <typename t> struct default_instance_factory {
-  [[nodiscard]] static auto make() -> remove_cvref_t<t>
+  [[nodiscard]] static auto make() -> result<remove_cvref_t<t>>
     requires default_initializable_object<t>
   {
-    return remove_cvref_t<t>{};
+    try {
+      return remove_cvref_t<t>{};
+    } catch (const std::bad_alloc &) {
+      return result<remove_cvref_t<t>>::failure(errc::resource_exhausted);
+    } catch (...) {
+      return result<remove_cvref_t<t>>::failure(errc::internal_error);
+    }
   }
 };
 
 template <typename t> struct default_instance_factory<t *> {
-  [[nodiscard]] static auto make() -> t * {
+  [[nodiscard]] static auto make() -> result<t *> {
     using pointee_t = std::remove_cv_t<t>;
-    auto *value = new pointee_t(default_instance_factory<pointee_t>::make());
-    return value;
+    auto nested = default_instance_factory<pointee_t>::make();
+    if (nested.has_error()) {
+      return result<t *>::failure(nested.error());
+    }
+
+    try {
+      auto *value = new pointee_t(std::move(nested.value()));
+      return value;
+    } catch (const std::bad_alloc &) {
+      return result<t *>::failure(errc::resource_exhausted);
+    } catch (...) {
+      return result<t *>::failure(errc::internal_error);
+    }
   }
 };
 
 template <typename t>
-[[nodiscard]] auto default_instance() -> remove_cvref_t<t> {
+[[nodiscard]] auto default_instance() -> result<remove_cvref_t<t>> {
   return default_instance_factory<remove_cvref_t<t>>::make();
 }
 
 template <typename value_t>
 [[nodiscard]] auto wrap_unique(value_t &&value)
-    -> std::unique_ptr<remove_cvref_t<value_t>> {
+    -> result<std::unique_ptr<remove_cvref_t<value_t>>> {
   using normalized_t = remove_cvref_t<value_t>;
-  return std::make_unique<normalized_t>(std::forward<value_t>(value));
+  try {
+    return std::make_unique<normalized_t>(std::forward<value_t>(value));
+  } catch (const std::bad_alloc &) {
+    return result<std::unique_ptr<normalized_t>>::failure(
+        errc::resource_exhausted);
+  } catch (...) {
+    return result<std::unique_ptr<normalized_t>>::failure(errc::internal_error);
+  }
 }
 
 template <typename first_t, typename second_t>
@@ -205,21 +228,39 @@ using pair_type = std::pair<first_t, second_t>;
 
 template <typename sequence_t>
 [[nodiscard]] auto reverse_copy(const sequence_t &sequence)
-    -> std::vector<typename sequence_t::value_type> {
+    -> result<std::vector<typename sequence_t::value_type>> {
   std::vector<typename sequence_t::value_type> output;
-  output.reserve(sequence.size());
-  for (auto iter = sequence.rbegin(); iter != sequence.rend(); ++iter) {
-    output.push_back(*iter);
+
+  try {
+    output.reserve(sequence.size());
+    for (auto iter = sequence.rbegin(); iter != sequence.rend(); ++iter) {
+      output.push_back(*iter);
+    }
+  } catch (const std::bad_alloc &) {
+    return result<std::vector<typename sequence_t::value_type>>::failure(
+        errc::resource_exhausted);
+  } catch (...) {
+    return result<std::vector<typename sequence_t::value_type>>::failure(
+        errc::internal_error);
   }
+
   return output;
 }
 
 template <typename map_out_t, typename map_in_t>
-[[nodiscard]] auto map_copy_as(const map_in_t &input) -> map_out_t {
+[[nodiscard]] auto map_copy_as(const map_in_t &input) -> result<map_out_t> {
   map_out_t output;
-  for (const auto &[key, value] : input) {
-    output.insert_or_assign(key, value);
+
+  try {
+    for (const auto &[key, value] : input) {
+      output.insert_or_assign(key, value);
+    }
+  } catch (const std::bad_alloc &) {
+    return result<map_out_t>::failure(errc::resource_exhausted);
+  } catch (...) {
+    return result<map_out_t>::failure(errc::internal_error);
   }
+
   return output;
 }
 

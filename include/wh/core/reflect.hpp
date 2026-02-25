@@ -10,7 +10,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "wh/core/type_utils.hpp"
 #include "wh/internal/type_name.hpp"
 
 namespace wh::core {
