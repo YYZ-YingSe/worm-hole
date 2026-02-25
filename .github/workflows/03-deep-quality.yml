@@ -37,6 +37,42 @@ jobs:
             cppcheck \
             cmake \
             ninja-build
+          for ver in 20 19 18; do
+            if apt-cache show "clang-${ver}" >/dev/null 2>&1 && \
+               apt-cache show "clang-tidy-${ver}" >/dev/null 2>&1 && \
+               apt-cache show "clang-tools-${ver}" >/dev/null 2>&1; then
+              sudo apt-get install -y \
+                "clang-${ver}" \
+                "clang-tidy-${ver}" \
+                "clang-tools-${ver}"
+            fi
+          done
+
+      - name: Select clang-tidy toolchain
+        run: |
+          set -euo pipefail
+          for ver in 20 19 18; do
+            if command -v "clang-${ver}" >/dev/null 2>&1 && \
+               command -v "clang++-${ver}" >/dev/null 2>&1 && \
+               command -v "clang-tidy-${ver}" >/dev/null 2>&1; then
+              {
+                echo "CC=clang-${ver}"
+                echo "CXX=clang++-${ver}"
+                echo "WH_CLANG_TIDY_BIN=clang-tidy-${ver}"
+                echo "WH_LLVM_VERSION=${ver}"
+              } >> "$GITHUB_ENV"
+              echo "[clang-tidy] selected LLVM ${ver}"
+              exit 0
+            fi
+          done
+
+          {
+            echo "CC=clang"
+            echo "CXX=clang++"
+            echo "WH_CLANG_TIDY_BIN=clang-tidy"
+            echo "WH_LLVM_VERSION=default"
+          } >> "$GITHUB_ENV"
+          echo "[clang-tidy] fallback to default toolchain"
 
       - name: Guard branch policy
         run: bash scripts/ci/guard_branch_policy.sh
@@ -44,8 +80,6 @@ jobs:
       - name: Run clang-tidy
         env:
           WH_CI_STRICT: '1'
-          CC: clang
-          CXX: clang++
         run: bash scripts/ci/run_clang_tidy_entry.sh
 
       - name: Run cppcheck

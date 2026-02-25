@@ -16,12 +16,14 @@ if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
   exit 0
 fi
 
-if ! command -v clang-tidy >/dev/null 2>&1; then
+clang_tidy_bin="${WH_CLANG_TIDY_BIN:-clang-tidy}"
+
+if ! command -v "$clang_tidy_bin" >/dev/null 2>&1; then
   if [[ "$strict_mode" == "1" || -n "${CI:-}" ]]; then
-    echo "[clang-tidy] FAIL clang-tidy not installed in strict mode"
+    echo "[clang-tidy] FAIL ${clang_tidy_bin} not installed in strict mode"
     exit 1
   fi
-  echo "[clang-tidy] SKIP clang-tidy not installed"
+  echo "[clang-tidy] SKIP ${clang_tidy_bin} not installed"
   exit 0
 fi
 
@@ -56,6 +58,10 @@ fi
 
 checks="${WH_CLANG_TIDY_CHECKS:-clang-analyzer-*,bugprone-*,performance-*,portability-*,readability-*}"
 header_filter='^(include/wh|src|tests)/'
+tidy_config='{InheritParentConfig: false}'
+
+echo "[clang-tidy] binary: ${clang_tidy_bin}"
+"$clang_tidy_bin" --version | head -n 1
 
 source_files=()
 while IFS= read -r path; do
@@ -63,5 +69,10 @@ while IFS= read -r path; do
   source_files+=("$path")
 done <<< "$source_listing"
 
-clang-tidy -p "$build_dir" -checks="$checks" -header-filter="$header_filter" "${source_files[@]}"
+"$clang_tidy_bin" \
+  -p "$build_dir" \
+  -checks="$checks" \
+  -header-filter="$header_filter" \
+  --config="$tidy_config" \
+  "${source_files[@]}"
 echo "[clang-tidy] PASS"
