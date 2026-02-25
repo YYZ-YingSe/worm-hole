@@ -62,9 +62,8 @@ describe_contract(const mpmc_queue<value_t, dynamic_growth, allocator_t> &queue)
 }
 
 template <typename value_t, bool dynamic_growth, typename allocator_t>
-[[nodiscard]] constexpr auto
-memory_order_contract(const mpmc_queue<value_t, dynamic_growth, allocator_t> &)
-    noexcept
+[[nodiscard]] constexpr auto memory_order_contract(
+    const mpmc_queue<value_t, dynamic_growth, allocator_t> &) noexcept
     -> mpmc_memory_order_contract {
   return mpmc_memory_order_contract{};
 }

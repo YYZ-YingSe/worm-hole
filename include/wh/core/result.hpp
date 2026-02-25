@@ -258,9 +258,9 @@ public:
                                    value_t &&> {
     wh_precondition(has_value());
     if constexpr (std::move_constructible<value_t>) {
-      return std::move(std::get<0>(storage_));
+      return static_cast<value_t &&>(std::get<0>(storage_));
     } else {
-      return std::move(std::get<0>(storage_));
+      return static_cast<value_t &&>(std::get<0>(storage_));
     }
   }
 
@@ -273,7 +273,7 @@ public:
   [[nodiscard]] constexpr auto value() const && -> const value_t &&requires(
       !std::move_constructible<value_u>) {
     wh_precondition(has_value());
-    return std::move(std::get<0>(storage_));
+    return static_cast<const value_t &&>(std::get<0>(storage_));
   }
 
   [[nodiscard]] constexpr auto operator->() noexcept -> value_t * {

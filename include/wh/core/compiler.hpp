@@ -64,42 +64,6 @@ concept trivially_relocatable = std::is_trivially_move_constructible_v<t> &&
 template <typename t>
 concept trivially_copyable_value = std::is_trivially_copyable_v<t>;
 
-template <typename condition_t>
-  requires std::convertible_to<condition_t, bool>
-[[nodiscard]] inline constexpr bool
-predict_likely(condition_t &&value) noexcept {
-  const bool raw = static_cast<bool>(std::forward<condition_t>(value));
-#if defined(__has_builtin)
-#if __has_builtin(__builtin_expect)
-  return __builtin_expect(raw, true);
-#else
-  return raw;
-#endif
-#elif defined(__GNUC__) || defined(__clang__)
-  return __builtin_expect(raw, true);
-#else
-  return raw;
-#endif
-}
-
-template <typename condition_t>
-  requires std::convertible_to<condition_t, bool>
-[[nodiscard]] inline constexpr bool
-predict_unlikely(condition_t &&value) noexcept {
-  const bool raw = static_cast<bool>(std::forward<condition_t>(value));
-#if defined(__has_builtin)
-#if __has_builtin(__builtin_expect)
-  return __builtin_expect(raw, false);
-#else
-  return raw;
-#endif
-#elif defined(__GNUC__) || defined(__clang__)
-  return __builtin_expect(raw, false);
-#else
-  return raw;
-#endif
-}
-
 [[nodiscard]] constexpr bool is_power_of_two(const std::size_t value) noexcept {
   return value != 0U && (value & (value - 1U)) == 0U;
 }
@@ -198,6 +162,18 @@ inline void spin_pause() noexcept {
 #else
 #define wh_likely
 #define wh_unlikely
+#endif
+
+#if defined(__has_cpp_attribute)
+#if __has_cpp_attribute(no_unique_address)
+#define wh_no_unique_address [[no_unique_address]]
+#elif defined(_MSC_VER) && __has_cpp_attribute(msvc::no_unique_address)
+#define wh_no_unique_address [[msvc::no_unique_address]]
+#else
+#define wh_no_unique_address
+#endif
+#else
+#define wh_no_unique_address
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)

@@ -92,8 +92,7 @@ template <typename value_t> struct mpmc_queue_common {
                                          const std::size_t capacity) noexcept
       -> std::uint64_t {
     if (is_power_of_two(capacity)) {
-      const auto shift =
-          static_cast<unsigned>(std::countr_zero(capacity));
+      const auto shift = static_cast<unsigned>(std::countr_zero(capacity));
       return (local_ticket >> shift) << 1U;
     }
     return (local_ticket / capacity) * 2U;
@@ -249,14 +248,14 @@ public:
                return result<void>::failure(errc::canceled);
              });
     } else if constexpr (std::same_as<bare_token_t, use_awaitable_t>) {
-      auto sender =
-          timeout_at<result<void>>(context, make_push_sender(context, value),
-                                   deadline) |
-          stdexec::upon_error([](auto &&) noexcept {
-            return result<void>::failure(errc::unavailable);
-          }) |
-          stdexec::upon_stopped(
-              []() noexcept { return result<void>::failure(errc::canceled); });
+      auto sender = timeout_at<result<void>>(
+                        context, make_push_sender(context, value), deadline) |
+                    stdexec::upon_error([](auto &&) noexcept {
+                      return result<void>::failure(errc::unavailable);
+                    }) |
+                    stdexec::upon_stopped([]() noexcept {
+                      return result<void>::failure(errc::canceled);
+                    });
       return detail::make_awaitable_task<result<void>>(std::move(sender));
     } else if constexpr (callback_token<bare_token_t>) {
       auto callback = std::move(token);
@@ -268,14 +267,14 @@ public:
         return;
       }
 
-      auto sender =
-          timeout_at<result<void>>(context, make_push_sender(context, value),
-                                   deadline) |
-          stdexec::upon_error([](auto &&) noexcept {
-            return result<void>::failure(errc::unavailable);
-          }) |
-          stdexec::upon_stopped(
-              []() noexcept { return result<void>::failure(errc::canceled); });
+      auto sender = timeout_at<result<void>>(
+                        context, make_push_sender(context, value), deadline) |
+                    stdexec::upon_error([](auto &&) noexcept {
+                      return result<void>::failure(errc::unavailable);
+                    }) |
+                    stdexec::upon_stopped([]() noexcept {
+                      return result<void>::failure(errc::canceled);
+                    });
       exec::start_detached(
           std::move(sender) |
           stdexec::then([handler = std::move(handler),
@@ -317,9 +316,8 @@ public:
              });
     } else if constexpr (std::same_as<bare_token_t, use_awaitable_t>) {
       auto sender =
-          timeout_at<result<void>>(context,
-                                   make_push_sender(context, std::move(value)),
-                                   deadline) |
+          timeout_at<result<void>>(
+              context, make_push_sender(context, std::move(value)), deadline) |
           stdexec::upon_error([](auto &&) noexcept {
             return result<void>::failure(errc::unavailable);
           }) |
@@ -337,9 +335,8 @@ public:
       }
 
       auto sender =
-          timeout_at<result<void>>(context,
-                                   make_push_sender(context, std::move(value)),
-                                   deadline) |
+          timeout_at<result<void>>(
+              context, make_push_sender(context, std::move(value)), deadline) |
           stdexec::upon_error([](auto &&) noexcept {
             return result<void>::failure(errc::unavailable);
           }) |
@@ -384,15 +381,14 @@ public:
                return result<value_t>::failure(errc::canceled);
              });
     } else if constexpr (std::same_as<bare_token_t, use_awaitable_t>) {
-      auto sender =
-          timeout_at<result<value_t>>(context, make_pop_sender(context),
-                                      deadline) |
-          stdexec::upon_error([](auto &&) noexcept {
-            return result<value_t>::failure(errc::unavailable);
-          }) |
-          stdexec::upon_stopped([]() noexcept {
-            return result<value_t>::failure(errc::canceled);
-          });
+      auto sender = timeout_at<result<value_t>>(
+                        context, make_pop_sender(context), deadline) |
+                    stdexec::upon_error([](auto &&) noexcept {
+                      return result<value_t>::failure(errc::unavailable);
+                    }) |
+                    stdexec::upon_stopped([]() noexcept {
+                      return result<value_t>::failure(errc::canceled);
+                    });
       return detail::make_awaitable_task<result<value_t>>(std::move(sender));
     } else if constexpr (callback_token<bare_token_t>) {
       auto callback = std::move(token);
@@ -404,15 +400,14 @@ public:
         return;
       }
 
-      auto sender =
-          timeout_at<result<value_t>>(context, make_pop_sender(context),
-                                      deadline) |
-          stdexec::upon_error([](auto &&) noexcept {
-            return result<value_t>::failure(errc::unavailable);
-          }) |
-          stdexec::upon_stopped([]() noexcept {
-            return result<value_t>::failure(errc::canceled);
-          });
+      auto sender = timeout_at<result<value_t>>(
+                        context, make_pop_sender(context), deadline) |
+                    stdexec::upon_error([](auto &&) noexcept {
+                      return result<value_t>::failure(errc::unavailable);
+                    }) |
+                    stdexec::upon_stopped([]() noexcept {
+                      return result<value_t>::failure(errc::canceled);
+                    });
       exec::start_detached(
           std::move(sender) |
           stdexec::then([handler = std::move(handler),
@@ -500,42 +495,39 @@ private:
 
         while (true) {
           scheduled_.store(false, std::memory_order_release);
-          run_attempt();
+          if (auto status = run_attempt(); status.has_value()) {
+            complete(std::move(*status));
+            return;
+          }
 
+          running_.store(false, std::memory_order_release);
           if (!scheduled_.load(std::memory_order_acquire) ||
-              completed.load(std::memory_order_acquire)) {
-            running_.store(false, std::memory_order_release);
-            if (!scheduled_.load(std::memory_order_acquire) ||
-                running_.exchange(true, std::memory_order_acq_rel)) {
-              return;
-            }
+              running_.exchange(true, std::memory_order_acq_rel)) {
+            return;
           }
         }
       }
 
-      void run_attempt() noexcept {
+      [[nodiscard]] auto run_attempt() noexcept -> std::optional<result<void>> {
         if (completed.load(std::memory_order_acquire)) {
-          return;
+          return std::nullopt;
         }
         if (stop_requested.load(std::memory_order_acquire)) {
-          complete(result<void>::failure(errc::canceled));
-          return;
+          return result<void>::failure(errc::canceled);
         }
 
         for (std::uint32_t attempt = 0U; attempt < async_spin_retry_limit_;
              ++attempt) {
-          auto status = queue->try_push(std::move(value));
+          auto status = queue->try_push(static_cast<value_t &&>(value));
           if (status.has_value() || status.error() != errc::queue_full) {
-            complete(std::move(status));
-            return;
+            return status;
           }
           spin_pause();
         }
 
-        auto status = queue->try_push(std::move(value));
+        auto status = queue->try_push(static_cast<value_t &&>(value));
         if (status.has_value() || status.error() != errc::queue_full) {
-          complete(std::move(status));
-          return;
+          return status;
         }
 
         const auto registration = queue->make_push_wait_registration();
@@ -551,9 +543,9 @@ private:
 
         if (!queue->arm_push_waiter(waiter_state_)) {
           waiting_.store(false, std::memory_order_release);
-          schedule_attempt();
-          return;
+          scheduled_.store(true, std::memory_order_release);
         }
+        return std::nullopt;
       }
 
       void complete(result<void> status) noexcept {
@@ -660,42 +652,40 @@ private:
 
         while (true) {
           scheduled_.store(false, std::memory_order_release);
-          run_attempt();
+          if (auto status = run_attempt(); status.has_value()) {
+            complete(std::move(*status));
+            return;
+          }
 
+          running_.store(false, std::memory_order_release);
           if (!scheduled_.load(std::memory_order_acquire) ||
-              completed.load(std::memory_order_acquire)) {
-            running_.store(false, std::memory_order_release);
-            if (!scheduled_.load(std::memory_order_acquire) ||
-                running_.exchange(true, std::memory_order_acq_rel)) {
-              return;
-            }
+              running_.exchange(true, std::memory_order_acq_rel)) {
+            return;
           }
         }
       }
 
-      void run_attempt() noexcept {
+      [[nodiscard]] auto run_attempt() noexcept
+          -> std::optional<result<value_t>> {
         if (completed.load(std::memory_order_acquire)) {
-          return;
+          return std::nullopt;
         }
         if (stop_requested.load(std::memory_order_acquire)) {
-          complete(result<value_t>::failure(errc::canceled));
-          return;
+          return result<value_t>::failure(errc::canceled);
         }
 
         for (std::uint32_t attempt = 0U; attempt < async_spin_retry_limit_;
              ++attempt) {
           auto status = queue->try_pop();
           if (status.has_value() || status.error() != errc::queue_empty) {
-            complete(std::move(status));
-            return;
+            return status;
           }
           spin_pause();
         }
 
         auto status = queue->try_pop();
         if (status.has_value() || status.error() != errc::queue_empty) {
-          complete(std::move(status));
-          return;
+          return status;
         }
 
         const auto registration = queue->make_pop_wait_registration();
@@ -711,9 +701,9 @@ private:
 
         if (!queue->arm_pop_waiter(waiter_state_)) {
           waiting_.store(false, std::memory_order_release);
-          schedule_attempt();
-          return;
+          scheduled_.store(true, std::memory_order_release);
         }
+        return std::nullopt;
       }
 
       void complete(result<value_t> status) noexcept {
@@ -764,7 +754,6 @@ private:
     return pop_wait_sender<scheduler_t>{static_cast<queue_t *>(this),
                                         select_execution_scheduler(context)};
   }
-
 };
 
 } // namespace detail
@@ -1001,16 +990,18 @@ private:
     pop_wait_notify_.notify(turn_ptr, turn_value);
   }
 
-  [[nodiscard]] auto enqueue_turn_for_ticket(
-      const std::uint64_t ticket) const noexcept -> std::uint64_t {
+  [[nodiscard]] auto
+  enqueue_turn_for_ticket(const std::uint64_t ticket) const noexcept
+      -> std::uint64_t {
     if (capacity_is_pow2_) {
       return (ticket >> capacity_shift_) << 1U;
     }
     return (ticket / capacity_) * 2U;
   }
 
-  [[nodiscard]] auto dequeue_turn_for_ticket(
-      const std::uint64_t ticket) const noexcept -> std::uint64_t {
+  [[nodiscard]] auto
+  dequeue_turn_for_ticket(const std::uint64_t ticket) const noexcept
+      -> std::uint64_t {
     return enqueue_turn_for_ticket(ticket) + 1U;
   }
 
@@ -1416,11 +1407,10 @@ private:
       const auto expected_turn =
           producer_wait ? common_t::enqueue_turn(local_ticket, capacity)
                         : common_t::dequeue_turn(local_ticket, capacity);
-      return detail::turn_wait_registration{&(slots[index].turn),
-                                            expected_turn,
-                                            sender_notify::suggest_channel_index(
-                                                &(slots[index].turn),
-                                                expected_turn)};
+      return detail::turn_wait_registration{
+          &(slots[index].turn), expected_turn,
+          sender_notify::suggest_channel_index(&(slots[index].turn),
+                                               expected_turn)};
     }
   }
 

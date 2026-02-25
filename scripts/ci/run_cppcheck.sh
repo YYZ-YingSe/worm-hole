@@ -59,6 +59,7 @@ cppcheck \
   --error-exitcode=2 \
   --language=c++ \
   --std=c++20 \
+  --library=posix \
   --quiet \
   "${source_files[@]}"
 

@@ -186,9 +186,9 @@ private:
     std::size_t size{0U};
   };
 
-  [[nodiscard]] static auto turn_reached(const std::uint64_t current_turn,
-                                         const std::uint64_t expected_turn)
-      noexcept -> bool {
+  [[nodiscard]] static auto
+  turn_reached(const std::uint64_t current_turn,
+               const std::uint64_t expected_turn) noexcept -> bool {
     return static_cast<std::int64_t>(current_turn - expected_turn) >= 0;
   }
 
@@ -197,8 +197,8 @@ private:
       -> std::uint64_t {
     auto mixed = static_cast<std::uint64_t>(
         reinterpret_cast<std::uintptr_t>(turn_ptr) >> 6U);
-    mixed ^= expected_turn + 0x9e3779b97f4a7c15ULL + (mixed << 6U) +
-             (mixed >> 2U);
+    mixed ^=
+        expected_turn + 0x9e3779b97f4a7c15ULL + (mixed << 6U) + (mixed >> 2U);
     mixed ^= mixed >> 30U;
     mixed *= 0xbf58476d1ce4e5b9ULL;
     mixed ^= mixed >> 27U;
@@ -243,7 +243,8 @@ private:
         continue;
       }
       lock_channel(channel);
-      if (channel.turn_ptr == turn_ptr && channel.expected_turn == expected_turn) {
+      if (channel.turn_ptr == turn_ptr &&
+          channel.expected_turn == expected_turn) {
         channel_index = index;
         return &channel;
       }
@@ -307,17 +308,15 @@ private:
                                  wait_channel_count_, channel_index);
   }
 
-  [[nodiscard]] auto
-  find_or_reserve_channel(waiter &waiter_state,
-                          std::atomic<std::uint64_t> *turn_ptr,
-                          const std::uint64_t expected_turn,
-                          const std::uint64_t key_tag,
-                          std::size_t &channel_index) noexcept -> wait_channel * {
-    if (auto *hinted = lock_channel_by_hint(waiter_state.channel_hint,
-                                            key_tag,
+  [[nodiscard]] auto find_or_reserve_channel(
+      waiter &waiter_state, std::atomic<std::uint64_t> *turn_ptr,
+      const std::uint64_t expected_turn, const std::uint64_t key_tag,
+      std::size_t &channel_index) noexcept -> wait_channel * {
+    if (auto *hinted = lock_channel_by_hint(waiter_state.channel_hint, key_tag,
                                             channel_index);
         hinted != nullptr) {
-      if (hinted->turn_ptr == turn_ptr && hinted->expected_turn == expected_turn) {
+      if (hinted->turn_ptr == turn_ptr &&
+          hinted->expected_turn == expected_turn) {
         return hinted;
       }
       if (hinted->size == 0U) {
@@ -333,8 +332,8 @@ private:
     for (std::size_t attempt = 0U; attempt < 3U; ++attempt) {
       const auto span = probe_window();
 
-      if (auto *channel = lock_matching_channel(turn_ptr, expected_turn, key_tag,
-                                                start, span, channel_index);
+      if (auto *channel = lock_matching_channel(
+              turn_ptr, expected_turn, key_tag, start, span, channel_index);
           channel != nullptr) {
         return channel;
       }
@@ -348,14 +347,14 @@ private:
       maybe_grow_probe_window(span);
     }
 
-    if (auto *channel = lock_matching_channel(turn_ptr, expected_turn, key_tag,
-                                              start, wait_channel_count_,
-                                              channel_index);
+    if (auto *channel =
+            lock_matching_channel(turn_ptr, expected_turn, key_tag, start,
+                                  wait_channel_count_, channel_index);
         channel != nullptr) {
       return channel;
     }
-    if (auto *channel = lock_empty_channel(start, wait_channel_count_,
-                                           channel_index);
+    if (auto *channel =
+            lock_empty_channel(start, wait_channel_count_, channel_index);
         channel != nullptr) {
       channel->turn_ptr = turn_ptr;
       channel->expected_turn = expected_turn;

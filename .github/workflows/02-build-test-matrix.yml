@@ -1,4 +1,4 @@
-name: worm-hole-build-verify
+name: ci-02-build-test-matrix
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-verify-${{ github.workflow }}-${{ github.ref }}
+  group: build-test-matrix-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -89,47 +89,3 @@ jobs:
 
       - name: Build and test
         run: bash scripts/ci/run_cmake_build_and_test.sh
-
-  sanitizer-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/sanitizer
-      CCACHE_COMPRESS: "true"
-      CCACHE_MAXSIZE: "750M"
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: "true"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Install required tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ripgrep \
-            clang \
-            cmake \
-            ninja-build \
-            ccache
-
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-sanitizer-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_sanitizer_smoke.sh') }}
-          restore-keys: |
-            ccache-sanitizer-${{ runner.os }}-
-
-      - name: Guard branch policy
-        run: bash scripts/ci/guard_branch_policy.sh
-
-      - name: Run sanitizer smoke
-        env:
-          WH_CI_STRICT: '1'
-          CC: clang
-          CXX: clang++
-        run: bash scripts/ci/run_sanitizer_smoke.sh

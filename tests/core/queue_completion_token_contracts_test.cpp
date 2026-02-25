@@ -409,7 +409,6 @@ TEST_CASE("mpmc queue push_until/pop_until three-mode contracts",
       consume_sender<wh::core::result<int>>(std::move(awaitable_pop));
   REQUIRE(awaitable_pop_status.has_value());
   REQUIRE(awaitable_pop_status.value() == 2);
-
 }
 
 TEST_CASE("mpmc queue use_awaitable supports plain coroutine co_await",

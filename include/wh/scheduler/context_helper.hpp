@@ -21,8 +21,7 @@ inline constexpr bool has_execution_scheduler_in_context_v =
 
 template <typename scheduler_t>
   requires stdexec_scheduler<scheduler_t>
-[[nodiscard]] constexpr auto
-make_scheduler_context(scheduler_t &&scheduler)
+[[nodiscard]] constexpr auto make_scheduler_context(scheduler_t &&scheduler)
     -> scheduler_context<std::remove_cvref_t<scheduler_t>> {
   return scheduler_context<std::remove_cvref_t<scheduler_t>>{
       std::forward<scheduler_t>(scheduler)};

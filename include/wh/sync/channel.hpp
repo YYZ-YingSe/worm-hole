@@ -111,7 +111,8 @@ public:
     requires std::is_nothrow_move_constructible_v<value_t>
   {
     return dispatch_token<result<void>>(
-        std::move(token), [state = state_, context, moved = std::move(value)]() mutable {
+        std::move(token),
+        [state = state_, context, moved = std::move(value)]() mutable {
           return make_push_sender(std::move(state), context, std::move(moved));
         });
   }
@@ -155,8 +156,8 @@ public:
     requires std::is_nothrow_move_constructible_v<value_t>
   {
     return dispatch_token<result<void>>(
-        std::move(token),
-        [state = state_, context, deadline, moved = std::move(value)]() mutable {
+        std::move(token), [state = state_, context, deadline,
+                           moved = std::move(value)]() mutable {
           return make_push_until_sender(std::move(state), context, deadline,
                                         std::move(moved));
         });
@@ -224,16 +225,18 @@ public:
       return dispatch_token<result<void>>(
           std::move(token),
           [state = state_, context, moved = std::move(value)]() mutable {
-            return make_push_sender(std::move(state), context, std::move(moved));
+            return make_push_sender(std::move(state), context,
+                                    std::move(moved));
           });
     }
 
     template <timed_scheduler_in_context scheduler_context_t,
               typename deadline_t,
               completion_token completion_token_t = use_sender_t>
-    [[nodiscard]] auto push_until(
-        scheduler_context_t context, const deadline_t &deadline,
-        const value_t &value, completion_token_t token = completion_token_t{})
+    [[nodiscard]] auto
+    push_until(scheduler_context_t context, const deadline_t &deadline,
+               const value_t &value,
+               completion_token_t token = completion_token_t{})
         -> decltype(auto)
       requires std::is_nothrow_copy_constructible_v<value_t>
     {
@@ -248,14 +251,15 @@ public:
     template <timed_scheduler_in_context scheduler_context_t,
               typename deadline_t,
               completion_token completion_token_t = use_sender_t>
-    [[nodiscard]] auto push_until(
-        scheduler_context_t context, const deadline_t &deadline, value_t &&value,
-        completion_token_t token = completion_token_t{}) -> decltype(auto)
+    [[nodiscard]] auto
+    push_until(scheduler_context_t context, const deadline_t &deadline,
+               value_t &&value, completion_token_t token = completion_token_t{})
+        -> decltype(auto)
       requires std::is_nothrow_move_constructible_v<value_t>
     {
       return dispatch_token<result<void>>(
-          std::move(token),
-          [state = state_, context, deadline, moved = std::move(value)]() mutable {
+          std::move(token), [state = state_, context, deadline,
+                             moved = std::move(value)]() mutable {
             return make_push_until_sender(std::move(state), context, deadline,
                                           std::move(moved));
           });
@@ -304,10 +308,9 @@ public:
     template <timed_scheduler_in_context scheduler_context_t,
               typename deadline_t,
               completion_token completion_token_t = use_sender_t>
-    [[nodiscard]] auto pop_until(scheduler_context_t context,
-                                 const deadline_t &deadline,
-                                 completion_token_t token = completion_token_t{})
-        -> decltype(auto)
+    [[nodiscard]] auto
+    pop_until(scheduler_context_t context, const deadline_t &deadline,
+              completion_token_t token = completion_token_t{}) -> decltype(auto)
       requires std::is_nothrow_move_constructible_v<value_t>
     {
       return dispatch_token<result<value_t>>(
@@ -341,8 +344,9 @@ private:
     static_assert(detail::result_like<result_t>);
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures = stdexec::completion_signatures<
-        stdexec::set_value_t(result_t), stdexec::set_stopped_t()>;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t(result_t),
+                                       stdexec::set_stopped_t()>;
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
     struct operation_state {
@@ -416,8 +420,8 @@ private:
         const auto current_epoch = turn_ptr->load(std::memory_order_acquire);
         waiter.turn_ptr = turn_ptr;
         waiter.expected_turn = current_epoch + 1U;
-        waiter.channel_hint =
-            sender_notify::suggest_channel_index(turn_ptr, waiter.expected_turn);
+        waiter.channel_hint = sender_notify::suggest_channel_index(
+            turn_ptr, waiter.expected_turn);
         waiter.channel_index.store(sender_notify::invalid_channel_index,
                                    std::memory_order_relaxed);
         waiter.owner = this;
@@ -494,8 +498,8 @@ private:
     return state->queue.try_push(std::forward<args_t>(args)...);
   }
 
-  [[nodiscard]] static auto try_pop_impl(const std::shared_ptr<state> &state)
-      noexcept -> result<value_t>
+  [[nodiscard]] static auto
+  try_pop_impl(const std::shared_ptr<state> &state) noexcept -> result<value_t>
     requires std::is_nothrow_move_constructible_v<value_t>
   {
     auto value = state->queue.try_pop();
@@ -514,8 +518,8 @@ private:
     return value;
   }
 
-  [[nodiscard]] static auto close_impl(const std::shared_ptr<state> &state)
-      noexcept -> bool {
+  [[nodiscard]] static auto
+  close_impl(const std::shared_ptr<state> &state) noexcept -> bool {
     if (state->closed.exchange(true, std::memory_order_acq_rel)) {
       return false;
     }
@@ -528,10 +532,9 @@ private:
   template <typename context_t>
   [[nodiscard]] static auto make_push_sender(std::shared_ptr<state> state,
                                              context_t context, value_t value) {
-    auto queue_sender = state->queue.push(context, std::move(value), use_sender) |
-                        stdexec::then([state](result<void> status) mutable {
-                          return status;
-                        });
+    auto queue_sender =
+        state->queue.push(context, std::move(value), use_sender) |
+        stdexec::then([state](result<void> status) mutable { return status; });
     return exec::when_any(std::move(queue_sender),
                           close_wait_sender<result<void>>{std::move(state)}) |
            stdexec::upon_stopped(
@@ -544,9 +547,8 @@ private:
     auto wait_sender =
         exec::when_any(state->queue.pop(context, use_sender),
                        close_wait_sender<result<value_t>>{state}) |
-        stdexec::upon_stopped([]() noexcept {
-          return result<value_t>::failure(errc::canceled);
-        });
+        stdexec::upon_stopped(
+            []() noexcept { return result<value_t>::failure(errc::canceled); });
 
     return std::move(wait_sender) |
            stdexec::then([state = std::move(state)](result<value_t> status) {
@@ -566,10 +568,9 @@ private:
   }
 
   template <typename context_t, typename deadline_t>
-  [[nodiscard]] static auto make_push_until_sender(std::shared_ptr<state> state,
-                                                   context_t context,
-                                                   const deadline_t &deadline,
-                                                   value_t value) {
+  [[nodiscard]] static auto
+  make_push_until_sender(std::shared_ptr<state> state, context_t context,
+                         const deadline_t &deadline, value_t value) {
     return timeout_at<result<void>>(
                context,
                make_push_sender(std::move(state), context, std::move(value)),
@@ -585,9 +586,8 @@ private:
   [[nodiscard]] static auto make_pop_until_sender(std::shared_ptr<state> state,
                                                   context_t context,
                                                   const deadline_t &deadline) {
-    return timeout_at<result<value_t>>(context,
-                                       make_pop_sender(std::move(state), context),
-                                       deadline) |
+    return timeout_at<result<value_t>>(
+               context, make_pop_sender(std::move(state), context), deadline) |
            stdexec::upon_error([](auto &&) noexcept {
              return result<value_t>::failure(errc::unavailable);
            }) |
@@ -598,9 +598,9 @@ private:
 
   template <typename result_t, completion_token completion_token_t,
             typename sender_factory_t>
-  [[nodiscard]] static auto
-  dispatch_token(completion_token_t &&token,
-                 sender_factory_t &&sender_factory) -> decltype(auto) {
+  [[nodiscard]] static auto dispatch_token(completion_token_t &&token,
+                                           sender_factory_t &&sender_factory)
+      -> decltype(auto) {
     using bare_token_t = std::remove_cvref_t<completion_token_t>;
 
     if constexpr (std::same_as<bare_token_t, use_sender_t>) {
@@ -619,15 +619,15 @@ private:
       }
 
       auto sender = std::invoke(std::forward<sender_factory_t>(sender_factory));
-      exec::start_detached(
-          std::move(sender) |
-          stdexec::then([handler = std::move(handler),
-                         stop_token](result_t status) mutable {
-            if (stop_token.stop_requested() && status.has_value()) {
-              status = result_t::failure(errc::canceled);
-            }
-            std::invoke(handler, std::move(status));
-          }));
+      exec::start_detached(std::move(sender) |
+                           stdexec::then([handler = std::move(handler),
+                                          stop_token](result_t status) mutable {
+                             if (stop_token.stop_requested() &&
+                                 status.has_value()) {
+                               status = result_t::failure(errc::canceled);
+                             }
+                             std::invoke(handler, std::move(status));
+                           }));
       return;
     }
   }

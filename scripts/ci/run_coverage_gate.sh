@@ -103,7 +103,10 @@ if [[ ! -f "$report_xml" ]]; then
   exit 1
 fi
 
-line_rate_raw="$(rg -o 'line-rate="[0-9.]+"' "$report_xml" | head -n1 | sed -E 's/line-rate="([0-9.]+)"/\1/')"
+line_rate_raw="$(
+  rg -m1 -o 'line-rate="[0-9.]+"' "$report_xml" |
+    sed -E 's/line-rate="([0-9.]+)"/\1/'
+)"
 if [[ -z "$line_rate_raw" ]]; then
   echo "[coverage] FAIL cannot parse line-rate from report"
   exit 1

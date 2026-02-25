@@ -114,7 +114,8 @@ TEST_CASE("channel close wakes blocked sender", "[core][channel][condition]") {
   REQUIRE(drained.value() == 1);
 }
 
-TEST_CASE("channel close wakes blocked receiver", "[core][channel][condition]") {
+TEST_CASE("channel close wakes blocked receiver",
+          "[core][channel][condition]") {
   channel_t channel(1U);
   stdexec::inline_scheduler scheduler;
   auto context = wh::core::make_scheduler_context(scheduler);
@@ -122,8 +123,8 @@ TEST_CASE("channel close wakes blocked receiver", "[core][channel][condition]") 
   auto [tx, rx] = channel.split();
   std::optional<wh::core::result<int>> pop_status;
   std::thread pop_thread([&] {
-    pop_status =
-        consume_sender<wh::core::result<int>>(rx.pop(context, wh::core::use_sender));
+    pop_status = consume_sender<wh::core::result<int>>(
+        rx.pop(context, wh::core::use_sender));
   });
 
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -219,9 +220,8 @@ TEST_CASE("sender_notify wakes waiter at expected turn",
     auto *flag = static_cast<std::atomic<bool> *>(owner);
     flag->store(true, std::memory_order_release);
   };
-  waiter.channel_hint =
-      wh::core::sender_notify::suggest_channel_index(waiter.turn_ptr,
-                                                     waiter.expected_turn);
+  waiter.channel_hint = wh::core::sender_notify::suggest_channel_index(
+      waiter.turn_ptr, waiter.expected_turn);
 
   REQUIRE(notify.arm(waiter));
   turn.store(7U, std::memory_order_release);
