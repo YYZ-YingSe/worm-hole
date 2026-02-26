@@ -18,7 +18,7 @@ install_manifest.txt
 compile_commands.json
 
 # test artifacts
-Testing/
+/Testing/
 *.gcno
 *.gcda
 *.gcov

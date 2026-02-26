@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <any>
 #include <cstddef>
 #include <concepts>
 #include <functional>
 #include <initializer_list>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <typeindex>
@@ -94,7 +96,11 @@ public:
       if (alias.empty()) {
         return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       }
-      if (name_to_type_.find(alias) != name_to_type_.end() ||
+      const auto duplicate_alias = std::ranges::any_of(
+          normalized_aliases, [&](const std::string &normalized_alias) {
+            return normalized_alias == alias;
+          });
+      if (duplicate_alias || name_to_type_.find(alias) != name_to_type_.end() ||
           alias == primary_name) {
         return wh::core::result<void>::failure(wh::core::errc::already_exists);
       }
@@ -116,9 +122,9 @@ public:
     }
 
     name_to_type_.emplace(iter->second.primary_name, type);
-    for (const auto &alias : iter->second.aliases) {
+    std::ranges::for_each(iter->second.aliases, [&](const std::string &alias) {
       name_to_type_.emplace(alias, type);
-    }
+    });
     return {};
   }
 

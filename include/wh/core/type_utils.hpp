@@ -1,10 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <iterator>
 #include <memory>
 #include <new>
 #include <optional>
+#include <ranges>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -233,9 +236,9 @@ template <typename sequence_t>
 
   try {
     output.reserve(sequence.size());
-    for (auto iter = sequence.rbegin(); iter != sequence.rend(); ++iter) {
-      output.push_back(*iter);
-    }
+    const auto copied =
+        std::ranges::reverse_copy(sequence, std::back_inserter(output));
+    static_cast<void>(copied);
   } catch (const std::bad_alloc &) {
     return result<std::vector<typename sequence_t::value_type>>::failure(
         errc::resource_exhausted);
