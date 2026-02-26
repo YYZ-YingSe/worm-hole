@@ -27,26 +27,27 @@ namespace detail {
          std::to_string(detail::next_interrupt_sequence());
 }
 
-[[nodiscard]] inline auto make_interrupt_signal(
-    std::string interrupt_id, wh::core::address location, std::any state = {},
-    std::any layer_payload = {}) -> wh::core::interrupt_signal {
-  return wh::core::interrupt_signal{
-      std::move(interrupt_id), std::move(location), std::move(state),
-      std::move(layer_payload), false};
+[[nodiscard]] inline auto
+make_interrupt_signal(std::string interrupt_id, wh::core::address location,
+                      std::any state = {}, std::any layer_payload = {})
+    -> wh::core::interrupt_signal {
+  return wh::core::interrupt_signal{std::move(interrupt_id),
+                                    std::move(location), std::move(state),
+                                    std::move(layer_payload), false};
 }
 
-[[nodiscard]] inline auto make_interrupt_signal(
-    wh::core::address location, std::any state = {},
-    std::any layer_payload = {}) -> wh::core::interrupt_signal {
+[[nodiscard]] inline auto make_interrupt_signal(wh::core::address location,
+                                                std::any state = {},
+                                                std::any layer_payload = {})
+    -> wh::core::interrupt_signal {
   return make_interrupt_signal(make_interrupt_id(), std::move(location),
                                std::move(state), std::move(layer_payload));
 }
 
 template <typename state_t, typename payload_t>
-[[nodiscard]] inline auto make_interrupt_signal(std::string interrupt_id,
-                                                wh::core::address location,
-                                                state_t &&state,
-                                                payload_t &&layer_payload)
+[[nodiscard]] inline auto
+make_interrupt_signal(std::string interrupt_id, wh::core::address location,
+                      state_t &&state, payload_t &&layer_payload)
     -> wh::core::interrupt_signal {
   using state_value_t = std::remove_cvref_t<state_t>;
   using payload_value_t = std::remove_cvref_t<payload_t>;
@@ -55,8 +56,8 @@ template <typename state_t, typename payload_t>
   if constexpr (std::same_as<state_value_t, std::any>) {
     boxed_state = std::forward<state_t>(state);
   } else {
-    boxed_state =
-        std::any{std::in_place_type<state_value_t>, std::forward<state_t>(state)};
+    boxed_state = std::any{std::in_place_type<state_value_t>,
+                           std::forward<state_t>(state)};
   }
 
   std::any boxed_payload;
@@ -67,8 +68,8 @@ template <typename state_t, typename payload_t>
                              std::forward<payload_t>(layer_payload)};
   }
 
-  return wh::core::interrupt_signal{std::move(interrupt_id), std::move(location),
-                                    std::move(boxed_state),
+  return wh::core::interrupt_signal{std::move(interrupt_id),
+                                    std::move(location), std::move(boxed_state),
                                     std::move(boxed_payload), false};
 }
 
@@ -105,8 +106,8 @@ to_interrupt_context(const wh::core::interrupt_signal &signal)
   return wh::core::to_interrupt_context(signal);
 }
 
-[[nodiscard]] inline auto
-flatten_interrupt_signals(const std::span<const wh::core::interrupt_signal> signals)
+[[nodiscard]] inline auto flatten_interrupt_signals(
+    const std::span<const wh::core::interrupt_signal> signals)
     -> wh::core::interrupt_snapshot {
   return wh::core::flatten_interrupt_signals(signals);
 }

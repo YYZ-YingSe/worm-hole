@@ -30,10 +30,11 @@ template <typename type_t>
   return wh::internal::from_json_value<type_t>(input);
 }
 
-[[nodiscard]] inline auto register_default_types(serialization_registry &registry)
+[[nodiscard]] inline auto
+register_default_types(serialization_registry &registry)
     -> wh::core::result<void> {
-  auto status = registry.register_type<std::string>(
-      "std.string", {"string", "text"});
+  auto status =
+      registry.register_type<std::string>("std.string", {"string", "text"});
   if (status.has_error()) {
     return status;
   }
@@ -43,8 +44,8 @@ template <typename type_t>
     return status;
   }
 
-  status = registry.register_type<std::int64_t>("std.i64",
-                                                {"int64", "integer"});
+  status =
+      registry.register_type<std::int64_t>("std.i64", {"int64", "integer"});
   if (status.has_error()) {
     return status;
   }
@@ -59,8 +60,8 @@ template <typename type_t>
     return status;
   }
 
-  status = registry.register_type<std::vector<std::string>>(
-      "std.vector.string", {"list.string"});
+  status = registry.register_type<std::vector<std::string>>("std.vector.string",
+                                                            {"list.string"});
   if (status.has_error()) {
     return status;
   }

@@ -7,10 +7,10 @@
 namespace wh::core {
 
 template <typename timing_checker_t>
-concept TimingChecker = requires(const timing_checker_t checker,
-                                 const callback_stage stage) {
-  { checker(stage) } -> std::convertible_to<bool>;
-};
+concept TimingChecker =
+    requires(const timing_checker_t checker, const callback_stage stage) {
+      { checker(stage) } -> std::convertible_to<bool>;
+    };
 
 template <typename handler_t>
 concept CallbackHandlerLike =

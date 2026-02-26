@@ -48,6 +48,12 @@ inline constexpr bool compiler_is_clang = active_compiler == compiler_id::clang;
 inline constexpr bool compiler_is_gcc = active_compiler == compiler_id::gcc;
 inline constexpr bool compiler_is_msvc = active_compiler == compiler_id::msvc;
 
+#if defined(_WIN32) || defined(__unix__) || defined(__APPLE__)
+inline constexpr bool supports_native_stacktrace_capture = true;
+#else
+inline constexpr bool supports_native_stacktrace_capture = false;
+#endif
+
 #if defined(__cpp_lib_hardware_interference_size)
 inline constexpr std::size_t default_cacheline_size =
     std::hardware_destructive_interference_size > 0

@@ -23,15 +23,17 @@ public:
     return {stages_.data(), stages_.size()};
   }
 
-  [[nodiscard]] auto expect(
-      const std::initializer_list<wh::core::callback_stage> expected) const
+  [[nodiscard]] auto
+  expect(const std::initializer_list<wh::core::callback_stage> expected) const
       -> wh::core::result<void> {
     if (expected.size() != stages_.size()) {
-      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(
+          wh::core::errc::contract_violation);
     }
     const auto matches = std::ranges::equal(expected, stages_);
     if (!matches) {
-      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(
+          wh::core::errc::contract_violation);
     }
     return {};
   }

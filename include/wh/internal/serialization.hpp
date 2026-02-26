@@ -30,10 +30,12 @@ template <typename type_t>
 concept custom_json_codec =
     requires(const remove_cvref_t<type_t> &value, wh::core::json_value &output,
              wh::core::json_allocator &allocator) {
-      { wh_to_json(value, output, allocator) }
-          -> std::same_as<wh::core::result<void>>;
+      {
+        wh_to_json(value, output, allocator)
+      } -> std::same_as<wh::core::result<void>>;
     } &&
-    requires(const wh::core::json_value &input, remove_cvref_t<type_t> &output) {
+    requires(const wh::core::json_value &input,
+             remove_cvref_t<type_t> &output) {
       { wh_from_json(input, output) } -> std::same_as<wh::core::result<void>>;
     };
 
@@ -52,7 +54,8 @@ template <typename value_t>
 struct is_optional<std::optional<value_t>> : std::true_type {};
 
 template <typename type_t>
-inline constexpr bool is_optional_v = is_optional<remove_cvref_t<type_t>>::value;
+inline constexpr bool is_optional_v =
+    is_optional<remove_cvref_t<type_t>>::value;
 
 template <typename type_t> struct is_unique_ptr : std::false_type {};
 
@@ -73,19 +76,21 @@ inline constexpr bool is_shared_ptr_v =
     is_shared_ptr<remove_cvref_t<type_t>>::value;
 
 template <typename type_t>
-inline constexpr bool is_raw_pointer_v = std::is_pointer_v<remove_cvref_t<type_t>>;
+inline constexpr bool is_raw_pointer_v =
+    std::is_pointer_v<remove_cvref_t<type_t>>;
 
 template <typename type_t>
-concept map_like = requires(remove_cvref_t<type_t> value,
-                            typename remove_cvref_t<type_t>::key_type key,
-                            typename remove_cvref_t<type_t>::mapped_type mapped) {
-  typename remove_cvref_t<type_t>::key_type;
-  typename remove_cvref_t<type_t>::mapped_type;
-  value.clear();
-  value.insert_or_assign(std::move(key), std::move(mapped));
-  value.begin();
-  value.end();
-};
+concept map_like =
+    requires(remove_cvref_t<type_t> value,
+             typename remove_cvref_t<type_t>::key_type key,
+             typename remove_cvref_t<type_t>::mapped_type mapped) {
+      typename remove_cvref_t<type_t>::key_type;
+      typename remove_cvref_t<type_t>::mapped_type;
+      value.clear();
+      value.insert_or_assign(std::move(key), std::move(mapped));
+      value.begin();
+      value.end();
+    };
 
 template <typename type_t>
 concept sequence_like =
@@ -439,7 +444,8 @@ auto from_json(const wh::core::json_value &input, type_t &output)
         if (decoded.has_error()) {
           return decoded;
         }
-        output.insert_or_assign(std::move(key).value(), std::move(decoded_value));
+        output.insert_or_assign(std::move(key).value(),
+                                std::move(decoded_value));
       }
       return {};
     }

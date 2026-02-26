@@ -10,8 +10,8 @@
 #include <unordered_map>
 
 #include "wh/core/error.hpp"
-#include "wh/core/resume_state.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/resume_state.hpp"
 
 namespace wh::internal {
 class callback_manager;
@@ -72,8 +72,8 @@ auto set_session_value(run_context &context, std::string key, value_t &&value)
                                             std::forward<value_t>(value));
   } else {
     context.session_values.insert_or_assign(
-        std::move(key), std::any{std::in_place_type<stored_t>,
-                                 std::forward<value_t>(value)});
+        std::move(key),
+        std::any{std::in_place_type<stored_t>, std::forward<value_t>(value)});
   }
 }
 
@@ -131,8 +131,8 @@ template <typename value_t>
   return moved;
 }
 
-[[nodiscard]] inline auto has_callback_manager(
-    const run_context &context) noexcept -> bool {
+[[nodiscard]] inline auto
+has_callback_manager(const run_context &context) noexcept -> bool {
   return static_cast<bool>(context.callback_manager);
 }
 

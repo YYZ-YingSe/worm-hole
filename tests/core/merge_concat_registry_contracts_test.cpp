@@ -20,8 +20,7 @@ struct unresolved_value {
   int payload{};
 };
 
-template <std::size_t index>
-struct registry_growth_value {
+template <std::size_t index> struct registry_growth_value {
   int payload{};
 };
 
@@ -54,8 +53,9 @@ auto register_concat_growth_type(wh::internal::stream_concat_registry &registry)
 }
 
 template <std::size_t... indexes>
-auto register_concat_growth_types(wh::internal::stream_concat_registry &registry,
-                                  std::index_sequence<indexes...>) -> bool {
+auto register_concat_growth_types(
+    wh::internal::stream_concat_registry &registry,
+    std::index_sequence<indexes...>) -> bool {
   return (register_concat_growth_type<indexes + 1U>(registry) && ...);
 }
 
@@ -68,9 +68,7 @@ struct copy_probe {
   copy_probe() = default;
   explicit copy_probe(const int value) : payload(value) {}
 
-  copy_probe(const copy_probe &other) : payload(other.payload) {
-    ++copy_count;
-  }
+  copy_probe(const copy_probe &other) : payload(other.payload) { ++copy_count; }
   auto operator=(const copy_probe &other) -> copy_probe & {
     payload = other.payload;
     ++copy_count;
@@ -118,8 +116,8 @@ TEST_CASE("values merge registry registration and default strategies",
   REQUIRE(registry.size() == 1U);
 
   const std::array<int, 3U> numeric_values{1, 2, 3};
-  const auto merged_numeric = wh::compose::values_merge(
-      registry, std::span<const int>{numeric_values});
+  const auto merged_numeric =
+      wh::compose::values_merge(registry, std::span<const int>{numeric_values});
   REQUIRE(merged_numeric.has_value());
   REQUIRE(merged_numeric.value() == 6);
 
@@ -163,9 +161,8 @@ TEST_CASE("values merge registry mismatch and fallback failures",
       std::string{"x"},
       std::string{"y"},
   };
-  const auto dynamic_merged =
-      wh::compose::values_merge(registry, std::type_index(typeid(int)),
-                                mismatch_values);
+  const auto dynamic_merged = wh::compose::values_merge(
+      registry, std::type_index(typeid(int)), mismatch_values);
   REQUIRE(dynamic_merged.has_error());
   REQUIRE(dynamic_merged.error() == wh::core::errc::type_mismatch);
 
@@ -173,8 +170,8 @@ TEST_CASE("values merge registry mismatch and fallback failures",
       unresolved_value{1},
       unresolved_value{2},
   };
-  const auto unresolved_result = registry.merge_as<unresolved_value>(
-      unresolved_values);
+  const auto unresolved_result =
+      registry.merge_as<unresolved_value>(unresolved_values);
   REQUIRE(unresolved_result.has_error());
   REQUIRE(unresolved_result.error() == wh::core::errc::contract_violation);
 
@@ -182,8 +179,8 @@ TEST_CASE("values merge registry mismatch and fallback failures",
   const std::array<wh::internal::dynamic_merge_value, 1U> single_mismatch{
       std::string{"only"},
   };
-  const auto fallback_mismatch = fallback_registry.merge(
-      std::type_index(typeid(int)), single_mismatch);
+  const auto fallback_mismatch =
+      fallback_registry.merge(std::type_index(typeid(int)), single_mismatch);
   REQUIRE(fallback_mismatch.has_error());
   REQUIRE(fallback_mismatch.error() == wh::core::errc::type_mismatch);
 }
@@ -269,7 +266,8 @@ TEST_CASE("values merge pointer registration reduces dynamic input copies",
   const auto merged_dynamic =
       registry.merge(std::type_index(typeid(copy_probe)), dynamic_values);
   REQUIRE(merged_dynamic.has_value());
-  const auto *dynamic_typed = std::any_cast<copy_probe>(&merged_dynamic.value());
+  const auto *dynamic_typed =
+      std::any_cast<copy_probe>(&merged_dynamic.value());
   REQUIRE(dynamic_typed != nullptr);
   REQUIRE(dynamic_typed->payload == 6);
   const auto copy_after = copy_probe::copy_count;
@@ -290,8 +288,7 @@ TEST_CASE("values merge pointer registration handles large dynamic batches",
   REQUIRE(register_status.has_value());
 
   const std::array<wh::internal::dynamic_merge_value, 12U> values{
-      1,  2,  3, 4,  5,  6,
-      7,  8,  9, 10, 11, 12,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
   };
   const auto merged = registry.merge(std::type_index(typeid(int)), values);
   REQUIRE(merged.has_value());
@@ -320,7 +317,8 @@ TEST_CASE("values merge dynamic handlers stay valid after growth",
   REQUIRE(
       register_merge_growth_types(registry, std::make_index_sequence<64U>{}));
 
-  const auto *function = registry.find_merge(std::type_index(typeid(first_value_t)));
+  const auto *function =
+      registry.find_merge(std::type_index(typeid(first_value_t)));
   REQUIRE(function != nullptr);
 
   const std::array<wh::internal::dynamic_merge_value, 3U> values{
@@ -328,7 +326,8 @@ TEST_CASE("values merge dynamic handlers stay valid after growth",
       first_value_t{2},
       first_value_t{4},
   };
-  const auto merged = registry.merge(std::type_index(typeid(first_value_t)), values);
+  const auto merged =
+      registry.merge(std::type_index(typeid(first_value_t)), values);
   REQUIRE(merged.has_value());
   const auto *typed = std::any_cast<first_value_t>(&merged.value());
   REQUIRE(typed != nullptr);
@@ -364,7 +363,8 @@ TEST_CASE("stream concat registry registration and recursive map strategy",
   REQUIRE(concat_string.has_value());
   REQUIRE(concat_string.value() == "abc");
 
-  using nested_map_t = std::map<std::string, std::map<std::string, std::string>>;
+  using nested_map_t =
+      std::map<std::string, std::map<std::string, std::string>>;
   const std::array<nested_map_t, 2U> nested_values{
       nested_map_t{{"root", {{"leaf", "left"}}}},
       nested_map_t{{"root", {{"leaf", "-right"}, {"other", "x"}}}},
@@ -389,9 +389,8 @@ TEST_CASE("stream concat registry mismatch and unresolved recursive conflicts",
       std::string{"x"},
       std::string{"y"},
   };
-  const auto dynamic_merged =
-      wh::compose::stream_concat(registry, std::type_index(typeid(int)),
-                                 mismatch_values);
+  const auto dynamic_merged = wh::compose::stream_concat(
+      registry, std::type_index(typeid(int)), mismatch_values);
   REQUIRE(dynamic_merged.has_error());
   REQUIRE(dynamic_merged.error() == wh::core::errc::type_mismatch);
 
@@ -409,8 +408,8 @@ TEST_CASE("stream concat registry mismatch and unresolved recursive conflicts",
   const std::array<wh::internal::dynamic_stream_chunk, 1U> single_mismatch{
       std::string{"only"},
   };
-  const auto fallback_mismatch = fallback_registry.concat(
-      std::type_index(typeid(int)), single_mismatch);
+  const auto fallback_mismatch =
+      fallback_registry.concat(std::type_index(typeid(int)), single_mismatch);
   REQUIRE(fallback_mismatch.has_error());
   REQUIRE(fallback_mismatch.error() == wh::core::errc::type_mismatch);
 }
@@ -505,7 +504,8 @@ TEST_CASE("stream concat pointer registration reduces dynamic input copies",
   const auto merged_dynamic = wh::compose::stream_concat(
       registry, std::type_index(typeid(copy_probe)), dynamic_values);
   REQUIRE(merged_dynamic.has_value());
-  const auto *dynamic_typed = std::any_cast<copy_probe>(&merged_dynamic.value());
+  const auto *dynamic_typed =
+      std::any_cast<copy_probe>(&merged_dynamic.value());
   REQUIRE(dynamic_typed != nullptr);
   REQUIRE(dynamic_typed->payload == 6);
   const auto copy_after = copy_probe::copy_count;
@@ -553,8 +553,7 @@ TEST_CASE("stream concat pointer registration handles large dynamic batches",
   REQUIRE(register_status.has_value());
 
   const std::array<wh::internal::dynamic_stream_chunk, 12U> values{
-      1,  2,  3, 4,  5,  6,
-      7,  8,  9, 10, 11, 12,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
   };
   const auto merged = registry.concat(std::type_index(typeid(int)), values);
   REQUIRE(merged.has_value());
@@ -592,7 +591,8 @@ TEST_CASE("stream concat dynamic handlers stay valid after growth",
       first_value_t{2},
       first_value_t{4},
   };
-  const auto merged = registry.concat(std::type_index(typeid(first_value_t)), values);
+  const auto merged =
+      registry.concat(std::type_index(typeid(first_value_t)), values);
   REQUIRE(merged.has_value());
   const auto *typed = std::any_cast<first_value_t>(&merged.value());
   REQUIRE(typed != nullptr);

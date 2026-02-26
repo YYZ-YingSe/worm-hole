@@ -84,9 +84,8 @@ struct interrupt_context_tree_node {
 
 [[nodiscard]] inline auto to_interrupt_context(const interrupt_signal &signal)
     -> interrupt_context {
-  return interrupt_context{
-      signal.interrupt_id, signal.location, signal.state, signal.layer_payload,
-      signal.used};
+  return interrupt_context{signal.interrupt_id, signal.location, signal.state,
+                           signal.layer_payload, signal.used};
 }
 
 [[nodiscard]] inline auto to_interrupt_context(interrupt_signal &&signal)
@@ -98,9 +97,8 @@ struct interrupt_context_tree_node {
 
 [[nodiscard]] inline auto to_interrupt_signal(const interrupt_context &context)
     -> interrupt_signal {
-  return interrupt_signal{
-      context.interrupt_id, context.location, context.state,
-      context.layer_payload, context.used};
+  return interrupt_signal{context.interrupt_id, context.location, context.state,
+                          context.layer_payload, context.used};
 }
 
 [[nodiscard]] inline auto to_interrupt_signal(interrupt_context &&context)
@@ -153,16 +151,14 @@ auto ensure_tree_path(std::vector<node_t> &roots, const address &location)
   return current_node;
 }
 
-inline auto
-append_filtered_segment(address &target, const std::string_view segment,
-                        const std::span<const std::string_view> allowed_segments)
-    -> void {
+inline auto append_filtered_segment(
+    address &target, const std::string_view segment,
+    const std::span<const std::string_view> allowed_segments) -> void {
   if (allowed_segments.empty()) {
     target = target.append(segment);
     return;
   }
-  const auto iter =
-      std::ranges::find(allowed_segments, segment);
+  const auto iter = std::ranges::find(allowed_segments, segment);
   if (iter != allowed_segments.end()) {
     target = target.append(segment);
   }
@@ -185,9 +181,9 @@ project_address(const address &source,
   return projected;
 }
 
-[[nodiscard]] inline auto
-project_interrupt_context(const interrupt_context &context,
-                          const std::span<const std::string_view> allowed_segments)
+[[nodiscard]] inline auto project_interrupt_context(
+    const interrupt_context &context,
+    const std::span<const std::string_view> allowed_segments)
     -> interrupt_context {
   if (allowed_segments.empty()) {
     return context;
@@ -197,9 +193,9 @@ project_interrupt_context(const interrupt_context &context,
   return projected;
 }
 
-[[nodiscard]] inline auto
-project_interrupt_context(interrupt_context &&context,
-                          const std::span<const std::string_view> allowed_segments)
+[[nodiscard]] inline auto project_interrupt_context(
+    interrupt_context &&context,
+    const std::span<const std::string_view> allowed_segments)
     -> interrupt_context {
   if (allowed_segments.empty()) {
     return std::move(context);
@@ -220,8 +216,8 @@ rebuild_interrupt_signal_tree(const std::span<const interrupt_signal> signals)
   return roots;
 }
 
-[[nodiscard]] inline auto
-rebuild_interrupt_context_tree(const std::span<const interrupt_context> contexts)
+[[nodiscard]] inline auto rebuild_interrupt_context_tree(
+    const std::span<const interrupt_context> contexts)
     -> std::vector<interrupt_context_tree_node> {
   std::vector<interrupt_context_tree_node> roots{};
   roots.reserve(contexts.size());
@@ -284,8 +280,8 @@ inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
 
 } // namespace detail
 
-[[nodiscard]] inline auto
-to_interrupt_context_tree(const std::span<const interrupt_signal_tree_node> roots)
+[[nodiscard]] inline auto to_interrupt_context_tree(
+    const std::span<const interrupt_signal_tree_node> roots)
     -> std::vector<interrupt_context_tree_node> {
   std::vector<interrupt_context_tree_node> converted{};
   converted.reserve(roots.size());
@@ -295,8 +291,8 @@ to_interrupt_context_tree(const std::span<const interrupt_signal_tree_node> root
   return converted;
 }
 
-[[nodiscard]] inline auto
-to_interrupt_signal_tree(const std::span<const interrupt_context_tree_node> roots)
+[[nodiscard]] inline auto to_interrupt_signal_tree(
+    const std::span<const interrupt_context_tree_node> roots)
     -> std::vector<interrupt_signal_tree_node> {
   std::vector<interrupt_signal_tree_node> converted{};
   converted.reserve(roots.size());
@@ -306,8 +302,8 @@ to_interrupt_signal_tree(const std::span<const interrupt_context_tree_node> root
   return converted;
 }
 
-[[nodiscard]] inline auto
-flatten_interrupt_signal_tree(const std::span<const interrupt_signal_tree_node> roots)
+[[nodiscard]] inline auto flatten_interrupt_signal_tree(
+    const std::span<const interrupt_signal_tree_node> roots)
     -> std::vector<interrupt_signal> {
   std::vector<interrupt_signal> flattened{};
   for (const auto &root : roots) {
@@ -316,8 +312,7 @@ flatten_interrupt_signal_tree(const std::span<const interrupt_signal_tree_node> 
   return flattened;
 }
 
-[[nodiscard]] inline auto
-flatten_interrupt_context_tree(
+[[nodiscard]] inline auto flatten_interrupt_context_tree(
     const std::span<const interrupt_context_tree_node> roots)
     -> std::vector<interrupt_context> {
   std::vector<interrupt_context> flattened{};
@@ -363,8 +358,8 @@ flatten_interrupt_signals(std::vector<interrupt_signal> &&signals)
   snapshot.interrupt_id_to_state.reserve(signals.size());
 
   for (auto &signal : signals) {
-    snapshot.interrupt_id_to_address.insert_or_assign(signal.interrupt_id,
-                                                      std::move(signal.location));
+    snapshot.interrupt_id_to_address.insert_or_assign(
+        signal.interrupt_id, std::move(signal.location));
     snapshot.interrupt_id_to_state.insert_or_assign(signal.interrupt_id,
                                                     std::move(signal.state));
   }
@@ -387,9 +382,9 @@ public:
       return upsert(std::move(interrupt_id), std::move(location),
                     std::forward<value_t>(data));
     } else {
-      return upsert(std::move(interrupt_id), std::move(location),
-                    std::any{std::in_place_type<stored_t>,
-                             std::forward<value_t>(data)});
+      return upsert(
+          std::move(interrupt_id), std::move(location),
+          std::any{std::in_place_type<stored_t>, std::forward<value_t>(data)});
     }
   }
 
@@ -404,10 +399,9 @@ public:
       remove_active_location(iter->second.location);
     }
 
-    auto [updated, inserted] =
-        entries_.insert_or_assign(std::move(interrupt_id),
-                                  resume_entry{std::move(location),
-                                               std::move(data), false});
+    auto [updated, inserted] = entries_.insert_or_assign(
+        std::move(interrupt_id),
+        resume_entry{std::move(location), std::move(data), false});
     static_cast<void>(inserted);
     add_active_location(updated->second.location);
     return {};
@@ -417,7 +411,8 @@ public:
     if (this == &other) {
       return {};
     }
-    if (revision_ != 0U && other.revision_ != 0U && revision_ != other.revision_) {
+    if (revision_ != 0U && other.revision_ != 0U &&
+        revision_ != other.revision_) {
       return result<void>::failure(errc::contract_violation);
     }
     if (revision_ == 0U) {
@@ -441,7 +436,8 @@ public:
     if (this == &other) {
       return {};
     }
-    if (revision_ != 0U && other.revision_ != 0U && revision_ != other.revision_) {
+    if (revision_ != 0U && other.revision_ != 0U &&
+        revision_ != other.revision_) {
       return result<void>::failure(errc::contract_violation);
     }
     if (revision_ == 0U) {
@@ -479,8 +475,9 @@ public:
     return revision_;
   }
 
-  [[nodiscard]] auto contains_interrupt_id(
-      const std::string_view interrupt_id) const noexcept -> bool {
+  [[nodiscard]] auto
+  contains_interrupt_id(const std::string_view interrupt_id) const noexcept
+      -> bool {
     return entries_.contains(interrupt_id);
   }
 
@@ -502,8 +499,8 @@ public:
     return active_prefix_counts_.contains(location.to_string());
   }
 
-  [[nodiscard]] auto is_exact_resume_target(const address &location) const
-      noexcept -> bool {
+  [[nodiscard]] auto
+  is_exact_resume_target(const address &location) const noexcept -> bool {
     const auto iter = active_exact_counts_.find(location.to_string());
     return iter != active_exact_counts_.end() && iter->second > 0U;
   }
@@ -578,11 +575,12 @@ public:
 
 private:
   using location_count_map =
-      std::unordered_map<std::string, std::size_t, detail::transparent_string_hash,
+      std::unordered_map<std::string, std::size_t,
+                         detail::transparent_string_hash,
                          detail::transparent_string_equal>;
-  using entry_map =
-      std::unordered_map<std::string, resume_entry, detail::transparent_string_hash,
-                         detail::transparent_string_equal>;
+  using entry_map = std::unordered_map<std::string, resume_entry,
+                                       detail::transparent_string_hash,
+                                       detail::transparent_string_equal>;
 
   auto decrement_location_count(location_count_map &counts,
                                 const std::string_view key) -> void {

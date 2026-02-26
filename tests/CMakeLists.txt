@@ -23,7 +23,9 @@ add_executable(
   core/type_name_registry_contracts_test.cpp
   core/merge_concat_registry_contracts_test.cpp
   core/json_serialization_error_domain_contracts_test.cpp
-  core/runtime_context_interrupt_mock_contracts_test.cpp)
+  core/runtime_context_interrupt_mock_contracts_test.cpp
+  core/l2_schema_contracts_test.cpp
+  core/l2_parser_stream_output_contracts_test.cpp)
 
 target_link_libraries(wh_core_tests PRIVATE wh::core Catch2::Catch2WithMain)
 

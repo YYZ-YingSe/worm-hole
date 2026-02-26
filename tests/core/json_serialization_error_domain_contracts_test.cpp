@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "wh/core/error.hpp"
-#include "wh/core/json.hpp"
 #include "wh/core/error_domain.hpp"
+#include "wh/core/json.hpp"
 #include "wh/internal/safe.hpp"
 #include "wh/internal/serialization.hpp"
 #include "wh/schema/serialization.hpp"
@@ -80,13 +80,9 @@ struct tracked_raw_pointer_value {
 
   int value{};
 
-  tracked_raw_pointer_value() {
-    ++live_count;
-  }
+  tracked_raw_pointer_value() { ++live_count; }
 
-  ~tracked_raw_pointer_value() {
-    --live_count;
-  }
+  ~tracked_raw_pointer_value() { --live_count; }
 
   tracked_raw_pointer_value(const tracked_raw_pointer_value &) = delete;
   auto operator=(const tracked_raw_pointer_value &)
@@ -120,7 +116,8 @@ TEST_CASE("json parsing helpers provide typed access and structured errors",
   const auto parsed = wh::core::parse_json(
       R"({"flag":true,"items":[1,2,3],"name":"worm-hole"})");
   REQUIRE(parsed.has_value());
-  REQUIRE(wh::core::json_kind(parsed.value()) == wh::core::json_value_kind::object_value);
+  REQUIRE(wh::core::json_kind(parsed.value()) ==
+          wh::core::json_value_kind::object_value);
 
   const auto items_member = wh::core::json_find_member(parsed.value(), "items");
   REQUIRE(items_member.has_value());
@@ -132,7 +129,8 @@ TEST_CASE("json parsing helpers provide typed access and structured errors",
   REQUIRE(array_item.value() != nullptr);
   REQUIRE(array_item.value()->GetInt() == 2);
 
-  const auto missing_member = wh::core::json_find_member(parsed.value(), "missing");
+  const auto missing_member =
+      wh::core::json_find_member(parsed.value(), "missing");
   REQUIRE(missing_member.has_error());
   REQUIRE(missing_member.error() == wh::core::errc::not_found);
 
@@ -155,12 +153,14 @@ TEST_CASE("serialization handles containers pointers and codec constraints",
   wh::core::json_document arena;
 
   const std::map<int, std::string> keyed_map{{1, "a"}, {2, "b"}};
-  const auto encoded_map = wh::internal::to_json_value(keyed_map, arena.GetAllocator());
+  const auto encoded_map =
+      wh::internal::to_json_value(keyed_map, arena.GetAllocator());
   REQUIRE(encoded_map.has_value());
   REQUIRE(encoded_map.value().IsObject());
 
   const auto decoded_map =
-      wh::internal::from_json_value<std::map<int, std::string>>(encoded_map.value());
+      wh::internal::from_json_value<std::map<int, std::string>>(
+          encoded_map.value());
   REQUIRE(decoded_map.has_value());
   REQUIRE(decoded_map.value() == keyed_map);
 
@@ -170,7 +170,8 @@ TEST_CASE("serialization handles containers pointers and codec constraints",
   REQUIRE(encoded_optional.has_value());
 
   const auto decoded_optional =
-      wh::internal::from_json_value<std::optional<int>>(encoded_optional.value());
+      wh::internal::from_json_value<std::optional<int>>(
+          encoded_optional.value());
   REQUIRE(decoded_optional.has_value());
   REQUIRE(decoded_optional.value().has_value());
   REQUIRE(*decoded_optional.value() == 42);
@@ -189,7 +190,8 @@ TEST_CASE("serialization handles containers pointers and codec constraints",
   wh::core::json_document oversized_array;
   oversized_array.Parse("[1,2,3]");
   std::array<int, 2U> fixed_array{};
-  const auto decoded_array = wh::internal::from_json(oversized_array, fixed_array);
+  const auto decoded_array =
+      wh::internal::from_json(oversized_array, fixed_array);
   REQUIRE(decoded_array.has_error());
   REQUIRE(decoded_array.error() == wh::core::errc::parse_error);
 
@@ -309,8 +311,8 @@ TEST_CASE("serialization registry freeze blocks late registration",
 TEST_CASE("serialization registry pointer view api keeps dynamic path typed",
           "[core][serialization_registry][condition]") {
   wh::schema::serialization_registry registry;
-  const auto registered = registry.register_type<std::int64_t>(
-      "my.i64", {"legacy.i64"});
+  const auto registered =
+      registry.register_type<std::int64_t>("my.i64", {"legacy.i64"});
   REQUIRE(registered.has_value());
 
   const std::int64_t input = 77;
@@ -327,9 +329,8 @@ TEST_CASE("serialization registry pointer view api keeps dynamic path typed",
   REQUIRE(decoded_status.has_value());
   REQUIRE(output == 77);
 
-  const auto mismatch_status =
-      registry.deserialize_to("legacy.i64", std::type_index(typeid(double)),
-                              encoded.value(), &output);
+  const auto mismatch_status = registry.deserialize_to(
+      "legacy.i64", std::type_index(typeid(double)), encoded.value(), &output);
   REQUIRE(mismatch_status.has_error());
   REQUIRE(mismatch_status.error() == wh::core::errc::type_mismatch);
 
@@ -353,7 +354,8 @@ TEST_CASE("serialization fast path bypasses registry lookup",
   REQUIRE(encoded.has_value());
   REQUIRE(encoded.value().IsObject());
 
-  const auto decoded = wh::schema::deserialize_fast<custom_point>(encoded.value());
+  const auto decoded =
+      wh::schema::deserialize_fast<custom_point>(encoded.value());
   REQUIRE(decoded.has_value());
   REQUIRE(decoded.value().x == 7);
   REQUIRE(decoded.value().y == 11);
@@ -363,14 +365,16 @@ TEST_CASE("serialization fast path bypasses registry lookup",
   REQUIRE(dynamic_lookup.has_error());
   REQUIRE(dynamic_lookup.error() == wh::core::errc::not_found);
 
-  const auto mismatch = wh::schema::deserialize_fast<std::int64_t>(encoded.value());
+  const auto mismatch =
+      wh::schema::deserialize_fast<std::int64_t>(encoded.value());
   REQUIRE(mismatch.has_error());
   REQUIRE(mismatch.error() == wh::core::errc::type_mismatch);
 }
 
 TEST_CASE("default schema registration and error domain mapping contracts",
           "[core][error_domain][boundary]") {
-  const auto default_registry = wh::schema::make_default_serialization_registry();
+  const auto default_registry =
+      wh::schema::make_default_serialization_registry();
   REQUIRE(default_registry.has_value());
   REQUIRE(default_registry.value().size() >= 7U);
   REQUIRE(default_registry.value().type_for_name("string").has_value());
@@ -383,10 +387,8 @@ TEST_CASE("default schema registration and error domain mapping contracts",
   REQUIRE(wh::core::map_exception(std::runtime_error{"boom"}) ==
           wh::core::errc::internal_error);
 
-  const auto exception_mapped =
-      wh::core::exception_boundary<int>([]() -> int {
-        throw std::invalid_argument{"bad"};
-      });
+  const auto exception_mapped = wh::core::exception_boundary<int>(
+      []() -> int { throw std::invalid_argument{"bad"}; });
   REQUIRE(exception_mapped.has_error());
   REQUIRE(exception_mapped.error() == wh::core::errc::invalid_argument);
 
@@ -396,9 +398,8 @@ TEST_CASE("default schema registration and error domain mapping contracts",
   REQUIRE(safe_fallback.has_error());
   REQUIRE(safe_fallback.error() == wh::core::errc::network_error);
 
-  const auto safe_oom = wh::internal::safe_call<int>([]() -> int {
-    throw std::bad_alloc{};
-  });
+  const auto safe_oom =
+      wh::internal::safe_call<int>([]() -> int { throw std::bad_alloc{}; });
   REQUIRE(safe_oom.has_error());
   REQUIRE(safe_oom.error() == wh::core::errc::resource_exhausted);
 }

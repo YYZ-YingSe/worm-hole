@@ -12,13 +12,14 @@ namespace wh::testing {
 
 class static_thread_scheduler_helper {
 public:
-  using scheduler_type = decltype(std::declval<stdexec::run_loop &>().get_scheduler());
+  using scheduler_type =
+      decltype(std::declval<stdexec::run_loop &>().get_scheduler());
   using context_type = wh::core::scheduler_context<scheduler_type>;
 
-  static_thread_scheduler_helper()
-      : worker_([this] { run_loop_.run(); }) {}
+  static_thread_scheduler_helper() : worker_([this] { run_loop_.run(); }) {}
 
-  static_thread_scheduler_helper(const static_thread_scheduler_helper &) = delete;
+  static_thread_scheduler_helper(const static_thread_scheduler_helper &) =
+      delete;
   auto operator=(const static_thread_scheduler_helper &)
       -> static_thread_scheduler_helper & = delete;
 
@@ -33,7 +34,8 @@ public:
   }
 
   auto stop() -> void {
-    const auto was_running = running_.exchange(false, std::memory_order_acq_rel);
+    const auto was_running =
+        running_.exchange(false, std::memory_order_acq_rel);
     if (!was_running) {
       return;
     }

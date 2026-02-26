@@ -5,7 +5,6 @@
 #include <exception>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -17,6 +16,7 @@
 #include "wh/core/run_context.hpp"
 #include "wh/core/small_vector.hpp"
 #include "wh/core/types/callback_types.hpp"
+#include "wh/internal/stacktrace.hpp"
 
 namespace wh::internal {
 
@@ -77,8 +77,7 @@ public:
     requires(!std::same_as<std::remove_cvref_t<handler_t>,
                            wh::core::callback_stage_handler>)
   auto register_global_handler(wh::core::callback_handler_config config,
-                               handler_t &&handler)
-      -> wh::core::result<void> {
+                               handler_t &&handler) -> wh::core::result<void> {
     return register_global_handler(
         std::move(config),
         wh::core::callback_stage_handler{std::forward<handler_t>(handler)});
@@ -88,8 +87,7 @@ public:
     requires(!std::same_as<std::remove_cvref_t<handler_t>,
                            wh::core::callback_stage_handler>)
   auto register_local_handler(wh::core::callback_handler_config config,
-                              handler_t &&handler)
-      -> wh::core::result<void> {
+                              handler_t &&handler) -> wh::core::result<void> {
     return register_local_handler(
         std::move(config),
         wh::core::callback_stage_handler{std::forward<handler_t>(handler)});
@@ -125,9 +123,9 @@ public:
     const auto local_handlers =
         std::atomic_load_explicit(&local_handlers_, std::memory_order_acquire);
 
-    auto execute_handlers = [&](const handler_list &handlers,
-                                const bool reverse_order)
-        -> wh::core::result<void> {
+    auto execute_handlers =
+        [&](const handler_list &handlers,
+            const bool reverse_order) -> wh::core::result<void> {
       if (reverse_order) {
         for (auto iter = handlers.rbegin(); iter != handlers.rend(); ++iter) {
           if (!evaluate_timing_checker(*iter, stage)) {
@@ -150,7 +148,8 @@ public:
         try {
           entry.handler(stage, event);
         } catch (...) {
-          return wh::core::result<void>::failure(wh::core::errc::internal_error);
+          return wh::core::result<void>::failure(
+              wh::core::errc::internal_error);
         }
       }
       return {};
@@ -187,18 +186,27 @@ private:
   auto append_handler(shared_handler_list &slot,
                       callback_registration registration)
       -> wh::core::result<void> {
-    std::scoped_lock lock(mutex_);
+    const callback_registration stable_registration{std::move(registration)};
+
     auto current_handlers =
         std::atomic_load_explicit(&slot, std::memory_order_acquire);
-    auto next_handlers = std::make_shared<handler_list>(*current_handlers);
-    const auto pushed = next_handlers->push_back(std::move(registration));
-    if (pushed.has_error()) {
-      return wh::core::result<void>::failure(pushed.error());
+    while (true) {
+      auto next_handlers = std::make_shared<handler_list>(*current_handlers);
+      auto registration_copy = stable_registration;
+      const auto pushed =
+          next_handlers->push_back(std::move(registration_copy));
+      if (pushed.has_error()) {
+        return wh::core::result<void>::failure(pushed.error());
+      }
+
+      std::shared_ptr<const handler_list> next_snapshot{
+          std::move(next_handlers)};
+      if (std::atomic_compare_exchange_weak_explicit(
+              &slot, &current_handlers, std::move(next_snapshot),
+              std::memory_order_release, std::memory_order_acquire)) {
+        return {};
+      }
     }
-    std::atomic_store_explicit(&slot, std::shared_ptr<const handler_list>{
-                                          std::move(next_handlers)},
-                               std::memory_order_release);
-    return {};
   }
 
   static auto
@@ -210,16 +218,15 @@ private:
     config.timing_checker = detail::default_timing_checker;
   }
 
-  [[nodiscard]] static auto evaluate_timing_checker(
-      const callback_registration &registration,
-      const wh::core::callback_stage stage) -> bool {
+  [[nodiscard]] static auto
+  evaluate_timing_checker(const callback_registration &registration,
+                          const wh::core::callback_stage stage) -> bool {
     if (!static_cast<bool>(registration.config.timing_checker)) {
       return true;
     }
     return registration.config.timing_checker(stage);
   }
 
-  mutable std::mutex mutex_{};
   shared_handler_list global_handlers_{};
   shared_handler_list local_handlers_{};
 };
@@ -254,10 +261,9 @@ template <typename... config_t>
 
     auto left_checker = std::move(merged.timing_checker);
     auto right_checker = std::move(config.timing_checker);
-    merged.timing_checker =
-        [left = std::move(left_checker),
-         right = std::move(right_checker)](
-            const wh::core::callback_stage stage) -> bool {
+    merged.timing_checker = [left = std::move(left_checker),
+                             right = std::move(right_checker)](
+                                const wh::core::callback_stage stage) -> bool {
       return left(stage) && right(stage);
     };
   };
@@ -278,22 +284,21 @@ auto inject_callback_event(wh::core::run_context &context,
     return {};
   }
 
-  return context.callback_manager->dispatch(stage,
-                                            wh::core::make_callback_event_view(
-                                                payload));
+  return context.callback_manager->dispatch(
+      stage, wh::core::make_callback_event_view(payload));
 }
 
-[[nodiscard]] inline auto capture_fatal_error() -> wh::core::callback_fatal_error {
+[[nodiscard]] inline auto capture_fatal_error()
+    -> wh::core::callback_fatal_error {
   try {
     throw;
   } catch (const std::exception &error) {
-    return wh::core::callback_fatal_error{
-        wh::core::map_exception(error), error.what(),
-        "stack-unavailable"};
+    return wh::core::callback_fatal_error{wh::core::map_exception(error),
+                                          error.what(), capture_call_stack()};
   } catch (...) {
     return wh::core::callback_fatal_error{
         wh::core::make_error(wh::core::errc::internal_error), "unknown",
-        "stack-unavailable"};
+        capture_call_stack()};
   }
 }
 
@@ -314,7 +319,8 @@ auto run_with_fatal_event(wh::core::run_context &context, callable_t &&callable,
                           const wh::core::callback_stage fatal_stage =
                               wh::core::callback_stage::error)
     -> wh::core::result<void> {
-  auto executed = run_with_fatal_error_capture(std::forward<callable_t>(callable));
+  auto executed =
+      run_with_fatal_error_capture(std::forward<callable_t>(callable));
   if (executed.has_value()) {
     return {};
   }

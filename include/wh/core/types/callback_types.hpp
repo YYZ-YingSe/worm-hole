@@ -18,8 +18,8 @@ enum class callback_stage : std::uint8_t {
   stream_end,
 };
 
-[[nodiscard]] constexpr auto is_reverse_callback_stage(
-    const callback_stage stage) noexcept -> bool {
+[[nodiscard]] constexpr auto
+is_reverse_callback_stage(const callback_stage stage) noexcept -> bool {
   return stage == callback_stage::start;
 }
 
@@ -44,8 +44,8 @@ struct callback_event_view {
 };
 
 template <typename payload_t>
-[[nodiscard]] inline auto make_callback_event_view(
-    const payload_t &value) noexcept
+[[nodiscard]] inline auto
+make_callback_event_view(const payload_t &value) noexcept
     -> callback_event_view {
   return callback_event_view::from(value);
 }
@@ -65,8 +65,8 @@ struct callback_fatal_error {
   std::string call_stack{};
 
   [[nodiscard]] auto to_string() const -> std::string {
-    return std::string{"code="} + code.message() + ", exception=" +
-           exception_message + ", stack=" + call_stack;
+    return std::string{"code="} + code.message() +
+           ", exception=" + exception_message + ", stack=" + call_stack;
   }
 };
 

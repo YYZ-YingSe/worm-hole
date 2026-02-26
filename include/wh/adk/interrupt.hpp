@@ -21,8 +21,7 @@ from_interrupt_contexts(const std::span<const interrupt_info> contexts)
   std::vector<interrupt_signal> signals{};
   signals.reserve(contexts.size());
   const auto transformed = std::ranges::transform(
-      contexts, std::back_inserter(signals),
-      [](const interrupt_info &context) {
+      contexts, std::back_inserter(signals), [](const interrupt_info &context) {
         return wh::core::to_interrupt_signal(context);
       });
   static_cast<void>(transformed);
@@ -45,11 +44,11 @@ to_interrupt_contexts(const std::span<const interrupt_signal> signals)
     -> std::vector<interrupt_info> {
   std::vector<interrupt_info> contexts{};
   contexts.reserve(signals.size());
-  const auto transformed = std::ranges::transform(
-      signals, std::back_inserter(contexts),
-      [](const interrupt_signal &signal) {
-        return wh::core::to_interrupt_context(signal);
-      });
+  const auto transformed =
+      std::ranges::transform(signals, std::back_inserter(contexts),
+                             [](const interrupt_signal &signal) {
+                               return wh::core::to_interrupt_context(signal);
+                             });
   static_cast<void>(transformed);
   return contexts;
 }

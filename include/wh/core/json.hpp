@@ -66,15 +66,15 @@ namespace wh::core {
   return std::string{buffer.GetString(), buffer.GetSize()};
 }
 
-[[nodiscard]] inline auto
-json_find_member(const json_value &value, const std::string_view key)
+[[nodiscard]] inline auto json_find_member(const json_value &value,
+                                           const std::string_view key)
     -> result<const json_value *> {
   if (!value.IsObject()) {
     return result<const json_value *>::failure(errc::type_mismatch);
   }
 
-  const auto member = value.FindMember(
-      rapidjson::StringRef(key.data(), static_cast<rapidjson::SizeType>(key.size())));
+  const auto member = value.FindMember(rapidjson::StringRef(
+      key.data(), static_cast<rapidjson::SizeType>(key.size())));
   if (member == value.MemberEnd()) {
     return result<const json_value *>::failure(errc::not_found);
   }

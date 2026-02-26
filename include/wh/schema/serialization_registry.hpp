@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <any>
-#include <cstddef>
 #include <concepts>
+#include <cstddef>
 #include <functional>
 #include <initializer_list>
 #include <ranges>
@@ -54,31 +54,27 @@ class serialization_registry {
 public:
   serialization_registry() = default;
 
-  auto reserve(const std::size_t type_count,
-               const std::size_t name_count = 0U) -> void {
+  auto reserve(const std::size_t type_count, const std::size_t name_count = 0U)
+      -> void {
     entries_by_type_.reserve(type_count);
     name_to_type_.reserve(name_count == 0U ? type_count : name_count);
   }
 
-  auto freeze() noexcept -> void {
-    frozen_ = true;
-  }
+  auto freeze() noexcept -> void { frozen_ = true; }
 
-  [[nodiscard]] auto is_frozen() const noexcept -> bool {
-    return frozen_;
-  }
+  [[nodiscard]] auto is_frozen() const noexcept -> bool { return frozen_; }
 
   template <typename type_t>
     requires std::default_initializable<std::remove_cvref_t<type_t>>
-  auto register_type(
-      const std::string_view primary_name,
-      const std::initializer_list<std::string_view> aliases = {})
+  auto register_type(const std::string_view primary_name,
+                     const std::initializer_list<std::string_view> aliases = {})
       -> wh::core::result<void> {
     using normalized_t = std::remove_cvref_t<type_t>;
     const auto type = std::type_index(typeid(normalized_t));
 
     if (frozen_) {
-      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(
+          wh::core::errc::contract_violation);
     }
     if (primary_name.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -94,7 +90,8 @@ public:
     normalized_aliases.reserve(aliases.size());
     for (const auto alias : aliases) {
       if (alias.empty()) {
-        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+        return wh::core::result<void>::failure(
+            wh::core::errc::invalid_argument);
       }
       const auto duplicate_alias = std::ranges::any_of(
           normalized_aliases, [&](const std::string &normalized_alias) {
@@ -146,7 +143,8 @@ public:
       -> wh::core::result<std::type_index> {
     const auto *type = find_type(name);
     if (type == nullptr) {
-      return wh::core::result<std::type_index>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::type_index>::failure(
+          wh::core::errc::not_found);
     }
     return *type;
   }
@@ -155,7 +153,8 @@ public:
       -> wh::core::result<std::string_view> {
     const auto *entry = find_entry(type);
     if (entry == nullptr) {
-      return wh::core::result<std::string_view>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::string_view>::failure(
+          wh::core::errc::not_found);
     }
     return entry->primary_name;
   }
@@ -172,7 +171,8 @@ public:
     wh::core::json_document output;
     auto encoded = entry->encode_any(value, output, output.GetAllocator());
     if (encoded.has_error()) {
-      return wh::core::result<wh::core::json_document>::failure(encoded.error());
+      return wh::core::result<wh::core::json_document>::failure(
+          encoded.error());
     }
     return output;
   }
@@ -194,7 +194,8 @@ public:
     wh::core::json_document output;
     auto encoded = entry->encode_ptr(value, output, output.GetAllocator());
     if (encoded.has_error()) {
-      return wh::core::result<wh::core::json_document>::failure(encoded.error());
+      return wh::core::result<wh::core::json_document>::failure(
+          encoded.error());
     }
     return output;
   }
@@ -283,7 +284,8 @@ private:
   };
 
   template <typename type_t>
-  static auto encode_from_any(const std::any &value, wh::core::json_value &output,
+  static auto encode_from_any(const std::any &value,
+                              wh::core::json_value &output,
                               wh::core::json_allocator &allocator)
       -> wh::core::result<void> {
     const auto *typed = std::any_cast<type_t>(&value);
@@ -341,7 +343,8 @@ private:
   }
 
   std::unordered_map<std::type_index, serialization_entry> entries_by_type_{};
-  std::unordered_map<std::string, std::type_index, detail::transparent_string_hash,
+  std::unordered_map<std::string, std::type_index,
+                     detail::transparent_string_hash,
                      detail::transparent_string_equal>
       name_to_type_{};
   bool frozen_{false};

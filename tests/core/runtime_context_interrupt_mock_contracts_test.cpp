@@ -17,11 +17,11 @@
 #include "wh/compose/resume.hpp"
 #include "wh/core/address.hpp"
 #include "wh/core/error.hpp"
-#include "wh/scheduler/context_helper.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/types/callback_types.hpp"
 #include "wh/internal/callbacks.hpp"
+#include "wh/scheduler/context_helper.hpp"
 #include "wh/testing/callback_sequence_assert.hpp"
 #include "wh/testing/mock/agent_mock.hpp"
 #include "wh/testing/mock/chat_model_mock.hpp"
@@ -41,8 +41,8 @@ TEST_CASE("callback manager ordering timing and run-context bridge",
 
   std::vector<std::string> trace{};
 
-  auto make_handler = [&trace](const std::string &name)
-      -> wh::core::callback_stage_handler {
+  auto make_handler =
+      [&trace](const std::string &name) -> wh::core::callback_stage_handler {
     return [name, &trace](const wh::core::callback_stage stage,
                           const wh::core::callback_event_view event) {
       const auto *payload = event.get_if<int>();
@@ -60,14 +60,14 @@ TEST_CASE("callback manager ordering timing and run-context bridge",
       },
       "start-only");
 
-  REQUIRE(manager->register_global_handler(always, make_handler("g1"))
-              .has_value());
+  REQUIRE(
+      manager->register_global_handler(always, make_handler("g1")).has_value());
   REQUIRE(manager->register_global_handler(start_only, make_handler("g2"))
               .has_value());
-  REQUIRE(manager->register_local_handler(always, make_handler("l1"))
-              .has_value());
-  REQUIRE(manager->register_local_handler(always, make_handler("l2"))
-              .has_value());
+  REQUIRE(
+      manager->register_local_handler(always, make_handler("l1")).has_value());
+  REQUIRE(
+      manager->register_local_handler(always, make_handler("l2")).has_value());
 
   const auto started = wh::internal::inject_callback_event(
       context, wh::core::callback_stage::start, 7);
@@ -114,20 +114,21 @@ TEST_CASE("fatal exception is converted to callback error event",
   context.callback_manager = manager;
 
   std::vector<wh::core::callback_fatal_error> captured_errors{};
-  REQUIRE(manager
-              ->register_global_handler(
-                  wh::internal::make_callback_config(
-                      [](const wh::core::callback_stage stage) noexcept {
-                        return stage == wh::core::callback_stage::error;
-                      }),
-                  [&captured_errors](const wh::core::callback_stage,
-                                     const wh::core::callback_event_view event) {
-                    const auto *fatal_error =
-                        event.get_if<wh::core::callback_fatal_error>();
-                    REQUIRE(fatal_error != nullptr);
-                    captured_errors.push_back(*fatal_error);
-                  })
-              .has_value());
+  REQUIRE(
+      manager
+          ->register_global_handler(
+              wh::internal::make_callback_config(
+                  [](const wh::core::callback_stage stage) noexcept {
+                    return stage == wh::core::callback_stage::error;
+                  }),
+              [&captured_errors](const wh::core::callback_stage,
+                                 const wh::core::callback_event_view event) {
+                const auto *fatal_error =
+                    event.get_if<wh::core::callback_fatal_error>();
+                REQUIRE(fatal_error != nullptr);
+                captured_errors.push_back(*fatal_error);
+              })
+          .has_value());
 
   const auto status = wh::internal::run_with_fatal_event(
       context, [] { throw std::runtime_error{"boom"}; });
@@ -154,9 +155,9 @@ TEST_CASE("address interrupt and resume paths are stable and consumable",
   wh::core::resume_state state{};
   REQUIRE(wh::compose::add_resume_target(state, "interrupt-A", leaf, 3)
               .has_value());
-  REQUIRE(wh::compose::add_resume_target(
-              state, "interrupt-B", branch.append("memory"),
-              std::string{"recover"})
+  REQUIRE(wh::compose::add_resume_target(state, "interrupt-B",
+                                         branch.append("memory"),
+                                         std::string{"recover"})
               .has_value());
 
   REQUIRE(state.is_resume_target(root));
@@ -247,15 +248,17 @@ TEST_CASE("interrupt id tree bridge and whitelist projection are stable",
   REQUIRE(signal_tree.front().children.size() == 2U);
 
   const auto context_tree = wh::compose::to_interrupt_context_tree(signal_tree);
-  const auto roundtrip_tree = wh::compose::to_interrupt_signal_tree(context_tree);
-  const auto flattened = wh::compose::flatten_interrupt_signal_tree(roundtrip_tree);
+  const auto roundtrip_tree =
+      wh::compose::to_interrupt_signal_tree(context_tree);
+  const auto flattened =
+      wh::compose::flatten_interrupt_signal_tree(roundtrip_tree);
   REQUIRE(flattened.size() == signals.size());
 
   const wh::core::interrupt_context context{
       "id-proj", wh::core::address{"root", "private", "visible", "tool"},
       std::string{"state"}, std::any{}, false};
   constexpr std::array<std::string_view, 2U> allowed_segments{"root",
-                                                               "visible"};
+                                                              "visible"};
   const auto projected =
       wh::compose::project_interrupt_context(context, allowed_segments);
   REQUIRE(projected.location.to_string() == "root/visible");
@@ -268,12 +271,14 @@ TEST_CASE("callback sequence assert helper records stable ordering",
   trace.record(wh::core::callback_stage::end);
   trace.record(wh::core::callback_stage::error);
 
-  REQUIRE(trace.expect({wh::core::callback_stage::start,
-                        wh::core::callback_stage::end,
-                        wh::core::callback_stage::error})
+  REQUIRE(trace
+              .expect({wh::core::callback_stage::start,
+                       wh::core::callback_stage::end,
+                       wh::core::callback_stage::error})
               .has_value());
-  REQUIRE(trace.expect({wh::core::callback_stage::start,
-                        wh::core::callback_stage::error})
+  REQUIRE(trace
+              .expect({wh::core::callback_stage::start,
+                       wh::core::callback_stage::error})
               .has_error());
 }
 
@@ -282,8 +287,9 @@ TEST_CASE("static thread scheduler helper provides test scheduler context",
   wh::testing::static_thread_scheduler_helper helper{};
   const auto context = helper.context();
 
-  auto sender = stdexec::schedule(wh::core::select_execution_scheduler(context)) |
-                stdexec::then([] { return 42; });
+  auto sender =
+      stdexec::schedule(wh::core::select_execution_scheduler(context)) |
+      stdexec::then([] { return 42; });
   auto result = stdexec::sync_wait(std::move(sender));
   REQUIRE(result.has_value());
   REQUIRE(std::get<0>(result.value()) == 42);
@@ -329,9 +335,9 @@ TEST_CASE("revision checkpoint fixture preserves revision and resume snapshot",
           "[core][testing][condition]") {
   wh::core::resume_state state{};
   state.bind_revision(7U);
-  REQUIRE(wh::compose::add_resume_target(
-              state, "interrupt-rv", wh::core::address{"root", "node"},
-              std::string{"payload"})
+  REQUIRE(wh::compose::add_resume_target(state, "interrupt-rv",
+                                         wh::core::address{"root", "node"},
+                                         std::string{"payload"})
               .has_value());
 
   wh::testing::revision_checkpoint_fixture fixture{};

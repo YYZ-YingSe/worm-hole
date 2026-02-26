@@ -51,7 +51,8 @@ public:
     }
 
     return std::ranges::equal(prefix.segments_,
-                              segments_ | std::views::take(prefix.segments_.size()));
+                              segments_ |
+                                  std::views::take(prefix.segments_.size()));
   }
 
   [[nodiscard]] auto to_string(const std::string_view separator = "/") const
@@ -83,7 +84,9 @@ public:
     return segments_.size();
   }
 
-  [[nodiscard]] auto empty() const noexcept -> bool { return segments_.empty(); }
+  [[nodiscard]] auto empty() const noexcept -> bool {
+    return segments_.empty();
+  }
 
   [[nodiscard]] auto segments() const noexcept -> std::span<const std::string> {
     return {segments_.data(), segments_.size()};

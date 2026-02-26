@@ -28,25 +28,25 @@ using dynamic_values_merge_function =
 namespace detail {
 
 template <typename map_t>
-concept merge_reservable_map_like = requires(map_t &map, const std::size_t size) {
-  { map.reserve(size) };
-};
+concept merge_reservable_map_like =
+    requires(map_t &map, const std::size_t size) {
+      { map.reserve(size) };
+    };
 
 } // namespace detail
 
 template <typename map_t>
-concept string_keyed_map_like =
-    requires(map_t &map, const map_t &const_map,
-             const typename map_t::key_type &key,
-             typename map_t::mapped_type value) {
-      typename map_t::key_type;
-      typename map_t::mapped_type;
-      requires std::same_as<std::remove_cv_t<typename map_t::key_type>,
-                            std::string>;
-      { const_map.find(key) };
-      { const_map.end() };
-      map.insert_or_assign(key, std::move(value));
-    };
+concept string_keyed_map_like = requires(map_t &map, const map_t &const_map,
+                                         const typename map_t::key_type &key,
+                                         typename map_t::mapped_type value) {
+  typename map_t::key_type;
+  typename map_t::mapped_type;
+  requires std::same_as<std::remove_cv_t<typename map_t::key_type>,
+                        std::string>;
+  { const_map.find(key) };
+  { const_map.end() };
+  map.insert_or_assign(key, std::move(value));
+};
 
 class values_merge_registry {
 public:
@@ -57,20 +57,17 @@ public:
     typed_table_.reserve(type_count);
   }
 
-  auto freeze() noexcept -> void {
-    frozen_ = true;
-  }
+  auto freeze() noexcept -> void { frozen_ = true; }
 
-  [[nodiscard]] auto is_frozen() const noexcept -> bool {
-    return frozen_;
-  }
+  [[nodiscard]] auto is_frozen() const noexcept -> bool { return frozen_; }
 
   template <typename value_t>
-  auto register_merge(std::function<wh::core::result<value_t>(
-                          std::span<const value_t>)>
-                          function) -> wh::core::result<void> {
+  auto register_merge(
+      std::function<wh::core::result<value_t>(std::span<const value_t>)>
+          function) -> wh::core::result<void> {
     if (frozen_) {
-      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(
+          wh::core::errc::contract_violation);
     }
     if (!static_cast<bool>(function)) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -82,37 +79,36 @@ public:
     }
 
     using typed_merge_fn = typed_merge_fn_t<value_t>;
-    auto typed_function =
-        std::make_shared<typed_merge_fn>(std::move(function));
+    auto typed_function = std::make_shared<typed_merge_fn>(std::move(function));
     auto [typed_iter, typed_inserted] =
         typed_table_.emplace(type, typed_function);
     if (!typed_inserted) {
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
     }
 
-    auto [dynamic_iter, dynamic_inserted] =
-        table_.emplace(
-            type, [typed_function](const dynamic_merge_values values)
-                      -> wh::core::result<dynamic_merge_value> {
-              std::vector<value_t> typed_values;
-              typed_values.reserve(values.size());
-              for (const auto &value : values) {
-                const auto *typed = std::any_cast<value_t>(&value);
-                if (typed == nullptr) {
-                  return wh::core::result<dynamic_merge_value>::failure(
-                      wh::core::errc::type_mismatch);
-                }
-                typed_values.push_back(*typed);
-              }
+    auto [dynamic_iter, dynamic_inserted] = table_.emplace(
+        type,
+        [typed_function](const dynamic_merge_values values)
+            -> wh::core::result<dynamic_merge_value> {
+          std::vector<value_t> typed_values;
+          typed_values.reserve(values.size());
+          for (const auto &value : values) {
+            const auto *typed = std::any_cast<value_t>(&value);
+            if (typed == nullptr) {
+              return wh::core::result<dynamic_merge_value>::failure(
+                  wh::core::errc::type_mismatch);
+            }
+            typed_values.push_back(*typed);
+          }
 
-              auto merged = (*typed_function)(typed_values);
-              if (merged.has_error()) {
-                return wh::core::result<dynamic_merge_value>::failure(
-                    merged.error());
-              }
+          auto merged = (*typed_function)(typed_values);
+          if (merged.has_error()) {
+            return wh::core::result<dynamic_merge_value>::failure(
+                merged.error());
+          }
 
-              return dynamic_merge_value{std::move(merged).value()};
-            });
+          return dynamic_merge_value{std::move(merged).value()};
+        });
     if (!dynamic_inserted) {
       typed_table_.erase(typed_iter);
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
@@ -127,17 +123,19 @@ public:
       std::function<wh::core::result<value_t>(std::span<const value_t *>)>
           function) -> wh::core::result<void> {
     if (frozen_) {
-      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(
+          wh::core::errc::contract_violation);
     }
     if (!static_cast<bool>(function)) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
 
     auto typed_function = [function](const std::span<const value_t> values)
-                              -> wh::core::result<value_t> {
+        -> wh::core::result<value_t> {
       wh::core::small_vector<const value_t *, 8U> typed_values;
       const auto reserved = typed_values.reserve(
-          static_cast<typename decltype(typed_values)::size_type>(values.size()));
+          static_cast<typename decltype(typed_values)::size_type>(
+              values.size()));
       if (reserved.has_error()) {
         return wh::core::result<value_t>::failure(reserved.error());
       }
@@ -147,8 +145,8 @@ public:
           return wh::core::result<value_t>::failure(appended.error());
         }
       }
-      return function(std::span<const value_t *>{typed_values.data(),
-                                                 typed_values.size()});
+      return function(
+          std::span<const value_t *>{typed_values.data(), typed_values.size()});
     };
 
     const auto type = std::type_index(typeid(value_t));
@@ -165,40 +163,40 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
     }
 
-    auto [dynamic_iter, dynamic_inserted] =
-        table_.emplace(
-            type, [function = std::move(function)](const dynamic_merge_values values)
-                      -> wh::core::result<dynamic_merge_value> {
-              wh::core::small_vector<const value_t *, 8U> typed_values;
-              const auto reserved = typed_values.reserve(
-                  static_cast<typename decltype(typed_values)::size_type>(
-                      values.size()));
-              if (reserved.has_error()) {
-                return wh::core::result<dynamic_merge_value>::failure(
-                    reserved.error());
-              }
-              for (const auto &value : values) {
-                const auto *typed = std::any_cast<value_t>(&value);
-                if (typed == nullptr) {
-                  return wh::core::result<dynamic_merge_value>::failure(
-                      wh::core::errc::type_mismatch);
-                }
-                const auto appended = typed_values.push_back(typed);
-                if (appended.has_error()) {
-                  return wh::core::result<dynamic_merge_value>::failure(
-                      appended.error());
-                }
-              }
+    auto [dynamic_iter, dynamic_inserted] = table_.emplace(
+        type,
+        [function = std::move(function)](const dynamic_merge_values values)
+            -> wh::core::result<dynamic_merge_value> {
+          wh::core::small_vector<const value_t *, 8U> typed_values;
+          const auto reserved = typed_values.reserve(
+              static_cast<typename decltype(typed_values)::size_type>(
+                  values.size()));
+          if (reserved.has_error()) {
+            return wh::core::result<dynamic_merge_value>::failure(
+                reserved.error());
+          }
+          for (const auto &value : values) {
+            const auto *typed = std::any_cast<value_t>(&value);
+            if (typed == nullptr) {
+              return wh::core::result<dynamic_merge_value>::failure(
+                  wh::core::errc::type_mismatch);
+            }
+            const auto appended = typed_values.push_back(typed);
+            if (appended.has_error()) {
+              return wh::core::result<dynamic_merge_value>::failure(
+                  appended.error());
+            }
+          }
 
-              auto merged = function(std::span<const value_t *>{typed_values.data(),
-                                                                typed_values.size()});
-              if (merged.has_error()) {
-                return wh::core::result<dynamic_merge_value>::failure(
-                    merged.error());
-              }
+          auto merged = function(std::span<const value_t *>{
+              typed_values.data(), typed_values.size()});
+          if (merged.has_error()) {
+            return wh::core::result<dynamic_merge_value>::failure(
+                merged.error());
+          }
 
-              return dynamic_merge_value{std::move(merged).value()};
-            });
+          return dynamic_merge_value{std::move(merged).value()};
+        });
     if (!dynamic_inserted) {
       typed_table_.erase(typed_iter);
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
@@ -245,7 +243,8 @@ public:
   [[nodiscard]] auto merge_as(const std::span<const value_t> values) const
       -> wh::core::result<value_t> {
     if (values.empty()) {
-      return wh::core::result<value_t>::failure(wh::core::errc::invalid_argument);
+      return wh::core::result<value_t>::failure(
+          wh::core::errc::invalid_argument);
     }
 
     if (const auto *typed_function = find_typed_merge<value_t>();

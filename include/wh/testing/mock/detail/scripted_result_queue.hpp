@@ -51,9 +51,7 @@ template <> class scripted_result_queue<void> {
 public:
   using result_t = wh::core::result<void>;
 
-  auto enqueue_success() -> void {
-    scripted_results_.push_back(result_t{});
-  }
+  auto enqueue_success() -> void { scripted_results_.push_back(result_t{}); }
 
   auto enqueue_error(const wh::core::errc code) -> void {
     scripted_results_.push_back(result_t::failure(code));
