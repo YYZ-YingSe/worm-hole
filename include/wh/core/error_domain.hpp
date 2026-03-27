@@ -8,9 +8,11 @@
 
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/type_traits.hpp"
 
 namespace wh::core {
 
+/// Maps a standard C++ exception object to the framework error domain.
 [[nodiscard]] inline auto map_exception(const std::exception &error) noexcept
     -> error_code {
   if (dynamic_cast<const std::bad_alloc *>(&error) != nullptr) {
@@ -29,6 +31,7 @@ namespace wh::core {
   return make_error(errc::internal_error);
 }
 
+/// Maps the currently active exception (`throw;`) to `error_code`.
 [[nodiscard]] inline auto map_current_exception() noexcept -> error_code {
   try {
     throw;
@@ -39,8 +42,9 @@ namespace wh::core {
   }
 }
 
+/// Executes a callable and converts thrown exceptions into `result` errors.
 template <typename value_t, typename callable_t>
-  requires std::invocable<callable_t>
+  requires callable_with<callable_t>
 [[nodiscard]] auto exception_boundary(callable_t &&callable)
     -> result<value_t> {
   try {

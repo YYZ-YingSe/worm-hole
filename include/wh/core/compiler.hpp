@@ -1,3 +1,5 @@
+// Defines compiler-level portability helpers such as branch prediction,
+// alignment utilities, and constexpr numeric helpers.
 #pragma once
 
 #include <concepts>
@@ -15,10 +17,15 @@
 
 namespace wh::core {
 
+/// Identifies the active compiler for compile-time feature branching.
 enum class compiler_id : std::uint8_t {
+  /// Compiler could not be identified from predefined macros.
   unknown = 0,
+  /// LLVM/Clang toolchain.
   clang = 1,
+  /// GNU Compiler Collection.
   gcc = 2,
+  /// Microsoft Visual C++ toolchain.
   msvc = 3,
 };
 
@@ -63,17 +70,21 @@ inline constexpr std::size_t default_cacheline_size =
 inline constexpr std::size_t default_cacheline_size = 64U;
 #endif
 
+/// True when a value can be moved by raw relocation safely.
 template <typename t>
 concept trivially_relocatable = std::is_trivially_move_constructible_v<t> &&
                                 std::is_trivially_destructible_v<t>;
 
+/// True when a value is bitwise copyable.
 template <typename t>
 concept trivially_copyable_value = std::is_trivially_copyable_v<t>;
 
+/// Returns whether `value` is a non-zero power of two.
 [[nodiscard]] constexpr bool is_power_of_two(const std::size_t value) noexcept {
   return value != 0U && (value & (value - 1U)) == 0U;
 }
 
+/// Aligns `value` upward to `alignment` when alignment is power-of-two.
 [[nodiscard]] constexpr std::size_t
 align_up(const std::size_t value, const std::size_t alignment) noexcept {
   if (!is_power_of_two(alignment)) {
@@ -82,6 +93,7 @@ align_up(const std::size_t value, const std::size_t alignment) noexcept {
   return (value + alignment - 1U) & ~(alignment - 1U);
 }
 
+/// Computes the next power of two greater than or equal to `value`.
 [[nodiscard]] constexpr std::size_t
 next_power_of_two(std::size_t value) noexcept {
   if (value <= 1U) {
@@ -95,6 +107,7 @@ next_power_of_two(std::size_t value) noexcept {
   return value + 1U;
 }
 
+/// Marks unreachable control flow and aborts as a fallback.
 [[noreturn]] inline void unreachable() noexcept {
 #if defined(__has_builtin)
 #if __has_builtin(__builtin_unreachable)
@@ -108,6 +121,7 @@ next_power_of_two(std::size_t value) noexcept {
   std::abort();
 }
 
+/// Hints the optimizer that `condition` is expected to hold.
 template <typename condition_t>
   requires std::convertible_to<condition_t, bool>
 inline void assume(condition_t &&condition) noexcept {
@@ -129,6 +143,7 @@ inline void assume(condition_t &&condition) noexcept {
 #endif
 }
 
+/// Emits a short CPU pause/yield for spin-wait loops.
 inline void spin_pause() noexcept {
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) ||             \
     defined(_M_IX86)
@@ -142,6 +157,7 @@ inline void spin_pause() noexcept {
 #endif
 }
 
+/// Reports contract violation and terminates immediately.
 [[noreturn]] inline void contract_violation(const char *kind,
                                             const char *expression,
                                             const char *file,
@@ -187,12 +203,27 @@ inline void spin_pause() noexcept {
 #define wh_noinline [[gnu::noinline]]
 #define wh_hot [[gnu::hot]]
 #define wh_cold [[gnu::cold]]
+#define wh_pure [[gnu::pure]]
+#define wh_const [[gnu::const]]
+#define wh_restrict __restrict__
+#define wh_cacheline_align alignas(::wh::core::default_cacheline_size)
+#elif defined(_MSC_VER)
+#define wh_force_inline __forceinline
+#define wh_noinline __declspec(noinline)
+#define wh_hot
+#define wh_cold
+#define wh_pure
+#define wh_const
+#define wh_restrict __restrict
 #define wh_cacheline_align alignas(::wh::core::default_cacheline_size)
 #else
 #define wh_force_inline inline
 #define wh_noinline
 #define wh_hot
 #define wh_cold
+#define wh_pure
+#define wh_const
+#define wh_restrict
 #define wh_cacheline_align
 #endif
 

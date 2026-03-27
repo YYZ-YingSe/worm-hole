@@ -1,3 +1,5 @@
+// Defines internal safety helpers for guarded execution, exception mapping,
+// and defensive conversions into result/error channels.
 #pragma once
 
 #include <concepts>
@@ -7,11 +9,13 @@
 
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/type_traits.hpp"
 
 namespace wh::internal {
 
+/// Executes a callable and maps thrown exceptions to `result` error codes.
 template <typename value_t, typename callable_t>
-  requires std::invocable<callable_t>
+  requires wh::core::callable_with<callable_t>
 [[nodiscard]] auto
 safe_call(callable_t &&callable,
           const wh::core::errc fallback_error = wh::core::errc::internal_error)

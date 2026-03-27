@@ -1,3 +1,5 @@
+// Defines internal stacktrace capture/format helpers used for diagnostics
+// in failure and exception paths.
 #pragma once
 
 #include <array>
@@ -6,16 +8,17 @@
 #include <sstream>
 #include <string>
 
-#include "wh/core/compiler.hpp"
-
 #if defined(_WIN32)
 #include <windows.h>
 #elif defined(__unix__) || defined(__APPLE__)
 #include <execinfo.h>
 #endif
 
+#include "wh/core/compiler.hpp"
+
 namespace wh::internal {
 
+/// Captures a best-effort textual call stack for fatal diagnostics.
 [[nodiscard]] inline auto capture_call_stack() -> std::string {
 #if defined(_WIN32)
   std::array<void *, 64U> frames{};

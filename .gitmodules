@@ -10,3 +10,9 @@
 [submodule "thirdy_party/benchmark"]
 	path = thirdy_party/benchmark
 	url = https://github.com/google/benchmark.git
+[submodule "thirdy_party/minja"]
+	path = thirdy_party/minja
+	url = https://github.com/google/minja.git
+[submodule "thirdy_party/dependencies/nlohmann_json"]
+	path = thirdy_party/dependencies/nlohmann_json
+	url = https://github.com/nlohmann/json.git

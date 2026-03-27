@@ -1,3 +1,5 @@
+// Defines compile-time and runtime reflection helpers for field metadata,
+// member visitation, and keyed field lookup.
 #pragma once
 
 #include <array>
@@ -10,6 +12,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "wh/core/type_traits.hpp"
 #include "wh/internal/type_name.hpp"
 
 namespace wh::core {
@@ -49,6 +52,7 @@ consteval bool field_keys_unique(const bindings_t &...bindings) {
   return true;
 }
 
+/// Extracts field names from the binding tuple.
 template <typename owner_t, typename... bindings_t, std::size_t... index_t>
 [[nodiscard]] constexpr auto
 field_name_array_impl(const std::tuple<bindings_t...> &bindings,
@@ -58,6 +62,7 @@ field_name_array_impl(const std::tuple<bindings_t...> &bindings,
   };
 }
 
+/// Extracts stable field keys from the binding tuple.
 template <typename owner_t, typename... bindings_t, std::size_t... index_t>
 [[nodiscard]] constexpr auto
 field_key_array_impl(const std::tuple<bindings_t...> &bindings,
@@ -69,6 +74,7 @@ field_key_array_impl(const std::tuple<bindings_t...> &bindings,
 
 } // namespace detail
 
+/// Stable type identifier used by registry-style lookups.
 struct type_key {
   std::uint64_t value{};
 
@@ -90,6 +96,7 @@ template <typename owner_t, typename value_t> struct field_binding {
   value_t owner_t::*member{};
 };
 
+/// Creates a field binding from member name and pointer.
 template <typename owner_t, typename value_t>
 [[nodiscard]] constexpr auto field(std::string_view name,
                                    value_t owner_t::*member) noexcept
@@ -101,6 +108,7 @@ template <typename owner_t, typename value_t>
   };
 }
 
+/// Static descriptor of reflected fields for `owner_t`.
 template <typename owner_t, typename... bindings_t>
   requires(sizeof...(bindings_t) > 0U)
 struct field_map {
@@ -112,17 +120,20 @@ struct field_map {
     return sizeof...(bindings_t);
   }
 
+  /// Returns reflected field names in declaration order.
   [[nodiscard]] constexpr auto names() const noexcept {
     return detail::field_name_array_impl<owner_t, bindings_t...>(
         bindings, std::index_sequence_for<bindings_t...>{});
   }
 
+  /// Returns reflected field keys in declaration order.
   [[nodiscard]] constexpr auto keys() const noexcept {
     return detail::field_key_array_impl<owner_t, bindings_t...>(
         bindings, std::index_sequence_for<bindings_t...>{});
   }
 };
 
+/// Validates field map ownership and uniqueness.
 template <typename owner_t, typename... bindings_t>
 [[nodiscard]] constexpr bool
 validate_field_map(bindings_t... bindings) noexcept {
@@ -134,6 +145,7 @@ validate_field_map(bindings_t... bindings) noexcept {
          detail::field_keys_unique<owner_t>(bindings...);
 }
 
+/// Creates a `field_map` after owner-type validation.
 template <typename owner_t, typename... bindings_t>
 [[nodiscard]] constexpr auto make_field_map(bindings_t... bindings) noexcept
     -> field_map<owner_t, bindings_t...> {
@@ -144,6 +156,7 @@ template <typename owner_t, typename... bindings_t>
       std::tuple<bindings_t...>{bindings...}};
 }
 
+/// Gets mutable member reference through a field binding.
 template <typename owner_t, typename value_t>
 [[nodiscard]] constexpr auto
 field_ref(owner_t &object,
@@ -152,6 +165,7 @@ field_ref(owner_t &object,
   return object.*(binding.member);
 }
 
+/// Gets const member reference through a field binding.
 template <typename owner_t, typename value_t>
 [[nodiscard]] constexpr auto
 field_ref(const owner_t &object,
@@ -175,8 +189,8 @@ visit_field(const field_map<owner_t, bindings_t...> &map,
   std::apply(
       [&](const auto &...binding) {
         (([&] {
-           using binding_t = std::remove_cvref_t<decltype(binding)>;
-           if constexpr (std::invocable<fn_t &, const binding_t &>) {
+           using binding_t = remove_cvref_t<decltype(binding)>;
+           if constexpr (callable_with<fn_t &, const binding_t &>) {
              if (!found && binding.name == name) {
                std::invoke(fn, binding);
                found = true;
@@ -197,8 +211,8 @@ visit_field_by_key(const field_map<owner_t, bindings_t...> &map,
   std::apply(
       [&](const auto &...binding) {
         (([&] {
-           using binding_t = std::remove_cvref_t<decltype(binding)>;
-           if constexpr (std::invocable<fn_t &, const binding_t &>) {
+           using binding_t = remove_cvref_t<decltype(binding)>;
+           if constexpr (callable_with<fn_t &, const binding_t &>) {
              if (!found && binding.key == key) {
                std::invoke(fn, binding);
                found = true;
@@ -214,6 +228,7 @@ visit_field_by_key(const field_map<owner_t, bindings_t...> &map,
 template <typename... ts>
 using type_key_registry = ::wh::internal::type_alias_registry<ts...>;
 
+/// Resolves alias string to a stable `type_key`.
 template <typename... ts>
 [[nodiscard]] constexpr auto
 find_type_key(const std::string_view alias) noexcept

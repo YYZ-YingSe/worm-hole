@@ -1,22 +1,22 @@
 #pragma once
 
-#include <atomic>
-#include <thread>
+#include <algorithm>
+#include <cstdint>
+#include <type_traits>
 #include <utility>
 
-#include <stdexec/execution.hpp>
-
-#include "wh/scheduler/context_helper.hpp"
+#include <exec/static_thread_pool.hpp>
 
 namespace wh::testing {
 
 class static_thread_scheduler_helper {
 public:
-  using scheduler_type =
-      decltype(std::declval<stdexec::run_loop &>().get_scheduler());
-  using context_type = wh::core::scheduler_context<scheduler_type>;
+  using pool_type = exec::static_thread_pool;
+  using scheduler_type = std::remove_cvref_t<
+      decltype(std::declval<pool_type &>().get_scheduler())>;
 
-  static_thread_scheduler_helper() : worker_([this] { run_loop_.run(); }) {}
+  explicit static_thread_scheduler_helper(const std::uint32_t thread_count = 1U)
+      : pool_(std::max<std::uint32_t>(thread_count, 1U)) {}
 
   static_thread_scheduler_helper(const static_thread_scheduler_helper &) =
       delete;
@@ -27,28 +27,12 @@ public:
   auto operator=(static_thread_scheduler_helper &&)
       -> static_thread_scheduler_helper & = delete;
 
-  ~static_thread_scheduler_helper() { stop(); }
-
-  [[nodiscard]] auto context() -> context_type {
-    return wh::core::make_scheduler_context(run_loop_.get_scheduler());
-  }
-
-  auto stop() -> void {
-    const auto was_running =
-        running_.exchange(false, std::memory_order_acq_rel);
-    if (!was_running) {
-      return;
-    }
-    run_loop_.finish();
-    if (worker_.joinable()) {
-      worker_.join();
-    }
+  [[nodiscard]] auto scheduler() -> scheduler_type {
+    return pool_.get_scheduler();
   }
 
 private:
-  stdexec::run_loop run_loop_{};
-  std::thread worker_{};
-  std::atomic<bool> running_{true};
+  pool_type pool_;
 };
 
 } // namespace wh::testing
