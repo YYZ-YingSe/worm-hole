@@ -9,104 +9,6 @@ inline auto graph::next_invoke_run_id() noexcept -> std::uint64_t {
   return sequence.fetch_add(1U, std::memory_order_relaxed);
 }
 
-inline auto graph::set_checkpoint_error_detail(
-    wh::core::run_context &context, const wh::core::error_code code,
-    const std::string_view checkpoint_id,
-    const std::string_view operation) -> void {
-  detail::checkpoint_runtime::set_error_detail(context, code, checkpoint_id,
-                                               operation);
-}
-
-inline auto graph::resolve_checkpoint_id_hint(
-    const checkpoint_load_options &options) -> std::string {
-  return detail::checkpoint_runtime::resolve_id_hint(options);
-}
-
-inline auto graph::resolve_checkpoint_id_hint(
-    const checkpoint_save_options &options) -> std::string {
-  return detail::checkpoint_runtime::resolve_id_hint(options);
-}
-
-inline auto graph::default_checkpoint_serializer()
-    -> const checkpoint_serializer & {
-  return detail::checkpoint_runtime::default_serializer();
-}
-
-inline auto graph::resolve_checkpoint_serializer(
-    const wh::core::run_context &context)
-    -> wh::core::result<const checkpoint_serializer *> {
-  return detail::checkpoint_runtime::resolve_serializer(context);
-}
-
-inline auto graph::roundtrip_checkpoint_with_serializer(
-    const checkpoint_state &checkpoint, wh::core::run_context &context)
-    -> wh::core::result<checkpoint_state> {
-  return detail::checkpoint_runtime::roundtrip_with_serializer(checkpoint,
-                                                               context);
-}
-
-inline auto graph::roundtrip_checkpoint_with_serializer(
-    checkpoint_state &&checkpoint, wh::core::run_context &context)
-    -> wh::core::result<checkpoint_state> {
-  return detail::checkpoint_runtime::roundtrip_with_serializer(
-      std::move(checkpoint), context);
-}
-
-inline auto graph::resolve_checkpoint_runtime_backend(
-    wh::core::run_context &context)
-    -> wh::core::result<checkpoint_runtime_backend> {
-  return detail::checkpoint_runtime::resolve_runtime_backend(context);
-}
-
-inline auto graph::resolve_checkpoint_node_hook_key(
-    const std::string_view modifier_key) -> std::optional<std::string_view> {
-  return detail::checkpoint_runtime::resolve_node_hook_key(modifier_key);
-}
-
-inline auto graph::make_node_path_from_state_key(
-    const std::string_view node_key) -> node_path {
-  return detail::checkpoint_runtime::make_node_path_from_state_key(node_key);
-}
-
-inline auto graph::apply_checkpoint_node_hooks(
-    wh::core::run_context &context, const std::string_view modifier_key,
-    checkpoint_state &state) const -> wh::core::result<void> {
-  return detail::checkpoint_runtime::apply_node_hooks(
-      context, modifier_key, state);
-}
-
-inline auto graph::apply_stream_codecs_for_checkpoint_save(
-    checkpoint_state &checkpoint, wh::core::run_context &context) const
-    -> wh::core::result<void> {
-  return detail::checkpoint_runtime::apply_stream_codecs_for_save(
-      checkpoint, context);
-}
-
-inline auto graph::apply_stream_codecs_for_checkpoint_load(
-    checkpoint_state &checkpoint, wh::core::run_context &context) const
-    -> wh::core::result<void> {
-  return detail::checkpoint_runtime::apply_stream_codecs_for_load(
-      checkpoint, context);
-}
-
-inline auto graph::restore_checkpoint_node_states(
-    const checkpoint_state &checkpoint,
-    graph_state_table &state_table) const -> wh::core::result<void> {
-  return detail::checkpoint_runtime::restore_node_states(checkpoint, state_table);
-}
-
-inline auto graph::apply_resume_data_state_overrides(
-    wh::core::run_context &context,
-    graph_state_table &state_table) const -> wh::core::result<void> {
-  return detail::interrupt_runtime::apply_resume_data_state_overrides(context,
-                                                                      state_table);
-}
-
-inline auto graph::validate_checkpoint_runtime_configuration(
-    wh::core::run_context &context) -> wh::core::result<void> {
-  return detail::checkpoint_runtime::validate_runtime_configuration(context);
-}
-
 inline constexpr auto graph::should_wrap_as_node_run_error(
     const wh::core::error_code code) noexcept -> bool {
   return code != wh::core::errc::canceled;
@@ -122,7 +24,7 @@ inline auto graph::collect_completed_nodes(
     if (node_states[node_id] != node_state::executed) {
       continue;
     }
-    completed_nodes.push_back(runtime_cache_.index.id_to_key[node_id]);
+    completed_nodes.push_back(compiled_execution_index_.index.id_to_key[node_id]);
   }
   return completed_nodes;
 }
@@ -147,7 +49,7 @@ inline auto graph::validate_call_scope_for_runtime(
       if (node_key.empty()) {
         return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       }
-      if (!runtime_cache_.index.key_to_id.contains(node_key)) {
+      if (!compiled_execution_index_.index.key_to_id.contains(node_key)) {
         return wh::core::result<void>::failure(wh::core::errc::not_found);
       }
     }
@@ -156,7 +58,7 @@ inline auto graph::validate_call_scope_for_runtime(
   auto validate_path = [&](const node_path &path) -> wh::core::result<void> {
     const auto segments = path.segments();
     if (segments.empty() ||
-        !runtime_cache_.index.key_to_id.contains(
+        !compiled_execution_index_.index.key_to_id.contains(
             std::string_view{segments.front()})) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
@@ -221,9 +123,9 @@ inline auto graph::validate_call_scope_for_runtime(
 
 inline auto graph::make_node_designation_path(const std::uint32_t node_id) const
     -> node_path {
-  const std::array<std::string_view, 1U> segments{runtime_cache_.index.id_to_key[node_id]};
-  return node_path{
-      std::span<const std::string_view>{segments.data(), segments.size()}};
+  const std::array<std::string_view, 1U> segments{compiled_execution_index_.index.id_to_key[node_id]};
+  return make_node_path(
+      std::span<const std::string_view>{segments.data(), segments.size()});
 }
 
 inline auto graph::make_runtime_node_path(const node_path &prefix,
@@ -231,7 +133,7 @@ inline auto graph::make_runtime_node_path(const node_path &prefix,
     -> node_path {
   if (!prefix.empty()) {
     const auto segments = prefix.segments();
-    const auto &node_key = runtime_cache_.index.id_to_key[node_id];
+    const auto &node_key = compiled_execution_index_.index.id_to_key[node_id];
     if (!segments.empty() && segments.back() == node_key) {
       return prefix;
     }
@@ -244,7 +146,7 @@ inline auto graph::publish_node_run_error(
     detail::runtime_state::invoke_outputs &outputs, const node_path &runtime_path,
     const std::uint32_t node_id, const wh::core::error_code code,
     const std::string_view message) const -> void {
-  const auto &node_key = runtime_cache_.index.id_to_key[node_id];
+  const auto &node_key = compiled_execution_index_.index.id_to_key[node_id];
   outputs.node_run_error = graph_node_run_error_detail{
       .path = runtime_path,
       .node = node_key,
@@ -291,8 +193,8 @@ inline auto graph::make_node_execution_address(
   for (const auto &segment : runtime_path.segments()) {
     segments.push_back(segment);
   }
-  return wh::core::address{
-      std::span<const std::string_view>{segments.data(), segments.size()}};
+  return wh::core::make_address(
+      std::span<const std::string_view>{segments.data(), segments.size()});
 }
 
 inline auto graph::has_descendant_designation_target(
@@ -314,14 +216,14 @@ inline auto graph::has_active_designation(
 inline auto graph::is_node_designated(
     const std::uint32_t node_id, const graph_call_scope &call_options) const
     -> bool {
-  if (node_id == runtime_cache_.index.start_id || node_id == runtime_cache_.index.end_id) {
+  if (node_id == compiled_execution_index_.index.start_id || node_id == compiled_execution_index_.index.end_id) {
     return true;
   }
   if (!has_active_designation(call_options)) {
     return true;
   }
   const auto node_path = make_node_designation_path(node_id);
-  if (is_graph_node_designated(call_options, runtime_cache_.index.id_to_key[node_id],
+  if (is_graph_node_designated(call_options, compiled_execution_index_.index.id_to_key[node_id],
                                node_path)) {
     return true;
   }
@@ -340,27 +242,27 @@ inline auto graph::emit_debug_stream_event(
   }
   const auto event = graph_debug_stream_event{
       .decision = decision,
-      .node_key = runtime_cache_.index.id_to_key[node_id],
+      .node_key = compiled_execution_index_.index.id_to_key[node_id],
       .path = runtime_path,
       .step = step,
   };
   detail::stream_runtime::emit_debug_event(
       context, outputs, options, event,
-      make_graph_stream_event_namespace(options_.name, event.node_key, event.path));
+      make_graph_event_scope(options_.name, event.node_key, event.path));
 }
 
 inline auto graph::make_stream_scope(const std::string_view node_key) const
-    -> graph_stream_event_namespace {
+    -> graph_event_scope {
   const std::array<std::string_view, 1U> segments{node_key};
-  const auto path =
-      node_path{std::span<const std::string_view>{segments.data(), segments.size()}};
-  return make_graph_stream_event_namespace(options_.name, node_key, path);
+  const auto path = make_node_path(
+      std::span<const std::string_view>{segments.data(), segments.size()});
+  return make_graph_event_scope(options_.name, node_key, path);
 }
 
 inline auto graph::make_stream_scope(const std::string_view node_key,
                                      const node_path &runtime_path) const
-    -> graph_stream_event_namespace {
-  return make_graph_stream_event_namespace(options_.name, node_key, runtime_path);
+    -> graph_event_scope {
+  return make_graph_event_scope(options_.name, node_key, runtime_path);
 }
 
 inline auto graph::append_state_transition(
@@ -371,7 +273,7 @@ inline auto graph::append_state_transition(
       options, graph_stream_channel_kind::state_snapshot);
   const auto emit_state_delta_events = has_graph_stream_subscription(
       options, graph_stream_channel_kind::state_delta);
-  const auto emit_message_events =
+  const auto emit_runtime_message_events =
       has_graph_stream_subscription(options, graph_stream_channel_kind::message);
   const auto emit_custom_events = std::ranges::any_of(
       options.options().stream_subscriptions,
@@ -383,8 +285,8 @@ inline auto graph::append_state_transition(
   detail::stream_runtime::append_state_transition(
       outputs.transition_log, outputs, options, event,
       make_stream_scope(event.cause.node_key, runtime_path), true,
-      emit_state_snapshot_events, emit_state_delta_events, emit_message_events,
-      emit_custom_events);
+      emit_state_snapshot_events, emit_state_delta_events,
+      emit_runtime_message_events, emit_custom_events);
 }
 
 inline auto graph::append_state_transition(
@@ -395,7 +297,7 @@ inline auto graph::append_state_transition(
       options, graph_stream_channel_kind::state_snapshot);
   const auto emit_state_delta_events = has_graph_stream_subscription(
       options, graph_stream_channel_kind::state_delta);
-  const auto emit_message_events =
+  const auto emit_runtime_message_events =
       has_graph_stream_subscription(options, graph_stream_channel_kind::message);
   const auto emit_custom_events = std::ranges::any_of(
       options.options().stream_subscriptions,
@@ -407,8 +309,8 @@ inline auto graph::append_state_transition(
   detail::stream_runtime::append_state_transition(
       outputs.transition_log, outputs, options, std::move(event),
       make_stream_scope(event.cause.node_key, runtime_path), true,
-      emit_state_snapshot_events, emit_state_delta_events, emit_message_events,
-      emit_custom_events);
+      emit_state_snapshot_events, emit_state_delta_events,
+      emit_runtime_message_events, emit_custom_events);
 }
 
 inline auto graph::evaluate_interrupt_hook(
@@ -417,30 +319,6 @@ inline auto graph::evaluate_interrupt_hook(
     -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
   return detail::interrupt_runtime::evaluate_hook(context, hook, node_key,
                                                   payload);
-}
-
-inline auto graph::apply_checkpoint_modifier(
-    wh::core::run_context &context, const std::string_view modifier_key,
-    checkpoint_state &state) const -> wh::core::result<void> {
-  return detail::checkpoint_runtime::apply_modifier(context, modifier_key, state);
-}
-
-inline auto graph::resolve_checkpoint_target_version(
-    const wh::core::run_context &context) -> std::uint32_t {
-  return detail::checkpoint_runtime::resolve_target_version(context);
-}
-
-inline auto graph::migrate_checkpoint_if_needed(
-    const checkpoint_state &checkpoint, wh::core::run_context &context)
-    -> wh::core::result<checkpoint_state> {
-  return detail::checkpoint_runtime::migrate_if_needed(checkpoint, context);
-}
-
-inline auto graph::migrate_checkpoint_if_needed(
-    checkpoint_state &&checkpoint, wh::core::run_context &context)
-    -> wh::core::result<checkpoint_state> {
-  return detail::checkpoint_runtime::migrate_if_needed(std::move(checkpoint),
-                                                       context);
 }
 
 inline auto graph::make_missing_rerun_input_default(const node_contract contract)
@@ -472,23 +350,27 @@ inline auto graph::maybe_restore_from_checkpoint(
     graph_value &input, wh::core::run_context &context,
     graph_state_table &state_table,
     detail::runtime_state::rerun_state &rerun_state,
+    const detail::runtime_state::invoke_config &config,
     bool &skip_state_pre_handlers,
     const detail::checkpoint_runtime::restore_scope scope,
-    const node_path &runtime_path) const
+    const node_path &runtime_path,
+    detail::runtime_state::invoke_outputs &outputs,
+    forwarded_checkpoint_map &forwarded_checkpoints) const
     -> wh::core::result<void> {
   const auto *start_node =
-      runtime_cache_.index.start_id < runtime_cache_.index.nodes_by_id.size()
-          ? runtime_cache_.index.nodes_by_id[runtime_cache_.index.start_id]
+      compiled_execution_index_.index.start_id < compiled_execution_index_.index.nodes_by_id.size()
+          ? compiled_execution_index_.index.nodes_by_id[compiled_execution_index_.index.start_id]
           : nullptr;
   const auto start_input_contract =
       start_node != nullptr ? start_node->meta.input_contract
                             : node_contract::value;
   return detail::checkpoint_runtime::maybe_restore(
       input, context, state_table, rerun_state, skip_state_pre_handlers, scope,
-      options_.name, runtime_path, restore_shape_, runtime_cache_.index.start_id,
+      options_.name, runtime_path, restore_shape_, compiled_execution_index_.index.start_id,
+      config, outputs, forwarded_checkpoints,
       [this](const std::string_view node_key) -> std::optional<std::uint32_t> {
-        const auto iter = runtime_cache_.index.key_to_id.find(node_key);
-        if (iter == runtime_cache_.index.key_to_id.end()) {
+        const auto iter = compiled_execution_index_.index.key_to_id.find(node_key);
+        if (iter == compiled_execution_index_.index.key_to_id.end()) {
           return std::nullopt;
         }
         return iter->second;
@@ -500,11 +382,13 @@ inline auto graph::maybe_restore_from_checkpoint(
 
 inline auto graph::maybe_persist_checkpoint(
     wh::core::run_context &context, const graph_state_table &state_table,
-    detail::runtime_state::rerun_state &rerun_state) const
+    detail::runtime_state::rerun_state &rerun_state,
+    const detail::runtime_state::invoke_config &config,
+    detail::runtime_state::invoke_outputs &outputs) const
     -> wh::core::result<void> {
   return detail::checkpoint_runtime::maybe_persist(
-      context, state_table, rerun_state, runtime_cache_.index.id_to_key,
-      options_.name, restore_shape_);
+      context, state_table, rerun_state, compiled_execution_index_.index.id_to_key,
+      options_.name, restore_shape_, config, outputs);
 }
 
 

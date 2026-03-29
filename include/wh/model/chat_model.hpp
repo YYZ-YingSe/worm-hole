@@ -3,7 +3,6 @@
 #pragma once
 
 #include <concepts>
-#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -51,7 +50,7 @@ struct chat_response {
 };
 
 /// Streaming reader over incremental model output messages.
-using chat_stream_reader =
+using chat_message_stream_reader =
     wh::schema::stream::any_stream_reader<wh::schema::message>;
 
 /// Data contract for `fallback_attempt`.
@@ -76,8 +75,25 @@ struct invoke_fallback_report {
   std::optional<wh::core::error_code> final_error{};
 };
 
+/// Data contract for `stream_fallback_report`.
+struct stream_fallback_report {
+  /// Successful stream reader when stream startup succeeds.
+  chat_message_stream_reader reader{};
+  /// Model type selected for the successful stream path.
+  std::string selected_model{};
+  /// Attempt-level failures when failure reasons are retained.
+  std::vector<fallback_attempt> attempts{};
+  /// Frozen candidate order used during this stream startup.
+  std::vector<std::string> frozen_candidates{};
+  /// Structured-output strategy negotiated for this invocation.
+  structured_output_plan structured_output{};
+  /// Final error when stream startup fails after all attempts.
+  std::optional<wh::core::error_code> final_error{};
+};
+
 using chat_invoke_result = wh::core::result<chat_response>;
-using chat_stream_result = wh::core::result<chat_stream_reader>;
+using chat_message_stream_result =
+    wh::core::result<chat_message_stream_reader>;
 
 namespace detail {
 
@@ -139,7 +155,7 @@ concept sender_invoke_handler_move =
 template <typename impl_t>
 concept sync_stream_handler =
     requires(const impl_t &impl, const chat_request &request) {
-      { impl.stream(request) } -> std::same_as<chat_stream_result>;
+      { impl.stream(request) } -> std::same_as<chat_message_stream_result>;
     };
 
 template <typename impl_t>
@@ -216,18 +232,18 @@ template <typename impl_t>
 template <typename impl_t>
 [[nodiscard]] inline auto run_sync_stream_impl(const impl_t &impl,
                                                const chat_request &request)
-    -> chat_stream_result {
+    -> chat_message_stream_result {
   return impl.stream(request);
 }
 
 template <typename impl_t>
 [[nodiscard]] inline auto run_sync_stream_impl(const impl_t &impl,
                                                chat_request &&request)
-    -> chat_stream_result {
+    -> chat_message_stream_result {
   if constexpr (requires {
                   {
                     impl.stream(std::move(request))
-                  } -> std::same_as<chat_stream_result>;
+                  } -> std::same_as<chat_message_stream_result>;
                 }) {
     return impl.stream(std::move(request));
   } else {
@@ -257,7 +273,7 @@ template <typename impl_t, typename request_t>
   using request_value_t = std::remove_cvref_t<request_t>;
   static_assert(std::same_as<request_value_t, chat_request>,
                 "chat_model sender factory requires chat_request input");
-  return wh::core::detail::request_result_sender<chat_stream_result>(
+  return wh::core::detail::request_result_sender<chat_message_stream_result>(
       std::forward<request_t>(request),
       [&impl](auto &&forwarded_request) -> decltype(auto) {
         return impl.stream_sender(
@@ -319,7 +335,7 @@ stream_sender(const impl_t &impl,
                       make_run_info(descriptor), request.options),
                   make_callback_event(descriptor, request, true));
   }
-  return wh::core::detail::defer_result_sender<chat_stream_result>(
+  return wh::core::detail::defer_result_sender<chat_message_stream_result>(
       [&impl, request = chat_request{std::forward<request_t>(request)},
        sink = std::move(sink), state = std::move(state),
        scheduler = std::move(scheduler)]() mutable {
@@ -331,7 +347,7 @@ stream_sender(const impl_t &impl,
             wh::core::detail::resume_if<Resume>(
                 make_stream_sender(impl, request), std::move(scheduler)),
             [&impl, request = std::move(request), sink = std::move(sink),
-             state = std::move(state)](chat_stream_result &status) mutable {
+             state = std::move(state)](chat_message_stream_result &status) mutable {
               if (!state.has_value()) {
                 return;
               }
@@ -473,7 +489,7 @@ public:
   /// Starts streaming execution and emits callbacks through the run context.
   [[nodiscard]] auto stream(const chat_request &request,
                             wh::core::run_context &callback_context) const
-      -> chat_stream_result
+      -> chat_message_stream_result
     requires detail::sync_stream_handler<impl_t>
   {
     return stream_sync_impl(request,
@@ -484,7 +500,7 @@ public:
   /// through the run context.
   [[nodiscard]] auto stream(chat_request &&request,
                             wh::core::run_context &callback_context) const
-      -> chat_stream_result
+      -> chat_message_stream_result
     requires detail::sync_stream_handler<impl_t>
   {
     return stream_sync_impl(std::move(request),
@@ -573,7 +589,7 @@ private:
              detail::sync_stream_handler<impl_t>
   [[nodiscard]] auto stream_sync_impl(request_t &&request,
                                       detail::callback_sink sink) const
-      -> chat_stream_result {
+      -> chat_message_stream_result {
     const auto descriptor = this->descriptor();
     sink =
         wh::callbacks::filter_callback_sink(std::move(sink), request.options);
@@ -638,7 +654,7 @@ concept chat_model_like =
     wh::core::invokable_component<const model_t &, chat_request,
                                   chat_response> &&
     wh::core::streamable_component<const model_t &, chat_request,
-                                   chat_stream_reader> &&
+                                   chat_message_stream_reader> &&
     requires(const model_t &model, chat_request &&movable_request,
              std::span<const wh::schema::tool_schema_definition> tools,
              wh::core::run_context &context) {
@@ -647,7 +663,7 @@ concept chat_model_like =
       } -> std::same_as<chat_invoke_result>;
       {
         model.stream(std::move(movable_request), context)
-      } -> std::same_as<chat_stream_result>;
+      } -> std::same_as<chat_message_stream_result>;
       { model.bind_tools(tools) } -> std::same_as<std::remove_cvref_t<model_t>>;
     };
 
@@ -655,7 +671,7 @@ namespace detail {
 
 template <typename model_t, typename request_t>
 [[nodiscard]] inline auto invoke_with_fallback_report_only_impl(
-    const std::span<const std::shared_ptr<model_t>> models, request_t &&request,
+    const std::span<const model_t> models, request_t &&request,
     const bool provider_native_supported = false) -> invoke_fallback_report {
   invoke_fallback_report report{};
   if (models.empty()) {
@@ -668,10 +684,7 @@ template <typename model_t, typename request_t>
   std::vector<std::string> discovered_candidates{};
   discovered_candidates.reserve(models.size());
   for (const auto &model : models) {
-    if (!model) {
-      continue;
-    }
-    const auto &type_name = model->descriptor().type_name;
+    const auto &type_name = model.descriptor().type_name;
     if (std::ranges::find(discovered_candidates, type_name) ==
         discovered_candidates.end()) {
       discovered_candidates.push_back(type_name);
@@ -721,18 +734,18 @@ template <typename model_t, typename request_t>
 
   effective_request.tools = effective_tools;
 
-  std::vector<std::shared_ptr<model_t>> ordered_models{};
+  std::vector<const model_t *> ordered_models{};
   ordered_models.reserve(models.size());
   std::vector<bool> consumed(models.size(), false);
   for (const auto &candidate : frozen_candidates) {
     for (std::size_t index = 0U; index < models.size(); ++index) {
-      if (consumed[index] || !models[index]) {
+      if (consumed[index]) {
         continue;
       }
-      if (models[index]->descriptor().type_name != candidate) {
+      if (models[index].descriptor().type_name != candidate) {
         continue;
       }
-      ordered_models.push_back(models[index]);
+      ordered_models.push_back(std::addressof(models[index]));
       consumed[index] = true;
       break;
     }
@@ -741,7 +754,7 @@ template <typename model_t, typename request_t>
     if (consumed[index]) {
       continue;
     }
-    ordered_models.push_back(models[index]);
+    ordered_models.push_back(std::addressof(models[index]));
   }
 
   report.attempts.reserve(ordered_models.size());
@@ -759,17 +772,11 @@ template <typename model_t, typename request_t>
             std::string{std::forward<model_type_t>(model_type)}, error});
       };
 
-  for (const auto &model : ordered_models) {
-    if (!model) {
-      last_error = wh::core::make_error(wh::core::errc::invalid_argument);
-      record_attempt("<null>", last_error);
-      continue;
-    }
-
-    const model_t *invokable = model.get();
+  for (const model_t *model : ordered_models) {
+    const model_t *invokable = model;
     std::optional<model_t> bound_invokable{};
     if (!effective_request.tools.empty()) {
-      bound_invokable.emplace(model->bind_tools(effective_request.tools));
+      bound_invokable.emplace(invokable->bind_tools(effective_request.tools));
       invokable = std::addressof(*bound_invokable);
     }
 
@@ -788,11 +795,138 @@ template <typename model_t, typename request_t>
   return report;
 }
 
+template <typename model_t, typename request_t>
+[[nodiscard]] inline auto stream_with_fallback_report_only_impl(
+    const std::span<const model_t> models, request_t &&request,
+    const bool provider_native_supported = false) -> stream_fallback_report {
+  stream_fallback_report report{};
+  if (models.empty()) {
+    report.final_error = wh::core::make_error(wh::core::errc::not_found);
+    return report;
+  }
+
+  chat_request effective_request = std::forward<request_t>(request);
+  const auto resolved_options = effective_request.options.resolve_view();
+  std::vector<std::string> discovered_candidates{};
+  discovered_candidates.reserve(models.size());
+  for (const auto &model : models) {
+    const auto &type_name = model.descriptor().type_name;
+    if (std::ranges::find(discovered_candidates, type_name) ==
+        discovered_candidates.end()) {
+      discovered_candidates.push_back(type_name);
+    }
+  }
+
+  auto frozen_candidates =
+      freeze_model_candidates(resolved_options, discovered_candidates);
+  const auto structured_output =
+      negotiate_structured_output(resolved_options, provider_native_supported,
+                                  !effective_request.tools.empty());
+  const bool keep_failure_reasons =
+      resolved_options.fallback_ref().keep_failure_reasons;
+  report.frozen_candidates = frozen_candidates;
+  report.structured_output = structured_output;
+
+  std::vector<wh::schema::tool_schema_definition> effective_tools =
+      effective_request.tools;
+  if (resolved_options.tool_choice_ref().mode ==
+      wh::schema::tool_call_mode::disable) {
+    effective_tools.clear();
+  } else {
+    if (!resolved_options.allowed_tool_names.empty()) {
+      std::vector<wh::schema::tool_schema_definition> filtered_tools{};
+      filtered_tools.reserve(effective_tools.size());
+      for (const auto &tool : effective_tools) {
+        if (std::ranges::find(resolved_options.allowed_tool_names, tool.name) !=
+            resolved_options.allowed_tool_names.end()) {
+          filtered_tools.push_back(tool);
+        }
+      }
+      effective_tools = std::move(filtered_tools);
+    }
+
+    if (resolved_options.tool_choice_ref().mode ==
+            wh::schema::tool_call_mode::force &&
+        effective_tools.empty()) {
+      if (effective_request.tools.empty()) {
+        report.final_error =
+            wh::core::make_error(wh::core::errc::invalid_argument);
+      } else {
+        report.final_error = wh::core::make_error(wh::core::errc::not_found);
+      }
+      return report;
+    }
+  }
+
+  effective_request.tools = effective_tools;
+
+  std::vector<const model_t *> ordered_models{};
+  ordered_models.reserve(models.size());
+  std::vector<bool> consumed(models.size(), false);
+  for (const auto &candidate : frozen_candidates) {
+    for (std::size_t index = 0U; index < models.size(); ++index) {
+      if (consumed[index]) {
+        continue;
+      }
+      if (models[index].descriptor().type_name != candidate) {
+        continue;
+      }
+      ordered_models.push_back(std::addressof(models[index]));
+      consumed[index] = true;
+      break;
+    }
+  }
+  for (std::size_t index = 0U; index < models.size(); ++index) {
+    if (consumed[index]) {
+      continue;
+    }
+    ordered_models.push_back(std::addressof(models[index]));
+  }
+
+  report.attempts.reserve(ordered_models.size());
+  wh::core::error_code last_error =
+      wh::core::make_error(wh::core::errc::not_found);
+  const auto record_attempt =
+      [&]<typename model_type_t>(model_type_t &&model_type,
+                                 const wh::core::error_code error) {
+        static_assert(std::constructible_from<std::string, model_type_t &&>,
+                      "model_type must be constructible as std::string");
+        if (!keep_failure_reasons) {
+          return;
+        }
+        report.attempts.push_back(fallback_attempt{
+            std::string{std::forward<model_type_t>(model_type)}, error});
+      };
+
+  for (const model_t *model : ordered_models) {
+    const model_t *invokable = model;
+    std::optional<model_t> bound_invokable{};
+    if (!effective_request.tools.empty()) {
+      bound_invokable.emplace(invokable->bind_tools(effective_request.tools));
+      invokable = std::addressof(*bound_invokable);
+    }
+
+    wh::core::run_context callback_context{};
+    auto streamed = invokable->stream(effective_request, callback_context);
+    if (streamed.has_value()) {
+      report.reader = std::move(streamed).value();
+      report.selected_model = invokable->descriptor().type_name;
+      return report;
+    }
+
+    last_error = streamed.error();
+    record_attempt(invokable->descriptor().type_name, last_error);
+  }
+
+  report.final_error = last_error;
+  return report;
+}
+
 } // namespace detail
 
 template <chat_model_like model_t>
 [[nodiscard]] inline auto invoke_with_fallback_report_only(
-    const std::span<const std::shared_ptr<model_t>> models,
+    const std::span<const model_t> models,
     const chat_request &request, const bool provider_native_supported = false)
     -> invoke_fallback_report {
   return detail::invoke_with_fallback_report_only_impl<model_t>(
@@ -801,7 +935,7 @@ template <chat_model_like model_t>
 
 template <chat_model_like model_t>
 [[nodiscard]] inline auto invoke_with_fallback_report_only(
-    const std::span<const std::shared_ptr<model_t>> models,
+    const std::span<const model_t> models,
     chat_request &&request, const bool provider_native_supported = false)
     -> invoke_fallback_report {
   return detail::invoke_with_fallback_report_only_impl<model_t>(
@@ -810,7 +944,7 @@ template <chat_model_like model_t>
 
 template <chat_model_like model_t>
 [[nodiscard]] inline auto
-invoke_with_fallback(const std::span<const std::shared_ptr<model_t>> models,
+invoke_with_fallback(const std::span<const model_t> models,
                      const chat_request &request,
                      const bool provider_native_supported = false)
     -> wh::core::result<invoke_fallback_report> {
@@ -825,7 +959,7 @@ invoke_with_fallback(const std::span<const std::shared_ptr<model_t>> models,
 
 template <chat_model_like model_t>
 [[nodiscard]] inline auto
-invoke_with_fallback(const std::span<const std::shared_ptr<model_t>> models,
+invoke_with_fallback(const std::span<const model_t> models,
                      chat_request &&request,
                      const bool provider_native_supported = false)
     -> wh::core::result<invoke_fallback_report> {
@@ -833,6 +967,54 @@ invoke_with_fallback(const std::span<const std::shared_ptr<model_t>> models,
                                                  provider_native_supported);
   if (report.final_error.has_value()) {
     return wh::core::result<invoke_fallback_report>::failure(
+        *report.final_error);
+  }
+  return report;
+}
+
+template <chat_model_like model_t>
+[[nodiscard]] inline auto stream_with_fallback_report_only(
+    const std::span<const model_t> models,
+    const chat_request &request, const bool provider_native_supported = false)
+    -> stream_fallback_report {
+  return detail::stream_with_fallback_report_only_impl<model_t>(
+      models, request, provider_native_supported);
+}
+
+template <chat_model_like model_t>
+[[nodiscard]] inline auto stream_with_fallback_report_only(
+    const std::span<const model_t> models,
+    chat_request &&request, const bool provider_native_supported = false)
+    -> stream_fallback_report {
+  return detail::stream_with_fallback_report_only_impl<model_t>(
+      models, std::move(request), provider_native_supported);
+}
+
+template <chat_model_like model_t>
+[[nodiscard]] inline auto
+stream_with_fallback(const std::span<const model_t> models,
+                     const chat_request &request,
+                     const bool provider_native_supported = false)
+    -> wh::core::result<stream_fallback_report> {
+  auto report = stream_with_fallback_report_only(models, request,
+                                                 provider_native_supported);
+  if (report.final_error.has_value()) {
+    return wh::core::result<stream_fallback_report>::failure(
+        *report.final_error);
+  }
+  return report;
+}
+
+template <chat_model_like model_t>
+[[nodiscard]] inline auto
+stream_with_fallback(const std::span<const model_t> models,
+                     chat_request &&request,
+                     const bool provider_native_supported = false)
+    -> wh::core::result<stream_fallback_report> {
+  auto report = stream_with_fallback_report_only(models, std::move(request),
+                                                 provider_native_supported);
+  if (report.final_error.has_value()) {
+    return wh::core::result<stream_fallback_report>::failure(
         *report.final_error);
   }
   return report;

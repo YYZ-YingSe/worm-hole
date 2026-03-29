@@ -1,4 +1,4 @@
-// Defines versioned checkpoint payload for compose graph state/resume recovery.
+// Defines checkpoint payload for compose graph state/resume recovery.
 #pragma once
 
 #include <cstdint>
@@ -13,10 +13,8 @@
 
 namespace wh::compose {
 
-/// Versioned checkpoint snapshot used by compose restore/migration flows.
+/// Checkpoint snapshot used by compose restore flows.
 struct checkpoint_state {
-  /// Payload schema version (migration source/target key).
-  std::uint32_t version{1U};
   /// Stable checkpoint id used by store read/write/index layers.
   std::string checkpoint_id{};
   /// Branch replay key for time-travel and branch-compare debugging.

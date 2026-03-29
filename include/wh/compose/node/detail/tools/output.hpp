@@ -72,8 +72,8 @@ namespace detail {
 
   auto merged = detail::make_graph_merge_reader(std::move(lanes));
   return wh::core::any(
-      make_tool_stream_reader(std::move(merged), std::move(bindings),
-                              std::move(afters)));
+      make_tool_event_stream_reader(std::move(merged), std::move(bindings),
+                                    std::move(afters)));
 }
 
 } // namespace detail

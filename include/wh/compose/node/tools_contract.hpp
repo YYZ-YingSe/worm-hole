@@ -26,6 +26,8 @@ struct tool_call {
   std::string tool_name{};
   /// Structured arguments payload encoded for the target tool.
   std::string arguments{};
+  /// Optional typed bridge payload shared with internal tool adapters.
+  graph_value payload{};
 };
 
 /// Batch of tool calls consumed by one tools node.

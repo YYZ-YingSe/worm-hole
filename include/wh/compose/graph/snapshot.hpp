@@ -43,8 +43,6 @@ struct graph_snapshot_compile_options {
   std::size_t max_parallel_per_node{1U};
   /// True enables local-state generation capability.
   bool enable_local_state_generation{true};
-  /// Graph-level cache namespace.
-  std::string cache_namespace{};
   /// True when a compile callback is installed.
   bool has_compile_callback{false};
 };

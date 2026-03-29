@@ -61,8 +61,6 @@ struct graph_add_node_options {
   std::optional<std::chrono::milliseconds> retry_window_override{};
   /// Optional node-level parallel gate override (`>=1`).
   std::optional<std::size_t> max_parallel_override{};
-  /// Optional node-level cache namespace override (empty disables cache on node).
-  std::optional<std::string> cache_namespace_override{};
   /// Declares node-level expected state handlers (pre/post/stream hooks).
   graph_compile_state_handler_metadata state_handlers{};
   /// Optional subgraph compile snapshot forwarded to parent compile callback.

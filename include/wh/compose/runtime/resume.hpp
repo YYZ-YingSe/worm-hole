@@ -124,19 +124,6 @@ struct resume_batch_item {
   wh::core::any data{};
 };
 
-/// Session key for one manual interrupt resume decision payload.
-inline constexpr std::string_view graph_resume_decision_session_key =
-    "compose.graph.resume.decision";
-/// Session key for batch resume payload list.
-inline constexpr std::string_view graph_resume_batch_session_key =
-    "compose.graph.resume.batch_items";
-/// Session key for interrupt-context list used by batch/re-interrupt orchestration.
-inline constexpr std::string_view graph_resume_contexts_session_key =
-    "compose.graph.resume.contexts";
-/// Session key controlling unmatched-context immediate re-interrupt behavior.
-inline constexpr std::string_view graph_resume_reinterrupt_session_key =
-    "compose.graph.resume.reinterrupt_unmatched";
-
 /// Resume target matching mode for explainable restore decisions.
 enum class resume_target_match_kind : std::uint8_t {
   /// Current address is not in active resume subtree.

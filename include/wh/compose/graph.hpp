@@ -7,6 +7,7 @@
 #include "wh/compose/graph/dag.hpp"
 #include "wh/compose/graph/diff.hpp"
 #include "wh/compose/graph/error.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
 #include "wh/compose/graph/pregel.hpp"
 #include "wh/compose/graph/restore_validation.hpp"
 #include "wh/compose/graph/stream.hpp"

@@ -22,7 +22,7 @@ inline auto detail::invoke_runtime::run_state::take_next_ready_action()
     return ready_action::continue_scan();
   }
 
-  const auto &node_key = owner_->runtime_cache_.index.id_to_key[node_id];
+  const auto &node_key = owner_->compiled_execution_index_.index.id_to_key[node_id];
   if (!owner_->is_node_designated(node_id, bound_call_scope_)) {
     node_states()[node_id] = node_state::skipped;
     state_table_.update(node_id, graph_node_lifecycle_state::skipped, 0U,
@@ -94,7 +94,7 @@ inline auto detail::invoke_runtime::run_state::take_next_ready_action()
     return ready_action::terminal_error(wh::core::errc::timeout);
   }
 
-  const auto *node = owner_->runtime_cache_.index.nodes_by_id[node_id];
+  const auto *node = owner_->compiled_execution_index_.index.nodes_by_id[node_id];
   if (node == nullptr) {
     state_table_.update(node_id, graph_node_lifecycle_state::failed, 1U,
                         wh::core::errc::not_found);

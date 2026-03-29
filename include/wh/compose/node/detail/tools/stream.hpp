@@ -32,21 +32,25 @@ using tool_stream_binding_map =
                        wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>;
 
-class tool_stream_reader final
-    : public wh::schema::stream::stream_base<tool_stream_reader, graph_value> {
+class tool_event_stream_reader final
+    : public wh::schema::stream::stream_base<tool_event_stream_reader,
+                                             graph_value> {
 public:
   using value_type = graph_value;
   using chunk_type = wh::schema::stream::stream_chunk<graph_value>;
 
-  tool_stream_reader() = default;
-  tool_stream_reader(const tool_stream_reader &) = delete;
-  auto operator=(const tool_stream_reader &) -> tool_stream_reader & = delete;
-  tool_stream_reader(tool_stream_reader &&) noexcept = default;
-  auto operator=(tool_stream_reader &&) noexcept -> tool_stream_reader & = default;
-  ~tool_stream_reader() = default;
+  tool_event_stream_reader() = default;
+  tool_event_stream_reader(const tool_event_stream_reader &) = delete;
+  auto operator=(const tool_event_stream_reader &)
+      -> tool_event_stream_reader & = delete;
+  tool_event_stream_reader(tool_event_stream_reader &&) noexcept = default;
+  auto operator=(tool_event_stream_reader &&) noexcept
+      -> tool_event_stream_reader & = default;
+  ~tool_event_stream_reader() = default;
 
-  tool_stream_reader(graph_stream_reader reader, tool_stream_binding_map bindings,
-                     std::vector<tool_after> afters)
+  tool_event_stream_reader(graph_stream_reader reader,
+                           tool_stream_binding_map bindings,
+                           std::vector<tool_after> afters)
       : reader_(std::move(reader)), bindings_(std::move(bindings)),
         afters_(std::move(afters)) {}
 
@@ -155,12 +159,12 @@ private:
   return afters;
 }
 
-[[nodiscard]] inline auto make_tool_stream_reader(
+[[nodiscard]] inline auto make_tool_event_stream_reader(
     graph_stream_reader reader, tool_stream_binding_map bindings,
     std::vector<tool_after> afters) -> graph_stream_reader {
   return graph_stream_reader{
-      tool_stream_reader{std::move(reader), std::move(bindings),
-                         std::move(afters)}};
+      tool_event_stream_reader{std::move(reader), std::move(bindings),
+                               std::move(afters)}};
 }
 
 } // namespace detail

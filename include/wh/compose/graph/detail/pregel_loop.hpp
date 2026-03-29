@@ -13,7 +13,7 @@ inline auto detail::invoke_runtime::run_state::take_next_pregel_action(
     return pregel_action::waiting(node_id);
   }
 
-  const auto &node_key = owner_->runtime_cache_.index.id_to_key[node_id];
+  const auto &node_key = owner_->compiled_execution_index_.index.id_to_key[node_id];
   const auto cause = graph_state_cause{
       .run_id = run_id_,
       .step = step,
@@ -32,7 +32,7 @@ inline auto detail::invoke_runtime::run_state::take_next_pregel_action(
     return pregel_action::skip(node_id, cause);
   }
 
-  const auto *node = owner_->runtime_cache_.index.nodes_by_id[node_id];
+  const auto *node = owner_->compiled_execution_index_.index.nodes_by_id[node_id];
   if (node == nullptr) {
     state_table_.update(node_id, graph_node_lifecycle_state::failed, 1U,
                         wh::core::errc::not_found);

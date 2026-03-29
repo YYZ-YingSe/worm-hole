@@ -7,12 +7,16 @@ namespace wh::compose {
 
 inline auto detail::invoke_runtime::run_state::capture_pending_inputs()
     -> graph_sender {
+  if (!graph_scheduler_.has_value()) {
+    return detail::failure_graph_sender(wh::core::errc::contract_violation);
+  }
+
   struct pending_input {
     std::uint32_t node_id{0U};
   };
 
   const auto node_count = static_cast<std::uint32_t>(
-      owner_->runtime_cache_.index.nodes_by_id.size());
+      owner_->compiled_execution_index_.index.nodes_by_id.size());
   std::vector<pending_input> pending{};
   pending.reserve(node_count);
 
@@ -20,8 +24,8 @@ inline auto detail::invoke_runtime::run_state::capture_pending_inputs()
   senders.reserve(node_count);
 
   for (std::uint32_t node_id = 0U; node_id < node_count; ++node_id) {
-    if (node_id == owner_->runtime_cache_.index.start_id ||
-        node_id == owner_->runtime_cache_.index.end_id ||
+    if (node_id == owner_->compiled_execution_index_.index.start_id ||
+        node_id == owner_->compiled_execution_index_.index.end_id ||
         node_states()[node_id] != node_state::pending) {
       continue;
     }
@@ -33,7 +37,7 @@ inline auto detail::invoke_runtime::run_state::capture_pending_inputs()
     pending.push_back(pending_input{.node_id = node_id});
     senders.push_back(owner_->build_node_input_sender(
         node_id, scratch_, node_states(), branch_states(), context_, nullptr,
-        invoke_config_));
+        invoke_config_, *graph_scheduler_));
   }
 
   if (senders.empty()) {
@@ -63,7 +67,7 @@ inline auto detail::invoke_runtime::run_state::capture_pending_inputs()
             return detail::failure_graph_sender(current.error());
           }
 
-          const auto *node = owner_->runtime_cache_.index.nodes_by_id[entry.node_id];
+          const auto *node = owner_->compiled_execution_index_.index.nodes_by_id[entry.node_id];
           if (node == nullptr || !node->meta.options.allow_no_data) {
             continue;
           }

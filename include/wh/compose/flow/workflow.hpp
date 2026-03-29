@@ -119,10 +119,11 @@ public:
   [[nodiscard]] auto invoke(wh::core::run_context &context, input_t &&input) const {
     using result_t = wh::core::result<graph_value_map>;
     using error_sender_t = wh::core::detail::ready_sender_t<result_t>;
+    using request_t = wh::compose::graph_invoke_request;
     using graph_sender_t =
         std::remove_cvref_t<decltype(map_graph_output_sender(graph_.invoke(
-            context, value_map_to_payload(graph_value_map{
-                         std::forward<input_t>(input)}))))>;
+            context, request_t{.input = value_map_to_payload(
+                         graph_value_map{std::forward<input_t>(input)})})))>;
     using sender_t = wh::core::detail::variant_sender<error_sender_t, graph_sender_t>;
 
     if (!compiled_ || first_error_.has_value()) {
@@ -131,8 +132,8 @@ public:
     }
 
     return sender_t{map_graph_output_sender(graph_.invoke(
-        context, value_map_to_payload(graph_value_map{
-                     std::forward<input_t>(input)})))};
+        context, request_t{.input = value_map_to_payload(
+                     graph_value_map{std::forward<input_t>(input)})}))};
   }
 
   /// Returns the lowered graph view.
@@ -166,10 +167,16 @@ private:
   [[nodiscard]] static auto map_graph_output_sender(stdexec::sender auto &&sender) {
     using result_t = wh::core::result<graph_value_map>;
     return wh::core::detail::map_result_sender<result_t>(
-        wh::core::detail::normalize_result_sender<wh::core::result<graph_value>>(
+        wh::core::detail::normalize_result_sender<
+            wh::core::result<graph_invoke_result>>(
             std::forward<decltype(sender)>(sender)),
-        [](graph_value output) {
-          return payload_to_value_map(std::move(output));
+        [](graph_invoke_result invoke_result) {
+          if (invoke_result.output_status.has_error()) {
+            return wh::core::result<graph_value_map>::failure(
+                std::move(invoke_result.output_status).error());
+          }
+          return payload_to_value_map(
+              std::move(invoke_result.output_status).value());
         });
   }
 

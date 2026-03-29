@@ -36,7 +36,6 @@ struct node_frame {
   graph_state_cause cause{};
   const compiled_node *node{nullptr};
   const graph_node_state_handlers *state_handlers{nullptr};
-  std::optional<std::string> cache_key{};
   std::size_t retry_budget{0U};
   std::size_t attempt{0U};
   std::optional<std::chrono::milliseconds> timeout_budget{};

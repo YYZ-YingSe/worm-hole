@@ -12,10 +12,10 @@
 #include "wh/compose/graph/restore_check.hpp"
 #include "wh/compose/graph/detail/keys.hpp"
 #include "wh/compose/graph/detail/runtime/rerun.hpp"
+#include "wh/compose/graph/detail/runtime/state.hpp"
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
 #include "wh/compose/runtime/interrupt.hpp"
-#include "wh/compose/runtime/state.hpp"
 #include "wh/compose/node/path.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/error.hpp"
@@ -38,21 +38,18 @@ resolve_forwarded_restore_key(const std::string_view graph_name,
   return std::string{graph_name};
 }
 
-inline auto set_error_detail(wh::core::run_context &context,
+inline auto set_error_detail(runtime_state::invoke_outputs &outputs,
                              const wh::core::error_code code,
                              const std::string_view checkpoint_id,
                              const std::string_view operation) -> void {
-  if (context.session_values.contains(
-          std::string{checkpoint_last_error_session_key})) {
+  if (outputs.checkpoint_error.has_value()) {
     return;
   }
-  wh::core::set_session_value(
-      context, std::string{checkpoint_last_error_session_key},
-      checkpoint_error_detail{
-          .code = code,
-          .checkpoint_id = std::string{checkpoint_id},
-          .operation = std::string{operation},
-      });
+  outputs.checkpoint_error = checkpoint_error_detail{
+      .code = code,
+      .checkpoint_id = std::string{checkpoint_id},
+      .operation = std::string{operation},
+  };
 }
 
 [[nodiscard]] inline auto
@@ -96,19 +93,12 @@ default_serializer() -> const checkpoint_serializer & {
 }
 
 [[nodiscard]] inline auto
-resolve_serializer(const wh::core::run_context &context)
+resolve_serializer(const runtime_state::invoke_config &config)
     -> wh::core::result<const checkpoint_serializer *> {
-  const auto iter =
-      context.session_values.find(checkpoint_serializer_session_key);
-  if (iter == context.session_values.end()) {
+  if (config.checkpoint_serializer == nullptr) {
     return std::addressof(default_serializer());
   }
-  const auto *serializer =
-      wh::core::any_cast<checkpoint_serializer>(&iter->second);
-  if (serializer == nullptr) {
-    return wh::core::result<const checkpoint_serializer *>::failure(
-        wh::core::errc::type_mismatch);
-  }
+  const auto *serializer = config.checkpoint_serializer;
   if (!serializer->encode || !serializer->decode) {
     return wh::core::result<const checkpoint_serializer *>::failure(
         wh::core::errc::invalid_argument);
@@ -117,9 +107,10 @@ resolve_serializer(const wh::core::run_context &context)
 }
 
 [[nodiscard]] inline auto roundtrip_with_serializer(
-    checkpoint_state &&checkpoint, wh::core::run_context &context)
+    checkpoint_state &&checkpoint, wh::core::run_context &context,
+    const runtime_state::invoke_config &config)
     -> wh::core::result<checkpoint_state> {
-  auto serializer_ref = resolve_serializer(context);
+  auto serializer_ref = resolve_serializer(config);
   if (serializer_ref.has_error()) {
     return wh::core::result<checkpoint_state>::failure(
         serializer_ref.error());
@@ -137,9 +128,11 @@ resolve_serializer(const wh::core::run_context &context)
 }
 
 [[nodiscard]] inline auto roundtrip_with_serializer(
-    const checkpoint_state &checkpoint, wh::core::run_context &context)
+    const checkpoint_state &checkpoint, wh::core::run_context &context,
+    const runtime_state::invoke_config &config)
     -> wh::core::result<checkpoint_state> {
-  return roundtrip_with_serializer(checkpoint_state{checkpoint}, context);
+  return roundtrip_with_serializer(checkpoint_state{checkpoint}, context,
+                                   config);
 }
 
 struct runtime_backend {
@@ -148,60 +141,21 @@ struct runtime_backend {
 };
 
 [[nodiscard]] inline auto
-resolve_runtime_backend(wh::core::run_context &context)
+resolve_runtime_backend(const runtime_state::invoke_config &config)
     -> wh::core::result<runtime_backend> {
   runtime_backend resolved{};
-  auto store_ref = wh::core::session_value_ref<checkpoint_store *>(
-      context, checkpoint_store_session_key);
-  if (store_ref.has_error()) {
-    if (store_ref.error() != wh::core::errc::not_found) {
-      return wh::core::result<runtime_backend>::failure(store_ref.error());
-    }
-  } else {
-    resolved.store = store_ref.value().get();
-    if (resolved.store == nullptr) {
-      return wh::core::result<runtime_backend>::failure(
-          wh::core::errc::invalid_argument);
-    }
-  }
-
-  auto backend_ref = wh::core::session_value_ref<checkpoint_backend *>(
-      context, checkpoint_backend_session_key);
-  if (backend_ref.has_error()) {
-    if (backend_ref.error() != wh::core::errc::not_found) {
-      return wh::core::result<runtime_backend>::failure(backend_ref.error());
-    }
-  } else {
-    resolved.backend = backend_ref.value().get();
-    if (resolved.backend == nullptr || !resolved.backend->prepare_restore ||
-        !resolved.backend->save) {
-      return wh::core::result<runtime_backend>::failure(
-          wh::core::errc::invalid_argument);
-    }
+  resolved.store = config.checkpoint_store;
+  resolved.backend = config.checkpoint_backend;
+  if (resolved.backend != nullptr &&
+      (!resolved.backend->prepare_restore || !resolved.backend->save)) {
+    return wh::core::result<runtime_backend>::failure(
+        wh::core::errc::invalid_argument);
   }
   if (resolved.store != nullptr && resolved.backend != nullptr) {
     return wh::core::result<runtime_backend>::failure(
         wh::core::errc::invalid_argument);
   }
   return resolved;
-}
-
-[[nodiscard]] inline auto
-resolve_node_hook_key(const std::string_view modifier_key)
-    -> std::optional<std::string_view> {
-  if (modifier_key == checkpoint_before_load_session_key) {
-    return checkpoint_before_load_nodes_session_key;
-  }
-  if (modifier_key == checkpoint_after_load_session_key) {
-    return checkpoint_after_load_nodes_session_key;
-  }
-  if (modifier_key == checkpoint_before_save_session_key) {
-    return checkpoint_before_save_nodes_session_key;
-  }
-  if (modifier_key == checkpoint_after_save_session_key) {
-    return checkpoint_after_save_nodes_session_key;
-  }
-  return std::nullopt;
 }
 
 [[nodiscard]] inline auto
@@ -214,21 +168,11 @@ make_node_path_from_state_key(const std::string_view node_key) -> node_path {
 }
 
 inline auto apply_node_hooks(wh::core::run_context &context,
-                                      const std::string_view modifier_key,
+                                      const checkpoint_node_hooks *modifiers,
                                       checkpoint_state &state)
     -> wh::core::result<void> {
-  const auto path_modifier_key = resolve_node_hook_key(modifier_key);
-  if (!path_modifier_key.has_value()) {
+  if (modifiers == nullptr || modifiers->empty()) {
     return {};
-  }
-  const auto iter = context.session_values.find(*path_modifier_key);
-  if (iter == context.session_values.end()) {
-    return {};
-  }
-  const auto *modifiers =
-      wh::core::any_cast<checkpoint_node_hooks>(&iter->second);
-  if (modifiers == nullptr) {
-    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
   }
   for (auto &node_state : state.node_states) {
     const auto node_state_path = make_node_path_from_state_key(node_state.key);
@@ -253,15 +197,10 @@ inline auto apply_node_hooks(wh::core::run_context &context,
 }
 
 inline auto apply_stream_codecs_for_save(
-    checkpoint_state &checkpoint, wh::core::run_context &context)
+    checkpoint_state &checkpoint, wh::core::run_context &context,
+    const checkpoint_stream_codecs *registry)
     -> wh::core::result<void> {
-  auto registry_ref = wh::core::session_value_ref<checkpoint_stream_codecs>(
-      context, checkpoint_stream_codecs_session_key);
-  const bool has_registry = registry_ref.has_value();
-  if (registry_ref.has_error() &&
-      registry_ref.error() != wh::core::errc::not_found) {
-    return wh::core::result<void>::failure(registry_ref.error());
-  }
+  const bool has_registry = registry != nullptr;
 
   const auto convert_one = [&](const std::string_view node_key, graph_value &payload,
                                const bool tolerate_channel_closed)
@@ -273,8 +212,8 @@ inline auto apply_stream_codecs_for_save(
     if (!has_registry) {
       return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
-    const auto converter_iter = registry_ref.value().get().find(node_key);
-    if (converter_iter == registry_ref.value().get().end() ||
+    const auto converter_iter = registry->find(node_key);
+    if (converter_iter == registry->end() ||
         !converter_iter->second.to_value) {
       return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
@@ -314,15 +253,10 @@ inline auto apply_stream_codecs_for_save(
 }
 
 inline auto apply_stream_codecs_for_load(
-    checkpoint_state &checkpoint, wh::core::run_context &context)
+    checkpoint_state &checkpoint, wh::core::run_context &context,
+    const checkpoint_stream_codecs *registry)
     -> wh::core::result<void> {
-  auto registry_ref = wh::core::session_value_ref<checkpoint_stream_codecs>(
-      context, checkpoint_stream_codecs_session_key);
-  const bool has_registry = registry_ref.has_value();
-  if (registry_ref.has_error() &&
-      registry_ref.error() != wh::core::errc::not_found) {
-    return wh::core::result<void>::failure(registry_ref.error());
-  }
+  const bool has_registry = registry != nullptr;
 
   for (auto &[node_key, payload] : checkpoint.rerun_inputs) {
     auto *stored =
@@ -333,8 +267,8 @@ inline auto apply_stream_codecs_for_load(
     if (!has_registry) {
       return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
-    const auto converter_iter = registry_ref.value().get().find(node_key);
-    if (converter_iter == registry_ref.value().get().end() ||
+    const auto converter_iter = registry->find(node_key);
+    if (converter_iter == registry->end() ||
         !converter_iter->second.to_stream) {
       return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
@@ -405,87 +339,51 @@ inline auto restore_node_states(const checkpoint_state &checkpoint,
 }
 
 [[nodiscard]] inline auto validate_runtime_configuration(
-    wh::core::run_context &context) -> wh::core::result<void> {
-  bool has_runtime_backend = false;
+    const runtime_state::invoke_config &config,
+    runtime_state::invoke_outputs &outputs) -> wh::core::result<void> {
+  const bool has_runtime_backend =
+      config.checkpoint_store != nullptr || config.checkpoint_backend != nullptr;
   std::string explicit_checkpoint_id{};
-  const auto store_iter =
-      context.session_values.find(checkpoint_store_session_key);
-  if (store_iter != context.session_values.end()) {
-    const auto *store =
-        wh::core::any_cast<checkpoint_store *>(&store_iter->second);
-    if (store == nullptr) {
-      set_error_detail(context, wh::core::errc::type_mismatch, "",
-                       "validate_runtime_config");
-      return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
-    }
-    if (*store == nullptr) {
-      set_error_detail(context, wh::core::errc::invalid_argument, "",
-                       "validate_runtime_config");
-      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-    }
-    has_runtime_backend = true;
+  if (config.checkpoint_store != nullptr && config.checkpoint_backend != nullptr) {
+    set_error_detail(outputs, wh::core::errc::invalid_argument, "",
+                     "validate_runtime_config");
+    return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
   }
-  const auto backend_iter =
-      context.session_values.find(checkpoint_backend_session_key);
-  if (backend_iter != context.session_values.end()) {
-    const auto *backend =
-        wh::core::any_cast<checkpoint_backend *>(&backend_iter->second);
-    if (backend == nullptr) {
-      set_error_detail(context, wh::core::errc::type_mismatch, "",
-                       "validate_runtime_config");
-      return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
-    }
-    if (*backend == nullptr || !(*backend)->prepare_restore || !(*backend)->save) {
-      set_error_detail(context, wh::core::errc::invalid_argument, "",
-                       "validate_runtime_config");
-      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-    }
-    has_runtime_backend = true;
+  if (config.checkpoint_backend != nullptr &&
+      (!config.checkpoint_backend->prepare_restore ||
+       !config.checkpoint_backend->save)) {
+    set_error_detail(outputs, wh::core::errc::invalid_argument, "",
+                     "validate_runtime_config");
+    return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
   }
-  if (store_iter != context.session_values.end() &&
-      backend_iter != context.session_values.end()) {
-    set_error_detail(context, wh::core::errc::invalid_argument, "",
+  if (config.checkpoint_serializer != nullptr &&
+      (!config.checkpoint_serializer->encode ||
+       !config.checkpoint_serializer->decode)) {
+    set_error_detail(outputs, wh::core::errc::invalid_argument, "",
                      "validate_runtime_config");
     return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
   }
 
   bool has_explicit_checkpoint_id = false;
-  const auto load_iter =
-      context.session_values.find(checkpoint_load_session_key);
-  if (load_iter != context.session_values.end()) {
-    const auto *load_options =
-        wh::core::any_cast<checkpoint_load_options>(&load_iter->second);
-    if (load_options == nullptr) {
-      set_error_detail(context, wh::core::errc::type_mismatch, "",
-                       "validate_runtime_config");
-      return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
-    }
+  if (config.checkpoint_load.has_value()) {
     has_explicit_checkpoint_id =
-        has_explicit_checkpoint_id || load_options->checkpoint_id.has_value();
+        has_explicit_checkpoint_id ||
+        config.checkpoint_load->checkpoint_id.has_value();
     if (explicit_checkpoint_id.empty()) {
-      explicit_checkpoint_id = resolve_id_hint(*load_options);
+      explicit_checkpoint_id = resolve_id_hint(*config.checkpoint_load);
     }
   }
-
-  const auto write_iter =
-      context.session_values.find(checkpoint_save_session_key);
-  if (write_iter != context.session_values.end()) {
-    const auto *write_options =
-        wh::core::any_cast<checkpoint_save_options>(&write_iter->second);
-    if (write_options == nullptr) {
-      set_error_detail(context, wh::core::errc::type_mismatch, "",
-                       "validate_runtime_config");
-      return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
-    }
+  if (config.checkpoint_save.has_value()) {
     has_explicit_checkpoint_id =
-        has_explicit_checkpoint_id || write_options->checkpoint_id.has_value();
+        has_explicit_checkpoint_id ||
+        config.checkpoint_save->checkpoint_id.has_value();
     if (explicit_checkpoint_id.empty()) {
-      explicit_checkpoint_id = resolve_id_hint(*write_options);
+      explicit_checkpoint_id = resolve_id_hint(*config.checkpoint_save);
     }
   }
 
   if (has_explicit_checkpoint_id && !has_runtime_backend) {
-    set_error_detail(context, wh::core::errc::contract_violation,
+    set_error_detail(outputs, wh::core::errc::contract_violation,
                      explicit_checkpoint_id, "validate_runtime_config");
     return wh::core::result<void>::failure(wh::core::errc::contract_violation);
   }
@@ -493,59 +391,17 @@ inline auto restore_node_states(const checkpoint_state &checkpoint,
 }
 
 inline auto apply_modifier(wh::core::run_context &context,
-                           const std::string_view modifier_key,
+                           const checkpoint_state_modifier &modifier,
+                           const checkpoint_node_hooks *node_hooks,
                            checkpoint_state &state)
     -> wh::core::result<void> {
-  const auto iter = context.session_values.find(modifier_key);
-  if (iter != context.session_values.end()) {
-    const auto *modifier =
-        wh::core::any_cast<checkpoint_state_modifier>(&iter->second);
-    if (modifier == nullptr) {
-      return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
-    }
-    auto status = (*modifier)(state, context);
+  if (modifier) {
+    auto status = modifier(state, context);
     if (status.has_error()) {
       return wh::core::result<void>::failure(status.error());
     }
   }
-  return apply_node_hooks(context, modifier_key, state);
-}
-
-[[nodiscard]] inline auto
-resolve_target_version(const wh::core::run_context &context) -> std::uint32_t {
-  auto target_ref = wh::core::session_value_ref<std::uint32_t>(
-      context, checkpoint_version_session_key);
-  if (target_ref.has_value() && target_ref.value().get() > 0U) {
-    return target_ref.value().get();
-  }
-  return 1U;
-}
-
-[[nodiscard]] inline auto migrate_if_needed(checkpoint_state &&checkpoint,
-                                            wh::core::run_context &context)
-    -> wh::core::result<checkpoint_state> {
-  const auto target_version = resolve_target_version(context);
-  if (checkpoint.version == target_version) {
-    return checkpoint;
-  }
-  auto registry_ref = wh::core::session_value_ref<checkpoint_migrator_registry *>(
-      context, checkpoint_migrators_session_key);
-  if (registry_ref.has_error()) {
-    return wh::core::result<checkpoint_state>::failure(
-        wh::core::errc::not_supported);
-  }
-  auto *registry = registry_ref.value().get();
-  if (registry == nullptr) {
-    return wh::core::result<checkpoint_state>::failure(
-        wh::core::errc::invalid_argument);
-  }
-  return registry->migrate(std::move(checkpoint), target_version);
-}
-
-[[nodiscard]] inline auto migrate_if_needed(
-    const checkpoint_state &checkpoint, wh::core::run_context &context)
-    -> wh::core::result<checkpoint_state> {
-  return migrate_if_needed(checkpoint_state{checkpoint}, context);
+  return apply_node_hooks(context, node_hooks, state);
 }
 
 template <typename resolve_node_id_fn_t, typename missing_input_fn_t>
@@ -558,17 +414,16 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
                           const node_path &runtime_path,
                           const graph_restore_shape &current_restore_shape,
                           const std::uint32_t start_id,
+                          const runtime_state::invoke_config &config,
+                          runtime_state::invoke_outputs &outputs,
+                          forwarded_checkpoint_map &forwarded_checkpoints,
                           resolve_node_id_fn_t &&resolve_node_id,
                           missing_input_fn_t &&resolve_missing_rerun_input)
     -> wh::core::result<void> {
   skip_state_pre_handlers = false;
   const auto resolver = std::forward<resolve_node_id_fn_t>(resolve_node_id);
-  checkpoint_load_options load_options{};
-  auto load_options_ref = wh::core::session_value_ref<checkpoint_load_options>(
-      context, checkpoint_load_session_key);
-  if (load_options_ref.has_value()) {
-    load_options = load_options_ref.value().get();
-  }
+  checkpoint_load_options load_options =
+      config.checkpoint_load.value_or(checkpoint_load_options{});
   if (load_options.force_new_run) {
     return {};
   }
@@ -580,15 +435,10 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
       resolve_forwarded_restore_key(graph_name, runtime_path);
 
   std::optional<checkpoint_state> forwarded_checkpoint{};
-  auto forwarded_ref = wh::core::session_value_ref<forwarded_checkpoint_map>(
-      context, forwarded_checkpoints_session_key);
-  if (!forwarded_ref.has_error()) {
-    auto &forwarded = forwarded_ref.value().get();
-    const auto iter = forwarded.find(forwarded_restore_key);
-    if (iter != forwarded.end()) {
-      forwarded_checkpoint.emplace(std::move(iter->second));
-      forwarded.erase(iter);
-    }
+  const auto forwarded_iter = forwarded_checkpoints.find(forwarded_restore_key);
+  if (forwarded_iter != forwarded_checkpoints.end()) {
+    forwarded_checkpoint.emplace(std::move(forwarded_iter->second));
+    forwarded_checkpoints.erase(forwarded_iter);
   }
 
   std::optional<checkpoint_state> checkpoint_value{};
@@ -599,9 +449,9 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
       return {};
     }
 
-    auto runtime_backend = resolve_runtime_backend(context);
+    auto runtime_backend = resolve_runtime_backend(config);
     if (runtime_backend.has_error()) {
-      set_error_detail(context, runtime_backend.error(), checkpoint_id_hint,
+      set_error_detail(outputs, runtime_backend.error(), checkpoint_id_hint,
                        "restore_store_lookup");
       return wh::core::result<void>::failure(runtime_backend.error());
     }
@@ -625,7 +475,7 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
       if (restore.error() == wh::core::errc::not_found) {
         return {};
       }
-      set_error_detail(context, restore.error(), checkpoint_id_hint,
+      set_error_detail(outputs, restore.error(), checkpoint_id_hint,
                        "prepare_restore");
       return wh::core::result<void>::failure(restore.error());
     }
@@ -637,38 +487,34 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
   }
 
   auto serializer_roundtrip =
-      roundtrip_with_serializer(std::move(checkpoint_value).value(), context);
+      roundtrip_with_serializer(std::move(checkpoint_value).value(), context,
+                                config);
   if (serializer_roundtrip.has_error()) {
-    set_error_detail(context, serializer_roundtrip.error(), checkpoint_id_hint,
+    set_error_detail(outputs, serializer_roundtrip.error(), checkpoint_id_hint,
                      "restore_serializer_roundtrip");
     return wh::core::result<void>::failure(serializer_roundtrip.error());
   }
-  auto migrated_checkpoint =
-      migrate_if_needed(std::move(serializer_roundtrip).value(), context);
-  if (migrated_checkpoint.has_error()) {
-    set_error_detail(context, migrated_checkpoint.error(), checkpoint_id_hint,
-                     "migrate");
-    return wh::core::result<void>::failure(migrated_checkpoint.error());
-  }
-  auto checkpoint = std::move(migrated_checkpoint).value();
+  auto checkpoint = std::move(serializer_roundtrip).value();
   auto pre_load = apply_modifier(
-      context, checkpoint_before_load_session_key, checkpoint);
+      context, config.checkpoint_before_load,
+      std::addressof(config.checkpoint_before_load_nodes), checkpoint);
   if (pre_load.has_error()) {
-    set_error_detail(context, pre_load.error(), checkpoint_id_hint,
+    set_error_detail(outputs, pre_load.error(), checkpoint_id_hint,
                      "pre_load_modifier");
     return pre_load;
   }
   auto validation = restore_check::validate(current_restore_shape, checkpoint);
   if (!validation.restorable) {
-    set_error_detail(context, wh::core::errc::contract_violation,
+    set_error_detail(outputs, wh::core::errc::contract_violation,
                      checkpoint_id_hint, "validate_restore");
     return wh::core::result<void>::failure(wh::core::errc::contract_violation);
   }
   skip_state_pre_handlers = load_options.skip_pre_handlers;
 
-  auto stream_restored = apply_stream_codecs_for_load(checkpoint, context);
+  auto stream_restored = apply_stream_codecs_for_load(
+      checkpoint, context, config.checkpoint_stream_codecs);
   if (stream_restored.has_error()) {
-    set_error_detail(context, stream_restored.error(), checkpoint_id_hint,
+    set_error_detail(outputs, stream_restored.error(), checkpoint_id_hint,
                      "restore_stream_convert");
     return stream_restored;
   }
@@ -676,7 +522,7 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
   auto rerun_restored =
       load_rerun_inputs(checkpoint, rerun_state, resolver, start_id);
   if (rerun_restored.has_error()) {
-    set_error_detail(context, rerun_restored.error(), checkpoint_id_hint,
+    set_error_detail(outputs, rerun_restored.error(), checkpoint_id_hint,
                      "restore_rerun_inputs");
     return rerun_restored;
   }
@@ -686,7 +532,7 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
   } else {
     auto merged = context.resume_info->merge(checkpoint.resume_snapshot);
     if (merged.has_error()) {
-      set_error_detail(context, merged.error(), checkpoint_id_hint,
+      set_error_detail(outputs, merged.error(), checkpoint_id_hint,
                        "merge_resume_snapshot");
       return wh::core::result<void>::failure(merged.error());
     }
@@ -694,7 +540,7 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
 
   auto restored_states = restore_node_states(checkpoint, state_table);
   if (restored_states.has_error()) {
-    set_error_detail(context, restored_states.error(), checkpoint_id_hint,
+    set_error_detail(outputs, restored_states.error(), checkpoint_id_hint,
                      "restore_node_states");
     return restored_states;
   }
@@ -721,7 +567,7 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
     } else {
       auto fallback = resolve_missing_rerun_input();
       if (fallback.has_error()) {
-        set_error_detail(context, fallback.error(), checkpoint_id_hint,
+        set_error_detail(outputs, fallback.error(), checkpoint_id_hint,
                          "resolve_missing_rerun_input");
         return wh::core::result<void>::failure(fallback.error());
       }
@@ -730,9 +576,10 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
   }
 
   auto post_load = apply_modifier(
-      context, checkpoint_after_load_session_key, checkpoint);
+      context, config.checkpoint_after_load,
+      std::addressof(config.checkpoint_after_load_nodes), checkpoint);
   if (post_load.has_error()) {
-    set_error_detail(context, post_load.error(), checkpoint_id_hint,
+    set_error_detail(outputs, post_load.error(), checkpoint_id_hint,
                      "post_load_modifier");
     return post_load;
   }
@@ -744,14 +591,13 @@ inline auto maybe_persist(wh::core::run_context &context,
                           runtime_state::rerun_state &rerun_state,
                           const std::span<const std::string> node_keys,
                           const std::string_view graph_name,
-                          const graph_restore_shape &current_restore_shape)
+                          const graph_restore_shape &current_restore_shape,
+                          const runtime_state::invoke_config &config,
+                          runtime_state::invoke_outputs &outputs)
     -> wh::core::result<void> {
-  auto runtime_backend = resolve_runtime_backend(context);
+  auto runtime_backend = resolve_runtime_backend(config);
   if (runtime_backend.has_error()) {
-    if (runtime_backend.error() == wh::core::errc::not_found) {
-      return {};
-    }
-    set_error_detail(context, runtime_backend.error(), graph_name,
+    set_error_detail(outputs, runtime_backend.error(), graph_name,
                      "persist_store_lookup");
     return wh::core::result<void>::failure(runtime_backend.error());
   }
@@ -761,7 +607,6 @@ inline auto maybe_persist(wh::core::run_context &context,
   }
 
   checkpoint_state checkpoint{};
-  checkpoint.version = 1U;
   checkpoint.checkpoint_id = std::string{graph_name};
   checkpoint.restore_shape = current_restore_shape;
   checkpoint.node_states = state_table.states();
@@ -769,7 +614,7 @@ inline auto maybe_persist(wh::core::run_context &context,
       context.resume_info.value_or(wh::core::resume_state{});
   auto cloned_rerun_inputs = save_rerun_inputs(rerun_state, node_keys);
   if (cloned_rerun_inputs.has_error()) {
-    set_error_detail(context, cloned_rerun_inputs.error(), graph_name,
+    set_error_detail(outputs, cloned_rerun_inputs.error(), graph_name,
                      "persist_rerun_clone");
     return wh::core::result<void>::failure(cloned_rerun_inputs.error());
   }
@@ -779,41 +624,33 @@ inline auto maybe_persist(wh::core::run_context &context,
         std::vector<wh::core::interrupt_signal>{
             wh::compose::to_reinterrupt_signal(*context.interrupt_info)});
   }
-  auto stream_persisted = apply_stream_codecs_for_save(checkpoint, context);
+  auto stream_persisted = apply_stream_codecs_for_save(
+      checkpoint, context, config.checkpoint_stream_codecs);
   if (stream_persisted.has_error()) {
-    set_error_detail(context, stream_persisted.error(), graph_name,
+    set_error_detail(outputs, stream_persisted.error(), graph_name,
                      "persist_stream_convert");
     return stream_persisted;
   }
 
   auto pre_save =
-      apply_modifier(context, checkpoint_before_save_session_key,
+      apply_modifier(context, config.checkpoint_before_save,
+                     std::addressof(config.checkpoint_before_save_nodes),
                      checkpoint);
   if (pre_save.has_error()) {
-    set_error_detail(context, pre_save.error(), graph_name, "pre_save_modifier");
+    set_error_detail(outputs, pre_save.error(), graph_name, "pre_save_modifier");
     return pre_save;
   }
   auto serializer_roundtrip =
-      roundtrip_with_serializer(std::move(checkpoint), context);
+      roundtrip_with_serializer(std::move(checkpoint), context, config);
   if (serializer_roundtrip.has_error()) {
-    set_error_detail(context, serializer_roundtrip.error(), graph_name,
+    set_error_detail(outputs, serializer_roundtrip.error(), graph_name,
                      "persist_serializer_roundtrip");
     return wh::core::result<void>::failure(serializer_roundtrip.error());
   }
   checkpoint = std::move(serializer_roundtrip).value();
 
-  checkpoint_save_options write_options{};
-  auto write_options_ref = wh::core::session_value_ref<checkpoint_save_options>(
-      context, checkpoint_save_session_key);
-  if (write_options_ref.has_error() &&
-      write_options_ref.error() != wh::core::errc::not_found) {
-    set_error_detail(context, write_options_ref.error(), graph_name,
-                     "persist_write_options_lookup");
-    return wh::core::result<void>::failure(write_options_ref.error());
-  }
-  if (write_options_ref.has_value()) {
-    write_options = write_options_ref.value().get();
-  }
+  checkpoint_save_options write_options =
+      config.checkpoint_save.value_or(checkpoint_save_options{});
   auto checkpoint_id_hint = resolve_id_hint(write_options);
   if (checkpoint_id_hint.empty()) {
     checkpoint_id_hint = std::string{graph_name};
@@ -831,22 +668,23 @@ inline auto maybe_persist(wh::core::run_context &context,
     auto saved = runtime_backend.value().backend->save(
         std::move(checkpoint), std::move(write_options), context);
     if (saved.has_error()) {
-      set_error_detail(context, saved.error(), checkpoint_id_hint, "save");
+      set_error_detail(outputs, saved.error(), checkpoint_id_hint, "save");
       return wh::core::result<void>::failure(saved.error());
     }
   } else {
     auto saved = runtime_backend.value().store->save(std::move(checkpoint),
                                                      std::move(write_options));
     if (saved.has_error()) {
-      set_error_detail(context, saved.error(), checkpoint_id_hint, "save");
+      set_error_detail(outputs, saved.error(), checkpoint_id_hint, "save");
       return wh::core::result<void>::failure(saved.error());
     }
   }
 
   auto post_save = apply_modifier(
-      context, checkpoint_after_save_session_key, post_save_state);
+      context, config.checkpoint_after_save,
+      std::addressof(config.checkpoint_after_save_nodes), post_save_state);
   if (post_save.has_error()) {
-    set_error_detail(context, post_save.error(), checkpoint_id_hint,
+    set_error_detail(outputs, post_save.error(), checkpoint_id_hint,
                      "post_save_modifier");
     return post_save;
   }

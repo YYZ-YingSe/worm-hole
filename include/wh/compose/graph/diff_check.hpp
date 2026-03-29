@@ -339,10 +339,6 @@ inline auto compare_node_options(graph_diff &diff,
   compare_policy("max_parallel_override",
                  optional_size_text(baseline.options.max_parallel_override),
                  optional_size_text(candidate.options.max_parallel_override));
-  compare_policy(
-      "cache_namespace_override",
-      optional_string_text(baseline.options.cache_namespace_override),
-      optional_string_text(candidate.options.cache_namespace_override));
   compare_policy("state_handlers.pre",
                  bool_text(baseline.options.state_handlers.pre),
                  bool_text(candidate.options.state_handlers.pre));
@@ -420,9 +416,6 @@ inline auto compare_graph_snapshots(graph_diff &diff,
       "enable_local_state_generation",
       bool_text(baseline.compile_options.enable_local_state_generation),
       bool_text(candidate.compile_options.enable_local_state_generation));
-  compare_compile_option("cache_namespace",
-                         baseline.compile_options.cache_namespace,
-                         candidate.compile_options.cache_namespace);
   compare_compile_option(
       "has_compile_callback",
       bool_text(baseline.compile_options.has_compile_callback),

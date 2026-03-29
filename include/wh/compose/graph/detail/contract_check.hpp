@@ -132,7 +132,7 @@ struct node_gate_state {
 } // namespace detail
 
 inline auto graph::validate_contracts() -> wh::core::result<void> {
-  auto &index = runtime_cache_.index;
+  auto &index = compiled_execution_index_.index;
   const auto node_count = index.id_to_key.size();
   std::vector<detail::node_gate_state> gates(node_count);
 
@@ -160,7 +160,7 @@ inline auto graph::validate_contracts() -> wh::core::result<void> {
       continue;
     }
 
-    const auto &value_edges = runtime_cache_.plan.inputs[node_id].value_edges;
+    const auto &value_edges = compiled_execution_index_.plan.inputs[node_id].value_edges;
     if (value_edges.size() != 1U) {
       gates[node_id].resolved_output = output_gate::dynamic();
       continue;

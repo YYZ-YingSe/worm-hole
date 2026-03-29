@@ -40,7 +40,9 @@ inline auto graph::apply_state_phase_async(
     const std::string_view node_key, const graph_state_cause &cause,
     graph_process_state &process_state, graph_value payload,
     const node_path &runtime_path,
-    detail::runtime_state::invoke_outputs &outputs) const -> graph_sender {
+    detail::runtime_state::invoke_outputs &outputs,
+    const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const
+    -> graph_sender {
   using state_handler_t = detail::state_runtime::state_handler;
 
   struct phase_state {
@@ -72,7 +74,7 @@ inline auto graph::apply_state_phase_async(
   };
 
   const auto run_stream =
-      [finish, fail_stream](phase_state state) -> graph_sender {
+      [finish, fail_stream, &graph_scheduler](phase_state state) -> graph_sender {
     if (state.stream_handler == nullptr) {
       return finish(std::move(state));
     }
@@ -89,17 +91,20 @@ inline auto graph::apply_state_phase_async(
       };
       state.payload = wh::core::any(std::move(rewritten));
       return detail::bridge_graph_sender(
-          detail::make_rewrite_stream_sender(std::move(source), std::move(writer),
-                                             std::move(handler)) |
-          stdexec::let_value(
-              [state = std::move(state), finish,
-               fail_stream](wh::core::result<graph_value> status) mutable
-                  -> graph_sender {
-                if (status.has_error()) {
-                  return fail_stream(state, status.error(), "state_stream_read");
-                }
-                return finish(std::move(state));
-              }));
+          wh::core::detail::bind_sender_scheduler(
+              detail::make_rewrite_stream_sender(
+                  std::move(source), std::move(writer), std::move(handler)) |
+                  stdexec::let_value(
+                      [state = std::move(state), finish,
+                       fail_stream](wh::core::result<graph_value> status) mutable
+                          -> graph_sender {
+                        if (status.has_error()) {
+                          return fail_stream(state, status.error(),
+                                             "state_stream_read");
+                        }
+                        return finish(std::move(state));
+                      }),
+              wh::core::detail::any_resume_scheduler_t{graph_scheduler}));
     }
 
     auto handled = state.stream_handler(state.cause, *state.process_state,
@@ -132,7 +137,7 @@ inline auto graph::apply_state_phase_async(
       wh::core::any_cast<graph_stream_reader>(&state.payload) != nullptr) {
     auto reader = std::move(*wh::core::any_cast<graph_stream_reader>(&state.payload));
     return detail::bridge_graph_sender(
-        collect_reader_value(std::move(reader), edge_limits{}) |
+        collect_reader_value(std::move(reader), edge_limits{}, graph_scheduler) |
         stdexec::let_value(
             [state = std::move(state), run_stream,
              fail_stream](wh::core::result<graph_value> status) mutable

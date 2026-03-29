@@ -69,8 +69,6 @@ struct graph_compile_node_options_info {
   std::optional<std::chrono::milliseconds> retry_window_override{};
   /// Optional node-level parallel gate override (`>=1`).
   std::optional<std::size_t> max_parallel_override{};
-  /// Optional node-level cache namespace override.
-  std::optional<std::string> cache_namespace_override{};
   /// Node-level state-handler metadata expectations.
   graph_compile_state_handler_metadata state_handlers{};
 };
@@ -131,8 +129,6 @@ struct graph_compile_info {
   std::size_t max_parallel_per_node{1U};
   /// True means graph enables local state generation features.
   bool state_generator_enabled{true};
-  /// Graph-level cache namespace.
-  std::string cache_namespace{};
   /// Deterministic compile order (topological/SCC-condensed order).
   std::vector<std::string> compile_order{};
   /// Runtime node-key to node-id mapping snapshot.

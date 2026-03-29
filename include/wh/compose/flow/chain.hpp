@@ -243,10 +243,16 @@ public:
 
   template <typename input_t>
     requires std::same_as<std::remove_cvref_t<input_t>, graph_value>
-  /// Executes the lowered graph and returns the same sender shape as `graph.invoke(...)`.
+  /// Executes the lowered graph through the typed graph invoke request.
   [[nodiscard]] auto invoke(wh::core::run_context &context,
                             input_t &&input) const {
-    return graph_.invoke(context, std::forward<input_t>(input));
+    wh::compose::graph_invoke_request request{};
+    request.input = graph_value{std::forward<input_t>(input)};
+    return wh::core::detail::map_result_sender<wh::core::result<graph_value>>(
+        graph_.invoke(context, std::move(request)),
+        [](graph_invoke_result invoke_result) {
+          return std::move(invoke_result.output_status);
+        });
   }
 
   /// Returns the underlying lowered graph for inspection or nested composition.

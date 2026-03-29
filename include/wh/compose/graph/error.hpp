@@ -31,22 +31,6 @@ enum class compose_error_phase : std::uint8_t {
   validate,
 };
 
-/// Session key carrying last step-limit overflow diagnostic detail.
-inline constexpr std::string_view graph_step_limit_error_session_key =
-    "compose.graph.error.step_limit";
-/// Session key carrying last node-timeout diagnostic detail.
-inline constexpr std::string_view graph_node_timeout_error_session_key =
-    "compose.graph.error.node_timeout";
-/// Session key carrying last node-level run error detail (`NodeRunError`).
-inline constexpr std::string_view graph_node_run_error_session_key =
-    "compose.graph.error.NodeRunError";
-/// Session key carrying last graph-level run error detail (`GraphRunError`).
-inline constexpr std::string_view graph_run_error_session_key =
-    "compose.graph.error.GraphRunError";
-/// Session key carrying last stream-read error detail (`newStreamReadError`).
-inline constexpr std::string_view graph_new_stream_read_error_session_key =
-    "compose.graph.error.newStreamReadError";
-
 /// Structured detail emitted when runtime exceeds configured step budget.
 struct graph_step_limit_error_detail {
   /// Step index that exceeded budget.

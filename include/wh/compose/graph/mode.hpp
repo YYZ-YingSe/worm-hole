@@ -245,20 +245,12 @@ public:
   /// Runs compile validation and freezes graph structure.
   auto compile() -> wh::core::result<void> { return graph_.compile(); }
 
-  template <typename input_t>
-    requires std::same_as<std::remove_cvref_t<input_t>, graph_value>
-  /// Invokes the fixed-mode graph and returns a sender.
+  template <typename request_t>
+    requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+  /// Invokes the fixed-mode graph with typed controls/services.
   [[nodiscard]] auto invoke(wh::core::run_context &context,
-                            input_t &&input) const -> auto {
-    return graph_.invoke(context, std::forward<input_t>(input));
-  }
-
-  template <typename input_t>
-    requires std::same_as<std::remove_cvref_t<input_t>, graph_value>
-  /// Invokes the fixed-mode graph with call options and returns a sender.
-  [[nodiscard]] auto invoke(wh::core::run_context &context, input_t &&input,
-                            const graph_call_options &options) const -> auto {
-    return graph_.invoke(context, std::forward<input_t>(input), options);
+                            request_t &&request) const -> auto {
+    return graph_.invoke(context, std::forward<request_t>(request));
   }
 
 private:

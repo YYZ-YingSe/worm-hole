@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <cstdlib>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -36,6 +37,16 @@ template <typename value_t, std::size_t storage_size = 64U>
 class any_stream_write_sender;
 
 namespace detail {
+
+template <typename receiver_t>
+[[noreturn]] inline auto missing_receiver_scheduler() noexcept
+    -> wh::core::detail::any_resume_scheduler_t {
+  static_assert(
+      wh::core::detail::receiver_with_resume_scheduler<receiver_t>,
+      "any_stream async sender requires receiver env to expose scheduler or "
+      "completion scheduler");
+  std::abort();
+}
 
 template <std::size_t storage_size> struct erased_storage {
   alignas(std::max_align_t) std::array<std::byte, storage_size> data{};
@@ -287,7 +298,7 @@ template <typename receiver_t> struct receiver_env_model {
       return wh::core::detail::erase_resume_scheduler(
           wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env));
     } else {
-      return wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{});
+      return missing_receiver_scheduler<receiver_t>();
     }
   }
 
@@ -385,7 +396,9 @@ public:
   template <typename receiver_t>
     requires (!std::same_as<std::remove_cvref_t<receiver_t>, basic_receiver_ref> &&
               stdexec::receiver_of<std::remove_cvref_t<receiver_t>,
-                                   completion_signatures>)
+                                   completion_signatures> &&
+              wh::core::detail::receiver_with_resume_scheduler<
+                  std::remove_cvref_t<receiver_t>>)
   basic_receiver_ref(receiver_t &receiver) noexcept
       : object_(std::addressof(receiver)),
         vtable_(
@@ -556,7 +569,7 @@ struct any_stream_writer_model {
                     writer.try_write(input);
                   }) {
       return typed->try_write(value);
-    } else {
+    } else if constexpr (std::copy_constructible<value_t>) {
       wh::core::result<value_t> copied{};
       try {
         copied = value_t{value};
@@ -568,6 +581,9 @@ struct any_stream_writer_model {
         return wh::core::result<void>::failure(copied.error());
       }
       return try_write_move(object, std::move(copied).value());
+    } else {
+      (void)value;
+      return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
   }
 
@@ -860,6 +876,8 @@ public:
   };
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
+    requires wh::core::detail::receiver_with_resume_scheduler<
+        std::remove_cvref_t<receiver_t>>
   [[nodiscard]] auto connect(receiver_t receiver) && -> operation<receiver_t> {
     if (owned_.has_value()) {
       return operation<receiver_t>{std::move(*owned_), std::move(receiver)};
@@ -935,11 +953,17 @@ public:
   /// Starts one sender-based async write.
   [[nodiscard]] auto write_async(const value_t &value) & -> write_sender_type {
     wh::core::result<value_t> prepared{};
-    try {
-      prepared = value_t{value};
-    } catch (...) {
-      prepared = wh::core::result<value_t>::failure(
-          wh::core::map_current_exception());
+    if constexpr (std::copy_constructible<value_t>) {
+      try {
+        prepared = value_t{value};
+      } catch (...) {
+        prepared = wh::core::result<value_t>::failure(
+            wh::core::map_current_exception());
+      }
+    } else {
+      (void)value;
+      prepared =
+          wh::core::result<value_t>::failure(wh::core::errc::not_supported);
     }
     return write_sender_type{*this, std::move(prepared)};
   }
@@ -959,11 +983,17 @@ public:
   /// Starts one sender-based async write, transferring writer ownership into the sender.
   [[nodiscard]] auto write_async(const value_t &value) && -> write_sender_type {
     wh::core::result<value_t> prepared{};
-    try {
-      prepared = value_t{value};
-    } catch (...) {
-      prepared = wh::core::result<value_t>::failure(
-          wh::core::map_current_exception());
+    if constexpr (std::copy_constructible<value_t>) {
+      try {
+        prepared = value_t{value};
+      } catch (...) {
+        prepared = wh::core::result<value_t>::failure(
+            wh::core::map_current_exception());
+      }
+    } else {
+      (void)value;
+      prepared =
+          wh::core::result<value_t>::failure(wh::core::errc::not_supported);
     }
     return write_sender_type{std::move(*this), std::move(prepared)};
   }
@@ -1122,6 +1152,8 @@ public:
   };
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
+    requires wh::core::detail::receiver_with_resume_scheduler<
+        std::remove_cvref_t<receiver_t>>
   [[nodiscard]] auto connect(receiver_t receiver) && -> operation<receiver_t> {
     if (owned_.has_value()) {
       return operation<receiver_t>{std::move(*owned_), std::move(prepared_),

@@ -23,8 +23,7 @@ struct call_scope {
 
   /// Builds structured execution location for this tool call on demand.
   [[nodiscard]] auto location() const -> wh::core::address {
-    return wh::core::address{
-        std::initializer_list<std::string_view>{"tool", tool_name, call_id}};
+    return wh::core::make_address({"tool", tool_name, call_id});
   }
 };
 

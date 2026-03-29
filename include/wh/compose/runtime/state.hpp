@@ -291,16 +291,6 @@ using graph_state_handler_registry =
 /// Transition log emitted by one invoke run.
 using graph_transition_log = std::vector<graph_state_transition_event>;
 
-/// Session key for state-handler registry.
-inline constexpr std::string_view graph_state_handlers_session_key =
-    "compose.graph.state.handlers";
-/// Session key for state transition log.
-inline constexpr std::string_view graph_transition_log_session_key =
-    "compose.graph.state.transitions";
-/// Session key for parallel branch merge strategy override.
-inline constexpr std::string_view graph_branch_merge_session_key =
-    "compose.graph.state.parallel_branch_merge_strategy";
-
 /// Mutable node-state table keyed by stable node key/id.
 class graph_state_table {
 public:

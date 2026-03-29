@@ -187,7 +187,7 @@ public:
   /// Starts streaming execution and emits callbacks through the run context.
   [[nodiscard]] auto stream(const chat_chain_request &request,
                             wh::core::run_context &callback_context) const
-      -> wh::core::result<wh::model::chat_stream_reader> {
+      -> wh::core::result<wh::model::chat_message_stream_reader> {
     return stream_impl(request,
                        wh::callbacks::borrow_callback_sink(callback_context));
   }
@@ -196,7 +196,7 @@ public:
   /// callbacks through the run context.
   [[nodiscard]] auto stream(chat_chain_request &&request,
                             wh::core::run_context &callback_context) const
-      -> wh::core::result<wh::model::chat_stream_reader> {
+      -> wh::core::result<wh::model::chat_message_stream_reader> {
     return stream_impl(std::move(request),
                        wh::callbacks::borrow_callback_sink(callback_context));
   }
@@ -249,7 +249,8 @@ private:
   }
 
   using model_invoke_result = wh::core::result<wh::model::chat_response>;
-  using model_stream_result = wh::core::result<wh::model::chat_stream_reader>;
+  using model_stream_result =
+      wh::core::result<wh::model::chat_message_stream_reader>;
 
   struct async_state {
     wh::callbacks::callback_sink sink{};
@@ -313,7 +314,7 @@ private:
     requires std::same_as<std::remove_cvref_t<request_t>, chat_chain_request>
   [[nodiscard]] auto stream_impl(request_t &&request,
                                  wh::callbacks::callback_sink sink) const
-      -> wh::core::result<wh::model::chat_stream_reader> {
+      -> wh::core::result<wh::model::chat_message_stream_reader> {
     auto run_info = make_run_info();
     auto callback_event = make_callback_event(request, true);
     wh::callbacks::emit(sink, wh::callbacks::stage::start, callback_event,
@@ -324,7 +325,7 @@ private:
     if (model_request.has_error()) {
       wh::callbacks::emit(sink, wh::callbacks::stage::error, callback_event,
                           run_info);
-      return wh::core::result<wh::model::chat_stream_reader>::failure(
+      return wh::core::result<wh::model::chat_message_stream_reader>::failure(
           model_request.error());
     }
 
@@ -584,7 +585,7 @@ private:
   [[nodiscard]] auto
   stream_model(wh::model::chat_request &&request,
                const wh::callbacks::callback_sink &sink) const
-      -> wh::core::result<wh::model::chat_stream_reader> {
+      -> wh::core::result<wh::model::chat_message_stream_reader> {
     auto callback_context = detail::make_callback_context(sink);
     return wh::core::deref_or_self(model_).stream(std::move(request),
                                                   callback_context);

@@ -1282,9 +1282,11 @@ private:
       std::forward<sink_t>(sink)(std::move(waiter.movable_source_value()));
       return;
     }
-    if (waiter.has_copy_source()) {
-      std::forward<sink_t>(sink)(waiter.source_value());
-      return;
+    if constexpr (std::copy_constructible<value_type>) {
+      if (waiter.has_copy_source()) {
+        std::forward<sink_t>(sink)(waiter.source_value());
+        return;
+      }
     }
     unreachable();
   }

@@ -36,8 +36,8 @@
 #include "wh/compose/node.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
 #include "wh/compose/graph/error.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
 #include "wh/compose/graph/detail/bitset.hpp"
-#include "wh/compose/graph/detail/runtime/cache.hpp"
 #include "wh/compose/graph/detail/runtime/rerun.hpp"
 #include "wh/compose/graph/call_options.hpp"
 #include "wh/compose/graph/compile_options.hpp"
@@ -48,7 +48,6 @@
 #include "wh/compose/graph/detail/runtime/invoke.hpp"
 #include "wh/compose/graph/detail/runtime/process.hpp"
 #include "wh/compose/graph/detail/runtime/state.hpp"
-#include "wh/compose/graph/detail/runtime/schedule.hpp"
 #include "wh/compose/graph/detail/runtime/handlers.hpp"
 #include "wh/compose/graph/detail/runtime/stream.hpp"
 #include "wh/compose/graph/restore_shape.hpp"
@@ -84,30 +83,33 @@ class run_state;
     graph_value &input, const graph_call_options *call_options,
     const node_path *path_prefix, graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
-    const wh::core::detail::any_resume_scheduler_t *resume_scheduler = nullptr)
+    const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+    const invoke_runtime::run_state *parent_state = nullptr,
+    const graph_runtime_services *services = nullptr,
+    graph_invoke_controls controls = {})
     -> graph_sender;
 
 } // namespace detail
 
 /// Mutable graph definition that compiles into a stable executable topology.
 class graph {
+  friend class detail::invoke_runtime::run_state;
+
   template <typename receiver_t>
   class invoke_operation;
 
-  template <typename input_t, typename call_options_t>
+  template <typename request_t>
   class invoke_sender;
 
   using invoke_completion_signatures =
       stdexec::completion_signatures<
-          stdexec::set_value_t(wh::core::result<graph_value>)>;
+          stdexec::set_value_t(wh::core::result<graph_invoke_result>)>;
 
-  template <typename input_t, typename call_options_t>
-    requires std::same_as<std::remove_cvref_t<input_t>, graph_value> &&
-             std::same_as<std::remove_cvref_t<call_options_t>, graph_call_options>
-  [[nodiscard]] auto make_invoke_sender(input_t &&input,
-                                        wh::core::run_context &context,
-                                        call_options_t &&call_options) const
-      -> invoke_sender<graph_value, graph_call_options>;
+  template <typename request_t>
+    requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+  [[nodiscard]] auto make_invoke_sender(request_t &&request,
+                                        wh::core::run_context &context) const
+      -> invoke_sender<graph_invoke_request>;
 
 public:
   graph();
@@ -272,18 +274,11 @@ public:
   /// Runs compile validations and freezes graph structure.
   auto compile() -> wh::core::result<void>;
 
-  template <typename input_t>
-    requires std::same_as<std::remove_cvref_t<input_t>, graph_value>
-  /// Invokes graph and returns a sender.
-  [[nodiscard]] auto invoke(wh::core::run_context &context, input_t &&input) const
-      -> auto;
-
-  template <typename input_t, typename call_options_t>
-    requires std::same_as<std::remove_cvref_t<input_t>, graph_value> &&
-             std::same_as<std::remove_cvref_t<call_options_t>, graph_call_options>
-  /// Invokes graph asynchronously with call options.
-  [[nodiscard]] auto invoke(wh::core::run_context &context, input_t &&input,
-                            call_options_t &&call_options) const -> auto;
+  template <typename request_t>
+    requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+  /// Invokes graph with typed controls/services and returns one structured result.
+  [[nodiscard]] auto invoke(wh::core::run_context &context,
+                            request_t &&request) const -> auto;
 
 private:
   friend class detail::invoke_runtime::run_state;
@@ -292,7 +287,9 @@ private:
       graph_value &input, const graph_call_options *call_options,
       const node_path *path_prefix, graph_process_state *parent_process_state,
       detail::runtime_state::invoke_outputs *nested_outputs,
-      const wh::core::detail::any_resume_scheduler_t *resume_scheduler)
+      const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+      const detail::invoke_runtime::run_state *parent_state,
+      const graph_runtime_services *services, graph_invoke_controls controls)
       -> graph_sender;
   friend auto detail::start_nested_graph(const graph &graph,
                                          wh::core::run_context &context,
@@ -446,8 +443,8 @@ private:
     std::vector<input_plan> inputs{};
   };
 
-  /// Immutable runtime cache built by compile() and shared by invoke().
-  struct runtime_cache {
+  /// Immutable compiled execution index built by compile() and shared by invoke().
+  struct compiled_execution_index {
     graph_index index{};
     graph_plan plan{};
   };
@@ -513,7 +510,7 @@ private:
 
   [[nodiscard]] auto build_restore_shape() const -> graph_restore_shape;
 
-  auto rebind_runtime_cache_nodes() noexcept -> void;
+  auto rebind_compiled_execution_index_nodes() noexcept -> void;
 
   [[nodiscard]] static auto
   make_csr_offsets(const std::vector<std::uint32_t> &counts)
@@ -522,77 +519,12 @@ private:
   [[nodiscard]] static auto compile_authored(const authored_node &node)
       -> compiled_node;
 
-  auto build_runtime_cache() -> wh::core::result<void>;
+  auto build_compiled_execution_index() -> wh::core::result<void>;
 
   auto validate_contracts() -> wh::core::result<void>;
 
-
-
-  static auto set_checkpoint_error_detail(wh::core::run_context &context,
-                                          const wh::core::error_code code,
-                                          const std::string_view checkpoint_id,
-                                          const std::string_view operation) -> void;
-
-  [[nodiscard]] static auto
-  resolve_checkpoint_id_hint(const checkpoint_load_options &options)
-      -> std::string;
-
-  [[nodiscard]] static auto
-  resolve_checkpoint_id_hint(const checkpoint_save_options &options)
-      -> std::string;
-
-  [[nodiscard]] static auto
-  default_checkpoint_serializer() -> const checkpoint_serializer &;
-
-  [[nodiscard]] static auto
-  resolve_checkpoint_serializer(const wh::core::run_context &context)
-      -> wh::core::result<const checkpoint_serializer *>;
-
-  [[nodiscard]] static auto roundtrip_checkpoint_with_serializer(
-      const checkpoint_state &checkpoint, wh::core::run_context &context)
-      -> wh::core::result<checkpoint_state>;
-
-  [[nodiscard]] static auto
-  roundtrip_checkpoint_with_serializer(checkpoint_state &&checkpoint,
-                                       wh::core::run_context &context)
-      -> wh::core::result<checkpoint_state>;
-
-  using checkpoint_runtime_backend = detail::checkpoint_runtime::runtime_backend;
-
-  [[nodiscard]] static auto resolve_checkpoint_runtime_backend(
-      wh::core::run_context &context) -> wh::core::result<checkpoint_runtime_backend>;
-
-  [[nodiscard]] static auto resolve_checkpoint_node_hook_key(
-      const std::string_view modifier_key) -> std::optional<std::string_view>;
-
-  [[nodiscard]] static auto make_node_path_from_state_key(
-      const std::string_view node_key) -> node_path;
-
-  auto apply_checkpoint_node_hooks(
-      wh::core::run_context &context, const std::string_view modifier_key,
-      checkpoint_state &state) const -> wh::core::result<void>;
-
-  auto apply_stream_codecs_for_checkpoint_save(
-      checkpoint_state &checkpoint, wh::core::run_context &context) const
-      -> wh::core::result<void>;
-
-  auto apply_stream_codecs_for_checkpoint_load(
-      checkpoint_state &checkpoint, wh::core::run_context &context) const
-      -> wh::core::result<void>;
-
-  auto restore_checkpoint_node_states(const checkpoint_state &checkpoint,
-                                      graph_state_table &state_table) const
-      -> wh::core::result<void>;
-
-  auto apply_resume_data_state_overrides(wh::core::run_context &context,
-                                         graph_state_table &state_table) const
-      -> wh::core::result<void>;
-
   [[nodiscard]] auto validate_call_scope_for_runtime(
       const graph_call_scope &call_scope) const -> wh::core::result<void>;
-
-  [[nodiscard]] static auto validate_checkpoint_runtime_configuration(
-      wh::core::run_context &context) -> wh::core::result<void>;
 
   [[nodiscard]] auto make_node_designation_path(const std::uint32_t node_id) const
       -> node_path;
@@ -647,11 +579,11 @@ private:
       const std::size_t step) const -> void;
 
   [[nodiscard]] auto make_stream_scope(const std::string_view node_key) const
-      -> graph_stream_event_namespace;
+      -> graph_event_scope;
 
   [[nodiscard]] auto make_stream_scope(const std::string_view node_key,
                                        const node_path &runtime_path) const
-      -> graph_stream_event_namespace;
+      -> graph_event_scope;
 
   auto apply_state_phase(wh::core::run_context &context,
                          const graph_node_state_handlers *handlers,
@@ -668,7 +600,9 @@ private:
       detail::state_runtime::state_phase phase, const std::string_view node_key,
       const graph_state_cause &cause, graph_process_state &process_state,
       graph_value payload, const node_path &runtime_path,
-      detail::runtime_state::invoke_outputs &outputs) const -> graph_sender;
+      detail::runtime_state::invoke_outputs &outputs,
+      const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const
+      -> graph_sender;
 
   auto append_state_transition(detail::runtime_state::invoke_outputs &outputs,
                                const graph_call_scope &options,
@@ -687,21 +621,6 @@ private:
       const std::string_view node_key, const graph_value &payload) const
       -> wh::core::result<std::optional<wh::core::interrupt_signal>>;
 
-  auto apply_checkpoint_modifier(
-      wh::core::run_context &context, const std::string_view modifier_key,
-      checkpoint_state &state) const -> wh::core::result<void>;
-
-  [[nodiscard]] static auto resolve_checkpoint_target_version(
-      const wh::core::run_context &context) -> std::uint32_t;
-
-  [[nodiscard]] static auto migrate_checkpoint_if_needed(
-      const checkpoint_state &checkpoint, wh::core::run_context &context)
-      -> wh::core::result<checkpoint_state>;
-
-  [[nodiscard]] static auto migrate_checkpoint_if_needed(
-      checkpoint_state &&checkpoint, wh::core::run_context &context)
-      -> wh::core::result<checkpoint_state>;
-
   [[nodiscard]] static auto
   make_missing_rerun_input_default(const node_contract contract)
       -> wh::core::result<graph_value>;
@@ -718,14 +637,19 @@ private:
       graph_value &input, wh::core::run_context &context,
       graph_state_table &state_table,
       detail::runtime_state::rerun_state &rerun_state,
+      const detail::runtime_state::invoke_config &config,
       bool &skip_state_pre_handlers,
       detail::checkpoint_runtime::restore_scope scope,
-      const node_path &runtime_path) const
+      const node_path &runtime_path,
+      detail::runtime_state::invoke_outputs &outputs,
+      forwarded_checkpoint_map &forwarded_checkpoints) const
       -> wh::core::result<void>;
 
   auto maybe_persist_checkpoint(
       wh::core::run_context &context, const graph_state_table &state_table,
-      detail::runtime_state::rerun_state &rerun_state) const
+      detail::runtime_state::rerun_state &rerun_state,
+      const detail::runtime_state::invoke_config &config,
+      detail::runtime_state::invoke_outputs &outputs) const
       -> wh::core::result<void>;
 
   [[nodiscard]] auto resolve_edge_status_indexed(
@@ -745,7 +669,9 @@ private:
       const scratch_buffer &scratch_buffer) const -> bool;
 
   [[nodiscard]] static auto collect_reader_value(
-      graph_stream_reader reader, edge_limits limits) -> graph_sender;
+      graph_stream_reader reader, edge_limits limits,
+      const wh::core::detail::any_resume_scheduler_t &graph_scheduler)
+      -> graph_sender;
 
   [[nodiscard]] static constexpr auto
   needs_reader_lowering(const indexed_edge &edge) noexcept -> bool {
@@ -758,7 +684,9 @@ private:
 
   [[nodiscard]] static auto lower_reader(graph_stream_reader reader,
                                          reader_lowering lowering,
-                                         wh::core::run_context &context)
+                                         wh::core::run_context &context,
+                                         const wh::core::detail::any_resume_scheduler_t
+                                             &graph_scheduler)
       -> graph_sender;
 
   [[nodiscard]] auto needs_reader_copy(const std::uint32_t node_id) const
@@ -887,12 +815,9 @@ private:
       const std::vector<node_state> &node_states,
       const std::vector<branch_state> &branch_states,
       wh::core::run_context &context, node_frame *frame,
-      const detail::runtime_state::invoke_config &config) const
-      -> graph_sender;
-
-  [[nodiscard]] auto resolve_runtime_cache_scope(
       const detail::runtime_state::invoke_config &config,
-      const graph_call_scope &call_options) const -> std::string;
+      const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const
+      -> graph_sender;
 
   [[nodiscard]] auto resolve_node_retry_budget(const std::uint32_t node_id) const
       -> std::size_t;
@@ -902,19 +827,6 @@ private:
 
   [[nodiscard]] auto resolve_node_parallel_gate(const std::uint32_t node_id) const
       -> std::size_t;
-
-  [[nodiscard]] auto resolve_node_cache_namespace(
-      const std::uint32_t node_id) const -> std::string_view;
-
-  [[nodiscard]] auto has_cache_enabled_nodes() const -> bool;
-
-  auto acquire_invoke_cache_store(wh::core::run_context &context) const
-      -> detail::cache_runtime::invoke_cache_store &;
-
-  [[nodiscard]] auto make_node_cache_key(const std::string_view cache_namespace,
-                                         const std::string_view runtime_scope,
-                                         const std::uint32_t node_id) const
-      -> std::string;
 
   [[nodiscard]] static auto resolve_branch_merge(
       const detail::runtime_state::invoke_config &config) noexcept
@@ -1000,7 +912,7 @@ private:
   /// Compile order produced by last successful compile.
   std::vector<std::string> compile_order_{};
   /// Precomputed runtime index used by invoke hot-path.
-  runtime_cache runtime_cache_{};
+  compiled_execution_index compiled_execution_index_{};
   /// Lazy compile-stable graph snapshot used by diff/control-plane paths.
   mutable std::optional<graph_snapshot> snapshot_cache_{};
   /// One-time initializer guarding lazy snapshot materialization.

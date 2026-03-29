@@ -89,6 +89,8 @@ struct node_runtime {
   std::size_t parallel_gate{0U};
   const graph_call_scope *call_options{nullptr};
   const node_path *path{nullptr};
+  /// Graph-level scheduler fixed by the enclosing invoke run.
+  const wh::core::detail::any_resume_scheduler_t *graph_scheduler{nullptr};
   graph_process_state *local_process_state{nullptr};
   const graph_component_option_map *component_options{nullptr};
   const graph_resolved_node_observation *observation{nullptr};
@@ -125,7 +127,7 @@ concept result_typed_sender =
     result_value_signature<
         result_t,
         stdexec::completion_signatures_of_t<std::remove_cvref_t<sender_t>,
-                                            stdexec::env<>>>::value;
+                                            wh::core::detail::sender_signature_env>>::value;
 
 template <typename sender_t>
 concept graph_result_sender = result_typed_sender<
@@ -229,7 +231,16 @@ template <node_async_run run_t>
                                    wh::core::run_context &context,
                                    const node_runtime &runtime)
           -> graph_sender {
-        return bridge_graph_sender(stored.value(input, context, runtime));
+        auto sender = stored.value(input, context, runtime);
+        if (runtime.graph_scheduler == nullptr) {
+          return failure_graph_sender(wh::core::errc::contract_violation);
+        }
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(sender)>,
+                                   graph_sender>) {
+          return bridge_graph_sender(std::move(sender));
+        }
+        return bridge_graph_sender(wh::core::detail::bind_sender_scheduler(
+            std::move(sender), *runtime.graph_scheduler));
       }};
 }
 
@@ -244,8 +255,12 @@ template <graph_result_sender sender_t>
   return node_async_factory{
       [stored = std::move(stored)](graph_value &,
                                    wh::core::run_context &,
-                                   const node_runtime &) -> graph_sender {
-        return bridge_graph_sender(stored.value);
+                                   const node_runtime &runtime) -> graph_sender {
+        if (runtime.graph_scheduler == nullptr) {
+          return failure_graph_sender(wh::core::errc::contract_violation);
+        }
+        return bridge_graph_sender(wh::core::detail::bind_sender_scheduler(
+            stored.value, *runtime.graph_scheduler));
       }};
 }
 

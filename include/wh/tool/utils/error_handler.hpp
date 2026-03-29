@@ -43,21 +43,22 @@ wrap_invoke_error(wh::core::result<std::string> invoked)
 
 /// Converts stream-start errors into fallback error stream when needed.
 [[nodiscard]] inline auto
-wrap_stream_error(wh::core::result<tool_stream_reader> streamed,
+wrap_stream_error(wh::core::result<tool_output_stream_reader> streamed,
                   const std::string_view tool_name)
-    -> wh::core::result<tool_stream_reader> {
+    -> wh::core::result<tool_output_stream_reader> {
   if (streamed.has_value()) {
     return streamed;
   }
   if (is_interrupt_or_resume_error(streamed.error())) {
-    return wh::core::result<tool_stream_reader>::failure(streamed.error());
+    return wh::core::result<tool_output_stream_reader>::failure(
+        streamed.error());
   }
 
   std::string error_text = "[";
   error_text += std::string{tool_name};
   error_text += "] ";
   error_text += streamed.error().to_string();
-  return tool_stream_reader{
+  return tool_output_stream_reader{
       wh::schema::stream::make_single_value_stream_reader<std::string>(
           std::move(error_text))};
 }
@@ -81,12 +82,12 @@ template <typename tool_t> struct error_policy_tool_impl {
   }
 
   [[nodiscard]] auto stream(const wh::tool::tool_request &request) const
-      -> wh::core::result<tool_stream_reader>
+      -> wh::core::result<tool_output_stream_reader>
     requires requires(const tool_t &tool, const wh::tool::tool_request &value,
                       wh::core::run_context &context) {
       {
         tool.stream(value, context)
-      } -> std::same_as<wh::tool::tool_stream_result>;
+      } -> std::same_as<wh::tool::tool_output_stream_result>;
     }
   {
     wh::core::run_context callback_context{};
@@ -111,7 +112,7 @@ template <typename tool_t>
                 wh::core::run_context &context) {
         {
           tool.stream(request, context)
-        } -> std::same_as<wh::tool::tool_stream_result>;
+        } -> std::same_as<wh::tool::tool_output_stream_result>;
       }) {
     return input_tool;
   }

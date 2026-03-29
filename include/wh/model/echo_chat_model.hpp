@@ -73,27 +73,30 @@ public:
   }
 
   [[nodiscard]] auto stream(const chat_request &request) const
-      -> wh::core::result<chat_stream_reader> {
+      -> wh::core::result<chat_message_stream_reader> {
     auto response = make_echo_response(request);
     if (response.has_error()) {
-      return wh::core::result<chat_stream_reader>::failure(response.error());
+      return wh::core::result<chat_message_stream_reader>::failure(
+          response.error());
     }
 
     auto [writer, reader] =
         wh::schema::stream::make_pipe_stream<wh::schema::message>(8U);
     auto write_status = writer.try_write(std::move(response).value().message);
     if (write_status.has_error()) {
-      return wh::core::result<chat_stream_reader>::failure(write_status.error());
+      return wh::core::result<chat_message_stream_reader>::failure(
+          write_status.error());
     }
     auto close_status = writer.close();
     if (close_status.has_error()) {
-      return wh::core::result<chat_stream_reader>::failure(close_status.error());
+      return wh::core::result<chat_message_stream_reader>::failure(
+          close_status.error());
     }
-    return chat_stream_reader{std::move(reader)};
+    return chat_message_stream_reader{std::move(reader)};
   }
 
   [[nodiscard]] auto stream(chat_request &&request) const
-      -> wh::core::result<chat_stream_reader> {
+      -> wh::core::result<chat_message_stream_reader> {
     return stream(static_cast<const chat_request &>(request));
   }
 

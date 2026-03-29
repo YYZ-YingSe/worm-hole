@@ -16,7 +16,6 @@
 
 #include "wh/compose/graph/class.hpp"
 #include "wh/compose/graph/detail/bitset.hpp"
-#include "wh/compose/graph/detail/runtime/cache.hpp"
 #include "wh/compose/graph/detail/runtime/input.hpp"
 #include "wh/compose/graph/detail/runtime/invoke.hpp"
 #include "wh/compose/graph/detail/runtime/process.hpp"
@@ -30,6 +29,9 @@
 #include "wh/core/stdexec.hpp"
 
 namespace wh::compose::detail::invoke_runtime {
+
+template <typename receiver_t> class runtime_operation;
+class runtime_sender;
 
 class run_state {
 public:
@@ -54,32 +56,38 @@ public:
 
   run_state(const graph *owner, graph_value &&input, wh::core::run_context &context,
             graph_call_options &&call_options,
-            wh::core::detail::any_resume_scheduler_t resume_scheduler,
+            wh::core::detail::any_resume_scheduler_t graph_scheduler,
             node_path path_prefix = {},
             graph_process_state *parent_process_state = nullptr,
-            detail::runtime_state::invoke_outputs *nested_outputs = nullptr);
+            detail::runtime_state::invoke_outputs *nested_outputs = nullptr,
+            const graph_runtime_services *services = nullptr,
+            graph_invoke_controls controls = {},
+            detail::runtime_state::invoke_outputs *published_outputs = nullptr,
+            const run_state *parent_state = nullptr);
 
   run_state(const graph *owner, graph_value &&input, wh::core::run_context &context,
             graph_call_scope call_scope,
-            wh::core::detail::any_resume_scheduler_t resume_scheduler,
+            wh::core::detail::any_resume_scheduler_t graph_scheduler,
             node_path path_prefix = {},
             graph_process_state *parent_process_state = nullptr,
-            detail::runtime_state::invoke_outputs *nested_outputs = nullptr);
+            detail::runtime_state::invoke_outputs *nested_outputs = nullptr,
+            const graph_runtime_services *services = nullptr,
+            graph_invoke_controls controls = {},
+            detail::runtime_state::invoke_outputs *published_outputs = nullptr,
+            const run_state *parent_state = nullptr);
 
   [[nodiscard]] static auto start(run_state &&state) -> graph_sender;
 
-  template <typename receiver_t, typename lane_scheduler_t>
-  static auto launch(run_state &&state, receiver_t receiver,
-                     lane_scheduler_t lane_scheduler) noexcept -> void;
-
 private:
+  auto rebind_moved_runtime_storage() noexcept -> void;
+
   auto initialize_runtime_node_caches() -> void;
 
   [[nodiscard]] auto runtime_node_path(const std::uint32_t node_id)
       -> const node_path &;
 
   [[nodiscard]] auto runtime_stream_scope(const std::uint32_t node_id)
-      -> const graph_stream_event_namespace &;
+      -> const graph_event_scope &;
 
   [[nodiscard]] auto runtime_node_execution_address(const std::uint32_t node_id)
       -> const wh::core::address &;
@@ -241,11 +249,11 @@ private:
   }
 
   [[nodiscard]] auto node_count() const noexcept -> std::size_t {
-    return owner_->runtime_cache_.index.nodes_by_id.size();
+    return owner_->compiled_execution_index_.index.nodes_by_id.size();
   }
 
   [[nodiscard]] auto end_id() const noexcept -> std::uint32_t {
-    return owner_->runtime_cache_.index.end_id;
+    return owner_->compiled_execution_index_.index.end_id;
   }
 
   [[nodiscard]] auto max_parallel_nodes() const noexcept -> std::size_t {
@@ -254,13 +262,16 @@ private:
 
   [[nodiscard]] auto node_key(const std::uint32_t node_id) const
       -> const std::string & {
-    return owner_->runtime_cache_.index.id_to_key[node_id];
+    return owner_->compiled_execution_index_.index.id_to_key[node_id];
   }
 
   [[nodiscard]] auto build_input_sender(node_frame *frame) -> graph_sender {
+    if (!graph_scheduler_.has_value()) {
+      return detail::failure_graph_sender(wh::core::errc::contract_violation);
+    }
     return owner_->build_node_input_sender(frame->node_id, scratch_, node_states(),
                                            branch_states(), context_, frame,
-                                           invoke_config_);
+                                           invoke_config_, *graph_scheduler_);
   }
 
   [[nodiscard]] auto store_output(const std::uint32_t node_id, graph_value value)
@@ -293,21 +304,24 @@ private:
     return owner_->collect_completed_nodes(scratch_.node_states);
   }
 
-  template <typename receiver_t, typename derived_t, typename lane_scheduler_t>
+  template <typename receiver_t, typename derived_t, typename graph_scheduler_t>
   class join_base;
 
+  template <typename receiver_t, typename derived_t, typename graph_scheduler_t>
+  class stage_run;
+
   template <typename receiver_t,
-            typename lane_scheduler_t =
+            typename graph_scheduler_t =
                 wh::core::detail::any_resume_scheduler_t>
   class dag_run;
 
   template <typename receiver_t,
-            typename lane_scheduler_t =
+            typename graph_scheduler_t =
                 wh::core::detail::any_resume_scheduler_t>
   class pregel_run;
 
-  [[nodiscard]] auto start_dag() && -> graph_sender;
-  [[nodiscard]] auto start_pregel() && -> graph_sender;
+  template <typename> friend class runtime_operation;
+  friend class runtime_sender;
 
   auto node_values() -> std::vector<graph_value> & { return scratch_.node_values; }
 
@@ -337,6 +351,9 @@ private:
 
   graph_state_table state_table_{};
   graph_process_state process_state_{};
+  graph_invoke_controls invoke_controls_{};
+  const graph_runtime_services *services_{nullptr};
+  const run_state *parent_state_{nullptr};
   detail::runtime_state::invoke_config invoke_config_{};
   detail::runtime_state::invoke_outputs invoke_outputs_{};
   detail::runtime_state::graph_trace_state trace_state_{};
@@ -349,9 +366,10 @@ private:
   node_path path_prefix_{};
   graph_process_state *parent_process_state_{nullptr};
   detail::runtime_state::invoke_outputs *nested_outputs_{nullptr};
-  std::string runtime_cache_scope_{};
-  detail::cache_runtime::invoke_cache_store *cache_store_{nullptr};
-  std::optional<wh::core::detail::any_resume_scheduler_t> resume_scheduler_{};
+  detail::runtime_state::invoke_outputs *published_outputs_{nullptr};
+  forwarded_checkpoint_map owned_forwarded_checkpoints_{};
+  forwarded_checkpoint_map *forwarded_checkpoints_{nullptr};
+  std::optional<wh::core::detail::any_resume_scheduler_t> graph_scheduler_{};
   bool retain_inputs_{false};
   std::size_t step_count_{0U};
   std::size_t step_budget_{0U};
@@ -362,13 +380,13 @@ private:
   bool collect_transition_log_{false};
   bool emit_state_snapshot_events_{false};
   bool emit_state_delta_events_{false};
-  bool emit_message_events_{false};
+  bool emit_runtime_message_events_{false};
   bool emit_custom_events_{false};
   graph_external_interrupt_policy external_interrupt_policy_{};
   graph_external_interrupt_policy_latch external_interrupt_policy_latch_{};
   std::vector<std::uint32_t> deferred_ready_queue_{};
   std::vector<node_path> runtime_node_paths_{};
-  std::vector<graph_stream_event_namespace> runtime_stream_scopes_{};
+  std::vector<graph_event_scope> runtime_stream_scopes_{};
   std::vector<wh::core::address> runtime_node_execution_addresses_{};
   std::vector<graph_component_option_map> resolved_component_options_{};
   std::vector<graph_resolved_node_observation> resolved_node_observations_{};

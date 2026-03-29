@@ -10,10 +10,6 @@
 
 namespace wh::compose {
 
-/// Session key carrying optional fan-in values-merge registry pointer.
-inline constexpr std::string_view graph_values_merge_registry_session_key =
-    "compose.graph.fan_in.values_merge_registry";
-
 /// Runtime merge path for type-erased values.
 [[nodiscard]] inline auto
 values_merge(const wh::internal::values_merge_registry &registry,

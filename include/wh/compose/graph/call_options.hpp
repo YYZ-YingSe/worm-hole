@@ -183,8 +183,6 @@ struct graph_call_options {
   std::optional<std::chrono::milliseconds> interrupt_timeout{};
   /// Runtime external interrupt policy override for current run only.
   std::optional<graph_external_interrupt_policy> external_interrupt_policy{};
-  /// Runtime cache scope key for current run only.
-  std::optional<std::string> cache_key{};
   /// Graph-level debug callback observing all scheduler decisions.
   graph_debug_callback graph_debug_observer{nullptr};
   /// Node-path scoped debug callbacks for local observability.
@@ -253,11 +251,6 @@ public:
     return options().external_interrupt_policy;
   }
 
-  [[nodiscard]] auto cache_key() const noexcept
-      -> const std::optional<std::string> & {
-    return options().cache_key;
-  }
-
   [[nodiscard]] auto graph_debug_observer() const noexcept
       -> const graph_debug_callback & {
     return options().graph_debug_observer;
@@ -292,25 +285,6 @@ private:
   std::optional<graph_trace_context> trace_override_{};
 };
 
-/// Session key carrying run-scoped debug stream event ring.
-inline constexpr std::string_view graph_debug_stream_session_key =
-    "compose.graph.stream.debug";
-/// Session key carrying run-scoped state-snapshot stream events.
-inline constexpr std::string_view graph_state_snapshot_stream_session_key =
-    "compose.graph.stream.state_snapshot";
-/// Session key carrying run-scoped state-delta stream events.
-inline constexpr std::string_view graph_state_delta_stream_session_key =
-    "compose.graph.stream.state_delta";
-/// Session key carrying run-scoped message stream events.
-inline constexpr std::string_view graph_message_stream_session_key =
-    "compose.graph.stream.message";
-/// Session key carrying run-scoped custom stream events keyed by channel.
-inline constexpr std::string_view graph_custom_stream_session_key =
-    "compose.graph.stream.custom";
-/// Session key carrying external interrupt resolution decision.
-inline constexpr std::string_view graph_external_interrupt_resolution_session_key =
-    "compose.graph.interrupt.resolution";
-
 /// External interrupt resolution chosen at runtime.
 enum class graph_external_interrupt_resolution_kind : std::uint8_t {
   /// Wait in-flight mode resolved without deadline timeout.
@@ -330,8 +304,8 @@ namespace detail {
   for (std::size_t index = prefix.size(); index < segments.size(); ++index) {
     remainder.push_back(segments[index]);
   }
-  return node_path{std::span<const std::string_view>{remainder.data(),
-                                                     remainder.size()}};
+  return make_node_path(
+      std::span<const std::string_view>{remainder.data(), remainder.size()});
 }
 
 [[nodiscard]] inline auto join_node_path(const node_path &prefix,
@@ -351,8 +325,8 @@ namespace detail {
   for (const auto &segment : path.segments()) {
     segments.push_back(segment);
   }
-  return node_path{
-      std::span<const std::string_view>{segments.data(), segments.size()}};
+  return make_node_path(
+      std::span<const std::string_view>{segments.data(), segments.size()});
 }
 
 } // namespace detail
@@ -387,7 +361,7 @@ struct graph_designation_match {
 };
 
 /// One stream event namespace for nested graph attribution.
-struct graph_stream_event_namespace {
+struct graph_event_scope {
   /// Graph name segment for event source attribution.
   std::string graph{};
   /// Node key segment for event source attribution.
@@ -396,40 +370,40 @@ struct graph_stream_event_namespace {
   std::string path{};
 };
 
-/// Generic state-snapshot stream event payload.
-struct graph_state_snapshot_stream_event {
+/// Generic state-snapshot event emitted on the state-snapshot stream.
+struct graph_state_snapshot_event {
   /// Event namespace (`graph/node/path`).
-  graph_stream_event_namespace scope{};
+  graph_event_scope scope{};
   /// Runtime step index.
   std::size_t step{0U};
-  /// Snapshot payload (implementation-defined shape).
-  graph_value payload{};
+  /// Snapshot value (implementation-defined shape).
+  graph_value snapshot{};
 };
 
-/// Generic state-delta stream event payload.
-struct graph_state_delta_stream_event {
+/// Generic state-delta event emitted on the state-delta stream.
+struct graph_state_delta_event {
   /// Event namespace (`graph/node/path`).
-  graph_stream_event_namespace scope{};
+  graph_event_scope scope{};
   /// Runtime step index.
   std::size_t step{0U};
-  /// Delta payload (implementation-defined shape).
-  graph_value payload{};
+  /// Delta value (implementation-defined shape).
+  graph_value delta{};
 };
 
-/// Generic message stream event payload.
-struct graph_message_stream_event {
+/// Generic runtime-message event emitted on the message stream.
+struct graph_runtime_message_event {
   /// Event namespace (`graph/node/path`).
-  graph_stream_event_namespace scope{};
+  graph_event_scope scope{};
   /// Runtime step index.
   std::size_t step{0U};
-  /// Human-readable runtime message.
-  std::string message{};
+  /// Human-readable runtime text.
+  std::string text{};
 };
 
 /// Generic custom stream event payload.
-struct graph_custom_stream_event {
+struct graph_custom_event {
   /// Event namespace (`graph/node/path`).
-  graph_stream_event_namespace scope{};
+  graph_event_scope scope{};
   /// Runtime step index.
   std::size_t step{0U};
   /// Caller-defined custom channel name.
@@ -598,10 +572,10 @@ should_emit_graph_debug_event(const graph_call_options &options) -> bool {
 }
 
 /// Builds stable `graph/node/path` namespace for one stream event.
-[[nodiscard]] inline auto make_graph_stream_event_namespace(
+[[nodiscard]] inline auto make_graph_event_scope(
     const std::string_view graph_name, const std::string_view node_key,
-    const node_path &path) -> graph_stream_event_namespace {
-  return graph_stream_event_namespace{
+    const node_path &path) -> graph_event_scope {
+  return graph_event_scope{
       .graph = std::string{graph_name},
       .node = std::string{node_key},
       .path = path.to_string(),

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <concepts>
 #include <initializer_list>
 #include <ranges>
 #include <span>
@@ -19,18 +20,36 @@ class address {
 public:
   address() = default;
 
-  /// Builds address from ordered path segments.
-  explicit address(std::span<const std::string_view> segments) {
-    segments_.reserve(segments.size());
+  /// Builds address from ordered path segments passed as individual values.
+  template <typename... segment_ts>
+    requires (sizeof...(segment_ts) > 0U &&
+              (std::constructible_from<std::string_view, segment_ts &&> && ...))
+  explicit address(segment_ts &&...segments) {
+    segments_.reserve(sizeof...(segment_ts));
+    (append_segment(std::forward<segment_ts>(segments)), ...);
+  }
+
+  /// Builds address from one C-string array segment list.
+  template <std::size_t count_v>
+  explicit address(const char *const (&segments)[count_v]) {
+    segments_.reserve(count_v);
     for (const auto segment : segments) {
-      [[maybe_unused]] auto &stored_segment = segments_.emplace_back(segment);
+      append_segment(segment);
     }
   }
 
-  /// Builds address from initializer-list path segments.
-  address(std::initializer_list<std::string_view> segments)
-      : address(std::span<const std::string_view>{segments.begin(),
-                                                  segments.size()}) {
+  /// Builds address from one string-view array segment list.
+  template <std::size_t count_v>
+  explicit address(const std::string_view (&segments)[count_v]) {
+    append_segments(std::span<const std::string_view>{segments});
+  }
+
+  /// Builds address from one pre-materialized segment span.
+  [[nodiscard]] static auto from_segments(
+      const std::span<const std::string_view> segments) -> address {
+    address built{};
+    built.append_segments(segments);
+    return built;
   }
 
   /// Returns a new address with one segment appended.
@@ -116,8 +135,32 @@ public:
   }
 
 private:
+  auto append_segment(const std::string_view segment) -> void {
+    [[maybe_unused]] auto &stored_segment = segments_.emplace_back(segment);
+  }
+
+  auto append_segments(const std::span<const std::string_view> segments) -> void {
+    segments_.reserve(segments.size());
+    for (const auto segment : segments) {
+      append_segment(segment);
+    }
+  }
+
   /// Inline-first segment storage optimized for shallow paths.
   wh::core::small_vector<std::string, 6U> segments_{};
 };
+
+/// Builds one address from one ordered span of path segments.
+[[nodiscard]] inline auto
+make_address(const std::span<const std::string_view> segments) -> address {
+  return address::from_segments(segments);
+}
+
+/// Builds one address from one ordered initializer-list of path segments.
+[[nodiscard]] inline auto
+make_address(const std::initializer_list<std::string_view> segments) -> address {
+  return address::from_segments(
+      std::span<const std::string_view>{segments.begin(), segments.size()});
+}
 
 } // namespace wh::core

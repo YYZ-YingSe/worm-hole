@@ -4,22 +4,22 @@
 
 namespace wh::compose {
 
-template <typename receiver_t, typename derived_t, typename lane_scheduler_t>
+template <typename receiver_t, typename derived_t, typename graph_scheduler_t>
 class detail::invoke_runtime::run_state::join_base {
 protected:
   struct pump_env {
-    const wh::core::detail::any_resume_scheduler_t *resume_scheduler{nullptr};
+    const wh::core::detail::any_resume_scheduler_t *graph_scheduler{nullptr};
 
     [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept
         -> wh::core::detail::any_resume_scheduler_t {
-      return *resume_scheduler;
+      return *graph_scheduler;
     }
 
     template <typename cpo_t>
     [[nodiscard]] auto
     query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
         -> wh::core::detail::any_resume_scheduler_t {
-      return *resume_scheduler;
+      return *graph_scheduler;
     }
 
     template <typename cpo_t>
@@ -30,15 +30,14 @@ protected:
   };
 
   struct outer_stop_callback {
-    std::weak_ptr<derived_t> self{};
+    join_base *base{nullptr};
 
     auto operator()() const noexcept -> void {
-      auto locked = self.lock();
-      if (!locked) {
+      if (base == nullptr) {
         return;
       }
-      locked->stop_requested_.store(true, std::memory_order_release);
-      locked->request_pump(locked);
+      base->stop_requested_.store(true, std::memory_order_release);
+      base->request_pump();
     }
   };
 
@@ -46,25 +45,22 @@ protected:
     using receiver_concept = stdexec::receiver_t;
 
     join_base *base{nullptr};
-    std::shared_ptr<derived_t> self{};
 
     auto set_value() noexcept -> void { complete(); }
 
     auto set_stopped() noexcept -> void { complete(); }
 
     template <typename error_t>
-    auto set_error(error_t &&) noexcept -> void {
-      std::terminate();
-    }
+    auto set_error(error_t &&) noexcept -> void { std::terminate(); }
 
     [[nodiscard]] auto get_env() const noexcept -> pump_env {
-      return pump_env{std::addressof(base->resume_scheduler())};
+      return pump_env{std::addressof(base->graph_scheduler_env())};
     }
 
   private:
     auto complete() noexcept -> void {
       base->join_done_.store(true, std::memory_order_release);
-      base->request_pump(self);
+      base->request_pump();
     }
   };
 
@@ -79,7 +75,7 @@ protected:
   using join_sender_t = decltype(std::declval<join_scope_t &>().join());
   using join_op_t = stdexec::connect_result_t<join_sender_t, join_receiver>;
   using pump_sender_t =
-      decltype(stdexec::schedule(std::declval<const lane_scheduler_t &>()));
+      decltype(stdexec::schedule(std::declval<const graph_scheduler_t &>()));
 
   static constexpr std::uint32_t no_slot_ =
       std::numeric_limits<std::uint32_t>::max();
@@ -90,11 +86,19 @@ protected:
     std::uint32_t next{no_slot_};
   };
 
+  struct finish_delivery {
+    receiver_t receiver{};
+    wh::core::result<graph_value> status{};
+
+    auto complete() && noexcept -> void {
+      stdexec::set_value(std::move(receiver), std::move(status));
+    }
+  };
+
   struct child_receiver {
     using receiver_concept = stdexec::receiver_t;
 
     join_base *base{nullptr};
-    std::shared_ptr<derived_t> self{};
     node_frame frame{};
 
     auto set_value(wh::core::result<graph_value> result) noexcept -> void {
@@ -113,13 +117,13 @@ protected:
     }
 
     [[nodiscard]] auto get_env() const noexcept -> pump_env {
-      return pump_env{std::addressof(base->resume_scheduler())};
+      return pump_env{std::addressof(base->graph_scheduler_env())};
     }
 
   private:
     auto complete(wh::core::result<graph_value> result) noexcept -> void {
       base->enqueue_completion(std::move(frame), std::move(result));
-      base->request_pump(self);
+      base->request_pump();
     }
   };
 
@@ -137,44 +141,44 @@ protected:
     using receiver_concept = stdexec::receiver_t;
 
     join_base *base{nullptr};
-    std::shared_ptr<derived_t> self{};
 
     auto set_value() noexcept -> void {
-      auto keep_self = std::move(self);
       base->destroy_pump();
-      base->run_pump(keep_self);
+      auto delivery = base->run_pump();
+      if (delivery.has_value()) {
+        std::move(*delivery).complete();
+      }
     }
 
     template <typename error_t>
-    auto set_error(error_t &&) noexcept -> void {
-      std::terminate();
-    }
+    auto set_error(error_t &&) noexcept -> void { std::terminate(); }
 
     auto set_stopped() noexcept -> void { std::terminate(); }
 
     [[nodiscard]] auto get_env() const noexcept -> pump_env {
-      return pump_env{std::addressof(base->resume_scheduler())};
+      return pump_env{std::addressof(base->graph_scheduler_env())};
     }
   };
 
   using pump_op_t = stdexec::connect_result_t<pump_sender_t, pump_receiver>;
 
-  [[nodiscard]] auto resume_scheduler() const noexcept
+  [[nodiscard]] auto graph_scheduler_env() const noexcept
       -> const wh::core::detail::any_resume_scheduler_t & {
-    return *resume_scheduler_;
+    return *graph_scheduler_env_;
   }
 
-  [[nodiscard]] auto lane_scheduler() const noexcept -> const lane_scheduler_t & {
-    return lane_scheduler_;
+  [[nodiscard]] auto graph_scheduler() const noexcept
+      -> const graph_scheduler_t & {
+    return graph_scheduler_;
   }
 
   explicit join_base(
       const std::size_t node_count,
-      wh::core::detail::any_resume_scheduler_t resume_scheduler,
-      lane_scheduler_t lane_scheduler)
+      wh::core::detail::any_resume_scheduler_t graph_scheduler_env,
+      graph_scheduler_t graph_scheduler)
       : completion_slots_(node_count), child_slots_(node_count),
-        resume_scheduler_(std::move(resume_scheduler)),
-        lane_scheduler_(std::move(lane_scheduler)) {}
+        graph_scheduler_env_(std::move(graph_scheduler_env)),
+        graph_scheduler_(std::move(graph_scheduler)) {}
 
   ~join_base() {
     destroy_pump();
@@ -188,28 +192,31 @@ protected:
     receiver_env_.emplace(stdexec::get_env(*receiver_));
   }
 
+  auto bind_derived(derived_t *self) noexcept -> void { derived_ = self; }
+
   [[nodiscard]] auto receiver_env() const noexcept -> const stored_outer_env_t & {
     return *receiver_env_;
   }
 
-  auto bind_outer_stop(const std::shared_ptr<derived_t> &self) noexcept -> void {
+  auto bind_outer_stop() noexcept -> void {
     if constexpr (!stdexec::unstoppable_token<outer_stop_token_t>) {
       auto stop_token = stdexec::get_stop_token(receiver_env());
       if (stop_token.stop_requested()) {
         stop_requested_.store(true, std::memory_order_release);
-        request_pump(self);
+        request_pump();
         return;
       }
-      outer_stop_callback_.emplace(
-          stop_token, outer_stop_callback{std::weak_ptr<derived_t>{self}});
+      outer_stop_callback_.emplace(stop_token,
+                                   outer_stop_callback{
+                                       this});
       if (stop_token.stop_requested()) {
         stop_requested_.store(true, std::memory_order_release);
-        request_pump(self);
+        request_pump();
       }
     }
   }
 
-  auto request_pump(const std::shared_ptr<derived_t> &self) noexcept -> void {
+  auto request_pump() noexcept -> void {
     pump_pending_.store(true, std::memory_order_release);
 
     bool expected = false;
@@ -219,18 +226,17 @@ protected:
       return;
     }
 
-    schedule_pump(self);
+    schedule_pump();
   }
 
-  auto finish(wh::core::result<graph_value> status,
-              const std::shared_ptr<derived_t> &self) noexcept -> void {
+  auto finish(wh::core::result<graph_value> status) noexcept -> void {
     if (finish_status_.has_value()) {
       return;
     }
     finish_status_.emplace(std::move(status));
     join_scope_.request_stop();
     join_scope_.close();
-    start_join(self);
+    start_join();
   }
 
   auto maybe_deliver_finish() noexcept -> void {
@@ -239,22 +245,27 @@ protected:
         !join_done_.load(std::memory_order_acquire)) {
       return;
     }
-    static_cast<derived_t &>(*this).prepare_finish_delivery();
+    derived_->prepare_finish_delivery();
     destroy_join();
-    deliver_finish();
+    result_delivered_ = true;
+    outer_stop_callback_.reset();
+    pending_delivery_.emplace(finish_delivery{
+        .receiver = std::move(*receiver_),
+        .status = std::move(*finish_status_),
+    });
+    receiver_.reset();
+    receiver_env_.reset();
+    finish_status_.reset();
   }
 
-  auto poll_outer_stop(const std::shared_ptr<derived_t> &self) noexcept -> void {
+  auto poll_outer_stop() noexcept -> void {
     if (!stop_requested_.exchange(false, std::memory_order_acq_rel)) {
       return;
     }
-    finish(wh::core::result<graph_value>::failure(wh::core::errc::canceled),
-           self);
+    finish(wh::core::result<graph_value>::failure(wh::core::errc::canceled));
   }
 
-  template <typename shared_state_t>
-  auto start_child(graph_sender sender, node_frame &&frame,
-                   const std::shared_ptr<shared_state_t> &self)
+  auto start_child(graph_sender sender, node_frame &&frame)
       -> wh::core::result<void> {
     ++running_async_;
     const auto node_id = frame.node_id;
@@ -268,7 +279,6 @@ protected:
               stdexec::associate(std::move(sender), join_scope_.get_token()),
               child_receiver{
                   .base = this,
-                  .self = self,
                   .frame = std::move(frame),
               }));
       slot.engaged = true;
@@ -282,8 +292,7 @@ protected:
   }
 
   template <typename release_fn_t, typename settle_fn_t>
-  auto drain_completions(const std::shared_ptr<derived_t> &self,
-                         release_fn_t release_fn,
+  auto drain_completions(release_fn_t release_fn,
                          settle_fn_t settle_fn) noexcept -> void {
     auto head = completion_head_.exchange(no_slot_, std::memory_order_acquire);
     while (head != no_slot_) {
@@ -308,10 +317,9 @@ protected:
         continue;
       }
 
-      auto settled =
-          settle_fn(std::move(frame), std::move(result), self);
+      auto settled = settle_fn(std::move(frame), std::move(result));
       if (settled.has_error()) {
-        finish(wh::core::result<graph_value>::failure(settled.error()), self);
+        finish(wh::core::result<graph_value>::failure(settled.error()));
       }
     }
   }
@@ -373,47 +381,53 @@ private:
     join_started_ = false;
   }
 
-  auto schedule_pump(const std::shared_ptr<derived_t> &self) noexcept -> void {
+  auto schedule_pump() noexcept -> void {
     try {
       if (pump_started_) {
         std::terminate();
       }
       ::new (static_cast<void *>(pump_ptr())) pump_op_t(stdexec::connect(
-          stdexec::schedule(lane_scheduler()),
+          stdexec::schedule(graph_scheduler()),
           pump_receiver{
               .base = this,
-              .self = self,
           }));
       pump_started_ = true;
       stdexec::start(pump_op());
-    } catch (...) {
-      std::terminate();
-    }
+    } catch (...) { std::terminate(); }
   }
 
-  auto run_pump(const std::shared_ptr<derived_t> &self) noexcept -> void {
+  auto run_pump() noexcept -> std::optional<finish_delivery> {
     for (;;) {
       pump_pending_.store(false, std::memory_order_release);
-      self->pump(self);
+      derived_->pump();
+      if (pending_delivery_.has_value()) {
+        break;
+      }
       if (!pump_pending_.load(std::memory_order_acquire)) {
         break;
       }
     }
 
     pump_scheduled_.store(false, std::memory_order_release);
+    if (pending_delivery_.has_value()) {
+      auto delivery = std::move(pending_delivery_);
+      pending_delivery_.reset();
+      return delivery;
+    }
     if (!pump_pending_.load(std::memory_order_acquire)) {
-      return;
+      return std::nullopt;
     }
 
     bool expected = false;
     if (pump_scheduled_.compare_exchange_strong(expected, true,
                                                 std::memory_order_acq_rel,
                                                 std::memory_order_relaxed)) {
-      schedule_pump(self);
+      schedule_pump();
     }
+    return std::nullopt;
   }
 
-  auto start_join(const std::shared_ptr<derived_t> &self) noexcept -> void {
+  auto start_join() noexcept -> void {
     if (join_started_) {
       return;
     }
@@ -422,13 +436,10 @@ private:
           join_scope_.join(),
           join_receiver{
               .base = this,
-              .self = self,
           }));
       join_started_ = true;
       stdexec::start(join_op());
-    } catch (...) {
-      std::terminate();
-    }
+    } catch (...) { std::terminate(); }
   }
 
   auto enqueue_completion(node_frame &&frame,
@@ -449,19 +460,6 @@ private:
         std::memory_order_relaxed));
   }
 
-  auto deliver_finish() noexcept -> void {
-    if (!finish_status_.has_value() || result_delivered_) {
-      return;
-    }
-    result_delivered_ = true;
-    outer_stop_callback_.reset();
-    auto receiver = std::move(*receiver_);
-    receiver_.reset();
-    receiver_env_.reset();
-    stdexec::set_value(std::move(receiver), std::move(*finish_status_));
-    finish_status_.reset();
-  }
-
 protected:
   std::optional<receiver_t> receiver_{};
   std::optional<stored_outer_env_t> receiver_env_{};
@@ -477,8 +475,10 @@ protected:
   alignas(pump_op_t) std::byte pump_storage_[sizeof(pump_op_t)]{};
   alignas(join_op_t) std::byte join_storage_[sizeof(join_op_t)]{};
   std::optional<wh::core::result<graph_value>> finish_status_{};
-  std::optional<wh::core::detail::any_resume_scheduler_t> resume_scheduler_{};
-  [[no_unique_address]] lane_scheduler_t lane_scheduler_;
+  std::optional<finish_delivery> pending_delivery_{};
+  std::optional<wh::core::detail::any_resume_scheduler_t> graph_scheduler_env_{};
+  [[no_unique_address]] graph_scheduler_t graph_scheduler_;
+  derived_t *derived_{nullptr};
   std::size_t running_async_{0U};
   bool pump_started_{false};
   bool join_started_{false};

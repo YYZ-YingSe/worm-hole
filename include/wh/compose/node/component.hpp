@@ -236,10 +236,16 @@ bind_component_sender(const graph_value &input, const node_runtime &runtime,
   auto &component_context =
       callback_context.has_value() ? *callback_context : empty_context;
   return std::move(request).value().apply([&](auto &&resolved_request) {
+    if (runtime.graph_scheduler == nullptr) {
+      return ::wh::compose::detail::failure_graph_sender(
+          wh::core::errc::contract_violation);
+    }
     return ::wh::compose::detail::map_graph_sender(
-        std::forward<sender_factory_t>(make_sender)(
-            std::forward<decltype(resolved_request)>(resolved_request),
-            component_context),
+        ::wh::core::detail::bind_sender_scheduler(
+            std::forward<sender_factory_t>(make_sender)(
+                std::forward<decltype(resolved_request)>(resolved_request),
+                component_context),
+            *runtime.graph_scheduler),
         [](typename status_t::value_type value) {
           return make_graph_output(std::move(value));
         });
@@ -261,10 +267,16 @@ bind_component_stream_sender(const graph_value &input,
   auto &component_context =
       callback_context.has_value() ? *callback_context : empty_context;
   return std::move(request).value().apply([&](auto &&resolved_request) {
+    if (runtime.graph_scheduler == nullptr) {
+      return ::wh::compose::detail::failure_graph_sender(
+          wh::core::errc::contract_violation);
+    }
     return ::wh::compose::detail::map_graph_sender(
-        std::forward<sender_factory_t>(make_sender)(
-            std::forward<decltype(resolved_request)>(resolved_request),
-            component_context),
+        ::wh::core::detail::bind_sender_scheduler(
+            std::forward<sender_factory_t>(make_sender)(
+                std::forward<decltype(resolved_request)>(resolved_request),
+                component_context),
+            *runtime.graph_scheduler),
         [](typename status_t::value_type reader) {
           return make_graph_stream_output(std::move(reader));
         });
@@ -345,7 +357,7 @@ struct explicit_component_types<component_kind::model, node_contract::value> {
 template <>
 struct explicit_component_types<component_kind::model, node_contract::stream> {
   using request_type = wh::model::chat_request;
-  using async_result_type = wh::model::chat_stream_result;
+  using async_result_type = wh::model::chat_message_stream_result;
 };
 
 template <>
@@ -386,7 +398,7 @@ struct explicit_component_types<component_kind::tool, node_contract::value> {
 template <>
 struct explicit_component_types<component_kind::tool, node_contract::stream> {
   using request_type = wh::tool::tool_request;
-  using async_result_type = wh::tool::tool_stream_result;
+  using async_result_type = wh::tool::tool_output_stream_result;
 };
 
 template <>
@@ -762,7 +774,7 @@ struct component_async_contract<component_kind::model, node_contract::value,
       static_assert(always_false_v<component_t>,
                     "component_node<async> requires "
                     "model.async_stream(request, run_context&) -> "
-                    "sender<result<chat_stream_reader>>");
+                    "sender<result<chat_message_stream_reader>>");
     }
   }
 };
@@ -947,7 +959,7 @@ struct component_async_contract<component_kind::tool, node_contract::value,
     } else {
       static_assert(always_false_v<component_t>,
                     "component_node<async> requires tool.async_stream(request, "
-                    "run_context&) -> sender<result<tool_stream_reader>>");
+                    "run_context&) -> sender<result<tool_output_stream_reader>>");
     }
   }
 };

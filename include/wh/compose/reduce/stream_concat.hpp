@@ -10,10 +10,6 @@
 
 namespace wh::compose {
 
-/// Session key carrying optional fan-in stream-concat registry pointer.
-inline constexpr std::string_view graph_stream_concat_registry_session_key =
-    "compose.graph.fan_in.stream_concat_registry";
-
 /// Runtime concat path for type-erased stream chunks.
 [[nodiscard]] inline auto
 stream_concat(const wh::internal::stream_concat_registry &registry,

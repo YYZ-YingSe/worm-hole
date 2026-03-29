@@ -28,13 +28,17 @@
 
 namespace wh::tool {
 
-using tool_stream_reader = wh::schema::stream::any_stream_reader<std::string>;
-using tool_stream_writer = wh::schema::stream::any_stream_writer<std::string>;
+using tool_output_stream_reader =
+    wh::schema::stream::any_stream_reader<std::string>;
+using tool_output_stream_writer =
+    wh::schema::stream::any_stream_writer<std::string>;
 using tool_invoke_result = wh::core::result<std::string>;
-using tool_stream_result = wh::core::result<tool_stream_reader>;
+using tool_output_stream_result =
+    wh::core::result<tool_output_stream_reader>;
 
 struct tool_request {
-  std::string input{};
+  /// Raw JSON input payload passed across the tool contract boundary.
+  std::string input_json{};
   tool_options options{};
 };
 
@@ -242,7 +246,7 @@ inline auto emit_callback(args_t &&...args) -> void {
   state.run_info = wh::callbacks::apply_component_run_info(
       std::move(state.run_info), request.options);
   state.event.tool_name = std::string{tool_name};
-  state.event.input_json = request.input;
+  state.event.input_json = request.input_json;
   return state;
 }
 
@@ -263,8 +267,8 @@ inline auto mark_error(callback_state &state, const wh::core::error_code error,
   }
 }
 
-[[nodiscard]] inline auto make_skipped_stream() -> tool_stream_result {
-  return tool_stream_reader{
+[[nodiscard]] inline auto make_skipped_stream() -> tool_output_stream_result {
+  return tool_output_stream_reader{
       wh::schema::stream::make_empty_stream_reader<std::string>()};
 }
 
@@ -283,8 +287,8 @@ concept invoke_output_compatible =
 
 template <typename output_t>
 concept stream_output_compatible =
-    std::same_as<std::remove_cvref_t<output_t>, tool_stream_result> ||
-    std::same_as<std::remove_cvref_t<output_t>, tool_stream_reader>;
+    std::same_as<std::remove_cvref_t<output_t>, tool_output_stream_result> ||
+    std::same_as<std::remove_cvref_t<output_t>, tool_output_stream_reader>;
 
 template <typename impl_t>
 concept sync_invoke_handler =
@@ -364,14 +368,15 @@ template <typename output_t>
 
 template <typename output_t>
 [[nodiscard]] inline auto normalize_stream_output(output_t &&output)
-    -> tool_stream_result {
+    -> tool_output_stream_result {
   using value_t = std::remove_cvref_t<output_t>;
-  if constexpr (std::same_as<value_t, tool_stream_result>) {
+  if constexpr (std::same_as<value_t, tool_output_stream_result>) {
     return std::forward<output_t>(output);
-  } else if constexpr (std::same_as<value_t, tool_stream_reader>) {
+  } else if constexpr (std::same_as<value_t, tool_output_stream_reader>) {
     return std::forward<output_t>(output);
   } else {
-    return tool_stream_result::failure(wh::core::errc::contract_violation);
+    return tool_output_stream_result::failure(
+        wh::core::errc::contract_violation);
   }
 }
 
@@ -402,7 +407,7 @@ template <typename impl_t>
 template <typename impl_t>
 [[nodiscard]] inline auto run_sync_stream(const impl_t &impl,
                                           const tool_request &request)
-    -> tool_stream_result {
+    -> tool_output_stream_result {
   if constexpr (requires {
                   { impl.stream(request) };
                 }) {
@@ -413,7 +418,7 @@ template <typename impl_t>
 template <typename impl_t>
 [[nodiscard]] inline auto run_sync_stream(const impl_t &impl,
                                           tool_request &&request)
-    -> tool_stream_result {
+    -> tool_output_stream_result {
   if constexpr (requires {
                   { impl.stream(std::move(request)) };
                 }) {
@@ -445,7 +450,7 @@ template <typename impl_t, typename request_t>
   using request_value_t = std::remove_cvref_t<request_t>;
   static_assert(std::same_as<request_value_t, tool_request>,
                 "tool sender factory requires tool_request input");
-  return wh::core::detail::request_result_sender<tool_stream_result>(
+  return wh::core::detail::request_result_sender<tool_output_stream_result>(
       std::forward<request_t>(request),
       [&impl](auto &&forwarded_request) -> decltype(auto) {
         return impl.stream_sender(
@@ -466,10 +471,11 @@ template <> struct tool_result_traits<tool_invoke_result> {
   }
 };
 
-template <> struct tool_result_traits<tool_stream_result> {
-  static auto record_success(callback_state &, tool_stream_result &) -> void {}
+template <> struct tool_result_traits<tool_output_stream_result> {
+  static auto record_success(callback_state &,
+                             tool_output_stream_result &) -> void {}
 
-  [[nodiscard]] static auto make_skip_result() -> tool_stream_result {
+  [[nodiscard]] static auto make_skip_result() -> tool_output_stream_result {
     return make_skipped_stream();
   }
 };
@@ -492,7 +498,7 @@ prepare_tool_run(tool_request request, callback_sink sink,
                  const tool_options &default_options)
     -> wh::core::result<tool_run_state<result_t>> {
   auto effective_request =
-      tool_request{std::move(request.input),
+      tool_request{std::move(request.input_json),
                    merge_options(default_options, request.options)};
   sink = wh::callbacks::filter_callback_sink(std::move(sink),
                                              effective_request.options);
@@ -514,7 +520,7 @@ prepare_tool_run(tool_request request, callback_sink sink,
 
   std::string validation_path{};
   auto validated = validate_tool_input_schema(
-      state.request.input, schema.parameters, validation_path);
+      state.request.input_json, schema.parameters, validation_path);
   if (validated.has_error()) {
     state.callback.event.error_context = std::move(validation_path);
     emit_callback(state.sink, wh::callbacks::stage::error, state.callback);
@@ -826,7 +832,7 @@ public:
     requires std::same_as<std::remove_cvref_t<request_t>, tool_request>
   [[nodiscard]] auto stream(request_t &&request,
                             wh::core::run_context &callback_context) const
-      -> tool_stream_result
+      -> tool_output_stream_result
     requires detail::sync_stream_handler<impl_t>
   {
     return stream_sync_impl(std::forward<request_t>(request),
@@ -863,7 +869,8 @@ private:
                                       detail::callback_sink sink) const
       -> tool_invoke_result {
     auto prepared = detail::prepare_tool_run<tool_invoke_result>(
-        tool_request{request.input, request.options}, std::move(sink), schema_,
+        tool_request{request.input_json, request.options}, std::move(sink),
+        schema_,
         default_options_);
     if (prepared.has_error()) {
       return tool_invoke_result::failure(prepared.error());
@@ -879,12 +886,13 @@ private:
              detail::sync_stream_handler<impl_t>
   [[nodiscard]] auto stream_sync_impl(request_t &&request,
                                       detail::callback_sink sink) const
-      -> tool_stream_result {
-    auto prepared = detail::prepare_tool_run<tool_stream_result>(
-        tool_request{request.input, request.options}, std::move(sink), schema_,
+      -> tool_output_stream_result {
+    auto prepared = detail::prepare_tool_run<tool_output_stream_result>(
+        tool_request{request.input_json, request.options}, std::move(sink),
+        schema_,
         default_options_);
     if (prepared.has_error()) {
-      return tool_stream_result::failure(prepared.error());
+      return tool_output_stream_result::failure(prepared.error());
     }
     return detail::run_sync_tool_loop(
         std::move(prepared).value(), [this](tool_request &prepared_request) {
@@ -899,7 +907,7 @@ private:
                                        detail::callback_sink sink) const
       -> auto {
     return wh::core::detail::defer_resume_sender<Resume>(
-        [this, request = tool_request{request.input, request.options},
+        [this, request = tool_request{request.input_json, request.options},
          sink = std::move(sink)](auto scheduler) mutable {
           auto prepared = detail::prepare_tool_run<tool_invoke_result>(
               std::move(request), std::move(sink), schema_, default_options_);
@@ -920,11 +928,11 @@ private:
                                        detail::callback_sink sink) const
       -> auto {
     return wh::core::detail::defer_resume_sender<Resume>(
-        [this, request = tool_request{request.input, request.options},
+        [this, request = tool_request{request.input_json, request.options},
          sink = std::move(sink)](auto scheduler) mutable {
-          auto prepared = detail::prepare_tool_run<tool_stream_result>(
+          auto prepared = detail::prepare_tool_run<tool_output_stream_result>(
               std::move(request), std::move(sink), schema_, default_options_);
-          return detail::make_tool_attempt_loop_sender<tool_stream_result>(
+          return detail::make_tool_attempt_loop_sender<tool_output_stream_result>(
               std::move(prepared), [this, scheduler = std::move(scheduler)](
                                        auto &loop_state) mutable {
                 return wh::core::detail::resume_if<Resume>(

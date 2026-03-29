@@ -24,7 +24,6 @@ namespace detail {
       .max_parallel_nodes = options.max_parallel_nodes,
       .max_parallel_per_node = options.max_parallel_per_node,
       .enable_local_state_generation = options.enable_local_state_generation,
-      .cache_namespace = options.cache_namespace,
       .has_compile_callback = static_cast<bool>(options.compile_callback),
   };
 }
@@ -108,13 +107,13 @@ inline graph::graph(const graph &other)
       branches_(other.branches_),
       diagnostics_(other.diagnostics_),
       compile_order_(other.compile_order_),
-      runtime_cache_(other.runtime_cache_),
+      compiled_execution_index_(other.compiled_execution_index_),
       snapshot_cache_(other.snapshot_cache_),
       snapshot_once_(std::in_place),
       restore_shape_(other.restore_shape_),
       compiled_(other.compiled_),
       first_error_(other.first_error_) {
-  rebind_runtime_cache_nodes();
+  rebind_compiled_execution_index_nodes();
 }
 
 inline graph::graph(graph &&other) noexcept
@@ -127,13 +126,13 @@ inline graph::graph(graph &&other) noexcept
       branches_(std::move(other.branches_)),
       diagnostics_(std::move(other.diagnostics_)),
       compile_order_(std::move(other.compile_order_)),
-      runtime_cache_(std::move(other.runtime_cache_)),
+      compiled_execution_index_(std::move(other.compiled_execution_index_)),
       snapshot_cache_(std::move(other.snapshot_cache_)),
       snapshot_once_(std::in_place),
       restore_shape_(std::move(other.restore_shape_)),
       compiled_(other.compiled_),
       first_error_(std::move(other.first_error_)) {
-  rebind_runtime_cache_nodes();
+  rebind_compiled_execution_index_nodes();
   other.snapshot_cache_.reset();
   other.snapshot_once_.emplace();
 }
@@ -151,13 +150,13 @@ inline auto graph::operator=(const graph &other) -> graph & {
   branches_ = other.branches_;
   diagnostics_ = other.diagnostics_;
   compile_order_ = other.compile_order_;
-  runtime_cache_ = other.runtime_cache_;
+  compiled_execution_index_ = other.compiled_execution_index_;
   snapshot_cache_ = other.snapshot_cache_;
   snapshot_once_.emplace();
   restore_shape_ = other.restore_shape_;
   compiled_ = other.compiled_;
   first_error_ = other.first_error_;
-  rebind_runtime_cache_nodes();
+  rebind_compiled_execution_index_nodes();
   return *this;
 }
 
@@ -174,13 +173,13 @@ inline auto graph::operator=(graph &&other) noexcept -> graph & {
   branches_ = std::move(other.branches_);
   diagnostics_ = std::move(other.diagnostics_);
   compile_order_ = std::move(other.compile_order_);
-  runtime_cache_ = std::move(other.runtime_cache_);
+  compiled_execution_index_ = std::move(other.compiled_execution_index_);
   snapshot_cache_ = std::move(other.snapshot_cache_);
   snapshot_once_.emplace();
   restore_shape_ = std::move(other.restore_shape_);
   compiled_ = other.compiled_;
   first_error_ = std::move(other.first_error_);
-  rebind_runtime_cache_nodes();
+  rebind_compiled_execution_index_nodes();
   other.snapshot_cache_.reset();
   other.snapshot_once_.emplace();
   return *this;
@@ -233,9 +232,10 @@ inline auto graph::compile_order() const noexcept
 
 inline auto graph::node_id(const std::string_view key) const
     -> wh::core::result<std::uint32_t> {
-  if (!runtime_cache_.index.key_to_id.empty()) {
-    const auto runtime_iter = runtime_cache_.index.key_to_id.find(key);
-    if (runtime_iter != runtime_cache_.index.key_to_id.end()) {
+  if (!compiled_execution_index_.index.key_to_id.empty()) {
+    const auto runtime_iter =
+        compiled_execution_index_.index.key_to_id.find(key);
+    if (runtime_iter != compiled_execution_index_.index.key_to_id.end()) {
       return runtime_iter->second;
     }
   }
@@ -252,8 +252,8 @@ inline auto graph::compiled_node_by_key(const std::string_view key) const
     return wh::core::result<std::reference_wrapper<const compiled_node>>::failure(
         wh::core::errc::contract_violation);
   }
-  const auto iter = runtime_cache_.index.key_to_id.find(key);
-  if (iter == runtime_cache_.index.key_to_id.end() ||
+  const auto iter = compiled_execution_index_.index.key_to_id.find(key);
+  if (iter == compiled_execution_index_.index.key_to_id.end() ||
       iter->second >= compiled_nodes_.size()) {
     return wh::core::result<std::reference_wrapper<const compiled_node>>::failure(
         wh::core::errc::not_found);
@@ -334,7 +334,7 @@ inline auto graph::compile() -> wh::core::result<void> {
     return wh::core::result<void>::failure(sorted.error());
   }
   compile_order_ = std::move(sorted).value();
-  auto prepared = build_runtime_cache();
+  auto prepared = build_compiled_execution_index();
   if (prepared.has_error()) {
     return prepared;
   }
@@ -486,7 +486,6 @@ inline auto graph::to_compile_node_options_info(
       .timeout_override = options.timeout_override,
       .retry_window_override = options.retry_window_override,
       .max_parallel_override = options.max_parallel_override,
-      .cache_namespace_override = options.cache_namespace_override,
       .state_handlers = options.state_handlers,
   };
 }
@@ -504,7 +503,6 @@ inline auto graph::build_compile_info_snapshot() const -> graph_compile_info {
   info.max_parallel_nodes = options_.max_parallel_nodes;
   info.max_parallel_per_node = options_.max_parallel_per_node;
   info.state_generator_enabled = options_.enable_local_state_generation;
-  info.cache_namespace = options_.cache_namespace;
   info.compile_order = compile_order_;
   info.node_key_to_id.reserve(node_id_index_.size());
   for (const auto &[key, node_id] : node_id_index_) {
@@ -577,10 +575,13 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
   graph_snapshot snapshot{};
   snapshot.compile_options = detail::to_snapshot_compile_options(options_);
 
-  if (!runtime_cache_.index.id_to_key.empty() && !compiled_nodes_.empty()) {
-    snapshot.node_id_to_key = runtime_cache_.index.id_to_key;
-    snapshot.node_key_to_id.reserve(runtime_cache_.index.key_to_id.size());
-    for (const auto &[key, node_id] : runtime_cache_.index.key_to_id) {
+  if (!compiled_execution_index_.index.id_to_key.empty() &&
+      !compiled_nodes_.empty()) {
+    snapshot.node_id_to_key = compiled_execution_index_.index.id_to_key;
+    snapshot.node_key_to_id.reserve(
+        compiled_execution_index_.index.key_to_id.size());
+    for (const auto &[key, node_id] :
+         compiled_execution_index_.index.key_to_id) {
       snapshot.node_key_to_id.emplace(key, node_id);
     }
 
@@ -609,11 +610,11 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
     std::sort(snapshot.nodes.begin(), snapshot.nodes.end(),
               detail::node_snapshot_less);
 
-    snapshot.edges.reserve(runtime_cache_.index.indexed_edges.size());
-    for (const auto &edge : runtime_cache_.index.indexed_edges) {
+    snapshot.edges.reserve(compiled_execution_index_.index.indexed_edges.size());
+    for (const auto &edge : compiled_execution_index_.index.indexed_edges) {
       snapshot.edges.push_back(graph_snapshot_edge{
-          .from = runtime_cache_.index.id_to_key[edge.from],
-          .to = runtime_cache_.index.id_to_key[edge.to],
+          .from = compiled_execution_index_.index.id_to_key[edge.from],
+          .to = compiled_execution_index_.index.id_to_key[edge.to],
           .no_control = edge.no_control,
           .no_data = edge.no_data,
           .adapter_kind = edge.adapter.kind,
@@ -627,21 +628,25 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
     std::sort(snapshot.edges.begin(), snapshot.edges.end(),
               detail::edge_snapshot_less);
 
-    snapshot.branches.reserve(runtime_cache_.index.has_branch_by_source.size());
+    snapshot.branches.reserve(
+        compiled_execution_index_.index.has_branch_by_source.size());
     for (std::uint32_t source_id = 0U;
          source_id < static_cast<std::uint32_t>(
-                         runtime_cache_.index.has_branch_by_source.size());
+                         compiled_execution_index_.index
+                             .has_branch_by_source.size());
          ++source_id) {
-      const auto *branch = runtime_cache_.index.branch_for_source(source_id);
+      const auto *branch =
+          compiled_execution_index_.index.branch_for_source(source_id);
       if (branch == nullptr) {
         continue;
       }
       auto branch_snapshot = graph_snapshot_branch{
-          .from = runtime_cache_.index.id_to_key[source_id],
+          .from = compiled_execution_index_.index.id_to_key[source_id],
       };
       branch_snapshot.end_nodes.reserve(branch->end_nodes_sorted.size());
       for (const auto node_id : branch->end_nodes_sorted) {
-        branch_snapshot.end_nodes.push_back(runtime_cache_.index.id_to_key[node_id]);
+        branch_snapshot.end_nodes.push_back(
+            compiled_execution_index_.index.id_to_key[node_id]);
       }
       std::sort(branch_snapshot.end_nodes.begin(), branch_snapshot.end_nodes.end());
       snapshot.branches.push_back(std::move(branch_snapshot));
@@ -718,7 +723,8 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
       .fan_in_policy = options_.fan_in_policy,
   };
 
-  if (!runtime_cache_.index.id_to_key.empty() && !compiled_nodes_.empty()) {
+  if (!compiled_execution_index_.index.id_to_key.empty() &&
+      !compiled_nodes_.empty()) {
     shape.nodes.reserve(compiled_nodes_.size());
     for (const auto &node : compiled_nodes_) {
       if (node.meta.key == graph_start_node_key ||
@@ -742,11 +748,11 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
     }
     std::sort(shape.nodes.begin(), shape.nodes.end(), detail::restore_node_less);
 
-    shape.edges.reserve(runtime_cache_.index.indexed_edges.size());
-    for (const auto &edge : runtime_cache_.index.indexed_edges) {
+    shape.edges.reserve(compiled_execution_index_.index.indexed_edges.size());
+    for (const auto &edge : compiled_execution_index_.index.indexed_edges) {
       shape.edges.push_back(graph_restore_edge{
-          .from = runtime_cache_.index.id_to_key[edge.from],
-          .to = runtime_cache_.index.id_to_key[edge.to],
+          .from = compiled_execution_index_.index.id_to_key[edge.from],
+          .to = compiled_execution_index_.index.id_to_key[edge.to],
           .no_control = edge.no_control,
           .no_data = edge.no_data,
           .adapter_kind = edge.adapter.kind,
@@ -758,21 +764,25 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
     }
     std::sort(shape.edges.begin(), shape.edges.end(), detail::restore_edge_less);
 
-    shape.branches.reserve(runtime_cache_.index.has_branch_by_source.size());
+    shape.branches.reserve(
+        compiled_execution_index_.index.has_branch_by_source.size());
     for (std::uint32_t source_id = 0U;
          source_id < static_cast<std::uint32_t>(
-                         runtime_cache_.index.has_branch_by_source.size());
+                         compiled_execution_index_.index
+                             .has_branch_by_source.size());
          ++source_id) {
-      const auto *branch = runtime_cache_.index.branch_for_source(source_id);
+      const auto *branch =
+          compiled_execution_index_.index.branch_for_source(source_id);
       if (branch == nullptr) {
         continue;
       }
       auto branch_shape = graph_restore_branch{
-          .from = runtime_cache_.index.id_to_key[source_id],
+          .from = compiled_execution_index_.index.id_to_key[source_id],
       };
       branch_shape.end_nodes.reserve(branch->end_nodes_sorted.size());
       for (const auto node_id : branch->end_nodes_sorted) {
-        branch_shape.end_nodes.push_back(runtime_cache_.index.id_to_key[node_id]);
+        branch_shape.end_nodes.push_back(
+            compiled_execution_index_.index.id_to_key[node_id]);
       }
       std::sort(branch_shape.end_nodes.begin(), branch_shape.end_nodes.end());
       shape.branches.push_back(std::move(branch_shape));
@@ -831,11 +841,11 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
   return shape;
 }
 
-inline auto graph::rebind_runtime_cache_nodes() noexcept -> void {
-  runtime_cache_.index.nodes_by_id.clear();
-  runtime_cache_.index.nodes_by_id.reserve(compiled_nodes_.size());
+inline auto graph::rebind_compiled_execution_index_nodes() noexcept -> void {
+  compiled_execution_index_.index.nodes_by_id.clear();
+  compiled_execution_index_.index.nodes_by_id.reserve(compiled_nodes_.size());
   for (auto &node : compiled_nodes_) {
-    runtime_cache_.index.nodes_by_id.push_back(&node);
+    compiled_execution_index_.index.nodes_by_id.push_back(&node);
   }
 }
 
@@ -856,10 +866,10 @@ inline auto graph::compile_authored(const authored_node &node) -> compiled_node 
       node);
 }
 
-inline auto graph::build_runtime_cache() -> wh::core::result<void> {
-  runtime_cache cache{};
-  auto &index = cache.index;
-  auto &plan = cache.plan;
+inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
+  compiled_execution_index compiled_index{};
+  auto &index = compiled_index.index;
+  auto &plan = compiled_index.plan;
   index.key_to_id.reserve(node_insertion_order_.size());
   index.id_to_key.reserve(node_insertion_order_.size());
   index.nodes_by_id.reserve(node_insertion_order_.size());
@@ -1076,7 +1086,7 @@ inline auto graph::build_runtime_cache() -> wh::core::result<void> {
     append_root_node(node_id);
   }
 
-  runtime_cache_ = std::move(cache);
+  compiled_execution_index_ = std::move(compiled_index);
   return {};
 }
 

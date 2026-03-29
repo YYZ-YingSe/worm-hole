@@ -205,6 +205,36 @@ inline auto patch_component_request(
   return node_context;
 }
 
+struct scoped_node_callbacks {
+  wh::core::run_context *context{nullptr};
+  std::optional<wh::core::callback_runtime> previous_callbacks{};
+
+  scoped_node_callbacks(wh::core::run_context &target,
+                        const graph_resolved_node_observation &observation,
+                        const graph_node_trace &trace)
+      : context(std::addressof(target)), previous_callbacks(target.callbacks) {
+    detail::apply_node_callbacks(target, observation, trace);
+  }
+
+  scoped_node_callbacks(const scoped_node_callbacks &) = delete;
+  auto operator=(const scoped_node_callbacks &) -> scoped_node_callbacks & =
+      delete;
+
+  scoped_node_callbacks(scoped_node_callbacks &&other) noexcept
+      : context(std::exchange(other.context, nullptr)),
+        previous_callbacks(std::move(other.previous_callbacks)) {}
+
+  auto operator=(scoped_node_callbacks &&other) noexcept
+      -> scoped_node_callbacks & = delete;
+
+  ~scoped_node_callbacks() {
+    if (context == nullptr) {
+      return;
+    }
+    context->callbacks = std::move(previous_callbacks);
+  }
+};
+
 template <typename invoke_t>
 [[nodiscard]] inline auto with_node_context(wh::core::run_context &context,
                                             const node_runtime &runtime,
@@ -214,13 +244,13 @@ template <typename invoke_t>
   const auto &trace = node_trace(runtime);
   const auto binding =
       detail::resolve_node_context_binding(context, observation, trace);
-  std::optional<wh::core::run_context> owned_context{};
-  if (binding.forks_execution()) {
-    owned_context = wh::core::run_context{context};
-    detail::apply_node_callbacks(*owned_context, observation, trace);
+  if (!binding.forks_execution()) {
+    return std::forward<invoke_t>(invoke)(context);
   }
-  auto &node_context = owned_context.has_value() ? *owned_context : context;
-  return std::forward<invoke_t>(invoke)(node_context);
+
+  auto owned_context = wh::core::run_context{context};
+  detail::apply_node_callbacks(owned_context, observation, trace);
+  return std::forward<invoke_t>(invoke)(owned_context);
 }
 
 template <typename invoke_t>
@@ -248,13 +278,21 @@ template <typename sender_factory_t>
     owned_context.emplace(context);
     detail::apply_node_callbacks(*owned_context, observation, trace);
   }
+  const auto *graph_scheduler = runtime.graph_scheduler;
   return ::wh::compose::detail::bridge_graph_sender(
       ::wh::core::detail::defer_sender(
-          [owned_context = std::move(owned_context), &context,
+          [owned_context = std::move(owned_context), &context, graph_scheduler,
            make_sender = std::forward<sender_factory_t>(make_sender)]() mutable {
             auto &node_context =
                 owned_context.has_value() ? *owned_context : context;
-            return make_sender(node_context);
+            if (graph_scheduler == nullptr) {
+              return ::wh::compose::detail::failure_graph_sender(
+                  wh::core::errc::contract_violation);
+            }
+            auto sender = make_sender(node_context);
+            return ::wh::compose::detail::bridge_graph_sender(
+                ::wh::core::detail::bind_sender_scheduler(
+                    std::move(sender), *graph_scheduler));
           }));
 }
 
@@ -267,7 +305,7 @@ template <typename sender_factory_t>
       context, runtime,
       [call_options,
        make_sender = std::forward<sender_factory_t>(make_sender)](
-          wh::core::run_context &node_context) mutable -> graph_sender {
+          wh::core::run_context &node_context) mutable -> decltype(auto) {
         return make_sender(node_context, *call_options);
       });
 }
@@ -285,16 +323,14 @@ template <typename sender_factory_t, typename input_t>
 [[nodiscard]] inline auto invoke_input_sender(
     sender_factory_t &make_sender, input_t &&input,
     wh::core::run_context &context,
-    const graph_call_scope &call_options) -> graph_sender {
+    const graph_call_scope &call_options) -> decltype(auto) {
   if constexpr (requires {
                   make_sender(std::forward<input_t>(input), context,
                               call_options);
                 }) {
-    return ::wh::compose::detail::bridge_graph_sender(
-        make_sender(std::forward<input_t>(input), context, call_options));
+    return make_sender(std::forward<input_t>(input), context, call_options);
   } else {
-    return ::wh::compose::detail::bridge_graph_sender(
-        make_sender(std::forward<input_t>(input), context));
+    return make_sender(std::forward<input_t>(input), context);
   }
 }
 
@@ -311,7 +347,7 @@ template <typename sender_factory_t>
       [input = std::move(owned_input),
        make_sender = std::forward<sender_factory_t>(make_sender)](
           wh::core::run_context &callback_context,
-          const graph_call_scope &call_options) mutable -> graph_sender {
+          const graph_call_scope &call_options) mutable -> decltype(auto) {
         return detail::invoke_input_sender(make_sender, input, callback_context,
                                            call_options);
       });
@@ -333,7 +369,7 @@ template <typename sender_factory_t>
       [input = std::move(owned_input),
        make_sender = std::forward<sender_factory_t>(make_sender)](
           wh::core::run_context &callback_context,
-          const graph_call_scope &call_options) mutable -> graph_sender {
+          const graph_call_scope &call_options) mutable -> decltype(auto) {
         return detail::invoke_input_sender(make_sender, std::move(input),
                                            callback_context, call_options);
       });

@@ -48,8 +48,6 @@ struct graph_compile_options {
   std::size_t max_parallel_per_node{1U};
   /// Enables node-local state generation/handler capability for this graph.
   bool enable_local_state_generation{true};
-  /// Graph-level cache namespace used by graph cache keying.
-  std::string cache_namespace{};
   /// Optional compile callback invoked once compile snapshot is finalized.
   graph_compile_callback compile_callback{nullptr};
 };
@@ -59,7 +57,7 @@ struct graph_compile_options {
 serialize_graph_compile_options(const graph_compile_options &options)
     -> std::string {
   std::string text{};
-  text.reserve(192U + options.name.size() + options.cache_namespace.size());
+  text.reserve(192U + options.name.size());
   text += "name=";
   text += options.name;
   text += ";boundary=";
@@ -101,8 +99,6 @@ serialize_graph_compile_options(const graph_compile_options &options)
   text += std::to_string(options.max_parallel_per_node);
   text += ";enable_local_state_generation=";
   text += options.enable_local_state_generation ? "true" : "false";
-  text += ";cache_namespace=";
-  text += options.cache_namespace;
   text += ";compile_callback=";
   text += static_cast<bool>(options.compile_callback) ? "true" : "false";
   return text;

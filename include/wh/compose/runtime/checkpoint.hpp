@@ -1,4 +1,4 @@
-// Defines checkpoint store and version migrator pipeline for compose recovery.
+// Defines checkpoint store and serializer pipeline for compose recovery.
 #pragma once
 
 #include <algorithm>
@@ -25,94 +25,6 @@
 #include "wh/core/type_traits.hpp"
 
 namespace wh::compose {
-
-/// One migration callback from older checkpoint version to newer version.
-using checkpoint_migrator = wh::core::callback_function<
-    wh::core::result<checkpoint_state>(checkpoint_state &&) const>;
-
-/// Registry for checkpoint-version migrators.
-class checkpoint_migrator_registry {
-public:
-  /// Registers one migrator step `from_version -> to_version`.
-  auto register_step(const std::uint32_t from_version, const std::uint32_t to_version,
-                     const checkpoint_migrator &migrator)
-      -> wh::core::result<void> {
-    return register_step_impl(from_version, to_version, migrator);
-  }
-
-  /// Registers one movable migrator step `from_version -> to_version`.
-  auto register_step(const std::uint32_t from_version, const std::uint32_t to_version,
-                     checkpoint_migrator &&migrator) -> wh::core::result<void> {
-    return register_step_impl(from_version, to_version, std::move(migrator));
-  }
-
-  /// Migrates one checkpoint snapshot to `target_version` (copy path).
-  [[nodiscard]] auto migrate(const checkpoint_state &state,
-                             const std::uint32_t target_version) const
-      -> wh::core::result<checkpoint_state> {
-    return migrate_impl(checkpoint_state{state}, target_version);
-  }
-
-  /// Migrates one checkpoint snapshot to `target_version` (move path).
-  [[nodiscard]] auto migrate(checkpoint_state &&state,
-                             const std::uint32_t target_version) const
-      -> wh::core::result<checkpoint_state> {
-    return migrate_impl(std::move(state), target_version);
-  }
-
-private:
-  [[nodiscard]] auto migrate_impl(checkpoint_state state,
-                                  const std::uint32_t target_version) const
-      -> wh::core::result<checkpoint_state> {
-    if (state.version > target_version) {
-      return wh::core::result<checkpoint_state>::failure(
-          wh::core::errc::contract_violation);
-    }
-    while (state.version < target_version) {
-      const auto step_iter = steps_.find(state.version);
-      if (step_iter == steps_.end()) {
-        return wh::core::result<checkpoint_state>::failure(
-            wh::core::errc::not_supported);
-      }
-      auto migrated = step_iter->second.migrator(std::move(state));
-      if (migrated.has_error()) {
-        return wh::core::result<checkpoint_state>::failure(migrated.error());
-      }
-      state = std::move(migrated).value();
-      state.version = step_iter->second.to_version;
-    }
-    return state;
-  }
-
-  struct migration_step {
-    std::uint32_t to_version{0U};
-    checkpoint_migrator migrator{nullptr};
-  };
-
-  template <typename migrator_t>
-  auto register_step_impl(const std::uint32_t from_version,
-                          const std::uint32_t to_version, migrator_t &&migrator)
-      -> wh::core::result<void> {
-    if (from_version >= to_version) {
-      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-    }
-    if (!static_cast<bool>(migrator)) {
-      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-    }
-    if (steps_.contains(from_version)) {
-      return wh::core::result<void>::failure(wh::core::errc::already_exists);
-    }
-    steps_.emplace(from_version, migration_step{
-                                    .to_version = to_version,
-                                    .migrator =
-                                        checkpoint_migrator{
-                                            std::forward<migrator_t>(migrator)},
-                                });
-    return {};
-  }
-
-  std::unordered_map<std::uint32_t, migration_step> steps_{};
-};
 
 /// One staged/committed checkpoint record.
 struct checkpoint_record {
@@ -372,119 +284,7 @@ struct checkpoint_backend {
 
 class checkpoint_store;
 
-/// Session key for checkpoint-store pointer (`checkpoint_store*`).
-inline constexpr std::string_view checkpoint_store_session_key =
-    "compose.graph.checkpoint.store";
-/// Session key for pluggable checkpoint backend pointer (`checkpoint_backend*`).
-inline constexpr std::string_view checkpoint_backend_session_key =
-    "compose.graph.checkpoint.backend";
-/// Session key for checkpoint load options.
-inline constexpr std::string_view checkpoint_load_session_key =
-    "compose.graph.checkpoint.load_options";
-/// Session key for checkpoint write options.
-inline constexpr std::string_view checkpoint_save_session_key =
-    "compose.graph.checkpoint.write_options";
-/// Session key for pre-load state modifier.
-inline constexpr std::string_view checkpoint_before_load_session_key =
-    "compose.graph.checkpoint.pre_load_modifier";
-/// Session key for pre-load NodePath-scoped state modifier list.
-inline constexpr std::string_view
-    checkpoint_before_load_nodes_session_key =
-        "compose.graph.checkpoint.pre_load.path_modifiers";
-/// Session key for post-load state modifier.
-inline constexpr std::string_view checkpoint_after_load_session_key =
-    "compose.graph.checkpoint.post_load_modifier";
-/// Session key for post-load NodePath-scoped state modifier list.
-inline constexpr std::string_view
-    checkpoint_after_load_nodes_session_key =
-        "compose.graph.checkpoint.post_load.path_modifiers";
-/// Session key for pre-save state modifier.
-inline constexpr std::string_view checkpoint_before_save_session_key =
-    "compose.graph.checkpoint.pre_save_modifier";
-/// Session key for pre-save NodePath-scoped state modifier list.
-inline constexpr std::string_view
-    checkpoint_before_save_nodes_session_key =
-        "compose.graph.checkpoint.pre_save.path_modifiers";
-/// Session key for post-save state modifier.
-inline constexpr std::string_view checkpoint_after_save_session_key =
-    "compose.graph.checkpoint.post_save_modifier";
-/// Session key for post-save NodePath-scoped state modifier list.
-inline constexpr std::string_view
-    checkpoint_after_save_nodes_session_key =
-        "compose.graph.checkpoint.post_save.path_modifiers";
-/// Session key for checkpoint-version migrator registry pointer.
-inline constexpr std::string_view checkpoint_migrators_session_key =
-    "compose.graph.checkpoint.migrator_registry";
-/// Session key for restore target schema version.
-inline constexpr std::string_view checkpoint_version_session_key =
-    "compose.graph.checkpoint.target_version";
-/// Session key carrying structured checkpoint failure detail.
-inline constexpr std::string_view checkpoint_last_error_session_key =
-    "compose.graph.checkpoint.last_error";
-/// Session key carrying one-shot forwarded checkpoints for subgraph restore.
-inline constexpr std::string_view forwarded_checkpoints_session_key =
-    "compose.graph.checkpoint.forwarded_once";
-/// Session key carrying stream conversion registry keyed by node key/path.
-inline constexpr std::string_view checkpoint_stream_codecs_session_key =
-    "compose.graph.checkpoint.stream_converters";
-/// Session key carrying checkpoint serializer callbacks.
-inline constexpr std::string_view checkpoint_serializer_session_key =
-    "compose.graph.checkpoint.serializer";
-
-/// Binds one in-memory checkpoint store to `context`.
-[[nodiscard]] inline auto bind_checkpoint_store(wh::core::run_context &context,
-                                                checkpoint_store &store)
-    -> wh::core::result<void> {
-  const auto backend_ref = wh::core::session_value_ref<checkpoint_backend *>(
-      context, checkpoint_backend_session_key);
-  if (backend_ref.has_value() && backend_ref.value().get() != nullptr) {
-    return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-  }
-  if (backend_ref.has_error() &&
-      backend_ref.error() != wh::core::errc::not_found) {
-    return wh::core::result<void>::failure(backend_ref.error());
-  }
-  wh::core::set_session_value(
-      context, std::string{checkpoint_store_session_key}, &store);
-  return {};
-}
-
-/// Binds one pluggable checkpoint backend to `context`.
-[[nodiscard]] inline auto bind_checkpoint_backend(wh::core::run_context &context,
-                                                  checkpoint_backend &backend)
-    -> wh::core::result<void> {
-  const auto store_ref = wh::core::session_value_ref<checkpoint_store *>(
-      context, checkpoint_store_session_key);
-  if (store_ref.has_value() && store_ref.value().get() != nullptr) {
-    return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-  }
-  if (store_ref.has_error() && store_ref.error() != wh::core::errc::not_found) {
-    return wh::core::result<void>::failure(store_ref.error());
-  }
-  wh::core::set_session_value(
-      context, std::string{checkpoint_backend_session_key}, &backend);
-  return {};
-}
-
-/// Binds restore/load options to `context`.
-inline auto bind_checkpoint_load_options(wh::core::run_context &context,
-                                         checkpoint_load_options options)
-    -> void {
-  wh::core::set_session_value(
-      context, std::string{checkpoint_load_session_key},
-      std::move(options));
-}
-
-/// Binds persist/save options to `context`.
-inline auto bind_checkpoint_save_options(wh::core::run_context &context,
-                                         checkpoint_save_options options)
-    -> void {
-  wh::core::set_session_value(
-      context, std::string{checkpoint_save_session_key},
-      std::move(options));
-}
-
-/// In-memory checkpoint store with migration-aware restore API.
+/// In-memory checkpoint store with restore/time-travel APIs.
 class checkpoint_store {
 public:
   /// Saves one checkpoint snapshot (copy path).
@@ -596,31 +396,6 @@ public:
       return wh::core::result<checkpoint_state>::failure(wh::core::errc::not_found);
     }
     return record->state;
-  }
-
-  /// Loads and migrates latest checkpoint snapshot to `target_version`.
-  [[nodiscard]] auto
-  load_migrated(const checkpoint_migrator_registry &registry,
-                const std::uint32_t target_version) const
-      -> wh::core::result<checkpoint_state> {
-    auto loaded = load();
-    if (loaded.has_error()) {
-      return loaded;
-    }
-    return registry.migrate(std::move(loaded).value(), target_version);
-  }
-
-  /// Loads and migrates checkpoint snapshot with explicit load options.
-  [[nodiscard]] auto
-  load_migrated(const checkpoint_migrator_registry &registry,
-                const std::uint32_t target_version,
-                const checkpoint_load_options &options) const
-      -> wh::core::result<checkpoint_state> {
-    auto loaded = load(options);
-    if (loaded.has_error()) {
-      return loaded;
-    }
-    return registry.migrate(std::move(loaded).value(), target_version);
   }
 
   /// Builds one restore plan (supports `force_new_run` bypass semantics).
@@ -1014,43 +789,5 @@ private:
   std::optional<std::string> latest_checkpoint_id_{};
   std::uint64_t next_record_id_{1U};
 };
-
-/// Restores resume snapshot after applying required checkpoint migrations.
-[[nodiscard]] inline auto
-restore_resume_snapshot(const checkpoint_store &store,
-                        const checkpoint_migrator_registry &registry,
-                        const std::uint32_t target_version)
-    -> wh::core::result<wh::core::resume_state> {
-  auto migrated = store.load_migrated(registry, target_version);
-  if (migrated.has_error()) {
-    return wh::core::result<wh::core::resume_state>::failure(migrated.error());
-  }
-  auto checkpoint = std::move(migrated).value();
-  return std::move(checkpoint.resume_snapshot);
-}
-
-/// Restores resume snapshot with explicit force-new-run/load options.
-[[nodiscard]] inline auto
-restore_resume_snapshot(const checkpoint_store &store,
-                        const checkpoint_migrator_registry &registry,
-                        const std::uint32_t target_version,
-                        const checkpoint_load_options &options)
-    -> wh::core::result<wh::core::resume_state> {
-  auto plan = store.prepare_restore(options);
-  if (plan.has_error()) {
-    return wh::core::result<wh::core::resume_state>::failure(plan.error());
-  }
-  auto restore_plan = std::move(plan).value();
-  if (!restore_plan.restore_from_checkpoint || !restore_plan.checkpoint.has_value()) {
-    return wh::core::resume_state{};
-  }
-  auto migrated =
-      registry.migrate(std::move(restore_plan.checkpoint).value(), target_version);
-  if (migrated.has_error()) {
-    return wh::core::result<wh::core::resume_state>::failure(migrated.error());
-  }
-  auto checkpoint = std::move(migrated).value();
-  return std::move(checkpoint.resume_snapshot);
-}
 
 } // namespace wh::compose

@@ -227,10 +227,14 @@ private:
 namespace wh::compose {
 
 inline auto graph::collect_reader_value(graph_stream_reader reader,
-                                        const edge_limits limits)
+                                        const edge_limits limits,
+                                        const wh::core::detail::any_resume_scheduler_t
+                                            &graph_scheduler)
     -> graph_sender {
   return detail::bridge_graph_sender(
-      detail::collect_reader_value_sender{std::move(reader), limits});
+      wh::core::detail::bind_sender_scheduler(
+          detail::collect_reader_value_sender{std::move(reader), limits},
+          wh::core::detail::any_resume_scheduler_t{graph_scheduler}));
 }
 
 } // namespace wh::compose

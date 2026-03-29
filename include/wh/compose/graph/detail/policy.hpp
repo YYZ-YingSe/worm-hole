@@ -1,25 +1,12 @@
-// Defines graph runtime policy, cache, branch, and budget helpers.
+// Defines graph runtime policy, compiled-execution index, branch, and budget helpers.
 #pragma once
 
 #include "wh/compose/graph/graph.hpp"
 
 namespace wh::compose {
-inline auto graph::resolve_runtime_cache_scope(
-    const detail::runtime_state::invoke_config &config,
-    const graph_call_scope &call_options) const -> std::string {
-  if (call_options.cache_key().has_value()) {
-    return *call_options.cache_key();
-  }
-  if (config.cache_scope_override.has_value() &&
-      !config.cache_scope_override->empty()) {
-    return *config.cache_scope_override;
-  }
-  return options_.name;
-}
-
 inline auto graph::resolve_node_retry_budget(const std::uint32_t node_id) const
     -> std::size_t {
-  const auto *node = runtime_cache_.index.nodes_by_id[node_id];
+  const auto *node = compiled_execution_index_.index.nodes_by_id[node_id];
   if (node != nullptr && node->meta.options.retry_budget_override.has_value()) {
     return *node->meta.options.retry_budget_override;
   }
@@ -28,7 +15,7 @@ inline auto graph::resolve_node_retry_budget(const std::uint32_t node_id) const
 
 inline auto graph::resolve_node_timeout_budget(const std::uint32_t node_id) const
     -> std::optional<std::chrono::milliseconds> {
-  const auto *node = runtime_cache_.index.nodes_by_id[node_id];
+  const auto *node = compiled_execution_index_.index.nodes_by_id[node_id];
   if (node != nullptr && node->meta.options.timeout_override.has_value()) {
     return node->meta.options.timeout_override;
   }
@@ -37,45 +24,11 @@ inline auto graph::resolve_node_timeout_budget(const std::uint32_t node_id) cons
 
 inline auto graph::resolve_node_parallel_gate(const std::uint32_t node_id) const
     -> std::size_t {
-  const auto *node = runtime_cache_.index.nodes_by_id[node_id];
+  const auto *node = compiled_execution_index_.index.nodes_by_id[node_id];
   if (node != nullptr && node->meta.options.max_parallel_override.has_value()) {
     return *node->meta.options.max_parallel_override;
   }
   return options_.max_parallel_per_node;
-}
-
-inline auto graph::resolve_node_cache_namespace(
-    const std::uint32_t node_id) const -> std::string_view {
-  const auto *node = runtime_cache_.index.nodes_by_id[node_id];
-  if (node != nullptr && node->meta.options.cache_namespace_override.has_value()) {
-    return *node->meta.options.cache_namespace_override;
-  }
-  return options_.cache_namespace;
-}
-
-inline auto graph::has_cache_enabled_nodes() const -> bool {
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(runtime_cache_.index.nodes_by_id.size());
-       ++node_id) {
-    if (!resolve_node_cache_namespace(node_id).empty()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-inline auto graph::acquire_invoke_cache_store(wh::core::run_context &context) const
-    -> detail::cache_runtime::invoke_cache_store & {
-  return detail::cache_runtime::acquire_store(context);
-}
-
-inline auto graph::make_node_cache_key(const std::string_view cache_namespace,
-                                       const std::string_view runtime_scope,
-                                       const std::uint32_t node_id) const
-    -> std::string {
-  return detail::cache_runtime::make_node_cache_key(
-      cache_namespace, runtime_scope, options_.name,
-      runtime_cache_.index.id_to_key[node_id]);
 }
 
 inline auto graph::resolve_branch_merge(
@@ -150,7 +103,7 @@ inline auto graph::evaluate_branch_indexed(
     const std::uint32_t source_node_id, const graph_value &source_output,
     wh::core::run_context &context, const graph_call_scope &call_options) const
     -> wh::core::result<std::optional<std::vector<std::uint32_t>>> {
-  const auto *branch = runtime_cache_.index.branch_for_source(source_node_id);
+  const auto *branch = compiled_execution_index_.index.branch_for_source(source_node_id);
   if (branch == nullptr) {
     return std::optional<std::vector<std::uint32_t>>{};
   }

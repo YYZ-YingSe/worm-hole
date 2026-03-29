@@ -79,16 +79,6 @@ using graph_interrupt_node_hook = wh::core::callback_function<
     wh::core::result<std::optional<wh::core::interrupt_signal>>(
         std::string_view, const graph_value &, wh::core::run_context &) const>;
 
-/// Session key for pre-node interrupt hook.
-inline constexpr std::string_view graph_interrupt_pre_hook_session_key =
-    "compose.graph.interrupt.pre_hook";
-/// Session key for post-node interrupt hook.
-inline constexpr std::string_view graph_interrupt_post_hook_session_key =
-    "compose.graph.interrupt.post_hook";
-/// Session key for one batch of subgraph interrupt signals.
-inline constexpr std::string_view graph_subgraph_interrupt_signals_session_key =
-    "compose.graph.interrupt.subgraph_signals";
-
 template <typename interrupt_id_t, typename location_t,
           typename state_t = wh::core::any,
           typename payload_t = wh::core::any>
@@ -129,7 +119,8 @@ template <typename interrupt_id_t, typename location_t,
 
 template <typename location_t, typename state_t = wh::core::any,
           typename payload_t = wh::core::any>
-  requires std::constructible_from<wh::core::address, location_t &&>
+  requires std::constructible_from<wh::core::address, location_t &&> &&
+           (!std::constructible_from<std::string, location_t &&>)
 /// Builds one interrupt signal with auto-generated id.
 [[nodiscard]] inline auto make_interrupt_signal(location_t &&location,
                                                 state_t &&state = {},
