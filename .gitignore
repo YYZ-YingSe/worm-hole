@@ -2,7 +2,7 @@
 docs/
 
 # build outputs
-build/
+/build/
 .cache/
 cmake-build-*/
 out/
