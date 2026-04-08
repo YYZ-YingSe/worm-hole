@@ -23,6 +23,10 @@ function(wh_setup_core_target)
       nlohmann_json::nlohmann_json
       minja::minja)
 
+  if(WIN32)
+    target_compile_definitions(wh_core INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
+  endif()
+
   if(UNIX AND NOT APPLE)
     target_link_libraries(wh_core INTERFACE atomic)
   endif()

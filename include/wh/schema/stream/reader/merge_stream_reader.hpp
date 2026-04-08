@@ -641,10 +641,14 @@ private:
         wh::core::detail::resume_scheduler_t<receiver_env_t>;
 
     struct final_delivery {
-      receiver_t receiver{};
+      receiver_t receiver;
       std::optional<status_type> value{};
       std::exception_ptr error{};
       bool stopped{false};
+
+      explicit final_delivery(receiver_t next_receiver) noexcept(
+          std::is_nothrow_move_constructible_v<receiver_t>)
+          : receiver(std::move(next_receiver)) {}
 
       auto complete() && noexcept -> void {
         if (error != nullptr) {
@@ -855,10 +859,9 @@ private:
         return std::nullopt;
       }
       reset_round_state();
-      return final_delivery{
-          .receiver = std::move(receiver_),
-          .value = std::move(status),
-      };
+      auto delivery = final_delivery{std::move(receiver_)};
+      delivery.value = std::move(status);
+      return delivery;
     }
 
     [[nodiscard]] auto make_error_delivery(std::exception_ptr error) noexcept
@@ -867,10 +870,9 @@ private:
         return std::nullopt;
       }
       reset_round_state();
-      return final_delivery{
-          .receiver = std::move(receiver_),
-          .error = std::move(error),
-      };
+      auto delivery = final_delivery{std::move(receiver_)};
+      delivery.error = std::move(error);
+      return delivery;
     }
 
     [[nodiscard]] auto make_stopped_delivery() noexcept
@@ -879,10 +881,9 @@ private:
         return std::nullopt;
       }
       reset_round_state();
-      return final_delivery{
-          .receiver = std::move(receiver_),
-          .stopped = true,
-      };
+      auto delivery = final_delivery{std::move(receiver_)};
+      delivery.stopped = true;
+      return delivery;
     }
 
     auto publish_completion(std::optional<final_delivery> delivery) noexcept

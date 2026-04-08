@@ -63,6 +63,12 @@ function(wh_setup_test_support_targets)
     "${WH_TARGET_TEST_SUPPORT}"
     LINK_LIBRARIES wh::core Catch2::Catch2WithMain
     INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/tests")
+
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options("${WH_TARGET_TEST_SUPPORT}" INTERFACE
+                           -Wno-c2y-extensions)
+  endif()
+
   wh_define_support_target(
     "${WH_TARGET_UT_SUPPORT}"
     LINK_LIBRARIES "${WH_TARGET_TEST_SUPPORT}"
