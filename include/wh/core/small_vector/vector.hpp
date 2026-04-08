@@ -484,8 +484,7 @@ public:
     append_value_initialized_n(new_size - size_);
   }
 
-  auto resize(const size_type requested_size, default_init_t)
-      -> void
+  auto resize(const size_type requested_size, default_init_t) -> void
     requires std::default_initializable<value_t>
   {
     const std::size_t new_size = static_cast<std::size_t>(requested_size);
@@ -647,13 +646,9 @@ public:
     }
   }
 
-  auto push_back(const value_t &value) -> void {
-    append_one(value);
-  }
+  auto push_back(const value_t &value) -> void { append_one(value); }
 
-  auto push_back(value_t &&value) -> void {
-    append_one(std::move(value));
-  }
+  auto push_back(value_t &&value) -> void { append_one(std::move(value)); }
 
   template <typename... args_t>
   [[nodiscard]] auto emplace_back(args_t &&...args) -> reference {
@@ -728,17 +723,15 @@ public:
 
     std::size_t inserted = 0U;
     for (; first != last; ++first, ++inserted) {
-      [[maybe_unused]] auto inserted_position =
-          emplace(cbegin() + static_cast<difference_type>(index + inserted),
-                  *first);
+      [[maybe_unused]] auto inserted_position = emplace(
+          cbegin() + static_cast<difference_type>(index + inserted), *first);
     }
 
     return data_ + index;
   }
 
   [[nodiscard]] auto insert(const_iterator position,
-                            std::initializer_list<value_t> values)
-      -> iterator {
+                            std::initializer_list<value_t> values) -> iterator {
     return insert(position, values.begin(), values.end());
   }
 
@@ -922,7 +915,8 @@ private:
         std::construct_at(data_ + size_,
                           std::move_if_noexcept(data_[size_ - 1U]));
       } catch (...) {
-        throw std::runtime_error("small_vector shift right construction failed");
+        throw std::runtime_error(
+            "small_vector shift right construction failed");
       }
 
       try {
@@ -1396,8 +1390,7 @@ private:
     other.reset_to_inline();
   }
 
-  template <typename... args_t>
-  auto append_one(args_t &&...args) -> void {
+  template <typename... args_t> auto append_one(args_t &&...args) -> void {
     if (size_ == capacity_)
       wh_unlikely {
         append_one_slow_path(std::forward<args_t>(args)...);
@@ -1719,7 +1712,8 @@ public:
 template <typename value_t, std::size_t inline_capacity = 8U,
           typename allocator_t = std::allocator<value_t>,
           typename options_t = small_vector_default_options>
-/// Concrete `small_vector` type combining value semantics and runtime interface.
+/// Concrete `small_vector` type combining value semantics and runtime
+/// interface.
 class small_vector : public small_vector_base<value_t, allocator_t, options_t>,
                      public small_vector_impl<value_t, inline_capacity,
                                               allocator_t, options_t> {
@@ -1849,9 +1843,8 @@ template <typename value_t, std::size_t inline_capacity, typename allocator_t,
 
 template <typename value_t, std::size_t inline_capacity, typename allocator_t,
           typename options_t>
-auto
-swap(small_vector<value_t, inline_capacity, allocator_t, options_t> &lhs,
-     small_vector<value_t, inline_capacity, allocator_t, options_t> &rhs)
+auto swap(small_vector<value_t, inline_capacity, allocator_t, options_t> &lhs,
+          small_vector<value_t, inline_capacity, allocator_t, options_t> &rhs)
     -> void {
   lhs.swap(rhs);
 }

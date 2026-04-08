@@ -1,4 +1,5 @@
-// Defines compile-stable graph metadata snapshots used by diff and restore validation.
+// Defines compile-stable graph metadata snapshots used by diff and restore
+// validation.
 #pragma once
 
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "wh/compose/graph/compile_info.hpp"
+#include "wh/compose/graph/edge_lowering.hpp"
 #include "wh/compose/types.hpp"
 #include "wh/core/type_traits.hpp"
 
@@ -23,8 +25,8 @@ struct graph_snapshot_compile_options {
   graph_boundary boundary{};
   /// Runtime mode used by this compiled graph snapshot.
   graph_runtime_mode mode{graph_runtime_mode::dag};
-  /// Eager scheduling flag.
-  bool eager{true};
+  /// DAG frontier dispatch policy.
+  graph_dispatch_policy dispatch_policy{graph_dispatch_policy::same_wave};
   /// Compile-time max-step budget.
   std::size_t max_steps{1024U};
   /// True keeps cold authoring data after compile.
@@ -77,12 +79,10 @@ struct graph_snapshot_edge {
   bool no_control{false};
   /// True disables data dependency on this edge.
   bool no_data{false};
-  /// Selected adapter family.
-  edge_adapter_kind adapter_kind{edge_adapter_kind::none};
-  /// True when a custom value->stream hook exists.
-  bool has_custom_value_to_stream{false};
-  /// True when a custom stream->value hook exists.
-  bool has_custom_stream_to_value{false};
+  /// Compile-resolved lowering family.
+  edge_lowering_kind lowering_kind{edge_lowering_kind::none};
+  /// True when this edge uses one authored custom lowering callback.
+  bool has_custom_lowering{false};
   /// Runtime guardrails visible on this edge.
   edge_limits limits{};
 };
@@ -95,12 +95,14 @@ struct graph_snapshot_branch {
   std::vector<std::string> end_nodes{};
 };
 
-/// One immutable compile-stable graph snapshot used by diff and restore validation.
+/// One immutable compile-stable graph snapshot used by diff and restore
+/// validation.
 struct graph_snapshot {
   /// Graph-level compile-visible options.
   graph_snapshot_compile_options compile_options{};
   /// Stable key->node-id mapping that survives `retain_cold_data=false`.
-  std::unordered_map<std::string, std::uint32_t, wh::core::transparent_string_hash,
+  std::unordered_map<std::string, std::uint32_t,
+                     wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       node_key_to_id{};
   /// Stable node-id->key mapping.

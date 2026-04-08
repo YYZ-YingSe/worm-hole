@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+
 #include "wh/schema/message.hpp"
 
 namespace wh::embedding {

@@ -8,16 +8,15 @@
 
 #include "wh/core/cursor_reader.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/schema/stream/core/concepts.hpp"
 #include "wh/schema/stream/adapter/detail/adapter_support.hpp"
+#include "wh/schema/stream/core/concepts.hpp"
 #include "wh/schema/stream/core/stream_base.hpp"
 
 namespace wh::schema::stream {
 
 namespace detail {
 
-template <typename reader_t>
-struct copy_stream_policy {
+template <typename reader_t> struct copy_stream_policy {
   using result_type =
       std::remove_cvref_t<decltype(std::declval<reader_t &>().read())>;
   using source_try_type =
@@ -59,7 +58,8 @@ struct copy_stream_policy {
     return result_type::failure(wh::core::errc::internal_error);
   }
 
-  static auto set_automatic_close(reader_t &reader, const bool enabled) -> void {
+  static auto set_automatic_close(reader_t &reader, const bool enabled)
+      -> void {
     set_automatic_close_if_supported(reader, auto_close_options{enabled});
   }
 };
@@ -82,15 +82,16 @@ public:
   copy_stream_reader(const copy_stream_reader &) = delete;
   auto operator=(const copy_stream_reader &) -> copy_stream_reader & = delete;
   copy_stream_reader(copy_stream_reader &&) noexcept = default;
-  auto operator=(copy_stream_reader &&) noexcept -> copy_stream_reader & = default;
+  auto operator=(copy_stream_reader &&) noexcept
+      -> copy_stream_reader & = default;
   ~copy_stream_reader() = default;
 
   template <typename source_reader_t>
-    requires (!std::same_as<std::remove_cvref_t<source_reader_t>,
-                            copy_stream_reader>) &&
-             std::constructible_from<reader_t, source_reader_t &&> &&
-             std::copy_constructible<
-                 std::remove_cvref_t<decltype(std::declval<reader_t &>().read())>>
+    requires(!std::same_as<std::remove_cvref_t<source_reader_t>,
+                           copy_stream_reader>) &&
+            std::constructible_from<reader_t, source_reader_t &&> &&
+            std::copy_constructible<std::remove_cvref_t<
+                decltype(std::declval<reader_t &>().read())>>
   explicit copy_stream_reader(source_reader_t &&reader) {
     auto readers = core_reader_t::make_readers(
         reader_t{std::forward<source_reader_t>(reader)}, 1U);
@@ -98,11 +99,11 @@ public:
   }
 
   template <typename source_reader_t>
-    requires (!std::same_as<std::remove_cvref_t<source_reader_t>,
-                            copy_stream_reader>) &&
-             std::constructible_from<reader_t, source_reader_t &&> &&
-             std::copy_constructible<
-                 std::remove_cvref_t<decltype(std::declval<reader_t &>().read())>>
+    requires(!std::same_as<std::remove_cvref_t<source_reader_t>,
+                           copy_stream_reader>) &&
+            std::constructible_from<reader_t, source_reader_t &&> &&
+            std::copy_constructible<std::remove_cvref_t<
+                decltype(std::declval<reader_t &>().read())>>
   [[nodiscard]] static auto make_copies(source_reader_t &&reader,
                                         const std::size_t count)
       -> std::vector<copy_stream_reader> {

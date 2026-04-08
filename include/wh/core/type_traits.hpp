@@ -125,4 +125,4 @@ template <typename t>
 /// `true` for `wh::core::result<T, E>` values.
 concept result_like = is_result_v<t>;
 
-} // namespace wh::coreh
+} // namespace wh::core

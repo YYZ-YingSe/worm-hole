@@ -38,13 +38,7 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Build for CodeQL extraction
-        run: |
-          cmake -S . -B build/codeql \
-            -DWH_BUILD_TESTING=OFF \
-            -DWH_WARNINGS_AS_ERRORS=OFF \
-            -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON \
-            -DWH_THIRDY_PARTY_DIR="$GITHUB_WORKSPACE/thirdy_party"
-          cmake --build build/codeql --parallel
+        uses: ./.github/actions/run/codeql-build
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
@@ -81,12 +75,6 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/coverage
-      CCACHE_COMPRESS: "true"
-      CCACHE_MAXSIZE: "750M"
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -94,29 +82,21 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install required tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ripgrep \
-            clang \
-            cmake \
-            ninja-build \
-            gcovr \
-            ccache
-
-      - name: Restore ccache
-        uses: actions/cache@v4
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-coverage-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_coverage_gate.sh') }}
-          restore-keys: |
+          install_profile: coverage
+          env_profile: strict-clang
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup/ccache
+        with:
+          dir: ${{ github.workspace }}/.ccache/coverage
+          key_stem: ccache-coverage-${{ runner.os }}
+          restore_keys: |
             ccache-coverage-${{ runner.os }}-
 
       - name: Run coverage gate
-        env:
-          WH_CI_STRICT: '1'
-          WH_COVERAGE_MIN_LINES: '0.70'
-          CC: clang
-          CXX: clang++
-        run: bash scripts/ci/run_coverage_gate.sh
+        uses: ./.github/actions/run/coverage-gate
+        with:
+          coverage_min_lines: "0.70"

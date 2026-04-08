@@ -11,13 +11,15 @@
 #include "wh/core/cursor_reader/detail/completion_bits.hpp"
 #include "wh/core/cursor_reader/detail/shared_state.hpp"
 #include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/manual_lifetime_box.hpp"
 
 namespace wh::core::cursor_reader_detail {
 
 template <wh::core::cursor_reader_source source_t, typename policy_t,
           typename receiver_t>
   requires wh::core::cursor_reader_detail::policy_for<source_t, policy_t>
-struct read_operation final : async_waiter_base<typename policy_t::result_type> {
+struct read_operation final
+    : async_waiter_base<typename policy_t::result_type> {
   using result_type = typename policy_t::result_type;
   using shared_state_t = shared_state<source_t, policy_t>;
   using async_waiter_t = async_waiter_base<result_type>;
@@ -45,12 +47,11 @@ struct read_operation final : async_waiter_base<typename policy_t::result_type> 
       stdexec::set_stopped(std::move(self->receiver_));
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> {
-      return {};
-    }
+    [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
   };
 
-  using stop_callback_t = stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
+  using stop_callback_t =
+      stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
   using handoff_op_t =
       stdexec::connect_result_t<handoff_sender_t, handoff_receiver>;
 
@@ -76,12 +77,11 @@ struct read_operation final : async_waiter_base<typename policy_t::result_type> 
   read_operation(std::shared_ptr<shared_state_t> state,
                  const std::size_t reader_index_value,
                  const bool released_value, receiver_u &&receiver)
-      : state_(std::move(state)),
-        reader_index(reader_index_value),
-        released(released_value),
-        receiver_(std::forward<receiver_u>(receiver)),
-        scheduler_(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
-            stdexec::get_env(receiver_))) {
+      : state_(std::move(state)), reader_index(reader_index_value),
+        released(released_value), receiver_(std::forward<receiver_u>(receiver)),
+        scheduler_(
+            wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
+                stdexec::get_env(receiver_))) {
     static constexpr typename async_waiter_t::ops_type ops{
         [](async_waiter_t *base) noexcept {
           static_cast<read_operation *>(base)->complete_deferred();
@@ -132,7 +132,8 @@ struct read_operation final : async_waiter_base<typename policy_t::result_type> 
     }
 
     if (ticket.start_pull) {
-      state_->start_async_pull(wh::core::detail::erase_resume_scheduler(scheduler_));
+      state_->start_async_pull(
+          wh::core::detail::erase_resume_scheduler(scheduler_));
     }
   }
 
@@ -197,9 +198,10 @@ struct read_sender {
   using result_type = typename policy_t::result_type;
   using sender_concept = stdexec::sender_t;
   using is_sender = void;
-  using completion_signatures = stdexec::completion_signatures<
-      stdexec::set_value_t(result_type), stdexec::set_error_t(std::exception_ptr),
-      stdexec::set_stopped_t()>;
+  using completion_signatures =
+      stdexec::completion_signatures<stdexec::set_value_t(result_type),
+                                     stdexec::set_error_t(std::exception_ptr),
+                                     stdexec::set_stopped_t()>;
 
   std::shared_ptr<shared_state<source_t, policy_t>> state_{};
   std::size_t reader_index{0U};
@@ -207,16 +209,16 @@ struct read_sender {
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver) &&
-      -> read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>> {
+  [[nodiscard]] auto connect(receiver_t receiver) && -> read_operation<
+      source_t, policy_t, std::remove_cvref_t<receiver_t>> {
     return read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>>{
         std::move(state_), reader_index, released, std::move(receiver)};
   }
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver) const &
-      -> read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>> {
+  [[nodiscard]] auto connect(receiver_t receiver) const
+      & -> read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>> {
     return read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>>{
         state_, reader_index, released, std::move(receiver)};
   }

@@ -25,7 +25,8 @@ public:
   pipe_stream_writer(const pipe_stream_writer &) = delete;
   auto operator=(const pipe_stream_writer &) -> pipe_stream_writer & = delete;
   pipe_stream_writer(pipe_stream_writer &&) noexcept = default;
-  auto operator=(pipe_stream_writer &&) noexcept -> pipe_stream_writer & = default;
+  auto operator=(pipe_stream_writer &&) noexcept
+      -> pipe_stream_writer & = default;
 
   auto try_write(const value_t &value) -> wh::core::result<void>
     requires std::is_nothrow_copy_constructible_v<value_t>
@@ -37,8 +38,8 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::channel_closed);
     }
 
-    const auto status =
-        detail::retry_busy_status([this, &value]() { return state_->queue.try_push(value); });
+    const auto status = detail::retry_busy_status(
+        [this, &value]() { return state_->queue.try_push(value); });
     if (status == wh::core::bounded_queue_status::success) {
       return {};
     }
@@ -71,10 +72,9 @@ public:
     const bool state_missing = !state_;
     const bool reader_closed =
         !state_missing && state_->reader_closed.load(std::memory_order_acquire);
-    auto target_state =
-        (state_missing || reader_closed)
-            ? detail::shared_closed_pipe_state<state_t>()
-            : state_;
+    auto target_state = (state_missing || reader_closed)
+                            ? detail::shared_closed_pipe_state<state_t>()
+                            : state_;
 
     return detail::normalize_pipe_write_sender(
         target_state->queue.async_push(value), std::move(target_state),
@@ -87,10 +87,9 @@ public:
     const bool state_missing = !state_;
     const bool reader_closed =
         !state_missing && state_->reader_closed.load(std::memory_order_acquire);
-    auto target_state =
-        (state_missing || reader_closed)
-            ? detail::shared_closed_pipe_state<state_t>()
-            : state_;
+    auto target_state = (state_missing || reader_closed)
+                            ? detail::shared_closed_pipe_state<state_t>()
+                            : state_;
 
     return detail::normalize_pipe_write_sender(
         target_state->queue.async_push(std::move(value)),

@@ -1,10 +1,8 @@
 // Defines compose graph value, node contracts, edge data, and diagnostics.
 #pragma once
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -35,9 +33,9 @@ using graph_stream_reader = wh::schema::stream::any_stream_reader<graph_value>;
 using graph_stream_writer = wh::schema::stream::any_stream_writer<graph_value>;
 /// Type-erased async result boundary carrying one graph value.
 using graph_value_sender =
-    exec::any_receiver_ref<stdexec::completion_signatures<stdexec::set_value_t(
-        wh::core::result<graph_value>),
-                                   stdexec::set_stopped_t()>>::any_sender<>;
+    exec::any_receiver_ref<stdexec::completion_signatures<
+        stdexec::set_value_t(wh::core::result<graph_value>),
+        stdexec::set_stopped_t()>>::any_sender<>;
 /// Logical contract for node input/output boundaries.
 enum class node_contract : std::uint8_t {
   /// One scalar/object payload.
@@ -47,8 +45,9 @@ enum class node_contract : std::uint8_t {
 };
 
 /// Execution mode carried by one authored or compiled node.
-/// `sync` nodes produce their result inline; `async` nodes hand execution to a sender.
-/// Some node families let the user choose this; others set it themselves.
+/// `sync` nodes produce their result inline; `async` nodes hand execution to a
+/// sender. Some node families let the user choose this; others set it
+/// themselves.
 enum class node_exec_mode : std::uint8_t {
   sync = 0U,
   async,
@@ -100,9 +99,9 @@ enum class node_kind : std::uint8_t {
   switch (kind) {
   case node_kind::component:
   case node_kind::lambda:
+  case node_kind::tools:
     return node_exec_origin::authored;
   case node_kind::subgraph:
-  case node_kind::tools:
   case node_kind::passthrough:
     return node_exec_origin::lowered;
   }
@@ -113,20 +112,15 @@ enum class node_kind : std::uint8_t {
 using component_kind = wh::core::component_kind;
 
 /// Named key/value map used by workflow field mapping and keyed payload IO.
-using graph_value_map =
-    std::unordered_map<std::string, graph_value,
-                       wh::core::transparent_string_hash,
-                       wh::core::transparent_string_equal>;
+using graph_value_map = std::unordered_map<std::string, graph_value,
+                                           wh::core::transparent_string_hash,
+                                           wh::core::transparent_string_equal>;
 
-/// Edge adapter families supported by compose compile/runtime.
+/// Authored edge-adapter families accepted by the public graph authoring API.
 enum class edge_adapter_kind : std::uint8_t {
-  /// No explicit adapter; matching contracts pass through unchanged.
+  /// No authored override; compile decides passthrough or builtin lowering.
   none = 0U,
-  /// Lift one value payload into one stream payload.
-  value_to_stream,
-  /// Collect one stream payload into one value payload.
-  stream_to_value,
-  /// Run a user-provided adapter callback.
+  /// Run one user-provided adapter callback for non-default lowering.
   custom,
 };
 
@@ -134,27 +128,22 @@ enum class edge_adapter_kind : std::uint8_t {
 struct edge_limits {
   /// Optional maximum chunk count allowed during `stream -> value` collection.
   std::size_t max_items{0U};
-  /// Optional maximum bytes budget (`0` disables the guard).
-  std::size_t max_bytes{0U};
-  /// Optional timeout budget for adapter execution.
-  std::optional<std::chrono::milliseconds> timeout{};
 };
 
-/// Custom value->stream edge adapter contract.
-using value_to_stream_adapter = wh::core::callback_function<
-    wh::core::result<graph_stream_reader>(graph_value &&, const edge_limits &,
-                                          wh::core::run_context &) const>;
-/// Custom stream->value edge adapter contract.
-using stream_to_value_adapter = wh::core::callback_function<
-    graph_value_sender(graph_stream_reader, const edge_limits &,
-                       wh::core::run_context &) const>;
+/// Custom edge adapter contract that produces one stream payload.
+using edge_to_stream_adapter =
+    wh::core::callback_function<wh::core::result<graph_stream_reader>(
+        graph_value &&, const edge_limits &, wh::core::run_context &) const>;
+/// Custom edge adapter contract that produces one value payload.
+using edge_to_value_adapter = wh::core::callback_function<graph_value_sender(
+    graph_stream_reader, const edge_limits &, wh::core::run_context &) const>;
 
 /// Custom adapter hooks used when default contract bridging is insufficient.
 struct custom_edge_adapter {
-  /// Optional value->stream adapter returning one graph reader.
-  std::optional<value_to_stream_adapter> value_to_stream{};
-  /// Optional stream->value adapter returning one async graph value sender.
-  std::optional<stream_to_value_adapter> stream_to_value{};
+  /// Optional adapter that lowers one edge payload to stream contract.
+  std::optional<edge_to_stream_adapter> to_stream{};
+  /// Optional adapter that lowers one edge payload to value contract.
+  std::optional<edge_to_value_adapter> to_value{};
 };
 
 /// Edge adapter declaration attached to one graph edge.
@@ -186,20 +175,36 @@ struct graph_edge {
   edge_options options{};
 };
 
-/// Branch selector callback that returns destination node ids directly.
-using graph_branch_selector_ids = wh::core::callback_function<
-    wh::core::result<std::vector<std::uint32_t>>(const graph_value &,
-                                                 wh::core::run_context &,
-                                                 const graph_call_scope &) const>;
+/// Value-branch selector callback that returns destination node ids directly.
+using graph_value_branch_selector_ids =
+    wh::core::callback_function<wh::core::result<std::vector<std::uint32_t>>(
+        const graph_value &, wh::core::run_context &, const graph_call_scope &)
+                                    const>;
 
-/// Branch declaration from one source node to candidate end-nodes.
-struct graph_branch {
+/// Stream-branch selector callback that returns destination node ids directly.
+using graph_stream_branch_selector_ids =
+    wh::core::callback_function<wh::core::result<std::vector<std::uint32_t>>(
+        graph_stream_reader, wh::core::run_context &, const graph_call_scope &)
+                                    const>;
+
+/// Value-branch declaration from one source node to candidate end-nodes.
+struct graph_value_branch {
   /// Branch source node key.
   std::string from{};
   /// Allowed branch destination node keys.
   std::vector<std::string> end_nodes{};
   /// Optional runtime selector that returns destination node ids directly.
-  graph_branch_selector_ids selector_ids{nullptr};
+  graph_value_branch_selector_ids selector_ids{nullptr};
+};
+
+/// Stream-branch declaration from one source node to candidate end-nodes.
+struct graph_stream_branch {
+  /// Branch source node key.
+  std::string from{};
+  /// Allowed branch destination node keys.
+  std::vector<std::string> end_nodes{};
+  /// Optional runtime selector that returns destination node ids directly.
+  graph_stream_branch_selector_ids selector_ids{nullptr};
 };
 
 /// Compile/runtime diagnostic record emitted by graph operations.

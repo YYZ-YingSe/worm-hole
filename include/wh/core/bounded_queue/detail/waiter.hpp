@@ -45,11 +45,9 @@ template <typename value_t> struct push_waiter_base {
 
   push_waiter_base() = default;
   push_waiter_base(const push_waiter_base &) = delete;
-  auto operator=(const push_waiter_base &)
-      -> push_waiter_base & = delete;
+  auto operator=(const push_waiter_base &) -> push_waiter_base & = delete;
   push_waiter_base(push_waiter_base &&) = delete;
-  auto operator=(push_waiter_base &&)
-      -> push_waiter_base & = delete;
+  auto operator=(push_waiter_base &&) -> push_waiter_base & = delete;
 
   ~push_waiter_base() { destroy_active_payload(); }
 
@@ -165,11 +163,9 @@ template <typename value_t> struct pop_waiter_base {
 
   pop_waiter_base() = default;
   pop_waiter_base(const pop_waiter_base &) = delete;
-  auto operator=(const pop_waiter_base &)
-      -> pop_waiter_base & = delete;
+  auto operator=(const pop_waiter_base &) -> pop_waiter_base & = delete;
   pop_waiter_base(pop_waiter_base &&) = delete;
-  auto operator=(pop_waiter_base &&)
-      -> pop_waiter_base & = delete;
+  auto operator=(pop_waiter_base &&) -> pop_waiter_base & = delete;
 
   ~pop_waiter_base() { destroy_active_payload(); }
 

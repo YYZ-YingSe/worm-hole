@@ -17,9 +17,8 @@ namespace wh::core {
 /// One source is read once, each emitted result is retained until the slowest
 /// reader cursor advances past it. Readers are created up front and do not
 /// support runtime fork/copy.
-template <
-    cursor_reader_source source_t,
-    typename policy_t = cursor_reader_detail::default_policy<source_t>>
+template <cursor_reader_source source_t,
+          typename policy_t = cursor_reader_detail::default_policy<source_t>>
   requires cursor_reader_detail::policy_for<source_t, policy_t>
 class cursor_reader {
 private:
@@ -157,9 +156,8 @@ private:
   bool released_{true};
 };
 
-template <
-    cursor_reader_source source_t,
-    typename policy_t = cursor_reader_detail::default_policy<source_t>>
+template <cursor_reader_source source_t,
+          typename policy_t = cursor_reader_detail::default_policy<source_t>>
   requires cursor_reader_detail::policy_for<source_t, policy_t>
 [[nodiscard]] inline auto make_cursor_readers(source_t &&source,
                                               const std::size_t count)

@@ -6,17 +6,17 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <utility>
+#include <vector>
 
-#include "wh/compose/graph/restore_check.hpp"
-#include "wh/compose/graph/detail/keys.hpp"
 #include "wh/compose/graph/detail/runtime/rerun.hpp"
 #include "wh/compose/graph/detail/runtime/state.hpp"
+#include "wh/compose/graph/keys.hpp"
+#include "wh/compose/graph/restore_check.hpp"
 #include "wh/compose/graph/stream.hpp"
+#include "wh/compose/node/path.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
 #include "wh/compose/runtime/interrupt.hpp"
-#include "wh/compose/node/path.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
@@ -68,20 +68,21 @@ resolve_id_hint(const checkpoint_save_options &options) -> std::string {
   return std::string{};
 }
 
-[[nodiscard]] inline auto
-default_serializer() -> const checkpoint_serializer & {
+[[nodiscard]] inline auto default_serializer()
+    -> const checkpoint_serializer & {
   static const checkpoint_serializer serializer{
       .encode =
           checkpoint_serializer_encode{
-              [](checkpoint_state &&state, wh::core::run_context &)
-                  -> wh::core::result<graph_value> {
+              [](checkpoint_state &&state,
+                 wh::core::run_context &) -> wh::core::result<graph_value> {
                 return wh::core::any(std::move(state));
               }},
       .decode =
           checkpoint_serializer_decode{
               [](graph_value &&payload, wh::core::run_context &)
                   -> wh::core::result<checkpoint_state> {
-                if (auto *typed = wh::core::any_cast<checkpoint_state>(&payload);
+                if (auto *typed =
+                        wh::core::any_cast<checkpoint_state>(&payload);
                     typed != nullptr) {
                   return std::move(*typed);
                 }
@@ -106,14 +107,14 @@ resolve_serializer(const runtime_state::invoke_config &config)
   return serializer;
 }
 
-[[nodiscard]] inline auto roundtrip_with_serializer(
-    checkpoint_state &&checkpoint, wh::core::run_context &context,
-    const runtime_state::invoke_config &config)
+[[nodiscard]] inline auto
+roundtrip_with_serializer(checkpoint_state &&checkpoint,
+                          wh::core::run_context &context,
+                          const runtime_state::invoke_config &config)
     -> wh::core::result<checkpoint_state> {
   auto serializer_ref = resolve_serializer(config);
   if (serializer_ref.has_error()) {
-    return wh::core::result<checkpoint_state>::failure(
-        serializer_ref.error());
+    return wh::core::result<checkpoint_state>::failure(serializer_ref.error());
   }
   auto encoded = serializer_ref.value()->encode(std::move(checkpoint), context);
   if (encoded.has_error()) {
@@ -127,9 +128,10 @@ resolve_serializer(const runtime_state::invoke_config &config)
   return decoded;
 }
 
-[[nodiscard]] inline auto roundtrip_with_serializer(
-    const checkpoint_state &checkpoint, wh::core::run_context &context,
-    const runtime_state::invoke_config &config)
+[[nodiscard]] inline auto
+roundtrip_with_serializer(const checkpoint_state &checkpoint,
+                          wh::core::run_context &context,
+                          const runtime_state::invoke_config &config)
     -> wh::core::result<checkpoint_state> {
   return roundtrip_with_serializer(checkpoint_state{checkpoint}, context,
                                    config);
@@ -168,8 +170,8 @@ make_node_path_from_state_key(const std::string_view node_key) -> node_path {
 }
 
 inline auto apply_node_hooks(wh::core::run_context &context,
-                                      const checkpoint_node_hooks *modifiers,
-                                      checkpoint_state &state)
+                             const checkpoint_node_hooks *modifiers,
+                             checkpoint_state &state)
     -> wh::core::result<void> {
   if (modifiers == nullptr || modifiers->empty()) {
     return {};
@@ -178,12 +180,12 @@ inline auto apply_node_hooks(wh::core::run_context &context,
     const auto node_state_path = make_node_path_from_state_key(node_state.key);
     for (const auto &path_modifier : *modifiers) {
       if (!path_modifier.modifier || path_modifier.path.empty()) {
-        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+        return wh::core::result<void>::failure(
+            wh::core::errc::invalid_argument);
       }
-      const auto matched =
-          path_modifier.include_descendants
-              ? node_state_path.starts_with(path_modifier.path)
-              : node_state_path == path_modifier.path;
+      const auto matched = path_modifier.include_descendants
+                               ? node_state_path.starts_with(path_modifier.path)
+                               : node_state_path == path_modifier.path;
       if (!matched) {
         continue;
       }
@@ -198,13 +200,12 @@ inline auto apply_node_hooks(wh::core::run_context &context,
 
 inline auto apply_stream_codecs_for_save(
     checkpoint_state &checkpoint, wh::core::run_context &context,
-    const checkpoint_stream_codecs *registry)
-    -> wh::core::result<void> {
+    const checkpoint_stream_codecs *registry) -> wh::core::result<void> {
   const bool has_registry = registry != nullptr;
 
-  const auto convert_one = [&](const std::string_view node_key, graph_value &payload,
-                               const bool tolerate_channel_closed)
-      -> wh::core::result<void> {
+  const auto convert_one =
+      [&](const std::string_view node_key, graph_value &payload,
+          const bool tolerate_channel_closed) -> wh::core::result<void> {
     auto *reader = wh::core::any_cast<graph_stream_reader>(&payload);
     if (reader == nullptr) {
       return {};
@@ -213,11 +214,11 @@ inline auto apply_stream_codecs_for_save(
       return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
     const auto converter_iter = registry->find(node_key);
-    if (converter_iter == registry->end() ||
-        !converter_iter->second.to_value) {
+    if (converter_iter == registry->end() || !converter_iter->second.to_value) {
       return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
-    auto converted = converter_iter->second.to_value(std::move(*reader), context);
+    auto converted =
+        converter_iter->second.to_value(std::move(*reader), context);
     if (converted.has_error()) {
       if (tolerate_channel_closed &&
           converted.error() == wh::core::errc::channel_closed) {
@@ -254,8 +255,7 @@ inline auto apply_stream_codecs_for_save(
 
 inline auto apply_stream_codecs_for_load(
     checkpoint_state &checkpoint, wh::core::run_context &context,
-    const checkpoint_stream_codecs *registry)
-    -> wh::core::result<void> {
+    const checkpoint_stream_codecs *registry) -> wh::core::result<void> {
   const bool has_registry = registry != nullptr;
 
   for (auto &[node_key, payload] : checkpoint.rerun_inputs) {
@@ -283,10 +283,11 @@ inline auto apply_stream_codecs_for_load(
 }
 
 template <typename resolve_node_id_fn_t>
-[[nodiscard]] inline auto load_rerun_inputs(
-    checkpoint_state &checkpoint, runtime_state::rerun_state &rerun_state,
-    resolve_node_id_fn_t &&resolve_node_id, const std::uint32_t start_id)
-    -> wh::core::result<void> {
+[[nodiscard]] inline auto
+load_rerun_inputs(checkpoint_state &checkpoint,
+                  runtime_state::rerun_state &rerun_state,
+                  resolve_node_id_fn_t &&resolve_node_id,
+                  const std::uint32_t start_id) -> wh::core::result<void> {
   const auto &resolver = resolve_node_id;
   for (auto &[node_key, payload] : checkpoint.rerun_inputs) {
     if (node_key == graph_start_node_key) {
@@ -305,9 +306,11 @@ template <typename resolve_node_id_fn_t>
   return {};
 }
 
-[[nodiscard]] inline auto save_rerun_inputs(
-    runtime_state::rerun_state &rerun_state,
-    const std::span<const std::string> node_keys) -> wh::core::result<graph_value_map> {
+[[nodiscard]] inline auto
+save_rerun_inputs(runtime_state::rerun_state &rerun_state,
+                  const std::span<const std::string> node_keys,
+                  const std::span<const compiled_node *const> nodes_by_id)
+    -> wh::core::result<graph_value_map> {
   graph_value_map cloned{};
   cloned.reserve(rerun_state.active_count());
   for (std::uint32_t node_id = 0U;
@@ -316,7 +319,15 @@ template <typename resolve_node_id_fn_t>
     if (payload == nullptr) {
       continue;
     }
-    auto forked = fork_graph_value(*payload);
+    const auto *node =
+        node_id < nodes_by_id.size() ? nodes_by_id[node_id] : nullptr;
+    if (node == nullptr) {
+      return wh::core::result<graph_value_map>::failure(
+          wh::core::errc::not_found);
+    }
+    auto forked = node->meta.input_contract == node_contract::stream
+                      ? detail::fork_graph_reader_payload(*payload)
+                      : fork_graph_value(*payload);
     if (forked.has_error()) {
       return wh::core::result<graph_value_map>::failure(forked.error());
     }
@@ -329,8 +340,9 @@ inline auto restore_node_states(const checkpoint_state &checkpoint,
                                 graph_state_table &state_table)
     -> wh::core::result<void> {
   for (const auto &node_state : checkpoint.node_states) {
-    auto updated = state_table.update(node_state.node_id, node_state.lifecycle,
-                                      node_state.attempts, node_state.last_error);
+    auto updated =
+        state_table.update(node_state.node_id, node_state.lifecycle,
+                           node_state.attempts, node_state.last_error);
     if (updated.has_error()) {
       continue;
     }
@@ -338,13 +350,15 @@ inline auto restore_node_states(const checkpoint_state &checkpoint,
   return {};
 }
 
-[[nodiscard]] inline auto validate_runtime_configuration(
-    const runtime_state::invoke_config &config,
-    runtime_state::invoke_outputs &outputs) -> wh::core::result<void> {
-  const bool has_runtime_backend =
-      config.checkpoint_store != nullptr || config.checkpoint_backend != nullptr;
+[[nodiscard]] inline auto
+validate_runtime_configuration(const runtime_state::invoke_config &config,
+                               runtime_state::invoke_outputs &outputs)
+    -> wh::core::result<void> {
+  const bool has_runtime_backend = config.checkpoint_store != nullptr ||
+                                   config.checkpoint_backend != nullptr;
   std::string explicit_checkpoint_id{};
-  if (config.checkpoint_store != nullptr && config.checkpoint_backend != nullptr) {
+  if (config.checkpoint_store != nullptr &&
+      config.checkpoint_backend != nullptr) {
     set_error_detail(outputs, wh::core::errc::invalid_argument, "",
                      "validate_runtime_config");
     return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -393,8 +407,7 @@ inline auto restore_node_states(const checkpoint_state &checkpoint,
 inline auto apply_modifier(wh::core::run_context &context,
                            const checkpoint_state_modifier &modifier,
                            const checkpoint_node_hooks *node_hooks,
-                           checkpoint_state &state)
-    -> wh::core::result<void> {
+                           checkpoint_state &state) -> wh::core::result<void> {
   if (modifier) {
     auto status = modifier(state, context);
     if (status.has_error()) {
@@ -405,20 +418,17 @@ inline auto apply_modifier(wh::core::run_context &context,
 }
 
 template <typename resolve_node_id_fn_t, typename missing_input_fn_t>
-inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
-                          graph_state_table &state_table,
-                          runtime_state::rerun_state &rerun_state,
-                          bool &skip_state_pre_handlers,
-                          const restore_scope scope,
-                          const std::string_view graph_name,
-                          const node_path &runtime_path,
-                          const graph_restore_shape &current_restore_shape,
-                          const std::uint32_t start_id,
-                          const runtime_state::invoke_config &config,
-                          runtime_state::invoke_outputs &outputs,
-                          forwarded_checkpoint_map &forwarded_checkpoints,
-                          resolve_node_id_fn_t &&resolve_node_id,
-                          missing_input_fn_t &&resolve_missing_rerun_input)
+inline auto maybe_restore(
+    graph_value &input, wh::core::run_context &context,
+    graph_state_table &state_table, runtime_state::rerun_state &rerun_state,
+    bool &skip_state_pre_handlers, const restore_scope scope,
+    const std::string_view graph_name, const node_path &runtime_path,
+    const graph_restore_shape &current_restore_shape,
+    const std::uint32_t start_id, const runtime_state::invoke_config &config,
+    runtime_state::invoke_outputs &outputs,
+    forwarded_checkpoint_map &forwarded_checkpoints,
+    resolve_node_id_fn_t &&resolve_node_id,
+    missing_input_fn_t &&resolve_missing_rerun_input)
     -> wh::core::result<void> {
   skip_state_pre_handlers = false;
   const auto resolver = std::forward<resolve_node_id_fn_t>(resolve_node_id);
@@ -455,9 +465,8 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
                        "restore_store_lookup");
       return wh::core::result<void>::failure(runtime_backend.error());
     }
-    const bool has_runtime_backend =
-        runtime_backend.value().store != nullptr ||
-        runtime_backend.value().backend != nullptr;
+    const bool has_runtime_backend = runtime_backend.value().store != nullptr ||
+                                     runtime_backend.value().backend != nullptr;
     if (!has_runtime_backend) {
       return {};
     }
@@ -466,8 +475,8 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
         wh::core::result<checkpoint_restore_plan>::failure(
             wh::core::errc::invalid_argument);
     if (runtime_backend.value().backend != nullptr) {
-      restore =
-          runtime_backend.value().backend->prepare_restore(load_options, context);
+      restore = runtime_backend.value().backend->prepare_restore(load_options,
+                                                                 context);
     } else {
       restore = runtime_backend.value().store->prepare_restore(load_options);
     }
@@ -486,9 +495,8 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
     checkpoint_value.emplace(std::move(plan.checkpoint).value());
   }
 
-  auto serializer_roundtrip =
-      roundtrip_with_serializer(std::move(checkpoint_value).value(), context,
-                                config);
+  auto serializer_roundtrip = roundtrip_with_serializer(
+      std::move(checkpoint_value).value(), context, config);
   if (serializer_roundtrip.has_error()) {
     set_error_detail(outputs, serializer_roundtrip.error(), checkpoint_id_hint,
                      "restore_serializer_roundtrip");
@@ -553,7 +561,8 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
     restored_interrupt.location = first->second;
     const auto state_iter =
         checkpoint.interrupt_snapshot.interrupt_id_to_state.find(first->first);
-    if (state_iter != checkpoint.interrupt_snapshot.interrupt_id_to_state.end()) {
+    if (state_iter !=
+        checkpoint.interrupt_snapshot.interrupt_id_to_state.end()) {
       restored_interrupt.state = state_iter->second;
     }
     context.interrupt_info = std::move(restored_interrupt);
@@ -586,15 +595,15 @@ inline auto maybe_restore(graph_value &input, wh::core::run_context &context,
   return {};
 }
 
-inline auto maybe_persist(wh::core::run_context &context,
-                          const graph_state_table &state_table,
-                          runtime_state::rerun_state &rerun_state,
-                          const std::span<const std::string> node_keys,
-                          const std::string_view graph_name,
-                          const graph_restore_shape &current_restore_shape,
-                          const runtime_state::invoke_config &config,
-                          runtime_state::invoke_outputs &outputs)
-    -> wh::core::result<void> {
+inline auto maybe_persist(
+    wh::core::run_context &context, const graph_state_table &state_table,
+    runtime_state::rerun_state &rerun_state,
+    const std::span<const std::string> node_keys,
+    const std::span<const compiled_node *const> nodes_by_id,
+    const std::string_view graph_name,
+    const graph_restore_shape &current_restore_shape,
+    const runtime_state::invoke_config &config,
+    runtime_state::invoke_outputs &outputs) -> wh::core::result<void> {
   auto runtime_backend = resolve_runtime_backend(config);
   if (runtime_backend.has_error()) {
     set_error_detail(outputs, runtime_backend.error(), graph_name,
@@ -612,7 +621,8 @@ inline auto maybe_persist(wh::core::run_context &context,
   checkpoint.node_states = state_table.states();
   checkpoint.resume_snapshot =
       context.resume_info.value_or(wh::core::resume_state{});
-  auto cloned_rerun_inputs = save_rerun_inputs(rerun_state, node_keys);
+  auto cloned_rerun_inputs =
+      save_rerun_inputs(rerun_state, node_keys, nodes_by_id);
   if (cloned_rerun_inputs.has_error()) {
     set_error_detail(outputs, cloned_rerun_inputs.error(), graph_name,
                      "persist_rerun_clone");
@@ -632,12 +642,12 @@ inline auto maybe_persist(wh::core::run_context &context,
     return stream_persisted;
   }
 
-  auto pre_save =
-      apply_modifier(context, config.checkpoint_before_save,
-                     std::addressof(config.checkpoint_before_save_nodes),
-                     checkpoint);
+  auto pre_save = apply_modifier(
+      context, config.checkpoint_before_save,
+      std::addressof(config.checkpoint_before_save_nodes), checkpoint);
   if (pre_save.has_error()) {
-    set_error_detail(outputs, pre_save.error(), graph_name, "pre_save_modifier");
+    set_error_detail(outputs, pre_save.error(), graph_name,
+                     "pre_save_modifier");
     return pre_save;
   }
   auto serializer_roundtrip =

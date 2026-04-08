@@ -20,6 +20,10 @@
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/detail/callback_guard.hpp"
+#include "wh/core/stdexec/detail/inline_drive_loop.hpp"
+#include "wh/core/stdexec/detail/receiver_completion.hpp"
+#include "wh/core/stdexec/manual_lifetime_box.hpp"
 #include "wh/schema/stream.hpp"
 #include "wh/schema/tool.hpp"
 #include "wh/tool/callback_event.hpp"
@@ -33,8 +37,7 @@ using tool_output_stream_reader =
 using tool_output_stream_writer =
     wh::schema::stream::any_stream_writer<std::string>;
 using tool_invoke_result = wh::core::result<std::string>;
-using tool_output_stream_result =
-    wh::core::result<tool_output_stream_reader>;
+using tool_output_stream_result = wh::core::result<tool_output_stream_reader>;
 
 struct tool_request {
   /// Raw JSON input payload passed across the tool contract boundary.
@@ -472,8 +475,8 @@ template <> struct tool_result_traits<tool_invoke_result> {
 };
 
 template <> struct tool_result_traits<tool_output_stream_result> {
-  static auto record_success(callback_state &,
-                             tool_output_stream_result &) -> void {}
+  static auto record_success(callback_state &, tool_output_stream_result &)
+      -> void {}
 
   [[nodiscard]] static auto make_skip_result() -> tool_output_stream_result {
     return make_skipped_stream();
@@ -588,26 +591,41 @@ template <typename result_t, typename run_attempt_t>
 
 template <typename result_t, typename state_t, typename make_attempt_t>
 class tool_attempt_loop_sender {
-  template <typename receiver_t> class operation {
+  template <typename receiver_t>
+  class operation
+      : private wh::core::detail::inline_drive_loop<operation<receiver_t>> {
+    using drive_loop_t =
+        wh::core::detail::inline_drive_loop<operation<receiver_t>>;
+    friend drive_loop_t;
+    friend class wh::core::detail::callback_guard<operation>;
+
     using receiver_env_t =
         decltype(stdexec::get_env(std::declval<const receiver_t &>()));
+    using final_completion_t =
+        wh::core::detail::receiver_completion<receiver_t, result_t>;
 
     struct child_receiver {
       using receiver_concept = stdexec::receiver_t;
+
       operation *op{nullptr};
       receiver_env_t env_{};
 
       auto set_value(result_t status) && noexcept -> void {
-        op->on_child_value(std::move(status));
+        auto scope = op->callbacks_.enter(op);
+        op->publish_attempt_completion(std::move(status));
       }
 
       template <typename error_t>
       auto set_error(error_t &&) && noexcept -> void {
-        op->on_child_value(result_t::failure(wh::core::errc::internal_error));
+        auto scope = op->callbacks_.enter(op);
+        op->publish_attempt_completion(
+            result_t::failure(wh::core::errc::internal_error));
       }
 
       auto set_stopped() && noexcept -> void {
-        op->on_child_value(result_t::failure(wh::core::errc::canceled));
+        auto scope = op->callbacks_.enter(op);
+        op->publish_attempt_completion(
+            result_t::failure(wh::core::errc::canceled));
       }
 
       [[nodiscard]] auto get_env() const noexcept { return env_; }
@@ -631,23 +649,74 @@ class tool_attempt_loop_sender {
           state_(std::forward<stored_state_t>(state)),
           make_attempt_(std::forward<stored_make_attempt_t>(make_attempt)) {}
 
-    auto start() & noexcept -> void { pump(); }
+    auto start() & noexcept -> void { drive_loop_t::request_drive(); }
 
   private:
-    auto pump() noexcept -> void {
-      if (state_.has_error()) {
-        complete(result_t::failure(state_.error()));
-        return;
-      }
+    [[nodiscard]] auto finished() const noexcept -> bool {
+      return delivered_.load(std::memory_order_acquire);
+    }
 
-      while (!terminal_ready_) {
+    [[nodiscard]] auto completion_pending() const noexcept -> bool {
+      return pending_completion_.has_value();
+    }
+
+    [[nodiscard]] auto take_completion() noexcept
+        -> std::optional<final_completion_t> {
+      if (!pending_completion_.has_value()) {
+        return std::nullopt;
+      }
+      auto completion = std::move(pending_completion_);
+      pending_completion_.reset();
+      return completion;
+    }
+
+    auto on_callback_exit() noexcept -> void {
+      if (pending_attempt_status_.has_value()) {
+        drive_loop_t::request_drive();
+      }
+    }
+
+    auto drive() noexcept -> void {
+      while (!finished()) {
+        if (callbacks_.active()) {
+          return;
+        }
+
+        if (pending_attempt_status_.has_value()) {
+          if (!attempt_in_flight_) {
+            std::terminate();
+          }
+          auto status = std::move(*pending_attempt_status_);
+          pending_attempt_status_.reset();
+          child_op_.reset();
+          attempt_in_flight_ = false;
+          terminal_ready_ =
+              consume_tool_attempt_result(state_.value(), std::move(status));
+          continue;
+        }
+
+        if (state_.has_error()) {
+          finish(result_t::failure(state_.error()));
+          return;
+        }
+
+        if (terminal_ready_) {
+          finish(finish_tool_run(std::move(state_).value()));
+          return;
+        }
+
+        if (attempt_in_flight_) {
+          return;
+        }
+
         start_next_attempt();
-        if (attempt_pending_) {
+        if (pending_attempt_status_.has_value() || terminal_ready_) {
+          continue;
+        }
+        if (attempt_in_flight_) {
           return;
         }
       }
-
-      complete(finish_tool_run(std::move(state_).value()));
     }
 
     auto start_next_attempt() noexcept -> void {
@@ -658,18 +727,15 @@ class tool_attempt_loop_sender {
       }
 
       ++run_state.next_attempt;
-      attempt_pending_ = true;
-      inline_completion_ = false;
-      starting_child_ = true;
+      attempt_in_flight_ = true;
 
       try {
         child_op_.emplace_from(
             stdexec::connect, std::invoke(make_attempt_, run_state),
             child_receiver{this, stdexec::get_env(receiver_)});
       } catch (...) {
-        attempt_pending_ = false;
-        inline_completion_ = false;
-        starting_child_ = false;
+        child_op_.reset();
+        attempt_in_flight_ = false;
         run_state.last_error =
             wh::core::make_error(wh::core::errc::internal_error);
         terminal_ready_ = true;
@@ -677,42 +743,39 @@ class tool_attempt_loop_sender {
       }
 
       stdexec::start(child_op_.get());
-      starting_child_ = false;
-
-      if (!inline_completion_) {
-        return;
-      }
-
-      attempt_pending_ = false;
-      child_op_.reset();
     }
 
-    auto on_child_value(result_t status) noexcept -> void {
-      const bool terminal =
-          consume_tool_attempt_result(state_.value(), std::move(status));
-      terminal_ready_ = terminal;
-
-      if (starting_child_) {
-        inline_completion_ = true;
+    auto publish_attempt_completion(result_t status) noexcept -> void {
+      if (finished()) {
         return;
       }
-
-      attempt_pending_ = false;
-      child_op_.reset();
-      pump();
+      if (pending_attempt_status_.has_value()) {
+        std::terminate();
+      }
+      pending_attempt_status_.emplace(std::move(status));
+      drive_loop_t::request_drive();
     }
 
-    auto complete(result_t status) noexcept -> void {
-      stdexec::set_value(std::move(receiver_), std::move(status));
+    auto finish(result_t status) noexcept -> void {
+      if (delivered_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+      }
+      child_op_.reset();
+      attempt_in_flight_ = false;
+      pending_attempt_status_.reset();
+      pending_completion_.emplace(final_completion_t::set_value(
+          std::move(receiver_), std::move(status)));
     }
 
     receiver_t receiver_;
     wh::core::result<state_t> state_;
     make_attempt_t make_attempt_;
     wh::core::detail::manual_lifetime_box<child_op_t> child_op_{};
-    bool attempt_pending_{false};
-    bool starting_child_{false};
-    bool inline_completion_{false};
+    wh::core::detail::callback_guard<operation> callbacks_{};
+    std::optional<result_t> pending_attempt_status_{};
+    std::optional<final_completion_t> pending_completion_{};
+    std::atomic<bool> delivered_{false};
+    bool attempt_in_flight_{false};
     bool terminal_ready_{false};
   };
 
@@ -870,8 +933,7 @@ private:
       -> tool_invoke_result {
     auto prepared = detail::prepare_tool_run<tool_invoke_result>(
         tool_request{request.input_json, request.options}, std::move(sink),
-        schema_,
-        default_options_);
+        schema_, default_options_);
     if (prepared.has_error()) {
       return tool_invoke_result::failure(prepared.error());
     }
@@ -889,8 +951,7 @@ private:
       -> tool_output_stream_result {
     auto prepared = detail::prepare_tool_run<tool_output_stream_result>(
         tool_request{request.input_json, request.options}, std::move(sink),
-        schema_,
-        default_options_);
+        schema_, default_options_);
     if (prepared.has_error()) {
       return tool_output_stream_result::failure(prepared.error());
     }
@@ -927,19 +988,20 @@ private:
   [[nodiscard]] auto stream_async_impl(request_t &&request,
                                        detail::callback_sink sink) const
       -> auto {
-    return wh::core::detail::defer_resume_sender<Resume>(
-        [this, request = tool_request{request.input_json, request.options},
-         sink = std::move(sink)](auto scheduler) mutable {
-          auto prepared = detail::prepare_tool_run<tool_output_stream_result>(
-              std::move(request), std::move(sink), schema_, default_options_);
-          return detail::make_tool_attempt_loop_sender<tool_output_stream_result>(
-              std::move(prepared), [this, scheduler = std::move(scheduler)](
-                                       auto &loop_state) mutable {
-                return wh::core::detail::resume_if<Resume>(
-                    detail::make_stream_sender(impl_, loop_state.request),
-                    scheduler);
-              });
-        });
+    return wh::core::detail::defer_resume_sender<
+        Resume>([this,
+                 request = tool_request{request.input_json, request.options},
+                 sink = std::move(sink)](auto scheduler) mutable {
+      auto prepared = detail::prepare_tool_run<tool_output_stream_result>(
+          std::move(request), std::move(sink), schema_, default_options_);
+      return detail::make_tool_attempt_loop_sender<tool_output_stream_result>(
+          std::move(prepared),
+          [this, scheduler = std::move(scheduler)](auto &loop_state) mutable {
+            return wh::core::detail::resume_if<Resume>(
+                detail::make_stream_sender(impl_, loop_state.request),
+                scheduler);
+          });
+    });
   }
 
   wh::schema::tool_schema_definition schema_{};

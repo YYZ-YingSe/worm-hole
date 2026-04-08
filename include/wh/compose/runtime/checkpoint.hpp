@@ -15,9 +15,9 @@
 #include <utility>
 #include <vector>
 
-#include "wh/compose/node.hpp"
-#include "wh/compose/graph/stream.hpp"
 #include "wh/compose/graph/checkpoint_state.hpp"
+#include "wh/compose/graph/stream.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/types.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
@@ -170,12 +170,14 @@ using forwarded_checkpoint_map =
                        wh::core::transparent_string_equal>;
 
 /// Checkpoint state modifier called before/after load/save I/O.
-using checkpoint_state_modifier = wh::core::callback_function<
-    wh::core::result<void>(checkpoint_state &, wh::core::run_context &) const>;
+using checkpoint_state_modifier =
+    wh::core::callback_function<wh::core::result<void>(
+        checkpoint_state &, wh::core::run_context &) const>;
 
 /// Node-state modifier callback applied by NodePath-scoped checkpoint hooks.
-using checkpoint_node_modifier = wh::core::callback_function<
-    wh::core::result<void>(graph_node_state &, wh::core::run_context &) const>;
+using checkpoint_node_modifier =
+    wh::core::callback_function<wh::core::result<void>(
+        graph_node_state &, wh::core::run_context &) const>;
 
 /// NodePath-scoped node-state modifier entry.
 struct checkpoint_node_hook {
@@ -188,8 +190,7 @@ struct checkpoint_node_hook {
 };
 
 /// NodePath-scoped checkpoint modifier list.
-using checkpoint_node_hooks =
-    std::vector<checkpoint_node_hook>;
+using checkpoint_node_hooks = std::vector<checkpoint_node_hook>;
 
 /// Marker payload persisted for stream->value converted checkpoint entries.
 struct checkpoint_stream_value_payload {
@@ -198,13 +199,13 @@ struct checkpoint_stream_value_payload {
 };
 
 /// Converts one stream payload into checkpoint-safe value payload.
-using checkpoint_stream_save = wh::core::callback_function<
-    wh::core::result<graph_value>(graph_stream_reader &&,
-                              wh::core::run_context &) const>;
+using checkpoint_stream_save =
+    wh::core::callback_function<wh::core::result<graph_value>(
+        graph_stream_reader &&, wh::core::run_context &) const>;
 /// Converts one persisted value payload back into stream payload.
-using checkpoint_stream_load = wh::core::callback_function<
-    wh::core::result<graph_stream_reader>(graph_value &&,
-                                        wh::core::run_context &) const>;
+using checkpoint_stream_load =
+    wh::core::callback_function<wh::core::result<graph_stream_reader>(
+        graph_value &&, wh::core::run_context &) const>;
 
 /// One bidirectional stream convert pair registered by node key/path.
 struct checkpoint_stream_codec {
@@ -215,30 +216,29 @@ struct checkpoint_stream_codec {
 };
 
 /// Builds the default stream/value codec used by checkpoint bridge helpers.
-[[nodiscard]] inline auto make_default_stream_codec() -> checkpoint_stream_codec {
+[[nodiscard]] inline auto make_default_stream_codec()
+    -> checkpoint_stream_codec {
   return checkpoint_stream_codec{
-      .to_value =
-          [](graph_stream_reader &&reader, wh::core::run_context &)
-              -> wh::core::result<graph_value> {
-            auto collected = collect_graph_stream_reader(std::move(reader));
-            if (collected.has_error()) {
-              return wh::core::result<graph_value>::failure(collected.error());
-            }
-            return wh::core::any(std::move(collected).value());
-          },
-      .to_stream =
-          [](graph_value &&value, wh::core::run_context &)
-              -> wh::core::result<graph_stream_reader> {
-            if (auto *reader = wh::core::any_cast<graph_stream_reader>(&value);
-                reader != nullptr) {
-              return std::move(*reader);
-            }
-            if (auto *chunks = wh::core::any_cast<std::vector<graph_value>>(&value);
-                chunks != nullptr) {
-              return make_values_stream_reader(std::move(*chunks));
-            }
-            return make_single_value_stream_reader(std::move(value));
-          },
+      .to_value = [](graph_stream_reader &&reader,
+                     wh::core::run_context &) -> wh::core::result<graph_value> {
+        auto collected = collect_graph_stream_reader(std::move(reader));
+        if (collected.has_error()) {
+          return wh::core::result<graph_value>::failure(collected.error());
+        }
+        return wh::core::any(std::move(collected).value());
+      },
+      .to_stream = [](graph_value &&value, wh::core::run_context &)
+          -> wh::core::result<graph_stream_reader> {
+        if (auto *reader = wh::core::any_cast<graph_stream_reader>(&value);
+            reader != nullptr) {
+          return std::move(*reader);
+        }
+        if (auto *chunks = wh::core::any_cast<std::vector<graph_value>>(&value);
+            chunks != nullptr) {
+          return make_values_stream_reader(std::move(*chunks));
+        }
+        return make_single_value_stream_reader(std::move(value));
+      },
   };
 }
 
@@ -249,22 +249,23 @@ using checkpoint_stream_codecs =
                        wh::core::transparent_string_equal>;
 
 /// Runtime checkpoint backend load callback for pluggable stores.
-using checkpoint_backend_prepare_restore = wh::core::callback_function<
-    wh::core::result<checkpoint_restore_plan>(const checkpoint_load_options &,
-                                                wh::core::run_context &) const>;
+using checkpoint_backend_prepare_restore =
+    wh::core::callback_function<wh::core::result<checkpoint_restore_plan>(
+        const checkpoint_load_options &, wh::core::run_context &) const>;
 /// Runtime checkpoint backend save callback for pluggable stores.
-using checkpoint_backend_save = wh::core::callback_function<
-    wh::core::result<void>(checkpoint_state &&, checkpoint_save_options &&,
-                       wh::core::run_context &) const>;
+using checkpoint_backend_save =
+    wh::core::callback_function<wh::core::result<void>(
+        checkpoint_state &&, checkpoint_save_options &&,
+        wh::core::run_context &) const>;
 
 /// Serializer encode callback used before checkpoint backend/store writes.
-using checkpoint_serializer_encode = wh::core::callback_function<
-    wh::core::result<graph_value>(checkpoint_state &&,
-                              wh::core::run_context &) const>;
+using checkpoint_serializer_encode =
+    wh::core::callback_function<wh::core::result<graph_value>(
+        checkpoint_state &&, wh::core::run_context &) const>;
 /// Serializer decode callback used after checkpoint backend/store reads.
-using checkpoint_serializer_decode = wh::core::callback_function<
-    wh::core::result<checkpoint_state>(graph_value &&,
-                                         wh::core::run_context &) const>;
+using checkpoint_serializer_decode =
+    wh::core::callback_function<wh::core::result<checkpoint_state>(
+        graph_value &&, wh::core::run_context &) const>;
 
 /// Serializer pair for custom/default checkpoint encode/decode flows.
 struct checkpoint_serializer {
@@ -369,7 +370,8 @@ public:
   /// Loads latest checkpoint snapshot.
   [[nodiscard]] auto load() const -> wh::core::result<checkpoint_state> {
     if (!latest_checkpoint_id_.has_value()) {
-      return wh::core::result<checkpoint_state>::failure(wh::core::errc::not_found);
+      return wh::core::result<checkpoint_state>::failure(
+          wh::core::errc::not_found);
     }
     checkpoint_load_options options{};
     options.checkpoint_id = latest_checkpoint_id_;
@@ -388,12 +390,15 @@ public:
       return wh::core::result<checkpoint_state>::failure(resolved_id.error());
     }
     const auto history_iter = committed_history_.find(resolved_id.value());
-    if (history_iter == committed_history_.end() || history_iter->second.empty()) {
-      return wh::core::result<checkpoint_state>::failure(wh::core::errc::not_found);
+    if (history_iter == committed_history_.end() ||
+        history_iter->second.empty()) {
+      return wh::core::result<checkpoint_state>::failure(
+          wh::core::errc::not_found);
     }
     const auto *record = select_record(history_iter->second, options);
     if (record == nullptr) {
-      return wh::core::result<checkpoint_state>::failure(wh::core::errc::not_found);
+      return wh::core::result<checkpoint_state>::failure(
+          wh::core::errc::not_found);
     }
     return record->state;
   }
@@ -435,18 +440,19 @@ public:
 
   /// Returns committed history list for one checkpoint id.
   [[nodiscard]] auto history(const std::string_view checkpoint_id) const
-      -> wh::core::result<std::reference_wrapper<const std::vector<checkpoint_record>>> {
+      -> wh::core::result<
+          std::reference_wrapper<const std::vector<checkpoint_record>>> {
     const auto iter = committed_history_.find(checkpoint_id);
     if (iter == committed_history_.end()) {
-      return wh::core::result<
-          std::reference_wrapper<const std::vector<checkpoint_record>>>::
-          failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<const std::vector<
+          checkpoint_record>>>::failure(wh::core::errc::not_found);
     }
     return std::cref(iter->second);
   }
 
   /// Returns latest checkpoint id bound to one thread key.
-  [[nodiscard]] auto latest_thread_checkpoint_id(const std::string_view thread_key) const
+  [[nodiscard]] auto
+  latest_thread_checkpoint_id(const std::string_view thread_key) const
       -> wh::core::result<std::string> {
     const auto iter = latest_id_by_thread_.find(thread_key);
     if (iter == latest_id_by_thread_.end()) {
@@ -493,10 +499,12 @@ public:
         const auto remove_count =
             history.size() - *policy.max_records_per_checkpoint_id;
         for (std::size_t index = 0U; index < remove_count; ++index) {
-          report.removed_committed_record_ids.push_back(history[index].record_id);
+          report.removed_committed_record_ids.push_back(
+              history[index].record_id);
         }
         history.erase(history.begin(),
-                      history.begin() + static_cast<std::ptrdiff_t>(remove_count));
+                      history.begin() +
+                          static_cast<std::ptrdiff_t>(remove_count));
       }
 
       if (history.empty()) {
@@ -525,25 +533,28 @@ public:
       }
       std::sort(pending_keys.begin(), pending_keys.end(),
                 [](const auto &lhs, const auto &rhs) noexcept {
-            if (lhs.second == rhs.second) {
-              return lhs.first < rhs.first;
-            }
-            return lhs.second < rhs.second;
-          });
-      const auto remove_count = pending_keys.size() - *policy.max_pending_writes;
+                  if (lhs.second == rhs.second) {
+                    return lhs.first < rhs.first;
+                  }
+                  return lhs.second < rhs.second;
+                });
+      const auto remove_count =
+          pending_keys.size() - *policy.max_pending_writes;
       for (std::size_t index = 0U; index < remove_count; ++index) {
-        const auto pending_iter = pending_writes_.find(pending_keys[index].first);
+        const auto pending_iter =
+            pending_writes_.find(pending_keys[index].first);
         if (pending_iter == pending_writes_.end()) {
           continue;
         }
-        report.removed_pending_record_ids.push_back(pending_iter->second.record_id);
+        report.removed_pending_record_ids.push_back(
+            pending_iter->second.record_id);
         pending_writes_.erase(pending_iter);
       }
     }
 
     if (policy.max_thread_index_entries.has_value()) {
-      report.removed_thread_index_entries = prune_index(
-          latest_id_by_thread_, *policy.max_thread_index_entries);
+      report.removed_thread_index_entries =
+          prune_index(latest_id_by_thread_, *policy.max_thread_index_entries);
     }
     if (policy.max_namespace_index_entries.has_value()) {
       report.removed_namespace_index_entries = prune_index(
@@ -584,7 +595,8 @@ private:
   }
 
   template <typename state_t, typename options_t>
-    requires std::same_as<wh::core::remove_cvref_t<state_t>, checkpoint_state> &&
+    requires std::same_as<wh::core::remove_cvref_t<state_t>,
+                          checkpoint_state> &&
              std::same_as<wh::core::remove_cvref_t<options_t>,
                           checkpoint_save_options>
   auto save_impl(state_t &&state, options_t &&options)
@@ -606,7 +618,8 @@ private:
   }
 
   template <typename state_t, typename options_t>
-    requires std::same_as<wh::core::remove_cvref_t<state_t>, checkpoint_state> &&
+    requires std::same_as<wh::core::remove_cvref_t<state_t>,
+                          checkpoint_state> &&
              std::same_as<wh::core::remove_cvref_t<options_t>,
                           checkpoint_save_options>
   auto stage_write_impl(state_t &&state, options_t &&options)
@@ -624,15 +637,16 @@ private:
       record.namespace_key = options.namespace_key;
       record.branch = options.branch;
       record.parent_branch = options.parent_branch;
-      record.staged_at = options.staged_at.value_or(std::chrono::system_clock::now());
+      record.staged_at =
+          options.staged_at.value_or(std::chrono::system_clock::now());
     } else {
       record.thread_key = std::move(options.thread_key);
       record.namespace_key = std::move(options.namespace_key);
       record.branch = std::move(options.branch);
       record.parent_branch = std::move(options.parent_branch);
-      record.staged_at =
-          options.staged_at.has_value() ? std::move(options.staged_at).value()
-                                        : std::chrono::system_clock::now();
+      record.staged_at = options.staged_at.has_value()
+                             ? std::move(options.staged_at).value()
+                             : std::chrono::system_clock::now();
     }
     if constexpr (std::is_lvalue_reference_v<state_t>) {
       record.state = state;
@@ -702,9 +716,9 @@ private:
     return nullptr;
   }
 
-  [[nodiscard]] static auto pending_matches(
-      const checkpoint_record &record,
-      const checkpoint_load_options &options) -> bool {
+  [[nodiscard]] static auto
+  pending_matches(const checkpoint_record &record,
+                  const checkpoint_load_options &options) -> bool {
     if (options.branch.has_value() && record.branch != *options.branch) {
       return false;
     }
@@ -721,14 +735,14 @@ private:
     std::erase_if(latest_id_by_namespace_, [&](const auto &entry) {
       return entry.second == checkpoint_id;
     });
-    if (latest_checkpoint_id_.has_value() && *latest_checkpoint_id_ == checkpoint_id) {
+    if (latest_checkpoint_id_.has_value() &&
+        *latest_checkpoint_id_ == checkpoint_id) {
       latest_checkpoint_id_.reset();
     }
   }
 
   template <typename index_map_t>
-  auto prune_index(index_map_t &index_map,
-                                     const std::size_t limit) const
+  auto prune_index(index_map_t &index_map, const std::size_t limit) const
       -> std::size_t {
     if (index_map.size() <= limit) {
       return 0U;
@@ -742,7 +756,8 @@ private:
     for (const auto &[layer_key, checkpoint_id] : index_map) {
       auto recency = std::chrono::system_clock::time_point{};
       const auto history_iter = committed_history_.find(checkpoint_id);
-      if (history_iter != committed_history_.end() && !history_iter->second.empty()) {
+      if (history_iter != committed_history_.end() &&
+          !history_iter->second.empty()) {
         const auto &latest_record = history_iter->second.back();
         recency = latest_record.committed_at.value_or(latest_record.staged_at);
       } else {
@@ -759,11 +774,11 @@ private:
 
     std::sort(entries.begin(), entries.end(),
               [](const entry_meta &lhs, const entry_meta &rhs) noexcept {
-      if (lhs.recency == rhs.recency) {
-        return lhs.key < rhs.key;
-      }
-      return lhs.recency > rhs.recency;
-    });
+                if (lhs.recency == rhs.recency) {
+                  return lhs.key < rhs.key;
+                }
+                return lhs.recency > rhs.recency;
+              });
 
     std::size_t removed = 0U;
     for (std::size_t index = limit; index < entries.size(); ++index) {
@@ -780,10 +795,12 @@ private:
                      wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       pending_writes_{};
-  std::unordered_map<std::string, std::string, wh::core::transparent_string_hash,
+  std::unordered_map<std::string, std::string,
+                     wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       latest_id_by_thread_{};
-  std::unordered_map<std::string, std::string, wh::core::transparent_string_hash,
+  std::unordered_map<std::string, std::string,
+                     wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       latest_id_by_namespace_{};
   std::optional<std::string> latest_checkpoint_id_{};

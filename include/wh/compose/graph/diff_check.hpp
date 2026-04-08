@@ -61,15 +61,16 @@ struct graph_diff {
   /// Returns entry count for one diff kind.
   [[nodiscard]] auto count(const graph_diff_kind kind) const noexcept
       -> std::size_t {
-    return static_cast<std::size_t>(std::count_if(
-        entries.begin(), entries.end(),
-        [kind](const graph_diff_entry &entry) -> bool {
-          return entry.kind == kind;
-        }));
+    return static_cast<std::size_t>(
+        std::count_if(entries.begin(), entries.end(),
+                      [kind](const graph_diff_entry &entry) -> bool {
+                        return entry.kind == kind;
+                      }));
   }
 
   /// Returns true when at least one entry of `kind` exists.
-  [[nodiscard]] auto contains(const graph_diff_kind kind) const noexcept -> bool {
+  [[nodiscard]] auto contains(const graph_diff_kind kind) const noexcept
+      -> bool {
     return std::any_of(entries.begin(), entries.end(),
                        [kind](const graph_diff_entry &entry) -> bool {
                          return entry.kind == kind;
@@ -107,6 +108,11 @@ struct graph_compatibility_report {
   return mode == graph_runtime_mode::pregel ? "pregel" : "dag";
 }
 
+[[nodiscard]] inline auto
+dispatch_policy_text(const graph_dispatch_policy policy) -> std::string_view {
+  return policy == graph_dispatch_policy::next_wave ? "next_wave" : "same_wave";
+}
+
 [[nodiscard]] inline auto trigger_mode_text(const graph_trigger_mode mode)
     -> std::string_view {
   return mode == graph_trigger_mode::all_predecessors ? "all_predecessors"
@@ -120,8 +126,6 @@ struct graph_compatibility_report {
     return "allow_partial";
   case graph_fan_in_policy::require_all_sources:
     return "require_all_sources";
-  case graph_fan_in_policy::require_all_sources_with_eof:
-    return "require_all_sources_with_eof";
   }
   return "allow_partial";
 }
@@ -153,43 +157,29 @@ struct graph_compatibility_report {
   return origin == node_exec_origin::lowered ? "lowered" : "authored";
 }
 
-[[nodiscard]] inline auto adapter_kind_text(const edge_adapter_kind kind)
-    -> std::string_view {
-  switch (kind) {
-  case edge_adapter_kind::none:
-    return "none";
-  case edge_adapter_kind::value_to_stream:
-    return "value_to_stream";
-  case edge_adapter_kind::stream_to_value:
-    return "stream_to_value";
-  case edge_adapter_kind::custom:
-    return "custom";
-  }
-  return "none";
-}
-
 [[nodiscard]] inline auto size_text(const std::size_t value) -> std::string {
   return std::to_string(value);
 }
 
-[[nodiscard]] inline auto duration_text(
-    const std::optional<std::chrono::milliseconds> &value) -> std::string {
+[[nodiscard]] inline auto
+duration_text(const std::optional<std::chrono::milliseconds> &value)
+    -> std::string {
   if (!value.has_value()) {
     return "none";
   }
   return std::to_string(value->count());
 }
 
-[[nodiscard]] inline auto optional_size_text(
-    const std::optional<std::size_t> &value) -> std::string {
+[[nodiscard]] inline auto
+optional_size_text(const std::optional<std::size_t> &value) -> std::string {
   if (!value.has_value()) {
     return "none";
   }
   return std::to_string(*value);
 }
 
-[[nodiscard]] inline auto optional_string_text(
-    const std::optional<std::string> &value) -> std::string {
+[[nodiscard]] inline auto
+optional_string_text(const std::optional<std::string> &value) -> std::string {
   if (!value.has_value()) {
     return "none";
   }
@@ -260,8 +250,8 @@ inline auto compare_node_options(graph_diff &diff,
                                  const std::string_view subject,
                                  const graph_snapshot_node &baseline,
                                  const graph_snapshot_node &candidate,
-                                 bool &incompatible,
-                                 std::string &message) -> void {
+                                 bool &incompatible, std::string &message)
+    -> void {
   const auto compare_policy = [&](const std::string_view detail,
                                   std::string before, std::string after,
                                   const bool breaking = false) -> void {
@@ -357,8 +347,8 @@ inline auto compare_graph_snapshots(graph_diff &diff,
                                     const graph_snapshot &baseline,
                                     const graph_snapshot &candidate,
                                     const std::string_view prefix,
-                                    bool &incompatible,
-                                    std::string &message) -> void {
+                                    bool &incompatible, std::string &message)
+    -> void {
   const auto graph_name = graph_subject(prefix);
   const auto compare_compile_option = [&](const std::string_view detail,
                                           std::string before,
@@ -378,18 +368,20 @@ inline auto compare_graph_snapshots(graph_diff &diff,
           std::string{to_string(baseline.compile_options.boundary.output)},
       std::string{to_string(candidate.compile_options.boundary.input)} + "->" +
           std::string{to_string(candidate.compile_options.boundary.output)});
-  compare_compile_option("mode",
-                         std::string{mode_text(baseline.compile_options.mode)},
-                         std::string{mode_text(candidate.compile_options.mode)});
-  compare_compile_option("eager", bool_text(baseline.compile_options.eager),
-                         bool_text(candidate.compile_options.eager));
+  compare_compile_option(
+      "mode", std::string{mode_text(baseline.compile_options.mode)},
+      std::string{mode_text(candidate.compile_options.mode)});
+  compare_compile_option("dispatch_policy",
+                         std::string{dispatch_policy_text(
+                             baseline.compile_options.dispatch_policy)},
+                         std::string{dispatch_policy_text(
+                             candidate.compile_options.dispatch_policy)});
   compare_compile_option("max_steps",
                          size_text(baseline.compile_options.max_steps),
                          size_text(candidate.compile_options.max_steps));
-  compare_compile_option(
-      "retain_cold_data",
-      bool_text(baseline.compile_options.retain_cold_data),
-      bool_text(candidate.compile_options.retain_cold_data));
+  compare_compile_option("retain_cold_data",
+                         bool_text(baseline.compile_options.retain_cold_data),
+                         bool_text(candidate.compile_options.retain_cold_data));
   compare_compile_option(
       "trigger_mode",
       std::string{trigger_mode_text(baseline.compile_options.trigger_mode)},
@@ -438,9 +430,10 @@ inline auto compare_graph_snapshots(graph_diff &diff,
     if (baseline_node_index == baseline.nodes.size() ||
         candidate.nodes[candidate_node_index].key <
             baseline.nodes[baseline_node_index].key) {
-      append_diff(diff, graph_diff_kind::node_added,
-                  join_subject(prefix, candidate.nodes[candidate_node_index].key),
-                  "node", "absent", "present");
+      append_diff(
+          diff, graph_diff_kind::node_added,
+          join_subject(prefix, candidate.nodes[candidate_node_index].key),
+          "node", "absent", "present");
       ++candidate_node_index;
       continue;
     }
@@ -464,8 +457,8 @@ inline auto compare_graph_snapshots(graph_diff &diff,
     } else if (baseline_subgraph != baseline.subgraphs.end() &&
                candidate_subgraph != candidate.subgraphs.end()) {
       compare_graph_snapshots(diff, baseline_subgraph->second,
-                              candidate_subgraph->second, subject,
-                              incompatible, message);
+                              candidate_subgraph->second, subject, incompatible,
+                              message);
     }
 
     ++baseline_node_index;
@@ -498,7 +491,8 @@ inline auto compare_graph_snapshots(graph_diff &diff,
       ++baseline_edge_index;
       continue;
     }
-    if (baseline_edge_index == baseline.edges.size() || candidate_key < baseline_key) {
+    if (baseline_edge_index == baseline.edges.size() ||
+        candidate_key < baseline_key) {
       const auto &edge = candidate.edges[candidate_edge_index];
       append_diff(diff, graph_diff_kind::edge_added,
                   join_subject(prefix, edge_label(edge.from, edge.to)), "edge",
@@ -534,27 +528,15 @@ inline auto compare_graph_snapshots(graph_diff &diff,
                           bool_text(candidate_edge.no_control));
     compare_edge_topology("no_data", bool_text(baseline_edge.no_data),
                           bool_text(candidate_edge.no_data));
-    compare_edge_policy(
-        "adapter_kind",
-        std::string{adapter_kind_text(baseline_edge.adapter_kind)},
-        std::string{adapter_kind_text(candidate_edge.adapter_kind)});
-    compare_edge_policy(
-        "custom.value_to_stream",
-        bool_text(baseline_edge.has_custom_value_to_stream),
-        bool_text(candidate_edge.has_custom_value_to_stream));
-    compare_edge_policy(
-        "custom.stream_to_value",
-        bool_text(baseline_edge.has_custom_stream_to_value),
-        bool_text(candidate_edge.has_custom_stream_to_value));
+    compare_edge_policy("lowering_kind",
+                        std::string{to_string(baseline_edge.lowering_kind)},
+                        std::string{to_string(candidate_edge.lowering_kind)});
+    compare_edge_policy("has_custom_lowering",
+                        bool_text(baseline_edge.has_custom_lowering),
+                        bool_text(candidate_edge.has_custom_lowering));
     compare_edge_policy("limits.max_items",
                         size_text(baseline_edge.limits.max_items),
                         size_text(candidate_edge.limits.max_items));
-    compare_edge_policy("limits.max_bytes",
-                        size_text(baseline_edge.limits.max_bytes),
-                        size_text(candidate_edge.limits.max_bytes));
-    compare_edge_policy("limits.timeout_ms",
-                        duration_text(baseline_edge.limits.timeout),
-                        duration_text(candidate_edge.limits.timeout));
 
     ++baseline_edge_index;
     ++candidate_edge_index;
@@ -602,8 +584,9 @@ inline auto compare_graph_snapshots(graph_diff &diff,
   }
 }
 
-[[nodiscard]] inline auto compare_graph_snapshots(
-    const graph_snapshot &baseline, const graph_snapshot &candidate)
+[[nodiscard]] inline auto
+compare_graph_snapshots(const graph_snapshot &baseline,
+                        const graph_snapshot &candidate)
     -> graph_compatibility_report {
   graph_compatibility_report report{};
   compare_graph_snapshots(report.diff, baseline, candidate, "",

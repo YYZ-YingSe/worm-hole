@@ -1,32 +1,29 @@
-if(NOT EXISTS "${WH_CATCH2_DIR}/CMakeLists.txt")
-  message(FATAL_ERROR
-    "Catch2 source is required at ${WH_CATCH2_DIR}\n"
-    "Hint: sync thirdy_party submodules or pass -DWH_CATCH2_DIR=<path>")
+include(wh_artifact_targets)
+
+wh_setup_root_artifact_targets()
+wh_setup_test_suite_targets()
+
+if(NOT WH_BUILD_UT AND NOT WH_BUILD_FT)
+  message(STATUS "worm-hole tests enabled, but all test suites are disabled")
+  return()
 endif()
+
+wh_require_cmake_source_dir(
+  "${WH_CATCH2_DIR}"
+  "Catch2"
+  "sync thirdy_party submodules or pass -DWH_CATCH2_DIR=<path>")
 
 add_subdirectory("${WH_CATCH2_DIR}" "${CMAKE_BINARY_DIR}/thirdy_party/catch2" EXCLUDE_FROM_ALL)
 
 list(APPEND CMAKE_MODULE_PATH "${WH_CATCH2_DIR}/extras")
 include(Catch)
 
-add_executable(
-  wh_core_tests
-  core/compiler_contracts_test.cpp
-  core/channel_contracts_test.cpp
-  core/container_queue_primitives_test.cpp
-  core/queue_completion_token_contracts_test.cpp
-  core/error_contracts_test.cpp
-  core/type_utils_metaprogramming_contracts_test.cpp
-  core/type_utils_default_instance_test.cpp
-  core/reflect_field_access_test.cpp
-  core/result_contracts_test.cpp
-  core/type_name_registry_contracts_test.cpp
-  core/merge_concat_registry_contracts_test.cpp
-  core/json_serialization_error_domain_contracts_test.cpp
-  core/runtime_context_interrupt_mock_contracts_test.cpp
-  core/l2_schema_contracts_test.cpp
-  core/l2_parser_stream_output_contracts_test.cpp)
+wh_setup_test_support_targets()
 
-target_link_libraries(wh_core_tests PRIVATE wh::core Catch2::Catch2WithMain)
+if(WH_BUILD_FT)
+  add_subdirectory(FT)
+endif()
 
-catch_discover_tests(wh_core_tests)
+if(WH_BUILD_UT)
+  add_subdirectory(UT)
+endif()

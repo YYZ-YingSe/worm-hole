@@ -1,8 +1,11 @@
 // Defines ADK call-option overlay and scope-materialization helpers without
-// copying compose/component runtime option stacks.
+// copying compose or component runtime option stacks.
 #pragma once
 
 #include <array>
+#include <chrono>
+#include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -10,14 +13,66 @@
 #include <utility>
 #include <vector>
 
-#include "wh/adk/types/call_option_types.hpp"
+#include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/type_traits.hpp"
 
 namespace wh::adk {
 
+/// Transparent hash alias used by ADK option dictionaries.
+using option_string_hash = wh::core::transparent_string_hash;
+
+/// Transparent equality alias used by ADK option dictionaries.
+using option_string_equal = wh::core::transparent_string_equal;
+
+/// Type-erased option bag shared by ADK call overlay layers.
+using option_bag = std::unordered_map<std::string, wh::core::any,
+                                      option_string_hash, option_string_equal>;
+
+/// One named option bag scoped to a single agent or tool target.
+struct named_option_bag {
+  /// Stable scope target for this bag.
+  std::string name{};
+  /// Options visible only to `name`.
+  option_bag values{};
+};
+
+/// History-trim knobs applied at transfer or bridge boundaries.
+struct transfer_trim_options {
+  /// When set, assistant transfer messages are dropped on the targeted path.
+  std::optional<bool> trim_assistant_transfer_message{};
+  /// When set, transfer tool-call/request pairs are dropped on the targeted
+  /// path.
+  std::optional<bool> trim_tool_transfer_pair{};
+};
+
+/// Resolved history-trim policy after layered option overlay.
+struct resolved_transfer_trim_options {
+  /// True means assistant transfer messages must be trimmed.
+  bool trim_assistant_transfer_message{false};
+  /// True means transfer tool-call/request pairs must be trimmed.
+  bool trim_tool_transfer_pair{false};
+};
+
+/// Shared budget and circuit-breaker knobs for ADK-driven calls.
+struct call_budget_options {
+  /// Optional maximum concurrent fanout or tool work for one call tree.
+  std::optional<std::size_t> max_concurrency{};
+  /// Optional maximum iteration or step budget for one authored loop.
+  std::optional<std::size_t> max_iterations{};
+  /// Optional token budget used by governance or reduction layers.
+  std::optional<std::size_t> token_budget{};
+  /// Optional breaker threshold for repeated failures.
+  std::optional<std::size_t> circuit_breaker_threshold{};
+  /// Optional timeout budget applied at the call surface.
+  std::optional<std::chrono::milliseconds> timeout{};
+  /// Optional fail-fast flag for subtree short-circuit.
+  std::optional<bool> fail_fast{};
+};
+
 /// One fully layered ADK call-options object.
 struct call_options {
-  /// Global options visible to every agent/tool unless shadowed.
+  /// Global options visible to every agent or tool unless shadowed.
   option_bag global{};
   /// Checkpoint-visible fields bridged to restore paths.
   option_bag checkpoint_fields{};
@@ -25,25 +80,27 @@ struct call_options {
   std::vector<named_option_bag> agent_scopes{};
   /// Tool-targeted option scopes.
   std::vector<named_option_bag> tool_scopes{};
-  /// Impl-specific option namespaces keyed by adapter/backend name.
-  std::unordered_map<std::string, option_bag, option_string_hash, option_string_equal>
+  /// Implementation-specific option namespaces keyed by backend name.
+  std::unordered_map<std::string, option_bag, option_string_hash,
+                     option_string_equal>
       impl_specific{};
-  /// Transfer trim knobs for bridge/history shaping.
+  /// Transfer-trim knobs for bridge or history shaping.
   transfer_trim_options transfer_trim{};
   /// Budget and circuit-breaker knobs.
   call_budget_options budget{};
 };
 
-/// Materialized options for one concrete agent/tool call site.
+/// Materialized options for one concrete agent or tool call site.
 struct resolved_call_options {
   /// Visible option values at the concrete call site.
   option_bag values{};
   /// Checkpoint-visible fields after layer overlay.
   option_bag checkpoint_fields{};
-  /// Impl-specific namespaces after layer overlay.
-  std::unordered_map<std::string, option_bag, option_string_hash, option_string_equal>
+  /// Implementation-specific namespaces after layer overlay.
+  std::unordered_map<std::string, option_bag, option_string_hash,
+                     option_string_equal>
       impl_specific{};
-  /// Concrete transfer trim decisions.
+  /// Concrete transfer-trim decisions.
   resolved_transfer_trim_options transfer_trim{};
   /// Concrete budget overlay.
   call_budget_options budget{};
@@ -58,9 +115,9 @@ inline auto set_option(option_bag &bag, key_t &&key, value_t &&value) -> void {
   if constexpr (std::same_as<stored_t, wh::core::any>) {
     bag.insert_or_assign(std::move(stored_key), std::forward<value_t>(value));
   } else {
-    bag.insert_or_assign(
-        std::move(stored_key),
-        wh::core::any{std::in_place_type<stored_t>, std::forward<value_t>(value)});
+    bag.insert_or_assign(std::move(stored_key),
+                         wh::core::any{std::in_place_type<stored_t>,
+                                       std::forward<value_t>(value)});
   }
 }
 
@@ -82,9 +139,10 @@ template <typename value_t>
 
 /// Stores one global option.
 template <typename key_t, typename value_t>
-inline auto set_global_option(call_options &options, key_t &&key, value_t &&value)
-    -> void {
-  set_option(options.global, std::forward<key_t>(key), std::forward<value_t>(value));
+inline auto set_global_option(call_options &options, key_t &&key,
+                              value_t &&value) -> void {
+  set_option(options.global, std::forward<key_t>(key),
+             std::forward<value_t>(value));
 }
 
 /// Stores one checkpoint-visible field.
@@ -128,14 +186,16 @@ inline auto upsert_scope(std::vector<named_option_bag> &scopes,
   return scopes.back();
 }
 
-inline auto merge_option_bag(option_bag &target, const option_bag &next) -> void {
+inline auto merge_option_bag(option_bag &target, const option_bag &next)
+    -> void {
   for (const auto &[key, value] : next) {
     target.insert_or_assign(key, value);
   }
 }
 
 inline auto merge_named_scopes(std::vector<named_option_bag> &target,
-                               const std::vector<named_option_bag> &next) -> void {
+                               const std::vector<named_option_bag> &next)
+    -> void {
   for (const auto &scope : next) {
     auto &materialized = upsert_scope(target, scope.name);
     merge_option_bag(materialized.values, scope.values);
@@ -143,8 +203,8 @@ inline auto merge_named_scopes(std::vector<named_option_bag> &target,
 }
 
 inline auto merge_impl_specific(
-    std::unordered_map<std::string, option_bag, option_string_hash, option_string_equal>
-        &target,
+    std::unordered_map<std::string, option_bag, option_string_hash,
+                       option_string_equal> &target,
     const std::unordered_map<std::string, option_bag, option_string_hash,
                              option_string_equal> &next) -> void {
   for (const auto &[key, values] : next) {
@@ -198,43 +258,49 @@ inline auto materialize_resolved_trim(const transfer_trim_options &trim)
 
 /// Stores one agent-targeted option.
 template <typename key_t, typename value_t>
-inline auto set_agent_option(call_options &options, const std::string_view agent_name,
-                             key_t &&key, value_t &&value) -> void {
+inline auto set_agent_option(call_options &options,
+                             const std::string_view agent_name, key_t &&key,
+                             value_t &&value) -> void {
   auto &scope = detail::upsert_scope(options.agent_scopes, agent_name);
-  set_option(scope.values, std::forward<key_t>(key), std::forward<value_t>(value));
+  set_option(scope.values, std::forward<key_t>(key),
+             std::forward<value_t>(value));
 }
 
 /// Stores one tool-targeted option.
 template <typename key_t, typename value_t>
-inline auto set_tool_option(call_options &options, const std::string_view tool_name,
-                            key_t &&key, value_t &&value) -> void {
+inline auto set_tool_option(call_options &options,
+                            const std::string_view tool_name, key_t &&key,
+                            value_t &&value) -> void {
   auto &scope = detail::upsert_scope(options.tool_scopes, tool_name);
-  set_option(scope.values, std::forward<key_t>(key), std::forward<value_t>(value));
-}
-
-/// Stores one impl-specific option.
-template <typename key_t, typename value_t>
-inline auto set_impl_option(call_options &options, const std::string_view impl_name,
-                            key_t &&key, value_t &&value) -> void {
-  set_option(options.impl_specific[std::string{impl_name}], std::forward<key_t>(key),
+  set_option(scope.values, std::forward<key_t>(key),
              std::forward<value_t>(value));
 }
 
+/// Stores one implementation-specific option.
+template <typename key_t, typename value_t>
+inline auto set_impl_option(call_options &options,
+                            const std::string_view impl_name, key_t &&key,
+                            value_t &&value) -> void {
+  set_option(options.impl_specific[std::string{impl_name}],
+             std::forward<key_t>(key), std::forward<value_t>(value));
+}
+
 /// Overlays four option layers in the fixed order:
-/// defaults -> Flow -> ADK -> call override.
+/// defaults -> workflow facade -> adk -> call override.
 [[nodiscard]] inline auto resolve_call_options(
-    const call_options *defaults = nullptr, const call_options *flow = nullptr,
-    const call_options *adk = nullptr, const call_options *call_override = nullptr)
-    -> call_options {
+    const call_options *defaults = nullptr,
+    const call_options *workflow = nullptr, const call_options *adk = nullptr,
+    const call_options *call_override = nullptr) -> call_options {
   call_options resolved{};
-  const std::array<const call_options *, 4U> layers{
-      defaults, flow, adk, call_override};
+  const std::array<const call_options *, 4U> layers{defaults, workflow, adk,
+                                                    call_override};
   for (const auto *layer : layers) {
     if (layer == nullptr) {
       continue;
     }
     detail::merge_option_bag(resolved.global, layer->global);
-    detail::merge_option_bag(resolved.checkpoint_fields, layer->checkpoint_fields);
+    detail::merge_option_bag(resolved.checkpoint_fields,
+                             layer->checkpoint_fields);
     detail::merge_named_scopes(resolved.agent_scopes, layer->agent_scopes);
     detail::merge_named_scopes(resolved.tool_scopes, layer->tool_scopes);
     detail::merge_impl_specific(resolved.impl_specific, layer->impl_specific);
@@ -245,35 +311,43 @@ inline auto set_impl_option(call_options &options, const std::string_view impl_n
 }
 
 /// Materializes the option view visible to one concrete agent.
-[[nodiscard]] inline auto materialize_agent_scope(const call_options &options,
-                                                  const std::string_view agent_name)
+[[nodiscard]] inline auto
+materialize_agent_scope(const call_options &options,
+                        const std::string_view agent_name)
     -> resolved_call_options {
   resolved_call_options resolved{};
   detail::merge_option_bag(resolved.values, options.global);
-  if (const auto *scope = detail::find_named_scope(options.agent_scopes, agent_name);
+  if (const auto *scope =
+          detail::find_named_scope(options.agent_scopes, agent_name);
       scope != nullptr) {
     detail::merge_option_bag(resolved.values, scope->values);
   }
-  detail::merge_option_bag(resolved.checkpoint_fields, options.checkpoint_fields);
+  detail::merge_option_bag(resolved.checkpoint_fields,
+                           options.checkpoint_fields);
   resolved.impl_specific = options.impl_specific;
-  resolved.transfer_trim = detail::materialize_resolved_trim(options.transfer_trim);
+  resolved.transfer_trim =
+      detail::materialize_resolved_trim(options.transfer_trim);
   resolved.budget = options.budget;
   return resolved;
 }
 
 /// Materializes the option view visible to one concrete tool.
-[[nodiscard]] inline auto materialize_tool_scope(const call_options &options,
-                                                 const std::string_view tool_name)
+[[nodiscard]] inline auto
+materialize_tool_scope(const call_options &options,
+                       const std::string_view tool_name)
     -> resolved_call_options {
   resolved_call_options resolved{};
   detail::merge_option_bag(resolved.values, options.global);
-  if (const auto *scope = detail::find_named_scope(options.tool_scopes, tool_name);
+  if (const auto *scope =
+          detail::find_named_scope(options.tool_scopes, tool_name);
       scope != nullptr) {
     detail::merge_option_bag(resolved.values, scope->values);
   }
-  detail::merge_option_bag(resolved.checkpoint_fields, options.checkpoint_fields);
+  detail::merge_option_bag(resolved.checkpoint_fields,
+                           options.checkpoint_fields);
   resolved.impl_specific = options.impl_specific;
-  resolved.transfer_trim = detail::materialize_resolved_trim(options.transfer_trim);
+  resolved.transfer_trim =
+      detail::materialize_resolved_trim(options.transfer_trim);
   resolved.budget = options.budget;
   return resolved;
 }

@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-#include "wh/compose/graph/detail/keys.hpp"
+#include "wh/compose/graph/keys.hpp"
 #include "wh/compose/runtime/state.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
@@ -27,7 +27,8 @@ public:
   explicit scoped_node_local_process_state(const std::uint32_t node_id) noexcept
       : node_id_(node_id) {}
 
-  scoped_node_local_process_state(const scoped_node_local_process_state &) = delete;
+  scoped_node_local_process_state(const scoped_node_local_process_state &) =
+      delete;
   auto operator=(const scoped_node_local_process_state &)
       -> scoped_node_local_process_state & = delete;
 
@@ -42,13 +43,13 @@ public:
   [[nodiscard]] auto get(node_local_process_state_slots &states)
       -> wh::core::result<std::reference_wrapper<graph_process_state>> {
     if (node_id_ == invalid_node_id || node_id_ >= states.size()) {
-      return wh::core::result<std::reference_wrapper<graph_process_state>>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<std::reference_wrapper<graph_process_state>>::
+          failure(wh::core::errc::contract_violation);
     }
     auto &slot = states[node_id_];
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<graph_process_state>>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<graph_process_state>>::
+          failure(wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }

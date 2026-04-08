@@ -18,8 +18,7 @@ template <typename value_t, typename error_t> class result;
 
 namespace detail {
 
-template <typename type_t>
-using remove_cvref_t = std::remove_cvref_t<type_t>;
+template <typename type_t> using remove_cvref_t = std::remove_cvref_t<type_t>;
 
 template <typename callable_t, typename... args_t>
 concept callable_with = std::invocable<callable_t, args_t...>;
@@ -190,8 +189,8 @@ public:
 
   template <typename value_u = value_t>
     requires detail::is_convertible_guarded_v<
-                 !std::same_as<detail::remove_cvref_t<value_u>, result>, value_u,
-                 value_t> &&
+                 !std::same_as<detail::remove_cvref_t<value_u>, result>,
+                 value_u, value_t> &&
              (!std::constructible_from<error_t, value_u &&>) &&
              (!detail::is_single_errc_pack_v<value_u> ||
               !std::is_arithmetic_v<value_t>)
@@ -201,8 +200,8 @@ public:
 
   template <typename error_u = error_t>
     requires detail::is_convertible_guarded_v<
-                 !std::same_as<detail::remove_cvref_t<error_u>, result>, error_u,
-                 error_t> &&
+                 !std::same_as<detail::remove_cvref_t<error_u>, result>,
+                 error_u, error_t> &&
              (!std::constructible_from<value_t, error_u &&>) &&
              (!std::same_as<detail::remove_cvref_t<error_u>, result>)
   constexpr result(error_u &&error) noexcept(
@@ -995,7 +994,8 @@ template <typename value_t, typename error_t, typename factory_t,
 template <typename value_t, typename error_t, typename factory_t,
           typename produced_t =
               detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
-  requires detail::callable_with<factory_t> && detail::result_like<produced_t> &&
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            detail::is_value_convertible_to<
                value_t, typename produced_t::value_type>::value
 [[nodiscard]] constexpr auto operator|(const result<value_t, error_t> &item,
@@ -1010,7 +1010,8 @@ template <typename value_t, typename error_t, typename factory_t,
 template <typename value_t, typename error_t, typename factory_t,
           typename produced_t =
               detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
-  requires detail::callable_with<factory_t> && detail::result_like<produced_t> &&
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            detail::is_value_convertible_to<
                value_t, typename produced_t::value_type>::value
 [[nodiscard]] constexpr auto operator|(result<value_t, error_t> &&item,
@@ -1025,7 +1026,8 @@ template <typename value_t, typename error_t, typename factory_t,
 template <typename error_t, typename factory_t,
           typename produced_t =
               detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
-  requires detail::callable_with<factory_t> && detail::result_like<produced_t> &&
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            std::same_as<typename produced_t::value_type, void>
 [[nodiscard]] constexpr auto operator|(const result<void, error_t> &item,
                                        factory_t &&factory) -> produced_t {
@@ -1039,7 +1041,8 @@ template <typename error_t, typename factory_t,
 template <typename error_t, typename factory_t,
           typename produced_t =
               detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
-  requires detail::callable_with<factory_t> && detail::result_like<produced_t> &&
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            std::same_as<typename produced_t::value_type, void>
 [[nodiscard]] constexpr auto operator|(result<void, error_t> &&item,
                                        factory_t &&factory) -> produced_t {
@@ -1079,7 +1082,8 @@ constexpr auto operator|=(result<value_t, error_t> &item, factory_t &&factory)
 template <typename value_t, typename error_t, typename factory_t,
           typename produced_t =
               detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
-  requires detail::callable_with<factory_t> && detail::result_like<produced_t> &&
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            detail::is_value_convertible_to<typename produced_t::value_type,
                                            value_t>::value &&
            std::convertible_to<typename produced_t::error_type, error_t>
@@ -1092,9 +1096,9 @@ constexpr auto operator|=(result<value_t, error_t> &item, factory_t &&factory)
   return item;
 }
 
-template <
-    typename value_t, typename error_t, typename callable_t,
-    typename produced_t = detail::callable_result_t<callable_t, const value_t &>>
+template <typename value_t, typename error_t, typename callable_t,
+          typename produced_t =
+              detail::callable_result_t<callable_t, const value_t &>>
   requires detail::callable_with<callable_t, const value_t &> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            (!std::is_void_v<produced_t>)
@@ -1123,9 +1127,9 @@ template <typename value_t, typename error_t, typename callable_t,
   return std::invoke(std::forward<callable_t>(callable), *std::move(item));
 }
 
-template <
-    typename value_t, typename error_t, typename callable_t,
-    typename produced_t = detail::callable_result_t<callable_t, const value_t &>>
+template <typename value_t, typename error_t, typename callable_t,
+          typename produced_t =
+              detail::callable_result_t<callable_t, const value_t &>>
   requires detail::callable_with<callable_t, const value_t &> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            std::is_void_v<produced_t>
@@ -1172,8 +1176,8 @@ template <typename value_t, typename error_t, typename callable_t,
 }
 
 template <typename value_t, typename error_t, typename callable_t,
-          typename produced_t =
-              detail::remove_cvref_t<detail::callable_result_t<callable_t, value_t>>>
+          typename produced_t = detail::remove_cvref_t<
+              detail::callable_result_t<callable_t, value_t>>>
   requires detail::callable_with<callable_t, value_t> &&
            detail::result_like<produced_t> &&
            std::convertible_to<error_t, typename produced_t::error_type>
@@ -1220,7 +1224,8 @@ template <typename error_t, typename callable_t,
 template <typename error_t, typename callable_t,
           typename produced_t =
               detail::remove_cvref_t<detail::callable_result_t<callable_t>>>
-  requires detail::callable_with<callable_t> && detail::result_like<produced_t> &&
+  requires detail::callable_with<callable_t> &&
+           detail::result_like<produced_t> &&
            std::convertible_to<error_t, typename produced_t::error_type>
 [[nodiscard]] constexpr auto operator&(const result<void, error_t> &item,
                                        callable_t &&callable) -> produced_t {
@@ -1259,8 +1264,8 @@ constexpr auto operator&=(result<void, error_t> &item, callable_t &&callable)
 }
 
 template <typename value_t, typename error_t, typename callable_t,
-          typename produced_t =
-              detail::remove_cvref_t<detail::callable_result_t<callable_t, value_t>>>
+          typename produced_t = detail::remove_cvref_t<
+              detail::callable_result_t<callable_t, value_t>>>
   requires detail::callable_with<callable_t, value_t> &&
            detail::result_like<produced_t> &&
            detail::is_value_convertible_to<typename produced_t::value_type,
@@ -1278,7 +1283,8 @@ constexpr auto operator&=(result<value_t, error_t> &item, callable_t &&callable)
 template <typename error_t, typename callable_t,
           typename produced_t =
               detail::remove_cvref_t<detail::callable_result_t<callable_t>>>
-  requires detail::callable_with<callable_t> && detail::result_like<produced_t> &&
+  requires detail::callable_with<callable_t> &&
+           detail::result_like<produced_t> &&
            std::same_as<typename produced_t::value_type, void> &&
            std::convertible_to<typename produced_t::error_type, error_t>
 constexpr auto operator&=(result<void, error_t> &item, callable_t &&callable)

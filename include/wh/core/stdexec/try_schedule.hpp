@@ -12,14 +12,14 @@ struct try_schedule_t;
 namespace detail {
 
 template <typename scheduler_t>
-concept try_schedule_member_callable =
-    requires(scheduler_t &&scheduler) {
-      static_cast<scheduler_t &&>(scheduler).try_schedule();
-    };
+concept try_schedule_member_callable = requires(scheduler_t &&scheduler) {
+  static_cast<scheduler_t &&>(scheduler).try_schedule();
+};
 
 } // namespace detail
 
-/// Customization point for non-blocking scheduler handoff via `scheduler.try_schedule()`.
+/// Customization point for non-blocking scheduler handoff via
+/// `scheduler.try_schedule()`.
 struct try_schedule_t {
   template <typename scheduler_t>
     requires detail::try_schedule_member_callable<scheduler_t>
@@ -37,7 +37,9 @@ template <typename scheduler_t>
 concept try_scheduler =
     stdexec::scheduler<std::remove_cvref_t<scheduler_t>> &&
     requires(scheduler_t &&scheduler) {
-      { wh::core::try_schedule(static_cast<scheduler_t &&>(scheduler)) } -> stdexec::sender;
+      {
+        wh::core::try_schedule(static_cast<scheduler_t &&>(scheduler))
+      } -> stdexec::sender;
     };
 
 template <typename scheduler_t>

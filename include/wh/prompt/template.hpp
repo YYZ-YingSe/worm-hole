@@ -2,8 +2,8 @@
 // rendering.
 #pragma once
 
-#include <charconv>
 #include <cctype>
+#include <charconv>
 #include <concepts>
 #include <cstdint>
 #include <map>
@@ -65,9 +65,11 @@ public:
   template_value(std::string &&value) noexcept : storage_(std::move(value)) {}
   template_value(const std::string_view value) : storage_(std::string{value}) {}
   template_value(const template_array &value) : storage_(value) {}
-  template_value(template_array &&value) noexcept : storage_(std::move(value)) {}
+  template_value(template_array &&value) noexcept
+      : storage_(std::move(value)) {}
   template_value(const template_object &value) : storage_(value) {}
-  template_value(template_object &&value) noexcept : storage_(std::move(value)) {}
+  template_value(template_object &&value) noexcept
+      : storage_(std::move(value)) {}
 
   [[nodiscard]] auto storage() const noexcept -> const storage_type & {
     return storage_;
@@ -181,8 +183,8 @@ struct template_delimiters {
       value.storage());
 }
 
-[[nodiscard]] inline auto stringify_placeholder_value(
-    const template_value &value) -> std::string {
+[[nodiscard]] inline auto
+stringify_placeholder_value(const template_value &value) -> std::string {
   return std::visit(
       []<typename value_t>(const value_t &inner) -> std::string {
         using inner_t = std::remove_cvref_t<value_t>;
@@ -223,7 +225,8 @@ struct template_delimiters {
   const auto *end = token.data() + token.size();
   const auto parsed = std::from_chars(begin, end, index);
   if (parsed.ec != std::errc{} || parsed.ptr != end) {
-    return wh::core::result<std::size_t>::failure(wh::core::errc::type_mismatch);
+    return wh::core::result<std::size_t>::failure(
+        wh::core::errc::type_mismatch);
   }
   return index;
 }
@@ -249,8 +252,9 @@ struct template_delimiters {
       wh::core::errc::type_mismatch);
 }
 
-[[nodiscard]] inline auto resolve_placeholder_value(
-    const template_context &context, const std::string_view key)
+[[nodiscard]] inline auto
+resolve_placeholder_value(const template_context &context,
+                          const std::string_view key)
     -> wh::core::result<const template_value *> {
   auto first_token_end = key.find('.');
   auto current = find_object_value(context, key.substr(0U, first_token_end));
@@ -261,11 +265,10 @@ struct template_delimiters {
   while (first_token_end != std::string_view::npos) {
     const auto next_token_start = first_token_end + 1U;
     const auto next_token_end = key.find('.', next_token_start);
-    const auto token = key.substr(
-        next_token_start,
-        next_token_end == std::string_view::npos
-            ? std::string_view::npos
-            : next_token_end - next_token_start);
+    const auto token =
+        key.substr(next_token_start, next_token_end == std::string_view::npos
+                                         ? std::string_view::npos
+                                         : next_token_end - next_token_start);
     current = descend_path(*current.value(), token);
     if (current.has_error()) {
       return current;
@@ -293,12 +296,12 @@ struct template_delimiters {
     rendered.append(text.substr(cursor, begin - cursor));
     const auto end = text.find(delimiters.end, begin + delimiters.begin.size());
     if (end == std::string_view::npos) {
-      return wh::core::result<std::string>::failure(wh::core::errc::parse_error);
+      return wh::core::result<std::string>::failure(
+          wh::core::errc::parse_error);
     }
 
-    const auto key =
-        trim(text.substr(begin + delimiters.begin.size(),
-                         end - (begin + delimiters.begin.size())));
+    const auto key = trim(text.substr(begin + delimiters.begin.size(),
+                                      end - (begin + delimiters.begin.size())));
     auto value = resolve_placeholder_value(context, key);
     if (value.has_error()) {
       return wh::core::result<std::string>::failure(value.error());
@@ -309,8 +312,8 @@ struct template_delimiters {
   return rendered;
 }
 
-[[nodiscard]] inline auto map_minja_runtime_error(
-    const std::string_view message) -> wh::core::errc {
+[[nodiscard]] inline auto
+map_minja_runtime_error(const std::string_view message) -> wh::core::errc {
   if (message.find("Undefined variable") != std::string_view::npos ||
       message.find("Undefined value or reference") != std::string_view::npos ||
       message.find("is not defined") != std::string_view::npos) {

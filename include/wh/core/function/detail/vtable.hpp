@@ -14,16 +14,13 @@
 namespace wh::core::fn_detail {
 
 /// Base vtable with invocation only.
-template <typename signature_t>
-class simple_vtable;
+template <typename signature_t> class simple_vtable;
 
 /// Base vtable with virtual destruction.
-template <typename signature_t>
-class destructible_vtable;
+template <typename signature_t> class destructible_vtable;
 
 /// Base vtable with clone support.
-template <typename signature_t>
-class cloneable_vtable;
+template <typename signature_t> class cloneable_vtable;
 
 /// Concrete vtable adapter around a managed invocable.
 template <typename signature_t, typename invocable_t, typename vtable_t,
@@ -47,8 +44,8 @@ class vtable_handler;
 // Generates invoke+virtual-dtor vtable specializations.
 #define WH_DEFINE_DESTRUCTIBLE_VTABLE(CV, REF)                                 \
   template <typename return_t, bool is_noexcept, typename... param_types>      \
-  class destructible_vtable<return_t(param_types...) CV REF                    \
-                                noexcept(is_noexcept)> {                       \
+  class destructible_vtable<return_t(param_types...)                           \
+                                CV REF noexcept(is_noexcept)> {                \
   public:                                                                      \
     virtual auto operator()(ref_non_trivials<param_types>...) CV REF           \
         noexcept(is_noexcept) -> return_t = 0;                                 \
@@ -58,8 +55,8 @@ class vtable_handler;
 // Generates invoke+clone vtable specializations.
 #define WH_DEFINE_CLONEABLE_VTABLE(CV, REF)                                    \
   template <typename return_t, bool is_noexcept, typename... param_types>      \
-  class cloneable_vtable<return_t(param_types...) CV REF                       \
-                             noexcept(is_noexcept)> {                          \
+  class cloneable_vtable<return_t(param_types...)                              \
+                             CV REF noexcept(is_noexcept)> {                   \
   public:                                                                      \
     virtual auto operator()(ref_non_trivials<param_types>...) CV REF           \
         noexcept(is_noexcept) -> return_t = 0;                                 \
@@ -69,15 +66,16 @@ class vtable_handler;
 
 // Generates concrete vtable handlers bridging invocation to object_manager.
 #define WH_DEFINE_VTABLE_HANDLER(CV, REF, INV_QUALS)                           \
-  template <typename invocable_t, typename vtable_t,                           \
-            template <typename, template <typename> class>                     \
-            class ownership_policy,                                            \
-            std::size_t buffer_size, bool accept_pointers,                     \
-            template <typename> class allocator_t, typename return_t,          \
-            bool is_noexcept, typename... param_types>                         \
+  template <                                                                   \
+      typename invocable_t, typename vtable_t,                                 \
+      template <typename, template <typename> class> class ownership_policy,   \
+      std::size_t buffer_size, bool accept_pointers,                           \
+      template <typename> class allocator_t, typename return_t,                \
+      bool is_noexcept, typename... param_types>                               \
   class vtable_handler<return_t(param_types...) CV REF noexcept(is_noexcept),  \
                        invocable_t, vtable_t, ownership_policy, buffer_size,   \
-                       accept_pointers, allocator_t> final : public vtable_t { \
+                       accept_pointers, allocator_t>                           \
+      final : public vtable_t {                                                \
   private:                                                                     \
     using manager_t =                                                          \
         object_manager<invocable_t, ownership_policy, check_none_base,         \
@@ -86,7 +84,8 @@ class vtable_handler;
     template <typename type_t>                                                 \
     [[nodiscard]] static consteval auto basic_constraint() -> bool {           \
       return std::is_constructible_v<std::decay_t<invocable_t>, type_t> &&     \
-             (!std::is_same_v<vtable_handler, wh::core::remove_cvref_t<type_t>>);   \
+             (!std::is_same_v<vtable_handler,                                  \
+                              wh::core::remove_cvref_t<type_t>>);              \
     }                                                                          \
     template <typename... args_t>                                              \
       requires(sizeof...(args_t) > 1U)                                         \

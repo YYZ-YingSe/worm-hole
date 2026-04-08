@@ -2,8 +2,8 @@
 // helpers.
 #pragma once
 
-#include <optional>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -18,7 +18,8 @@ namespace wh::callbacks {
 
 /// Optional callback-manager sink reusable across component execution helpers.
 struct callback_sink {
-  /// Borrowed manager used by sync call paths that do not outlive the source context.
+  /// Borrowed manager used by sync call paths that do not outlive the source
+  /// context.
   const manager *borrowed{nullptr};
   /// Owned manager snapshot used by async/detached call paths.
   std::optional<manager> owned{};
@@ -54,8 +55,8 @@ borrow_callback_sink(const wh::core::run_context &context) -> callback_sink {
 }
 
 /// Copies callback-manager state out of the provided run context.
-[[nodiscard]] inline auto make_callback_sink(const wh::core::run_context &context)
-    -> callback_sink {
+[[nodiscard]] inline auto
+make_callback_sink(const wh::core::run_context &context) -> callback_sink {
   callback_sink sink{};
   if (context.callbacks.has_value()) {
     sink.owned = context.callbacks->manager;
@@ -96,11 +97,11 @@ inline auto emit(const callback_sink &sink, const stage current_stage,
 }
 
 template <typename options_t>
-concept component_options_provider =
-    requires(const options_t &options) {
-      { options.component_options() }
-          -> std::same_as<const wh::core::component_options &>;
-    };
+concept component_options_provider = requires(const options_t &options) {
+  {
+    options.component_options()
+  } -> std::same_as<const wh::core::component_options &>;
+};
 
 template <component_options_provider options_t>
 [[nodiscard]] inline auto apply_component_run_info(run_info info,

@@ -81,7 +81,8 @@ public:
   }
 
   /// Looks up dynamic merge function by runtime type key.
-  [[nodiscard]] auto find_merge(const wh::core::any_type_key type) const noexcept
+  [[nodiscard]] auto
+  find_merge(const wh::core::any_type_key type) const noexcept
       -> const dynamic_values_merge_function * {
     return core_.find_dynamic(type);
   }

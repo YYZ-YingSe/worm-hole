@@ -16,11 +16,13 @@ concept memory_pool_like =
              memory_acquire_request &&movable_request,
              const memory_block &block, memory_block &&movable_block) {
       { pool.acquire(request) } -> std::same_as<memory_acquire_result>;
-      { pool.acquire(std::move(movable_request)) }
-      -> std::same_as<memory_acquire_result>;
+      {
+        pool.acquire(std::move(movable_request))
+      } -> std::same_as<memory_acquire_result>;
       { pool.release(block) } -> std::same_as<memory_release_result>;
-      { pool.release(std::move(movable_block)) }
-      -> std::same_as<memory_release_result>;
+      {
+        pool.release(std::move(movable_block))
+      } -> std::same_as<memory_release_result>;
     };
 
 } // namespace wh::net

@@ -12,8 +12,7 @@
 namespace wh::core::fn_detail {
 
 /// Base storage wrapper for callable objects.
-template <typename storage_t>
-class function_base : public storage_t {
+template <typename storage_t> class function_base : public storage_t {
 protected:
   using storage_type = storage_t;
   typename storage_t::buffer_type local_buffer_{nullptr};
@@ -28,9 +27,10 @@ protected:
   }
 
   template <typename fun_t, typename... args_t>
-  explicit function_base(std::in_place_type_t<fun_t>,
-                         args_t &&...args) noexcept(check_nothrow<std::decay_t<fun_t>,
-                                                                   args_t...>()) {
+  explicit function_base(
+      std::in_place_type_t<fun_t>,
+      args_t
+          &&...args) noexcept(check_nothrow<std::decay_t<fun_t>, args_t...>()) {
     if constexpr (sizeof...(args_t) == 1U) {
       if constexpr (is_function_pointer_v<wh::core::remove_cvref_t<fun_t>> ||
                     std::is_member_pointer_v<std::decay_t<fun_t>>) {

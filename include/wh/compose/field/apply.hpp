@@ -28,7 +28,8 @@ read_value_by_path(const graph_value_map &source, const field_path &path,
     const auto iter = current->find(path.segments[index]);
     if (iter == current->end()) {
       if (missing_policy == field_missing_policy::skip) {
-        return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
+        return wh::core::result<graph_value>::failure(
+            wh::core::errc::not_found);
       }
       return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
     }
@@ -39,7 +40,8 @@ read_value_by_path(const graph_value_map &source, const field_path &path,
 
     const auto *nested = wh::core::any_cast<graph_value_map>(&iter->second);
     if (nested == nullptr) {
-      return wh::core::result<graph_value>::failure(wh::core::errc::type_mismatch);
+      return wh::core::result<graph_value>::failure(
+          wh::core::errc::type_mismatch);
     }
     current = nested;
   }
@@ -63,9 +65,7 @@ inline auto write_value_by_path(graph_value_map &target, const field_path &path,
 
     auto iter = current->find(segment);
     if (iter == current->end()) {
-      iter = current
-                 ->emplace(segment, graph_value{graph_value_map{}})
-                 .first;
+      iter = current->emplace(segment, graph_value{graph_value_map{}}).first;
     }
 
     auto *nested = wh::core::any_cast<graph_value_map>(&iter->second);
@@ -87,7 +87,8 @@ inline auto write_value_by_path(graph_value_map &target, const field_path &path,
 /// The current map is used as the read snapshot, while writes are staged first
 /// so one failing rule does not partially mutate the target map.
 [[nodiscard]] inline auto apply_field_mappings_in_place(
-    graph_value_map &target, const std::vector<compiled_field_mapping_rule> &rules,
+    graph_value_map &target,
+    const std::vector<compiled_field_mapping_rule> &rules,
     wh::core::run_context &context) -> wh::core::result<void> {
   std::vector<detail::pending_field_write> pending_writes{};
   pending_writes.reserve(rules.size());
@@ -132,10 +133,11 @@ inline auto write_value_by_path(graph_value_map &target, const field_path &path,
 }
 
 /// Applies mapping rules and returns updated target map.
-[[nodiscard]] inline auto apply_field_mappings(
-    const graph_value_map &source, graph_value_map &&target,
-    const std::vector<compiled_field_mapping_rule> &rules,
-    wh::core::run_context &context) -> wh::core::result<graph_value_map> {
+[[nodiscard]] inline auto
+apply_field_mappings(const graph_value_map &source, graph_value_map &&target,
+                     const std::vector<compiled_field_mapping_rule> &rules,
+                     wh::core::run_context &context)
+    -> wh::core::result<graph_value_map> {
   for (const auto &rule : rules) {
     wh::core::result<graph_value> extracted{};
     if (rule.static_value.has_value()) {
@@ -178,9 +180,10 @@ inline auto write_value_by_path(graph_value_map &target, const field_path &path,
 }
 
 /// Applies mapping rules and returns updated target map.
-[[nodiscard]] inline auto apply_field_mappings(
-    const graph_value_map &source, graph_value_map &&target,
-    const std::vector<field_mapping_rule> &rules, wh::core::run_context &context)
+[[nodiscard]] inline auto
+apply_field_mappings(const graph_value_map &source, graph_value_map &&target,
+                     const std::vector<field_mapping_rule> &rules,
+                     wh::core::run_context &context)
     -> wh::core::result<graph_value_map> {
   std::vector<compiled_field_mapping_rule> compiled_rules{};
   compiled_rules.reserve(rules.size());
@@ -192,14 +195,15 @@ inline auto write_value_by_path(graph_value_map &target, const field_path &path,
     compiled_rules.push_back(std::move(compiled_rule).value());
   }
 
-  return apply_field_mappings(source, std::move(target), compiled_rules, context);
+  return apply_field_mappings(source, std::move(target), compiled_rules,
+                              context);
 }
 
 /// Applies mapping rules and returns updated target map.
 [[nodiscard]] inline auto apply_field_mappings(
     const graph_value_map &source, const graph_value_map &target,
-    const std::vector<field_mapping_rule> &rules, wh::core::run_context &context)
-    -> wh::core::result<graph_value_map> {
+    const std::vector<field_mapping_rule> &rules,
+    wh::core::run_context &context) -> wh::core::result<graph_value_map> {
   graph_value_map copied_target = target;
   return apply_field_mappings(source, std::move(copied_target), rules, context);
 }

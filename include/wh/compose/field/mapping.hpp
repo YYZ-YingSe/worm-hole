@@ -36,9 +36,9 @@ enum class workflow_dependency_kind : std::uint8_t {
 /// One field mapping rule from source path to target path.
 struct field_mapping_rule {
   /// Custom extractor callback type used by mapping rules.
-  using extractor_callback = wh::core::callback_function<
-      wh::core::result<graph_value>(const graph_value_map &,
-                                wh::core::run_context &) const>;
+  using extractor_callback =
+      wh::core::callback_function<wh::core::result<graph_value>(
+          const graph_value_map &, wh::core::run_context &) const>;
 
   /// Source path expression, for example `order.user.id`.
   std::string from_path{};
@@ -90,7 +90,8 @@ struct compiled_field_mapping_rule {
 [[nodiscard]] inline auto parse_field_path(const std::string_view text)
     -> wh::core::result<field_path> {
   if (text.empty()) {
-    return wh::core::result<field_path>::failure(wh::core::errc::invalid_argument);
+    return wh::core::result<field_path>::failure(
+        wh::core::errc::invalid_argument);
   }
 
   field_path parsed{};
@@ -101,7 +102,8 @@ struct compiled_field_mapping_rule {
     const auto stop = end == std::string_view::npos ? text.size() : end;
     const auto segment = text.substr(begin, stop - begin);
     if (segment.empty() || segment.find('\x1F') != std::string_view::npos) {
-      return wh::core::result<field_path>::failure(wh::core::errc::invalid_argument);
+      return wh::core::result<field_path>::failure(
+          wh::core::errc::invalid_argument);
     }
     parsed.segments.emplace_back(segment);
     if (end == std::string_view::npos) {
@@ -113,8 +115,9 @@ struct compiled_field_mapping_rule {
 }
 
 /// Compiles one mapping rule into parsed-path representation.
-[[nodiscard]] inline auto compile_field_mapping_rule(
-    const field_mapping_rule &rule) -> wh::core::result<compiled_field_mapping_rule> {
+[[nodiscard]] inline auto
+compile_field_mapping_rule(const field_mapping_rule &rule)
+    -> wh::core::result<compiled_field_mapping_rule> {
   auto parsed_to_path = parse_field_path(rule.to_path);
   if (parsed_to_path.has_error()) {
     return wh::core::result<compiled_field_mapping_rule>::failure(

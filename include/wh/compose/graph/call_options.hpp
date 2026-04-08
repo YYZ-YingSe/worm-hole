@@ -68,7 +68,8 @@ struct graph_external_interrupt_policy {
   /// Optional timeout budget for external interrupt convergence.
   std::optional<std::chrono::milliseconds> timeout{};
   /// Timeout interpretation mode for rerun handoff.
-  graph_interrupt_timeout_mode mode{graph_interrupt_timeout_mode::wait_inflight};
+  graph_interrupt_timeout_mode mode{
+      graph_interrupt_timeout_mode::wait_inflight};
   /// True enables automatic persist for external interrupts.
   bool auto_persist_external_interrupt{true};
   /// True keeps internal interrupt persist on manual path only.
@@ -102,8 +103,8 @@ struct graph_debug_stream_event {
 };
 
 /// Debug callback invoked for scheduler decisions in one run.
-using graph_debug_callback = wh::core::callback_function<
-    void(const graph_debug_stream_event &, wh::core::run_context &) const>;
+using graph_debug_callback = wh::core::callback_function<void(
+    const graph_debug_stream_event &, wh::core::run_context &) const>;
 
 /// Node-path scoped debug callback injection entry.
 struct graph_node_path_debug_callback {
@@ -224,7 +225,8 @@ public:
     return options().trace;
   }
 
-  [[nodiscard]] auto component_defaults() const noexcept -> const graph_value_map & {
+  [[nodiscard]] auto component_defaults() const noexcept
+      -> const graph_value_map & {
     return options().component_defaults;
   }
 
@@ -434,9 +436,8 @@ resolve_graph_designation(const graph_call_scope &scope,
   }
   const auto absolute = scope.absolute_path(path);
   match.node_path_hit = std::ranges::any_of(
-      options.designated_node_paths, [&](const node_path &candidate) {
-        return candidate == absolute;
-      });
+      options.designated_node_paths,
+      [&](const node_path &candidate) { return candidate == absolute; });
   return match;
 }
 
@@ -466,11 +467,9 @@ is_graph_node_designated(const graph_call_options &options,
 }
 
 /// Returns true when one stream kind is enabled in call options.
-[[nodiscard]] inline auto
-has_graph_stream_subscription(const graph_call_scope &scope,
-                              const graph_stream_channel_kind kind,
-                              const std::string_view custom_channel = {})
-    -> bool {
+[[nodiscard]] inline auto has_graph_stream_subscription(
+    const graph_call_scope &scope, const graph_stream_channel_kind kind,
+    const std::string_view custom_channel = {}) -> bool {
   const auto &options = scope.options();
   for (const auto &subscription : options.stream_subscriptions) {
     if (!subscription.enabled || subscription.kind != kind) {
@@ -486,11 +485,9 @@ has_graph_stream_subscription(const graph_call_scope &scope,
 }
 
 /// Returns true when one stream kind is enabled in call options.
-[[nodiscard]] inline auto
-has_graph_stream_subscription(const graph_call_options &options,
-                              const graph_stream_channel_kind kind,
-                              const std::string_view custom_channel = {})
-    -> bool {
+[[nodiscard]] inline auto has_graph_stream_subscription(
+    const graph_call_options &options, const graph_stream_channel_kind kind,
+    const std::string_view custom_channel = {}) -> bool {
   for (const auto &subscription : options.stream_subscriptions) {
     if (!subscription.enabled || subscription.kind != kind) {
       continue;
@@ -517,7 +514,8 @@ matches_node_observation(const node_path &node,
   return node == rule.path;
 }
 
-/// Returns true when one observation rule is visible in `scope` and matches `node`.
+/// Returns true when one observation rule is visible in `scope` and matches
+/// `node`.
 [[nodiscard]] inline auto
 matches_node_observation(const graph_call_scope &scope, const node_path &node,
                          const graph_node_observation_override &rule) -> bool {
@@ -557,24 +555,28 @@ should_emit_graph_debug_event(const graph_call_scope &scope) -> bool {
     return true;
   }
   return !scope.isolate_debug_stream() &&
-         has_graph_stream_subscription(scope, graph_stream_channel_kind::message);
+         has_graph_stream_subscription(scope,
+                                       graph_stream_channel_kind::message);
 }
 
 /// Returns true when runtime must materialize debug events for this run.
 [[nodiscard]] inline auto
 should_emit_graph_debug_event(const graph_call_options &options) -> bool {
   if (has_graph_debug_observer(options) ||
-      has_graph_stream_subscription(options, graph_stream_channel_kind::debug)) {
+      has_graph_stream_subscription(options,
+                                    graph_stream_channel_kind::debug)) {
     return true;
   }
   return !options.isolate_debug_stream &&
-         has_graph_stream_subscription(options, graph_stream_channel_kind::message);
+         has_graph_stream_subscription(options,
+                                       graph_stream_channel_kind::message);
 }
 
 /// Builds stable `graph/node/path` namespace for one stream event.
-[[nodiscard]] inline auto make_graph_event_scope(
-    const std::string_view graph_name, const std::string_view node_key,
-    const node_path &path) -> graph_event_scope {
+[[nodiscard]] inline auto
+make_graph_event_scope(const std::string_view graph_name,
+                       const std::string_view node_key, const node_path &path)
+    -> graph_event_scope {
   return graph_event_scope{
       .graph = std::string{graph_name},
       .node = std::string{node_key},
@@ -583,9 +585,9 @@ should_emit_graph_debug_event(const graph_call_options &options) -> bool {
 }
 
 /// Freezes external interrupt policy once; later calls keep initial policy.
-[[nodiscard]] inline auto freeze_external_interrupt_policy(
-    graph_external_interrupt_policy_latch &latch,
-    const graph_external_interrupt_policy &policy)
+[[nodiscard]] inline auto
+freeze_external_interrupt_policy(graph_external_interrupt_policy_latch &latch,
+                                 const graph_external_interrupt_policy &policy)
     -> const graph_external_interrupt_policy & {
   if (!latch.frozen) {
     latch.policy = policy;
@@ -628,10 +630,10 @@ resolve_external_interrupt_policy(const graph_call_options &options)
 }
 
 /// Dispatches graph-level and node-path scoped debug observers for one event.
-inline auto dispatch_graph_debug_observers(const graph_call_scope &scope,
-                                           const graph_debug_stream_event &event,
-                                           wh::core::run_context &context)
-    -> void {
+inline auto
+dispatch_graph_debug_observers(const graph_call_scope &scope,
+                               const graph_debug_stream_event &event,
+                               wh::core::run_context &context) -> void {
   const auto &options = scope.options();
   if (options.graph_debug_observer) {
     options.graph_debug_observer(event, context);
@@ -641,9 +643,9 @@ inline auto dispatch_graph_debug_observers(const graph_call_scope &scope,
     if (!observer.callback || observer.path.empty()) {
       continue;
     }
-    const auto matched =
-        observer.include_descendants ? absolute.starts_with(observer.path)
-                                     : absolute == observer.path;
+    const auto matched = observer.include_descendants
+                             ? absolute.starts_with(observer.path)
+                             : absolute == observer.path;
     if (matched) {
       observer.callback(event, context);
     }
@@ -651,11 +653,12 @@ inline auto dispatch_graph_debug_observers(const graph_call_scope &scope,
 }
 
 /// Dispatches graph-level and node-path scoped debug observers for one event.
-inline auto dispatch_graph_debug_observers(const graph_call_options &options,
-                                           const graph_debug_stream_event &event,
-                                           wh::core::run_context &context)
-    -> void {
-  dispatch_graph_debug_observers(graph_call_scope::root(options), event, context);
+inline auto
+dispatch_graph_debug_observers(const graph_call_options &options,
+                               const graph_debug_stream_event &event,
+                               wh::core::run_context &context) -> void {
+  dispatch_graph_debug_observers(graph_call_scope::root(options), event,
+                                 context);
 }
 
 /// Resolves component options for `path` using defaults + exact path override.
@@ -688,7 +691,8 @@ resolve_graph_component_option_map(const graph_call_scope &scope,
 resolve_graph_component_option_map(const graph_call_options &options,
                                    const node_path &path)
     -> graph_component_option_map {
-  return resolve_graph_component_option_map(graph_call_scope::root(options), path);
+  return resolve_graph_component_option_map(graph_call_scope::root(options),
+                                            path);
 }
 
 /// Resolves component values for `path` using defaults + exact path override.
@@ -727,11 +731,13 @@ resolve_graph_component_values(graph_call_options &&options,
   return resolved;
 }
 
-/// Extracts one typed component option from resolved map with scope-aware typing rules.
+/// Extracts one typed component option from resolved map with scope-aware
+/// typing rules.
 template <typename option_t>
-[[nodiscard]] inline auto extract_graph_component_option(
-    const graph_component_option_map &resolved,
-    const std::string_view option_key) -> wh::core::result<std::optional<option_t>> {
+[[nodiscard]] inline auto
+extract_graph_component_option(const graph_component_option_map &resolved,
+                               const std::string_view option_key)
+    -> wh::core::result<std::optional<option_t>> {
   const auto iter = resolved.find(option_key);
   if (iter == resolved.end()) {
     return std::optional<option_t>{};
@@ -748,6 +754,7 @@ template <typename option_t>
   return std::optional<option_t>{};
 }
 
-/// Rewrites targeted options by trimming `prefix` and dropping out-of-scope entries.
+/// Rewrites targeted options by trimming `prefix` and dropping out-of-scope
+/// entries.
 
 } // namespace wh::compose

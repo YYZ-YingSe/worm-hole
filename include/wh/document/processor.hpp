@@ -23,8 +23,8 @@ namespace wh::document {
 
 using loader_function = wh::core::function<wh::core::result<std::string>(
     std::string, const loader_options &) const>;
-using transformer_function = wh::core::function<wh::core::result<std::string>(
-    std::string) const>;
+using transformer_function =
+    wh::core::function<wh::core::result<std::string>(std::string) const>;
 
 namespace detail {
 
@@ -33,10 +33,9 @@ using wh::callbacks::borrow_callback_sink;
 using wh::callbacks::make_callback_sink;
 
 template <typename payload_t>
-inline auto emit_callback(const callback_sink &sink,
-                          const wh::callbacks::stage stage,
-                          const payload_t &payload,
-                          const loader_options &options) -> void {
+inline auto
+emit_callback(const callback_sink &sink, const wh::callbacks::stage stage,
+              const payload_t &payload, const loader_options &options) -> void {
   wh::callbacks::run_info run_info{};
   run_info.name = "DocumentProcessor";
   run_info.type = "DocumentProcessor";
@@ -52,7 +51,8 @@ class document_processor {
 public:
   document_processor() : parser_(parser::ext_parser{}) {}
   explicit document_processor(const parser::parser &parser) : parser_(parser) {}
-  explicit document_processor(parser::parser &&parser) : parser_(std::move(parser)) {}
+  explicit document_processor(parser::parser &&parser)
+      : parser_(std::move(parser)) {}
 
   template <typename parser_t>
     requires parser::parser_like<std::remove_cvref_t<parser_t>> &&
@@ -86,13 +86,13 @@ public:
     return *this;
   }
 
-  auto operator=(document_processor &&) noexcept -> document_processor & =
-      default;
+  auto operator=(document_processor &&) noexcept
+      -> document_processor & = default;
   ~document_processor() = default;
 
   [[nodiscard]] static auto descriptor() -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{
-        "DocumentProcessor", wh::core::component_kind::document};
+    return wh::core::component_descriptor{"DocumentProcessor",
+                                          wh::core::component_kind::document};
   }
 
   template <typename loader_t>
@@ -110,7 +110,8 @@ public:
   template <typename transformer_t>
     requires std::constructible_from<transformer_function, transformer_t &&>
   auto set_transformer(transformer_t &&transformer) -> document_processor & {
-    transformer_ = transformer_function{std::forward<transformer_t>(transformer)};
+    transformer_ =
+        transformer_function{std::forward<transformer_t>(transformer)};
     return *this;
   }
 
@@ -139,7 +140,8 @@ public:
   [[nodiscard]] auto process(const document_request &request,
                              wh::core::run_context &callback_context) const
       -> wh::core::result<document_batch> {
-    return process_impl(request, detail::borrow_callback_sink(callback_context));
+    return process_impl(request,
+                        detail::borrow_callback_sink(callback_context));
   }
 
   [[nodiscard]] auto process(document_request &&request,

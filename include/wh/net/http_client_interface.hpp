@@ -24,7 +24,8 @@ template <http_client_like client_t>
 
 /// Forwards one movable ordinary request into a concrete HTTP client.
 template <http_client_like client_t>
-[[nodiscard]] inline auto invoke_http(const client_t &client, http_request &&request)
+[[nodiscard]] inline auto invoke_http(const client_t &client,
+                                      http_request &&request)
     -> http_invoke_result {
   return client.invoke(std::move(request));
 }

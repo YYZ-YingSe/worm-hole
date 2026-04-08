@@ -25,14 +25,24 @@
 
 namespace wh::compose::detail::interrupt_runtime {
 
+struct graph_interrupt_state {
+  graph_external_interrupt_policy policy{};
+  graph_external_interrupt_policy_latch policy_latch{};
+  bool wait_mode_active{false};
+  bool freeze_requested{false};
+  bool freeze_external{false};
+  std::optional<std::chrono::steady_clock::time_point> deadline{};
+};
+
 struct external_interrupt_boundary_state {
   bool wait_mode_active{false};
   std::optional<std::chrono::steady_clock::time_point> deadline{};
 };
 
-[[nodiscard]] inline auto evaluate_hook(
-    wh::core::run_context &context, const graph_interrupt_node_hook &hook,
-    const std::string_view node_key, const graph_value &payload)
+[[nodiscard]] inline auto evaluate_hook(wh::core::run_context &context,
+                                        const graph_interrupt_node_hook &hook,
+                                        const std::string_view node_key,
+                                        const graph_value &payload)
     -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
   if (!hook) {
     return std::optional<wh::core::interrupt_signal>{};
@@ -40,9 +50,9 @@ struct external_interrupt_boundary_state {
   return hook(node_key, payload, context);
 }
 
-[[nodiscard]] inline auto freeze_external_policy_from_latch(
-    graph_external_interrupt_policy_latch &latch,
-    const graph_external_interrupt_policy &policy)
+[[nodiscard]] inline auto
+freeze_external_policy_from_latch(graph_external_interrupt_policy_latch &latch,
+                                  const graph_external_interrupt_policy &policy)
     -> wh::core::result<const graph_external_interrupt_policy *> {
   auto &frozen = freeze_external_interrupt_policy(latch, policy);
   return std::addressof(frozen);
@@ -73,16 +83,17 @@ inline auto apply_runtime_resume_controls(
     synthesized_root_contexts.push_back(*context.interrupt_info);
     root_contexts_ptr = &synthesized_root_contexts;
   }
-  const auto subgraph_span =
-      std::span<const wh::core::interrupt_signal>{
-          config.subgraph_interrupt_signals.data(),
-          config.subgraph_interrupt_signals.size()};
+  const auto subgraph_span = std::span<const wh::core::interrupt_signal>{
+      config.subgraph_interrupt_signals.data(),
+      config.subgraph_interrupt_signals.size()};
   const auto root_contexts_span =
       root_contexts_ptr != nullptr
-          ? std::span<const wh::core::interrupt_context>{root_contexts_ptr->data(),
-                                                         root_contexts_ptr->size()}
+          ? std::span<
+                const wh::core::interrupt_context>{root_contexts_ptr->data(),
+                                                   root_contexts_ptr->size()}
           : std::span<const wh::core::interrupt_context>{};
-  auto owned_contexts = merge_interrupt_sources(root_contexts_span, subgraph_span);
+  auto owned_contexts =
+      merge_interrupt_sources(root_contexts_span, subgraph_span);
   if (owned_contexts.empty() && context.interrupt_info.has_value()) {
     owned_contexts = fallback_to_single_interrupt_when_empty(
         std::move(owned_contexts), context.interrupt_info->location,
@@ -106,8 +117,8 @@ inline auto apply_runtime_resume_controls(
     if (match == owned_contexts.end()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
-    auto applied = apply_resume_decision(context.resume_info.value(),
-                                                   *match, *config.resume_decision);
+    auto applied = apply_resume_decision(context.resume_info.value(), *match,
+                                         *config.resume_decision);
     if (applied.has_error()) {
       return wh::core::result<void>::failure(applied.error());
     }
@@ -122,7 +133,7 @@ inline auto apply_runtime_resume_controls(
         std::span<const wh::core::interrupt_context>{owned_contexts.data(),
                                                      owned_contexts.size()},
         std::span<const resume_batch_item>{config.batch_resume_items.data(),
-                                                config.batch_resume_items.size()});
+                                           config.batch_resume_items.size()});
     if (status.has_error()) {
       return wh::core::result<void>::failure(status.error());
     }
@@ -130,12 +141,13 @@ inline auto apply_runtime_resume_controls(
   const bool should_reinterrupt = config.reinterrupt_unmatched;
   if (should_reinterrupt && !owned_contexts.empty() &&
       context.resume_info.has_value()) {
-    const auto unmatched = collect_reinterrupts(
-        context.resume_info.value(),
-        std::span<const wh::core::interrupt_context>{owned_contexts.data(),
-                                                     owned_contexts.size()});
+    const auto unmatched =
+        collect_reinterrupts(context.resume_info.value(),
+                             std::span<const wh::core::interrupt_context>{
+                                 owned_contexts.data(), owned_contexts.size()});
     if (!unmatched.empty()) {
-      context.interrupt_info = wh::compose::to_interrupt_context(unmatched.front());
+      context.interrupt_info =
+          wh::compose::to_interrupt_context(unmatched.front());
     }
   }
   return {};
@@ -148,7 +160,8 @@ inline auto apply_resume_data_state_overrides(wh::core::run_context &context,
     return {};
   }
   for (const auto &interrupt_id : context.resume_info->interrupt_ids(true)) {
-    auto node_state_ref = context.resume_info->peek<graph_node_state>(interrupt_id);
+    auto node_state_ref =
+        context.resume_info->peek<graph_node_state>(interrupt_id);
     if (node_state_ref.has_error()) {
       if (node_state_ref.error() == wh::core::errc::type_mismatch ||
           node_state_ref.error() == wh::core::errc::not_found) {
@@ -157,9 +170,9 @@ inline auto apply_resume_data_state_overrides(wh::core::run_context &context,
       return wh::core::result<void>::failure(node_state_ref.error());
     }
     const auto &node_state = node_state_ref.value().get();
-    auto updated = state_table.update(node_state.node_id, node_state.lifecycle,
-                                      node_state.attempts,
-                                      node_state.last_error);
+    auto updated =
+        state_table.update(node_state.node_id, node_state.lifecycle,
+                           node_state.attempts, node_state.last_error);
     if (updated.has_error() && updated.error() != wh::core::errc::not_found) {
       return wh::core::result<void>::failure(updated.error());
     }
@@ -172,8 +185,7 @@ template <typename persist_fn_t>
     wh::compose::detail::runtime_state::invoke_outputs &outputs,
     graph_external_interrupt_policy_latch &latch,
     const graph_external_interrupt_policy &policy,
-    external_interrupt_boundary_state &state,
-    persist_fn_t &&persist_interrupt)
+    external_interrupt_boundary_state &state, persist_fn_t &&persist_interrupt)
     -> wh::core::result<bool> {
   const auto *frozen_policy =
       freeze_external_policy_from_latch(latch, policy).value();
@@ -212,15 +224,15 @@ template <typename persist_fn_t>
     wh::compose::detail::runtime_state::invoke_outputs &outputs,
     graph_external_interrupt_policy_latch &latch,
     const graph_external_interrupt_policy &policy,
-    external_interrupt_boundary_state &state,
-    persist_fn_t &&persist_interrupt)
+    external_interrupt_boundary_state &state, persist_fn_t &&persist_interrupt)
     -> wh::core::result<bool> {
   if (!context.interrupt_info.has_value() ||
       context.interrupt_info->interrupt_id.empty()) {
     return false;
   }
-  return handle_external_boundary(outputs, latch, policy, state,
-                                  std::forward<persist_fn_t>(persist_interrupt));
+  return handle_external_boundary(
+      outputs, latch, policy, state,
+      std::forward<persist_fn_t>(persist_interrupt));
 }
 
 } // namespace wh::compose::detail::interrupt_runtime

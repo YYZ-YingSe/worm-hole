@@ -17,8 +17,8 @@ namespace wh::compose {
 namespace detail {
 
 /// Copies one graph reader into fixed-count readers.
-[[nodiscard]] inline auto copy_graph_readers(
-    graph_stream_reader &&reader, const std::size_t count)
+[[nodiscard]] inline auto copy_graph_readers(graph_stream_reader &&reader,
+                                             const std::size_t count)
     -> wh::core::result<std::vector<graph_stream_reader>> {
   if (count == 0U) {
     return std::vector<graph_stream_reader>{};
@@ -43,11 +43,70 @@ namespace detail {
 }
 
 /// Builds one live merged graph reader shell from source keys.
-[[nodiscard]] inline auto make_graph_merge_reader(
-    std::vector<std::string> sources) -> graph_stream_reader {
+[[nodiscard]] inline auto
+make_graph_merge_reader(std::vector<std::string> sources)
+    -> graph_stream_reader {
   return graph_stream_reader{
       wh::schema::stream::make_merge_stream_reader<graph_stream_reader>(
           std::move(sources))};
+}
+
+/// Forks one declared stream payload into two readers, mutating `payload` in
+/// place.
+[[nodiscard]] inline auto fork_graph_reader_payload(graph_value &payload)
+    -> wh::core::result<graph_value> {
+  auto *reader = wh::core::any_cast<graph_stream_reader>(&payload);
+  if (reader == nullptr) {
+    return wh::core::result<graph_value>::failure(
+        wh::core::errc::type_mismatch);
+  }
+
+  auto copied_readers = copy_graph_readers(std::move(*reader), 2U);
+  if (copied_readers.has_error()) {
+    return wh::core::result<graph_value>::failure(copied_readers.error());
+  }
+
+  auto readers = std::move(copied_readers).value();
+  if (readers.size() != 2U) {
+    return wh::core::result<graph_value>::failure(
+        wh::core::errc::type_mismatch);
+  }
+
+  payload = wh::core::any(std::move(readers[0]));
+  return wh::core::any(std::move(readers[1]));
+}
+
+[[nodiscard]] inline auto
+is_reader_value_payload(const graph_value &value) noexcept -> bool {
+  return wh::core::any_cast<graph_stream_reader>(&value) != nullptr;
+}
+
+[[nodiscard]] inline auto
+validate_value_boundary_payload(const graph_value &value)
+    -> wh::core::result<void> {
+  if (is_reader_value_payload(value)) {
+    return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+  }
+  return {};
+}
+
+[[nodiscard]] inline auto
+validate_copyable_value_payload(const graph_value &value)
+    -> wh::core::result<void> {
+  if (value.copyable()) {
+    return {};
+  }
+  return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+}
+
+[[nodiscard]] inline auto
+validate_value_contract_payload(const graph_value &value)
+    -> wh::core::result<void> {
+  auto boundary = validate_value_boundary_payload(value);
+  if (boundary.has_error()) {
+    return boundary;
+  }
+  return validate_copyable_value_payload(value);
 }
 
 } // namespace detail
@@ -78,7 +137,8 @@ template <typename value_t>
 }
 
 /// Collects one graph stream into owned graph values.
-[[nodiscard]] inline auto collect_graph_stream_reader(graph_stream_reader &&reader)
+[[nodiscard]] inline auto
+collect_graph_stream_reader(graph_stream_reader &&reader)
     -> wh::core::result<std::vector<graph_value>> {
   return wh::schema::stream::collect_stream_reader(std::move(reader));
 }
@@ -87,11 +147,13 @@ template <typename value_t>
 [[nodiscard]] inline auto
 make_values_stream_reader(const std::vector<graph_value> &values)
     -> wh::core::result<graph_stream_reader> {
-  return graph_stream_reader{wh::schema::stream::make_values_stream_reader(values)};
+  return graph_stream_reader{
+      wh::schema::stream::make_values_stream_reader(values)};
 }
 
 /// Creates one graph stream from movable graph values.
-[[nodiscard]] inline auto make_values_stream_reader(std::vector<graph_value> &&values)
+[[nodiscard]] inline auto
+make_values_stream_reader(std::vector<graph_value> &&values)
     -> wh::core::result<graph_stream_reader> {
   return graph_stream_reader{
       wh::schema::stream::make_values_stream_reader(std::move(values))};
@@ -104,10 +166,10 @@ make_values_stream_reader(const std::vector<graph_value> &values)
 }
 
 template <typename reader_t>
-  requires (!std::same_as<std::remove_cvref_t<reader_t>, graph_stream_reader>) &&
-           wh::schema::stream::stream_reader<std::remove_cvref_t<reader_t>> &&
-           std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
-                        graph_value>
+  requires(!std::same_as<std::remove_cvref_t<reader_t>, graph_stream_reader>) &&
+          wh::schema::stream::stream_reader<std::remove_cvref_t<reader_t>> &&
+          std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
+                       graph_value>
 [[nodiscard]] inline auto to_graph_stream_reader(reader_t &&reader)
     -> wh::core::result<graph_stream_reader> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;
@@ -115,13 +177,13 @@ template <typename reader_t>
 }
 
 template <typename reader_t>
-  requires (!std::same_as<std::remove_cvref_t<reader_t>, graph_stream_reader>) &&
-           wh::schema::stream::stream_reader<std::remove_cvref_t<reader_t>> &&
-           (!std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
-                          graph_value>) &&
-           std::constructible_from<
-               graph_value,
-               const typename std::remove_cvref_t<reader_t>::value_type &>
+  requires(!std::same_as<std::remove_cvref_t<reader_t>, graph_stream_reader>) &&
+          wh::schema::stream::stream_reader<std::remove_cvref_t<reader_t>> &&
+          (!std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
+                         graph_value>) &&
+          std::constructible_from<
+              graph_value,
+              const typename std::remove_cvref_t<reader_t>::value_type &>
 [[nodiscard]] inline auto to_graph_stream_reader(reader_t &&reader)
     -> wh::core::result<graph_stream_reader> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;
@@ -134,37 +196,23 @@ template <typename reader_t>
 
 template <typename status_t>
 concept graph_stream_status =
-    wh::core::result_like<std::remove_cvref_t<status_t>> &&
+    wh::core::detail::result_like<std::remove_cvref_t<status_t>> &&
     requires(typename std::remove_cvref_t<status_t>::value_type value) {
-      { to_graph_stream_reader(std::move(value)) }
-      -> std::same_as<wh::core::result<graph_stream_reader>>;
+      {
+        to_graph_stream_reader(std::move(value))
+      } -> std::same_as<wh::core::result<graph_stream_reader>>;
     };
 
-/// Converts one payload to a graph reader, preserving movable reader payloads.
-[[nodiscard]] inline auto payload_to_reader(graph_value &&payload)
-    -> wh::core::result<graph_stream_reader> {
-  if (auto *reader = wh::core::any_cast<graph_stream_reader>(&payload);
-      reader != nullptr) {
-    return std::move(*reader);
-  }
-  return make_single_value_stream_reader(std::move(payload));
-}
-
-/// Forks one retained graph payload into an execution-safe sibling payload.
+/// Forks one declared value payload into an execution-safe sibling payload.
+///
+/// This helper is intentionally value-only: it does not reinterpret a stored
+/// `graph_stream_reader` as stream contract. Stream payload duplication must go
+/// through explicit stream helpers on declared stream boundaries.
 [[nodiscard]] inline auto fork_graph_value(graph_value &value)
     -> wh::core::result<graph_value> {
-  if (auto *reader = wh::core::any_cast<graph_stream_reader>(&value);
-      reader != nullptr) {
-    auto copies = detail::copy_graph_readers(std::move(*reader), 2U);
-    if (copies.has_error()) {
-      return wh::core::result<graph_value>::failure(copies.error());
-    }
-    auto readers = std::move(copies).value();
-    value = wh::core::any(std::move(readers[0]));
-    return wh::core::any(std::move(readers[1]));
-  }
-  if (!value.copyable()) {
-    return wh::core::result<graph_value>::failure(wh::core::errc::not_supported);
+  auto valid = detail::validate_value_contract_payload(value);
+  if (valid.has_error()) {
+    return wh::core::result<graph_value>::failure(valid.error());
   }
   return graph_value{value};
 }

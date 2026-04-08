@@ -36,8 +36,7 @@ auto operator<<(std::basic_ostream<char_t, traits_t> &stream,
 
 inline constexpr auto stream_pending = stream_signal::pending;
 
-template <typename value_t>
-using stream_result = wh::core::result<value_t>;
+template <typename value_t> using stream_result = wh::core::result<value_t>;
 
 template <typename value_t>
 using stream_try_result = std::variant<stream_signal, stream_result<value_t>>;

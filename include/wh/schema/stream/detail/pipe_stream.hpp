@@ -21,8 +21,8 @@
 namespace wh::schema::stream::detail {
 
 template <typename state_t>
-inline auto keep_pipe_state_alive(const std::shared_ptr<state_t> &state) noexcept
-    -> void {
+inline auto
+keep_pipe_state_alive(const std::shared_ptr<state_t> &state) noexcept -> void {
   [[maybe_unused]] const auto *raw_state = state.get();
 }
 
@@ -121,7 +121,8 @@ normalize_pipe_write_sender(sender_t &&sender, std::shared_ptr<state_t> state,
           if (state_missing) {
             return wh::core::result<void>::failure(wh::core::errc::not_found);
           }
-          if (reader_closed || error == wh::core::bounded_queue_status::closed) {
+          if (reader_closed ||
+              error == wh::core::bounded_queue_status::closed) {
             return wh::core::result<void>::failure(
                 wh::core::errc::channel_closed);
           }
@@ -136,8 +137,7 @@ normalize_pipe_write_sender(sender_t &&sender, std::shared_ptr<state_t> state,
 template <typename value_t, typename state_t, stdexec::sender sender_t>
 [[nodiscard]] inline auto
 normalize_pipe_read_sender(sender_t &&sender, std::shared_ptr<state_t> state,
-                           const bool state_missing,
-                           const bool reader_closed) {
+                           const bool state_missing, const bool reader_closed) {
   using chunk_type = stream_chunk<value_t>;
   using result_t = stream_result<chunk_type>;
   auto success_state = state;
@@ -163,7 +163,8 @@ normalize_pipe_read_sender(sender_t &&sender, std::shared_ptr<state_t> state,
           if (state_missing) {
             return result_t::failure(wh::core::errc::not_found);
           }
-          if (reader_closed || error == wh::core::bounded_queue_status::closed) {
+          if (reader_closed ||
+              error == wh::core::bounded_queue_status::closed) {
             return result_t{chunk_type::make_eof()};
           }
           return result_t::failure(map_pipe_queue_status(error));

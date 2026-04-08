@@ -35,7 +35,8 @@ template <wh::core::resume_mode Mode, stdexec::sender sender_t>
 
 template <wh::core::resume_mode Mode, stdexec::sender sender_t,
           stdexec::scheduler scheduler_t>
-[[nodiscard]] constexpr auto resume_if(sender_t &&sender, scheduler_t scheduler) {
+[[nodiscard]] constexpr auto resume_if(sender_t &&sender,
+                                       scheduler_t scheduler) {
   if constexpr (Mode == wh::core::resume_mode::restore) {
     return wh::core::resume_on(std::forward<sender_t>(sender),
                                std::move(scheduler));
@@ -55,10 +56,10 @@ template <wh::core::resume_mode Mode, typename factory_t>
           return std::invoke(factory, std::move(scheduler));
         });
   } else {
-    return defer_sender(
-        [factory = stored_factory_t{std::forward<factory_t>(factory)}]() mutable {
-          return std::invoke(factory, resume_passthrough);
-        });
+    return defer_sender([factory = stored_factory_t{
+                             std::forward<factory_t>(factory)}]() mutable {
+      return std::invoke(factory, resume_passthrough);
+    });
   }
 }
 

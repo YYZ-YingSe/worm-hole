@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "wh/core/component.hpp"
-#include "wh/core/component.hpp"
 #include "wh/document/parser/option.hpp"
 
 namespace wh::document {
@@ -103,7 +102,8 @@ public:
   }
 
   /// Resolves effective options into a borrowed view.
-  [[nodiscard]] auto resolve_view() const noexcept -> resolved_loader_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept
+      -> resolved_loader_options_view {
     resolved_loader_options_view view{};
     view.base_parser = &base_.parser;
     view.override_parser = nullptr;
@@ -136,7 +136,8 @@ public:
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept
+      -> wh::core::component_options & {
     return component_options_;
   }
 

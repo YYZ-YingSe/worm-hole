@@ -24,8 +24,7 @@ struct memory_block {
 };
 
 /// Result returned by memory acquisition.
-using memory_acquire_result =
-    wh::core::result<memory_block, transport_error>;
+using memory_acquire_result = wh::core::result<memory_block, transport_error>;
 
 /// Result returned by memory release.
 using memory_release_result = wh::core::result<void, transport_error>;

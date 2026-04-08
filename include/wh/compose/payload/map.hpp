@@ -32,8 +32,8 @@ namespace wh::compose {
       typed != nullptr) {
     return std::cref(*typed);
   }
-  return wh::core::result<std::reference_wrapper<const graph_value_map>>::failure(
-      wh::core::errc::type_mismatch);
+  return wh::core::result<std::reference_wrapper<const graph_value_map>>::
+      failure(wh::core::errc::type_mismatch);
 }
 
 /// Moves payload into map-shaped value or returns type mismatch.

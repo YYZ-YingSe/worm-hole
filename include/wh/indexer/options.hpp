@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "wh/core/component.hpp"
-#include "wh/core/component.hpp"
 
 namespace wh::indexer {
 
@@ -75,13 +74,15 @@ public:
   }
 
   /// Sets per-call option overrides merged on top of the baseline options.
-  auto set_call_override(indexer_common_options &&options) -> indexer_options & {
+  auto set_call_override(indexer_common_options &&options)
+      -> indexer_options & {
     override_ = std::move(options);
     return *this;
   }
 
   /// Resolves effective options into a borrowed view without deep copies.
-  [[nodiscard]] auto resolve_view() const noexcept -> resolved_indexer_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept
+      -> resolved_indexer_options_view {
     resolved_indexer_options_view view{};
     view.failure_policy = base_.failure_policy;
     view.max_retries = base_.max_retries;
@@ -131,13 +132,15 @@ public:
   }
 
   template <typename options_t>
-  /// Returns provider-specific options when the stored type matches `options_t`.
+  /// Returns provider-specific options when the stored type matches
+  /// `options_t`.
   [[nodiscard]] auto impl_specific_if() const -> const options_t * {
     return component_options_.impl_specific_if<options_t>();
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept
+      -> wh::core::component_options & {
     return component_options_;
   }
 

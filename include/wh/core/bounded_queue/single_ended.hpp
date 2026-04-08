@@ -18,7 +18,8 @@ public:
   using allocator_type = typename queue_type::allocator_type;
   using status_type = bounded_queue_status;
 
-  explicit bounded_queue_producer(queue_type &queue) noexcept : queue_(&queue) {}
+  explicit bounded_queue_producer(queue_type &queue) noexcept
+      : queue_(&queue) {}
 
   auto push(const value_type &value) -> bool
     requires std::copy_constructible<value_type>
@@ -45,9 +46,8 @@ public:
     return queue_->try_push(value);
   }
 
-  [[nodiscard]] auto try_push(value_type &&value) noexcept(
-      noexcept(std::declval<queue_type &>().try_push(std::move(value))))
-      -> status_type
+  [[nodiscard]] auto try_push(value_type &&value) noexcept(noexcept(
+      std::declval<queue_type &>().try_push(std::move(value)))) -> status_type
     requires std::move_constructible<value_type>
   {
     return queue_->try_push(std::move(value));
@@ -55,23 +55,23 @@ public:
 
   template <typename... args_t>
     requires std::constructible_from<value_type, args_t &&...>
-  [[nodiscard]] auto try_emplace(args_t &&...args) noexcept(
-      noexcept(std::declval<queue_type &>().try_emplace(
-          std::forward<args_t>(args)...))) -> status_type {
+  [[nodiscard]] auto try_emplace(args_t &&...args) noexcept(noexcept(
+      std::declval<queue_type &>().try_emplace(std::forward<args_t>(args)...)))
+      -> status_type {
     return queue_->try_emplace(std::forward<args_t>(args)...);
   }
 
   [[nodiscard]] auto async_push(const value_type &value) noexcept(
-      noexcept(std::declval<queue_type &>().async_push(value)))
-      -> typename queue_type::push_sender
+      noexcept(std::declval<queue_type &>().async_push(value))) ->
+      typename queue_type::push_sender
     requires std::copy_constructible<value_type>
   {
     return queue_->async_push(value);
   }
 
   [[nodiscard]] auto async_push(value_type &&value) noexcept(
-      noexcept(std::declval<queue_type &>().async_push(std::move(value))))
-      -> typename queue_type::push_sender
+      noexcept(std::declval<queue_type &>().async_push(std::move(value)))) ->
+      typename queue_type::push_sender
     requires std::move_constructible<value_type>
   {
     return queue_->async_push(std::move(value));
@@ -116,11 +116,15 @@ public:
   using allocator_type = typename queue_type::allocator_type;
   using try_pop_result = typename queue_type::try_pop_result;
 
-  explicit bounded_queue_consumer(queue_type &queue) noexcept : queue_(&queue) {}
+  explicit bounded_queue_consumer(queue_type &queue) noexcept
+      : queue_(&queue) {}
 
-  [[nodiscard]] auto pop() -> std::optional<value_type> { return queue_->pop(); }
+  [[nodiscard]] auto pop() -> std::optional<value_type> {
+    return queue_->pop();
+  }
 
-  [[nodiscard]] auto try_pop() noexcept(noexcept(std::declval<queue_type &>().try_pop()))
+  [[nodiscard]] auto
+  try_pop() noexcept(noexcept(std::declval<queue_type &>().try_pop()))
       -> try_pop_result {
     return queue_->try_pop();
   }

@@ -16,9 +16,9 @@
 
 #include "wh/core/any.hpp"
 #include "wh/core/error.hpp"
+#include "wh/core/json.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/core/json.hpp"
 #include "wh/internal/serialization.hpp"
 #include "wh/internal/type_name.hpp"
 
@@ -86,7 +86,8 @@ public:
           normalized_aliases, [&](const std::string &normalized_alias) {
             return normalized_alias == alias;
           });
-      if (duplicate_alias || name_to_entry_.find(alias) != name_to_entry_.end() ||
+      if (duplicate_alias ||
+          name_to_entry_.find(alias) != name_to_entry_.end() ||
           alias == primary_name) {
         return wh::core::result<void>::failure(wh::core::errc::already_exists);
       }
@@ -119,16 +120,16 @@ public:
   template <typename type_t>
     requires std::default_initializable<wh::core::remove_cvref_t<type_t>>
   auto register_type_with_diagnostic_alias() -> wh::core::result<void> {
-    return register_type<type_t>(
-        wh::internal::diagnostic_type_alias<wh::core::remove_cvref_t<type_t>>());
+    return register_type<type_t>(wh::internal::diagnostic_type_alias<
+                                 wh::core::remove_cvref_t<type_t>>());
   }
 
   /// Registers type using persistent alias as primary name.
   template <typename type_t>
     requires std::default_initializable<wh::core::remove_cvref_t<type_t>>
   auto register_type_with_persistent_alias() -> wh::core::result<void> {
-    return register_type<type_t>(
-        wh::internal::persistent_type_alias<wh::core::remove_cvref_t<type_t>>());
+    return register_type<type_t>(wh::internal::persistent_type_alias<
+                                 wh::core::remove_cvref_t<type_t>>());
   }
 
   /// Resolves runtime key by registered name/alias.
@@ -143,7 +144,8 @@ public:
   }
 
   /// Resolves primary name by registered runtime key.
-  [[nodiscard]] auto primary_name_for_key(const wh::core::any_type_key key) const
+  [[nodiscard]] auto
+  primary_name_for_key(const wh::core::any_type_key key) const
       -> wh::core::result<std::string_view> {
     const auto *entry = find_entry(key);
     if (entry == nullptr) {
@@ -235,16 +237,16 @@ public:
     return serialize_view(wh::core::any_type_key_v<normalized_t>, &value);
   }
 
-  /// Deserializes JSON into `type_t` and validates registered name-to-type match.
+  /// Deserializes JSON into `type_t` and validates registered name-to-type
+  /// match.
   template <typename type_t>
   [[nodiscard]] auto deserialize(const std::string_view name,
                                  const wh::core::json_value &input) const
       -> wh::core::result<type_t> {
     using normalized_t = wh::core::remove_cvref_t<type_t>;
     normalized_t output{};
-    auto decoded =
-        deserialize_to(name, wh::core::any_type_key_v<normalized_t>, input,
-                       &output);
+    auto decoded = deserialize_to(name, wh::core::any_type_key_v<normalized_t>,
+                                  input, &output);
     if (decoded.has_error()) {
       return wh::core::result<type_t>::failure(decoded.error());
     }
@@ -258,9 +260,9 @@ public:
 
 private:
   /// Signature for encoding from `wh::core::any`.
-  using encode_any_function = wh::core::result<void> (*)(
-      const wh::core::any &, wh::core::json_value &,
-      wh::core::json_allocator &);
+  using encode_any_function =
+      wh::core::result<void> (*)(const wh::core::any &, wh::core::json_value &,
+                                 wh::core::json_allocator &);
   /// Signature for encoding from type-erased pointer.
   using encode_ptr_function = wh::core::result<void> (*)(
       const void *, wh::core::json_value &, wh::core::json_allocator &);
@@ -348,8 +350,9 @@ private:
   }
 
   /// Finds entry by primary name or alias.
-  [[nodiscard]] auto find_entry_by_name(const std::string_view name) const
-      noexcept -> const serialization_entry * {
+  [[nodiscard]] auto
+  find_entry_by_name(const std::string_view name) const noexcept
+      -> const serialization_entry * {
     const auto iter = name_to_entry_.find(name);
     return iter == name_to_entry_.end() ? nullptr : iter->second;
   }

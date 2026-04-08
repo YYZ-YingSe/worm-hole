@@ -8,8 +8,6 @@
 
 #include "wh/compose/graph/call_options.hpp"
 #include "wh/compose/graph/error.hpp"
-#include "wh/compose/reduce/stream_concat.hpp"
-#include "wh/compose/reduce/values_merge.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
 #include "wh/compose/runtime/interrupt.hpp"
 #include "wh/compose/runtime/resume.hpp"
@@ -35,10 +33,6 @@ struct graph_runtime_services {
 
   /// Node state-handler registry used by runtime pre/post hooks.
   const graph_state_handler_registry *state_handlers{nullptr};
-  /// Value-merge registry used by fan-in value composition.
-  const wh::internal::values_merge_registry *values_merge_registry{nullptr};
-  /// Stream-concat registry reserved for fan-in stream composition.
-  const wh::internal::stream_concat_registry *stream_concat_registry{nullptr};
 };
 
 /// Typed per-invoke controls that should not be encoded through session keys.
@@ -132,7 +126,8 @@ struct graph_run_report {
   /// Optional stream-read error detail captured during this invoke.
   std::optional<graph_new_stream_read_error_detail> stream_read_error{};
   /// Optional external interrupt resolution captured during this invoke.
-  std::optional<graph_external_interrupt_resolution_kind> interrupt_resolution{};
+  std::optional<graph_external_interrupt_resolution_kind>
+      interrupt_resolution{};
   /// Optional checkpoint error detail captured during this invoke.
   std::optional<checkpoint_error_detail> checkpoint_error{};
 };

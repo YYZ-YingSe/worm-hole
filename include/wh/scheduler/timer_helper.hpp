@@ -40,7 +40,8 @@ template <timed_scheduler_like scheduler_t, typename deadline_t>
   return exec::schedule_at(scheduler, std::forward<deadline_t>(deadline));
 }
 
-/// Races `wait_sender` with a relative timeout; timeout returns `result_t::failure(timeout)`.
+/// Races `wait_sender` with a relative timeout; timeout returns
+/// `result_t::failure(timeout)`.
 template <typename result_t, timed_scheduler_like scheduler_t,
           stdexec::sender wait_sender_t, typename duration_t>
 [[nodiscard]] constexpr auto timeout(const scheduler_t &scheduler,
@@ -53,7 +54,8 @@ template <typename result_t, timed_scheduler_like scheduler_t,
               []() noexcept { return result_t::failure(errc::timeout); }));
 }
 
-/// Races `wait_sender` with an absolute deadline; deadline returns `result_t::failure(timeout)`.
+/// Races `wait_sender` with an absolute deadline; deadline returns
+/// `result_t::failure(timeout)`.
 template <typename result_t, timed_scheduler_like scheduler_t,
           stdexec::sender wait_sender_t, typename deadline_t>
 [[nodiscard]] constexpr auto timeout_at(const scheduler_t &scheduler,

@@ -53,7 +53,7 @@ inline constexpr std::string_view dense_vector = "_dense_vector";
 inline constexpr std::string_view sparse_vector = "_sparse_vector";
 } // namespace document_metadata_keys
 
-  /// Document entity with content plus optional typed metadata map.
+/// Document entity with content plus optional typed metadata map.
 class document {
 public:
   document() = default;
@@ -94,11 +94,10 @@ public:
   template <typename key_t, typename value_t>
     requires std::constructible_from<std::string, key_t &&> &&
              std::constructible_from<document_metadata_value, value_t>
-  auto set_metadata(key_t &&key, value_t &&value) -> document &
-  {
-    ensure_metadata().insert_or_assign(std::string{std::forward<key_t>(key)},
-                                       document_metadata_value{
-                                           std::forward<value_t>(value)});
+  auto set_metadata(key_t &&key, value_t &&value) -> document & {
+    ensure_metadata().insert_or_assign(
+        std::string{std::forward<key_t>(key)},
+        document_metadata_value{std::forward<value_t>(value)});
     return *this;
   }
 
@@ -205,8 +204,8 @@ public:
   }
 
   /// Sets `_sparse_vector` metadata.
-  auto with_sparse_vector(
-      std::initializer_list<sparse_vector_item> value) -> document & {
+  auto with_sparse_vector(std::initializer_list<sparse_vector_item> value)
+      -> document & {
     return set_metadata(std::string{document_metadata_keys::sparse_vector},
                         sparse_vector{value});
   }

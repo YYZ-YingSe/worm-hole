@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "wh/core/component.hpp"
-#include "wh/core/component.hpp"
 #include "wh/schema/tool.hpp"
 
 namespace wh::model {
@@ -73,7 +72,8 @@ struct chat_model_common_options {
   /// Optional stop token list for completion truncation.
   std::vector<std::string> stop_tokens{};
   /// Candidate ordering strategy for fallback model selection.
-  model_selection_policy selection_policy{model_selection_policy::quality_first};
+  model_selection_policy selection_policy{
+      model_selection_policy::quality_first};
   /// Fallback behavior configuration.
   model_fallback_policy fallback{};
   /// Tool-selection policy used by model execution.
@@ -97,7 +97,8 @@ struct resolved_chat_model_options_view {
   /// Effective stop-token list.
   std::span<const std::string> stop_tokens{};
   /// Effective model-selection policy.
-  model_selection_policy selection_policy{model_selection_policy::quality_first};
+  model_selection_policy selection_policy{
+      model_selection_policy::quality_first};
   /// Effective fallback policy storage.
   const model_fallback_policy *fallback{nullptr};
   /// Effective tool-choice policy storage.
@@ -132,7 +133,8 @@ public:
   chat_model_options() = default;
 
   /// Sets baseline options used when no per-call override is provided.
-  auto set_base(const chat_model_common_options &options) -> chat_model_options & {
+  auto set_base(const chat_model_common_options &options)
+      -> chat_model_options & {
     base_ = options;
     return *this;
   }
@@ -245,13 +247,15 @@ public:
   }
 
   template <typename options_t>
-  /// Returns provider-specific options when the stored type matches `options_t`.
+  /// Returns provider-specific options when the stored type matches
+  /// `options_t`.
   [[nodiscard]] auto impl_specific_if() const -> const options_t * {
     return component_options_.impl_specific_if<options_t>();
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept
+      -> wh::core::component_options & {
     return component_options_;
   }
 
@@ -270,7 +274,8 @@ private:
   wh::core::component_options component_options_{};
 };
 
-/// Freezes fallback model candidate ordering using explicit and discovered candidates.
+/// Freezes fallback model candidate ordering using explicit and discovered
+/// candidates.
 [[nodiscard]] inline auto
 freeze_model_candidates(const chat_model_common_options &options,
                         std::span<const std::string> discovered_candidates)
@@ -346,13 +351,15 @@ freeze_model_candidates(const resolved_chat_model_options_view &options,
   return ordered;
 }
 
-/// Negotiates the effective structured-output mode from policy and runtime capabilities.
+/// Negotiates the effective structured-output mode from policy and runtime
+/// capabilities.
 [[nodiscard]] inline auto
 negotiate_structured_output(const structured_output_policy &policy,
                             const bool provider_native_supported,
                             const bool tool_call_supported)
     -> structured_output_plan {
-  if (policy.preference == structured_output_preference::provider_native_first) {
+  if (policy.preference ==
+      structured_output_preference::provider_native_first) {
     if (provider_native_supported) {
       return structured_output_plan{true, false};
     }

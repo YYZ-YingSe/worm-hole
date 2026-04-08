@@ -18,10 +18,12 @@ namespace detail {
 template <typename request_t>
 concept component_request_with_options =
     requires(request_t &request, const request_t &const_request) {
-      { request.options.component_options() }
-          -> std::same_as<wh::core::component_options &>;
-      { const_request.options.component_options() }
-          -> std::same_as<const wh::core::component_options &>;
+      {
+        request.options.component_options()
+      } -> std::same_as<wh::core::component_options &>;
+      {
+        const_request.options.component_options()
+      } -> std::same_as<const wh::core::component_options &>;
     };
 
 [[nodiscard]] inline auto default_node_observation() noexcept
@@ -43,8 +45,8 @@ concept component_request_with_options =
   return scope;
 }
 
-[[nodiscard]] inline auto make_callback_metadata(
-    const graph_node_trace &trace) -> wh::core::callback_run_metadata {
+[[nodiscard]] inline auto make_callback_metadata(const graph_node_trace &trace)
+    -> wh::core::callback_run_metadata {
   wh::core::callback_run_metadata metadata{};
   if (!trace.trace_id.empty()) {
     metadata.trace_id = std::string{trace.trace_id};
@@ -80,10 +82,11 @@ struct resolved_node_context_binding {
   }
 };
 
-[[nodiscard]] inline auto resolve_node_context_binding(
-    const wh::core::run_context &parent,
-    const graph_resolved_node_observation &observation,
-    const graph_node_trace &trace) noexcept -> resolved_node_context_binding {
+[[nodiscard]] inline auto
+resolve_node_context_binding(const wh::core::run_context &parent,
+                             const graph_resolved_node_observation &observation,
+                             const graph_node_trace &trace) noexcept
+    -> resolved_node_context_binding {
   resolved_node_context_binding binding{};
   if (observation.callbacks_enabled &&
       (parent.callbacks.has_value() || !observation.local_callbacks.empty())) {
@@ -108,10 +111,10 @@ struct resolved_node_context_binding {
   return binding;
 }
 
-inline auto apply_node_callbacks(
-    wh::core::run_context &context,
-    const graph_resolved_node_observation &observation,
-    const graph_node_trace &trace) -> void {
+inline auto
+apply_node_callbacks(wh::core::run_context &context,
+                     const graph_resolved_node_observation &observation,
+                     const graph_node_trace &trace) -> void {
   if (!observation.callbacks_enabled) {
     context.callbacks.reset();
     return;
@@ -121,8 +124,8 @@ inline auto apply_node_callbacks(
       context.callbacks.emplace();
     }
     for (const auto &registration : observation.local_callbacks) {
-      context.callbacks->manager.register_local_callbacks(registration.config,
-                                                          registration.callbacks);
+      context.callbacks->manager.register_local_callbacks(
+          registration.config, registration.callbacks);
     }
     auto metadata = make_callback_metadata(trace);
     if (!metadata.empty()) {
@@ -135,32 +138,66 @@ inline auto apply_node_callbacks(
 
 [[nodiscard]] inline auto node_observation(const node_runtime &runtime) noexcept
     -> const graph_resolved_node_observation & {
-  if (runtime.observation != nullptr) {
-    return *runtime.observation;
+  if (runtime.observation() != nullptr) {
+    return *runtime.observation();
   }
   return detail::default_node_observation();
 }
 
 [[nodiscard]] inline auto node_trace(const node_runtime &runtime) noexcept
     -> const graph_node_trace & {
-  if (runtime.trace != nullptr) {
-    return *runtime.trace;
+  if (runtime.trace() != nullptr) {
+    return *runtime.trace();
   }
   return detail::default_node_trace();
 }
 
-[[nodiscard]] inline auto node_call_options(const node_runtime &runtime) noexcept
+[[nodiscard]] inline auto
+node_call_options(const node_runtime &runtime) noexcept
     -> const graph_call_scope & {
-  if (runtime.call_options != nullptr) {
-    return *runtime.call_options;
+  if (runtime.call_options() != nullptr) {
+    return *runtime.call_options();
   }
   return detail::default_node_call_options();
 }
 
+template <typename state_t>
+[[nodiscard]] inline auto node_process_state_ref(const node_runtime &runtime)
+    -> wh::core::result<std::reference_wrapper<state_t>> {
+  if (runtime.process_state() == nullptr) {
+    return wh::core::result<std::reference_wrapper<state_t>>::failure(
+        wh::core::errc::not_found);
+  }
+  return runtime.process_state()->template get<state_t>();
+}
+
+template <typename state_t>
+[[nodiscard]] inline auto
+node_const_process_state_ref(const node_runtime &runtime) noexcept
+    -> wh::core::result<std::reference_wrapper<const state_t>> {
+  if (runtime.process_state() == nullptr) {
+    return wh::core::result<std::reference_wrapper<const state_t>>::failure(
+        wh::core::errc::not_found);
+  }
+  return std::as_const(*runtime.process_state()).template get<state_t>();
+}
+
+template <typename state_t, typename... args_t>
+auto emplace_node_process_state(const node_runtime &runtime, args_t &&...args)
+    -> wh::core::result<std::reference_wrapper<state_t>> {
+  if (runtime.process_state() == nullptr) {
+    return wh::core::result<std::reference_wrapper<state_t>>::failure(
+        wh::core::errc::not_found);
+  }
+  return runtime.process_state()->template emplace<state_t>(
+      std::forward<args_t>(args)...);
+}
+
 template <detail::component_request_with_options request_t>
-inline auto patch_component_request(
-    request_t &request, const graph_resolved_node_observation &observation,
-    const graph_node_trace &trace) -> void {
+inline auto
+patch_component_request(request_t &request,
+                        const graph_resolved_node_observation &observation,
+                        const graph_node_trace &trace) -> void {
   wh::core::component_override_options overrides{};
   overrides.callbacks_enabled = observation.callbacks_enabled;
   if (!trace.trace_id.empty()) {
@@ -172,10 +209,11 @@ inline auto patch_component_request(
   request.options.component_options().set_call_override(std::move(overrides));
 }
 
-[[nodiscard]] inline auto make_node_callback_context(
-    const wh::core::run_context &parent,
-    const graph_resolved_node_observation &observation,
-    const graph_node_trace &trace) -> std::optional<wh::core::run_context> {
+[[nodiscard]] inline auto
+make_node_callback_context(const wh::core::run_context &parent,
+                           const graph_resolved_node_observation &observation,
+                           const graph_node_trace &trace)
+    -> std::optional<wh::core::run_context> {
   const auto binding =
       detail::resolve_node_context_binding(parent, observation, trace);
   if (!binding.projects_callbacks()) {
@@ -190,10 +228,11 @@ inline auto patch_component_request(
   return callback_context;
 }
 
-[[nodiscard]] inline auto make_node_context(
-    const wh::core::run_context &parent,
-    const graph_resolved_node_observation &observation,
-    const graph_node_trace &trace) -> std::optional<wh::core::run_context> {
+[[nodiscard]] inline auto
+make_node_context(const wh::core::run_context &parent,
+                  const graph_resolved_node_observation &observation,
+                  const graph_node_trace &trace)
+    -> std::optional<wh::core::run_context> {
   const auto binding =
       detail::resolve_node_context_binding(parent, observation, trace);
   if (!binding.forks_execution()) {
@@ -217,8 +256,8 @@ struct scoped_node_callbacks {
   }
 
   scoped_node_callbacks(const scoped_node_callbacks &) = delete;
-  auto operator=(const scoped_node_callbacks &) -> scoped_node_callbacks & =
-      delete;
+  auto operator=(const scoped_node_callbacks &)
+      -> scoped_node_callbacks & = delete;
 
   scoped_node_callbacks(scoped_node_callbacks &&other) noexcept
       : context(std::exchange(other.context, nullptr)),
@@ -266,9 +305,10 @@ template <typename invoke_t>
 }
 
 template <typename sender_factory_t>
-[[nodiscard]] inline auto bind_node_sender(
-    wh::core::run_context &context, const node_runtime &runtime,
-    sender_factory_t &&make_sender) -> graph_sender {
+[[nodiscard]] inline auto bind_node_sender(wh::core::run_context &context,
+                                           const node_runtime &runtime,
+                                           sender_factory_t &&make_sender)
+    -> graph_sender {
   const auto &observation = node_observation(runtime);
   const auto &trace = node_trace(runtime);
   const auto binding =
@@ -278,11 +318,12 @@ template <typename sender_factory_t>
     owned_context.emplace(context);
     detail::apply_node_callbacks(*owned_context, observation, trace);
   }
-  const auto *graph_scheduler = runtime.graph_scheduler;
+  const auto *graph_scheduler = runtime.graph_scheduler();
   return ::wh::compose::detail::bridge_graph_sender(
       ::wh::core::detail::defer_sender(
           [owned_context = std::move(owned_context), &context, graph_scheduler,
-           make_sender = std::forward<sender_factory_t>(make_sender)]() mutable {
+           make_sender =
+               std::forward<sender_factory_t>(make_sender)]() mutable {
             auto &node_context =
                 owned_context.has_value() ? *owned_context : context;
             if (graph_scheduler == nullptr) {
@@ -291,26 +332,27 @@ template <typename sender_factory_t>
             }
             auto sender = make_sender(node_context);
             return ::wh::compose::detail::bridge_graph_sender(
-                ::wh::core::detail::bind_sender_scheduler(
-                    std::move(sender), *graph_scheduler));
+                ::wh::core::detail::write_sender_scheduler(std::move(sender),
+                                                           *graph_scheduler));
           }));
 }
 
 template <typename sender_factory_t>
-[[nodiscard]] inline auto bind_node_call_sender(
-    wh::core::run_context &context, const node_runtime &runtime,
-    sender_factory_t &&make_sender) -> graph_sender {
+[[nodiscard]] inline auto bind_node_call_sender(wh::core::run_context &context,
+                                                const node_runtime &runtime,
+                                                sender_factory_t &&make_sender)
+    -> graph_sender {
   const auto *call_options = std::addressof(node_call_options(runtime));
   return bind_node_sender(
       context, runtime,
-      [call_options,
-       make_sender = std::forward<sender_factory_t>(make_sender)](
+      [call_options, make_sender = std::forward<sender_factory_t>(make_sender)](
           wh::core::run_context &node_context) mutable -> decltype(auto) {
         return make_sender(node_context, *call_options);
       });
 }
 
-[[nodiscard]] inline auto own_node_input(graph_value &input) -> graph_value {
+[[nodiscard]] inline auto capture_node_input(graph_value &input)
+    -> graph_value {
   if (input.copyable()) {
     return graph_value{input};
   }
@@ -320,10 +362,10 @@ template <typename sender_factory_t>
 namespace detail {
 
 template <typename sender_factory_t, typename input_t>
-[[nodiscard]] inline auto invoke_input_sender(
-    sender_factory_t &make_sender, input_t &&input,
-    wh::core::run_context &context,
-    const graph_call_scope &call_options) -> decltype(auto) {
+[[nodiscard]] inline auto
+invoke_input_sender(sender_factory_t &make_sender, input_t &&input,
+                    wh::core::run_context &context,
+                    const graph_call_scope &call_options) -> decltype(auto) {
   if constexpr (requires {
                   make_sender(std::forward<input_t>(input), context,
                               call_options);
@@ -337,14 +379,13 @@ template <typename sender_factory_t, typename input_t>
 } // namespace detail
 
 template <typename sender_factory_t>
-[[nodiscard]] inline auto bind_value_sender(
-    graph_value &input, wh::core::run_context &context,
-    const node_runtime &runtime, sender_factory_t &&make_sender)
+[[nodiscard]] inline auto
+bind_value_sender(graph_value &input, wh::core::run_context &context,
+                  const node_runtime &runtime, sender_factory_t &&make_sender)
     -> graph_sender {
-  auto owned_input = own_node_input(input);
   return bind_node_call_sender(
       context, runtime,
-      [input = std::move(owned_input),
+      [input = capture_node_input(input),
        make_sender = std::forward<sender_factory_t>(make_sender)](
           wh::core::run_context &callback_context,
           const graph_call_scope &call_options) mutable -> decltype(auto) {
@@ -354,9 +395,9 @@ template <typename sender_factory_t>
 }
 
 template <typename sender_factory_t>
-[[nodiscard]] inline auto bind_reader_sender(
-    graph_value &input, wh::core::run_context &context,
-    const node_runtime &runtime, sender_factory_t &&make_sender)
+[[nodiscard]] inline auto
+bind_reader_sender(graph_value &input, wh::core::run_context &context,
+                   const node_runtime &runtime, sender_factory_t &&make_sender)
     -> graph_sender {
   auto *reader = wh::core::any_cast<graph_stream_reader>(&input);
   if (reader == nullptr) {

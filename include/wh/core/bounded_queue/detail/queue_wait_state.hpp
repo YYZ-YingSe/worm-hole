@@ -30,7 +30,8 @@ public:
       return std::nullopt;
     }
     closed_ = true;
-    return detached_waiters{push_waiters_.detach_all(), pop_waiters_.detach_all()};
+    return detached_waiters{push_waiters_.detach_all(),
+                            pop_waiters_.detach_all()};
   }
 
   auto enqueue_push(push_waiter_t *waiter) noexcept -> void {

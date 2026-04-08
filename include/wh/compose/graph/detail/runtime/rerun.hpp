@@ -24,7 +24,8 @@ public:
     active_count_ = 0U;
   }
 
-  [[nodiscard]] auto contains(const std::uint32_t node_id) const noexcept -> bool {
+  [[nodiscard]] auto contains(const std::uint32_t node_id) const noexcept
+      -> bool {
     return node_id < inputs_.size() && present_.test(node_id);
   }
 
@@ -32,7 +33,8 @@ public:
     return active_count_;
   }
 
-  [[nodiscard]] auto find(const std::uint32_t node_id) noexcept -> graph_value * {
+  [[nodiscard]] auto find(const std::uint32_t node_id) noexcept
+      -> graph_value * {
     if (!contains(node_id)) {
       return nullptr;
     }
@@ -59,7 +61,8 @@ public:
     restored_.set(node_id);
   }
 
-  [[nodiscard]] auto restored(const std::uint32_t node_id) const noexcept -> bool {
+  [[nodiscard]] auto restored(const std::uint32_t node_id) const noexcept
+      -> bool {
     return node_id < inputs_.size() && restored_.test(node_id);
   }
 

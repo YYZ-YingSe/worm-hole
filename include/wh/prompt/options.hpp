@@ -63,7 +63,8 @@ public:
   }
 
   /// Resolves effective options into a borrowed view without deep copies.
-  [[nodiscard]] auto resolve_view() const noexcept -> resolved_prompt_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept
+      -> resolved_prompt_options_view {
     resolved_prompt_options_view view{};
     view.syntax = base_.syntax;
     view.strict_missing_variables = base_.strict_missing_variables;
@@ -103,13 +104,15 @@ public:
   }
 
   template <typename options_t>
-  /// Returns provider-specific options when the stored type matches `options_t`.
+  /// Returns provider-specific options when the stored type matches
+  /// `options_t`.
   [[nodiscard]] auto impl_specific_if() const -> const options_t * {
     return component_options_.impl_specific_if<options_t>();
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept
+      -> wh::core::component_options & {
     return component_options_;
   }
 

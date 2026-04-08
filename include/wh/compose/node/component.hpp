@@ -9,9 +9,9 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/compose/node/authored.hpp"
 #include "wh/compose/node/detail/context.hpp"
 #include "wh/compose/node/detail/contract.hpp"
-#include "wh/compose/node/authored.hpp"
 #include "wh/compose/types.hpp"
 #include "wh/core/stdexec.hpp"
 #include "wh/document/document.hpp"
@@ -28,6 +28,16 @@ namespace wh::compose {
 namespace detail {
 
 template <typename type_t> inline constexpr bool always_false_v = false;
+
+template <typename value_t>
+concept value_contract_payload =
+    std::same_as<std::remove_cvref_t<value_t>, graph_value> ||
+    std::copy_constructible<std::remove_cvref_t<value_t>>;
+
+template <typename request_t>
+using custom_sync_request_arg_t =
+    std::conditional_t<std::copy_constructible<request_t>, const request_t &,
+                       request_t &&>;
 
 [[nodiscard]] inline auto component_kind_name(const component_kind kind)
     -> std::string_view {
@@ -46,8 +56,6 @@ template <typename type_t> inline constexpr bool always_false_v = false;
     return "document";
   case component_kind::tool:
     return "tool";
-  case component_kind::chain:
-    return "chain";
   case component_kind::custom:
     return "custom";
   }
@@ -59,10 +67,9 @@ template <typename key_t, typename options_t>
                                                      const component_kind kind,
                                                      options_t &&options)
     -> graph_add_node_options {
-  return decorate_named_node_options(std::forward<key_t>(key),
-                                     std::forward<options_t>(options),
-                                     component_kind_name(kind),
-                                     component_kind_name(kind));
+  return decorate_named_node_options(
+      std::forward<key_t>(key), std::forward<options_t>(options),
+      component_kind_name(kind), component_kind_name(kind));
 }
 
 template <typename request_t>
@@ -81,8 +88,7 @@ template <typename request_t>
   return wh::core::any_cast<request_t>(&input);
 }
 
-template <typename request_t>
-struct component_request_state {
+template <typename request_t> struct component_request_state {
   const request_t *borrowed{nullptr};
   std::optional<request_t> owned{};
 
@@ -120,8 +126,9 @@ struct component_request_state {
 };
 
 template <component_request_with_options request_t>
-[[nodiscard]] inline auto request_matches_runtime(
-    const request_t &request, const node_runtime &runtime) -> bool {
+[[nodiscard]] inline auto request_matches_runtime(const request_t &request,
+                                                  const node_runtime &runtime)
+    -> bool {
   const auto resolved = request.options.component_options().resolve_view();
   const auto &observation = node_observation(runtime);
   if (resolved.callbacks_enabled != observation.callbacks_enabled) {
@@ -200,6 +207,10 @@ make_component_context(const wh::core::run_context &parent,
 template <typename value_t>
 [[nodiscard]] inline auto make_graph_output(value_t &&value)
     -> wh::core::result<graph_value> {
+  static_assert(
+      value_contract_payload<value_t>,
+      "value contract output type must be copy-constructible; wrap dynamic "
+      "payloads in graph_value/wh::core::any explicitly");
   return graph_value{std::forward<value_t>(value)};
 }
 
@@ -236,16 +247,16 @@ bind_component_sender(const graph_value &input, const node_runtime &runtime,
   auto &component_context =
       callback_context.has_value() ? *callback_context : empty_context;
   return std::move(request).value().apply([&](auto &&resolved_request) {
-    if (runtime.graph_scheduler == nullptr) {
+    if (runtime.graph_scheduler() == nullptr) {
       return ::wh::compose::detail::failure_graph_sender(
           wh::core::errc::contract_violation);
     }
     return ::wh::compose::detail::map_graph_sender(
-        ::wh::core::detail::bind_sender_scheduler(
+        ::wh::core::detail::write_sender_scheduler(
             std::forward<sender_factory_t>(make_sender)(
                 std::forward<decltype(resolved_request)>(resolved_request),
                 component_context),
-            *runtime.graph_scheduler),
+            *runtime.graph_scheduler()),
         [](typename status_t::value_type value) {
           return make_graph_output(std::move(value));
         });
@@ -267,16 +278,16 @@ bind_component_stream_sender(const graph_value &input,
   auto &component_context =
       callback_context.has_value() ? *callback_context : empty_context;
   return std::move(request).value().apply([&](auto &&resolved_request) {
-    if (runtime.graph_scheduler == nullptr) {
+    if (runtime.graph_scheduler() == nullptr) {
       return ::wh::compose::detail::failure_graph_sender(
           wh::core::errc::contract_violation);
     }
     return ::wh::compose::detail::map_graph_sender(
-        ::wh::core::detail::bind_sender_scheduler(
+        ::wh::core::detail::write_sender_scheduler(
             std::forward<sender_factory_t>(make_sender)(
                 std::forward<decltype(resolved_request)>(resolved_request),
                 component_context),
-            *runtime.graph_scheduler),
+            *runtime.graph_scheduler()),
         [](typename status_t::value_type reader) {
           return make_graph_stream_output(std::move(reader));
         });
@@ -313,17 +324,18 @@ bind_component_result(const graph_value &input, const node_runtime &runtime,
   auto &component_context =
       callback_context.has_value() ? *callback_context : empty_context;
   return std::move(request).value().apply([&](auto &&resolved_request) {
-    return to_graph_output(std::invoke(
-        std::forward<invoke_t>(invoke),
-        std::forward<decltype(resolved_request)>(resolved_request),
-        component_context));
+    return to_graph_output(
+        std::invoke(std::forward<invoke_t>(invoke),
+                    std::forward<decltype(resolved_request)>(resolved_request),
+                    component_context));
   });
 }
 
 template <typename request_t, typename invoke_t>
-[[nodiscard]] inline auto bind_component_stream_result(
-    const graph_value &input, const node_runtime &runtime,
-    wh::core::run_context &context, invoke_t &&invoke)
+[[nodiscard]] inline auto
+bind_component_stream_result(const graph_value &input,
+                             const node_runtime &runtime,
+                             wh::core::run_context &context, invoke_t &&invoke)
     -> wh::core::result<graph_value> {
   auto request = resolve_component_request<request_t>(input, runtime);
   if (request.has_error()) {
@@ -334,10 +346,10 @@ template <typename request_t, typename invoke_t>
   auto &component_context =
       callback_context.has_value() ? *callback_context : empty_context;
   return std::move(request).value().apply([&](auto &&resolved_request) {
-    auto output = std::invoke(std::forward<invoke_t>(invoke),
-                              std::forward<decltype(resolved_request)>(
-                                  resolved_request),
-                              component_context);
+    auto output =
+        std::invoke(std::forward<invoke_t>(invoke),
+                    std::forward<decltype(resolved_request)>(resolved_request),
+                    component_context);
     if (output.has_error()) {
       return wh::core::result<graph_value>::failure(output.error());
     }
@@ -363,24 +375,21 @@ struct explicit_component_types<component_kind::model, node_contract::stream> {
 template <>
 struct explicit_component_types<component_kind::prompt, node_contract::value> {
   using request_type = wh::prompt::prompt_render_request;
-  using async_result_type =
-      wh::core::result<std::vector<wh::schema::message>>;
+  using async_result_type = wh::core::result<std::vector<wh::schema::message>>;
 };
 
 template <>
 struct explicit_component_types<component_kind::embedding,
                                 node_contract::value> {
   using request_type = wh::embedding::embedding_request;
-  using async_result_type =
-      wh::core::result<wh::embedding::embedding_response>;
+  using async_result_type = wh::core::result<wh::embedding::embedding_response>;
 };
 
 template <>
 struct explicit_component_types<component_kind::retriever,
                                 node_contract::value> {
   using request_type = wh::retriever::retriever_request;
-  using async_result_type =
-      wh::core::result<wh::retriever::retriever_response>;
+  using async_result_type = wh::core::result<wh::retriever::retriever_response>;
 };
 
 template <>
@@ -442,70 +451,117 @@ template <typename component_t, typename request_t, typename result_t>
 concept async_invoke_result_sender =
     requires(const component_t &value,
              wh::core::run_context &callback_context) {
-      requires result_typed_sender<
-          decltype(value.async_invoke(std::declval<request_t &&>(),
-                                      callback_context)),
-          result_t>;
+      requires result_typed_sender<decltype(value.async_invoke(
+                                       std::declval<request_t &&>(),
+                                       callback_context)),
+                                   result_t>;
+    } ||
+    requires(const component_t &value, wh::core::run_context &callback_context,
+             const node_runtime &runtime) {
+      requires result_typed_sender<decltype(value.async_invoke(
+                                       std::declval<request_t &&>(),
+                                       callback_context, runtime)),
+                                   result_t>;
     };
 
 template <typename component_t, typename request_t, typename result_t>
 concept async_stream_result_sender =
     requires(const component_t &value,
              wh::core::run_context &callback_context) {
-      requires result_typed_sender<
-          decltype(value.async_stream(std::declval<request_t &&>(),
-                                      callback_context)),
-          result_t>;
-    };
-
-template <typename component_t, typename request_t, typename result_t>
-concept async_render_result_sender =
-    requires(const component_t &value,
-             wh::core::run_context &callback_context) {
-      requires result_typed_sender<
-          decltype(value.async_render(std::declval<request_t &&>(),
-                                      callback_context)),
-          result_t>;
-    };
-
-template <typename component_t, typename request_t, typename result_t>
-concept async_embed_result_sender =
-    requires(const component_t &value,
-             wh::core::run_context &callback_context) {
-      requires result_typed_sender<
-          decltype(value.async_embed(std::declval<request_t &&>(),
-                                     callback_context)),
-          result_t>;
-    };
-
-template <typename component_t, typename request_t, typename result_t>
-concept async_retrieve_result_sender =
-    requires(const component_t &value,
-             wh::core::run_context &callback_context) {
-      requires result_typed_sender<
-          decltype(value.async_retrieve(std::declval<request_t &&>(),
-                                        callback_context)),
-          result_t>;
-    };
-
-template <typename component_t, typename request_t, typename result_t>
-concept async_write_result_sender =
-    requires(const component_t &value,
-             wh::core::run_context &callback_context) {
-      requires result_typed_sender<
-          decltype(value.async_write(std::declval<request_t &&>(),
-                                     callback_context)),
-          result_t>;
-    };
-
-template <typename component_t, typename request_t, typename result_t>
-concept async_process_result_sender =
-    requires(const component_t &value,
-             wh::core::run_context &callback_context) {
-      requires result_typed_sender<
-          decltype(value.async_process(std::declval<request_t &&>(),
+      requires result_typed_sender<decltype(value.async_stream(
+                                       std::declval<request_t &&>(),
                                        callback_context)),
-          result_t>;
+                                   result_t>;
+    } ||
+    requires(const component_t &value, wh::core::run_context &callback_context,
+             const node_runtime &runtime) {
+      requires result_typed_sender<decltype(value.async_stream(
+                                       std::declval<request_t &&>(),
+                                       callback_context, runtime)),
+                                   result_t>;
+    };
+
+template <typename component_t, typename request_t, typename result_t>
+concept async_render_result_sender = requires(
+    const component_t &value, wh::core::run_context &callback_context) {
+  requires result_typed_sender<decltype(value.async_render(
+                                   std::declval<request_t &&>(),
+                                   callback_context)),
+                               result_t>;
+};
+
+template <typename component_t, typename request_t, typename result_t>
+concept async_embed_result_sender = requires(
+    const component_t &value, wh::core::run_context &callback_context) {
+  requires result_typed_sender<decltype(value.async_embed(
+                                   std::declval<request_t &&>(),
+                                   callback_context)),
+                               result_t>;
+};
+
+template <typename component_t, typename request_t, typename result_t>
+concept async_retrieve_result_sender = requires(
+    const component_t &value, wh::core::run_context &callback_context) {
+  requires result_typed_sender<decltype(value.async_retrieve(
+                                   std::declval<request_t &&>(),
+                                   callback_context)),
+                               result_t>;
+};
+
+template <typename component_t, typename request_t, typename result_t>
+concept async_write_result_sender = requires(
+    const component_t &value, wh::core::run_context &callback_context) {
+  requires result_typed_sender<decltype(value.async_write(
+                                   std::declval<request_t &&>(),
+                                   callback_context)),
+                               result_t>;
+};
+
+template <typename component_t, typename request_t, typename result_t>
+concept async_process_result_sender = requires(
+    const component_t &value, wh::core::run_context &callback_context) {
+  requires result_typed_sender<decltype(value.async_process(
+                                   std::declval<request_t &&>(),
+                                   callback_context)),
+                               result_t>;
+};
+
+template <typename component_t, typename request_t, typename result_t>
+concept custom_sync_invoke_result = requires(
+    const component_t &value, wh::core::run_context &callback_context) {
+  {
+    value.invoke(std::declval<custom_sync_request_arg_t<request_t>>(),
+                 callback_context)
+  } -> std::same_as<result_t>;
+};
+
+template <typename component_t, typename request_t, typename result_t>
+concept custom_sync_invoke_result_with_runtime =
+    requires(const component_t &value, wh::core::run_context &callback_context,
+             const node_runtime &runtime) {
+      {
+        value.invoke(std::declval<custom_sync_request_arg_t<request_t>>(),
+                     callback_context, runtime)
+      } -> std::same_as<result_t>;
+    };
+
+template <typename component_t, typename request_t, typename result_t>
+concept custom_sync_stream_result = requires(
+    const component_t &value, wh::core::run_context &callback_context) {
+  {
+    value.stream(std::declval<custom_sync_request_arg_t<request_t>>(),
+                 callback_context)
+  } -> std::same_as<result_t>;
+};
+
+template <typename component_t, typename request_t, typename result_t>
+concept custom_sync_stream_result_with_runtime =
+    requires(const component_t &value, wh::core::run_context &callback_context,
+             const node_runtime &runtime) {
+      {
+        value.stream(std::declval<custom_sync_request_arg_t<request_t>>(),
+                     callback_context, runtime)
+      } -> std::same_as<result_t>;
     };
 
 template <component_kind Kind, node_contract From, node_contract To,
@@ -530,8 +586,7 @@ struct component_contract<component_kind::model, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.invoke(std::forward<decltype(request)>(request),
                                   component_context);
         });
@@ -549,8 +604,7 @@ struct component_contract<component_kind::model, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_stream_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.stream(std::forward<decltype(request)>(request),
                                   component_context);
         });
@@ -568,8 +622,7 @@ struct component_contract<component_kind::prompt, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.render(std::forward<decltype(request)>(request),
                                   component_context);
         });
@@ -587,8 +640,7 @@ struct component_contract<component_kind::embedding, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.embed(std::forward<decltype(request)>(request),
                                  component_context);
         });
@@ -606,8 +658,7 @@ struct component_contract<component_kind::retriever, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.retrieve(std::forward<decltype(request)>(request),
                                     component_context);
         });
@@ -625,8 +676,7 @@ struct component_contract<component_kind::indexer, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.write(std::forward<decltype(request)>(request),
                                  component_context);
         });
@@ -644,8 +694,7 @@ struct component_contract<component_kind::tool, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.invoke(std::forward<decltype(request)>(request),
                                   component_context);
         });
@@ -655,16 +704,15 @@ struct component_contract<component_kind::tool, node_contract::value,
 template <typename component_t>
 struct component_contract<component_kind::tool, node_contract::value,
                           node_contract::stream, component_t> {
-  using request_type = explicit_component_request_t<component_kind::tool,
-                                                    node_contract::stream>;
+  using request_type =
+      explicit_component_request_t<component_kind::tool, node_contract::stream>;
 
   static auto run(const component_t &component, const graph_value &input,
                   wh::core::run_context &context, const node_runtime &runtime)
       -> wh::core::result<graph_value> {
     return bind_component_stream_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.stream(std::forward<decltype(request)>(request),
                                   component_context);
         });
@@ -682,8 +730,7 @@ struct component_contract<component_kind::document, node_contract::value,
       -> wh::core::result<graph_value> {
     return bind_component_result<request_type>(
         input, runtime, context,
-        [&component](auto &&request,
-                     wh::core::run_context &component_context) {
+        [&component](auto &&request, wh::core::run_context &component_context) {
           return component.process(std::forward<decltype(request)>(request),
                                    component_context);
         });
@@ -842,9 +889,8 @@ struct component_async_contract<component_kind::embedding, node_contract::value,
 };
 
 template <typename component_t>
-struct component_async_contract<component_kind::retriever,
-                                node_contract::value, node_contract::value,
-                                component_t> {
+struct component_async_contract<component_kind::retriever, node_contract::value,
+                                node_contract::value, component_t> {
   using request_type = explicit_component_request_t<component_kind::retriever,
                                                     node_contract::value>;
 
@@ -937,8 +983,8 @@ struct component_async_contract<component_kind::tool, node_contract::value,
 template <typename component_t>
 struct component_async_contract<component_kind::tool, node_contract::value,
                                 node_contract::stream, component_t> {
-  using request_type = explicit_component_request_t<component_kind::tool,
-                                                    node_contract::stream>;
+  using request_type =
+      explicit_component_request_t<component_kind::tool, node_contract::stream>;
 
   static auto run(const component_t &component, const graph_value &input,
                   wh::core::run_context &context, const node_runtime &runtime)
@@ -957,17 +1003,17 @@ struct component_async_contract<component_kind::tool, node_contract::value,
                 std::forward<decltype(request)>(request), component_context);
           });
     } else {
-      static_assert(always_false_v<component_t>,
-                    "component_node<async> requires tool.async_stream(request, "
-                    "run_context&) -> sender<result<tool_output_stream_reader>>");
+      static_assert(
+          always_false_v<component_t>,
+          "component_node<async> requires tool.async_stream(request, "
+          "run_context&) -> sender<result<tool_output_stream_reader>>");
     }
   }
 };
 
 template <typename component_t>
-struct component_async_contract<component_kind::document,
-                                node_contract::value, node_contract::value,
-                                component_t> {
+struct component_async_contract<component_kind::document, node_contract::value,
+                                node_contract::value, component_t> {
   using request_type = explicit_component_request_t<component_kind::document,
                                                     node_contract::value>;
 
@@ -1014,8 +1060,7 @@ inline constexpr bool component_async_contract_supported =
 
 template <component_kind Kind, node_contract To, typename component_t>
 inline constexpr bool explicit_component_async_method_supported_v = [] {
-  if constexpr (Kind == component_kind::model &&
-                To == node_contract::value) {
+  if constexpr (Kind == component_kind::model && To == node_contract::value) {
     return async_invoke_result_sender<
         component_t, explicit_component_request_t<Kind, To>,
         explicit_component_async_result_t<Kind, To>>;
@@ -1115,18 +1160,25 @@ struct custom_component_contract<node_contract::value, component_t, request_t,
               context, runtime,
               [&](wh::core::run_context &component_context)
                   -> wh::core::result<graph_value> {
-                if constexpr (requires(const component_t &value,
-                                       wh::core::run_context &callback_context) {
-                                {
-                                  value.invoke(
-                                      std::forward<decltype(resolved_request)>(
-                                          resolved_request),
-                                      callback_context)
-                                } -> std::same_as<wh::core::result<response_t>>;
-                              }) {
-                  auto output = component.invoke(
-                      std::forward<decltype(resolved_request)>(resolved_request),
-                      component_context);
+                if constexpr (custom_sync_invoke_result_with_runtime<
+                                  component_t, request_t,
+                                  wh::core::result<response_t>>) {
+                  auto output =
+                      component.invoke(std::forward<decltype(resolved_request)>(
+                                           resolved_request),
+                                       component_context, runtime);
+                  if (output.has_error()) {
+                    return wh::core::result<graph_value>::failure(
+                        output.error());
+                  }
+                  return make_graph_output(std::move(output).value());
+                } else if constexpr (custom_sync_invoke_result<
+                                         component_t, request_t,
+                                         wh::core::result<response_t>>) {
+                  auto output =
+                      component.invoke(std::forward<decltype(resolved_request)>(
+                                           resolved_request),
+                                       component_context);
                   if (output.has_error()) {
                     return wh::core::result<graph_value>::failure(
                         output.error());
@@ -1135,8 +1187,9 @@ struct custom_component_contract<node_contract::value, component_t, request_t,
                 } else {
                   static_assert(
                       always_false_v<component_t>,
-                      "custom component requires invoke(request, run_context) "
-                      "returning wh::core::result<response_t> when To == value");
+                      "custom component requires const "
+                      "invoke(request, run_context[, node_runtime]) -> "
+                      "wh::core::result<response_t> when To == value");
                 }
               });
         });
@@ -1159,18 +1212,25 @@ struct custom_component_contract<node_contract::stream, component_t, request_t,
               context, runtime,
               [&](wh::core::run_context &component_context)
                   -> wh::core::result<graph_value> {
-                if constexpr (requires(const component_t &value,
-                                       wh::core::run_context &callback_context) {
-                                {
-                                  value.stream(
-                                      std::forward<decltype(resolved_request)>(
-                                          resolved_request),
-                                      callback_context)
-                                } -> std::same_as<wh::core::result<response_t>>;
-                              }) {
-                  auto output = component.stream(
-                      std::forward<decltype(resolved_request)>(resolved_request),
-                      component_context);
+                if constexpr (custom_sync_stream_result_with_runtime<
+                                  component_t, request_t,
+                                  wh::core::result<response_t>>) {
+                  auto output =
+                      component.stream(std::forward<decltype(resolved_request)>(
+                                           resolved_request),
+                                       component_context, runtime);
+                  if (output.has_error()) {
+                    return wh::core::result<graph_value>::failure(
+                        output.error());
+                  }
+                  return make_graph_stream_output(std::move(output).value());
+                } else if constexpr (custom_sync_stream_result<
+                                         component_t, request_t,
+                                         wh::core::result<response_t>>) {
+                  auto output =
+                      component.stream(std::forward<decltype(resolved_request)>(
+                                           resolved_request),
+                                       component_context);
                   if (output.has_error()) {
                     return wh::core::result<graph_value>::failure(
                         output.error());
@@ -1179,8 +1239,9 @@ struct custom_component_contract<node_contract::stream, component_t, request_t,
                 } else {
                   static_assert(
                       always_false_v<component_t>,
-                      "custom component requires stream(request, run_context) "
-                      "returning wh::core::result<response_t> when To == stream");
+                      "custom component requires const "
+                      "stream(request, run_context[, node_runtime]) -> "
+                      "wh::core::result<response_t> when To == stream");
                 }
               });
         });
@@ -1189,21 +1250,20 @@ struct custom_component_contract<node_contract::stream, component_t, request_t,
 
 template <component_kind Kind, node_contract From, node_contract To,
           typename component_t, typename request_t, typename response_t>
-[[nodiscard]] inline auto bind_explicit_custom_component(
-    const component_t &component, graph_value &input,
-    wh::core::run_context &context, const node_runtime &runtime)
+[[nodiscard]] inline auto
+bind_explicit_custom_component(const component_t &component, graph_value &input,
+                               wh::core::run_context &context,
+                               const node_runtime &runtime)
     -> wh::core::result<graph_value> {
   static_assert(Kind == component_kind::custom,
                 "custom binder must only be used with component_kind::custom");
-  return custom_component_contract<To, component_t, request_t,
-                                   response_t>::run(component, input, context,
-                                                    runtime);
+  return custom_component_contract<To, component_t, request_t, response_t>::run(
+      component, input, context, runtime);
 }
 
 template <typename request_t, typename response_t, typename sender_factory_t>
 [[nodiscard]] inline auto
-bind_custom_component_sender(graph_value &input,
-                             const node_runtime &runtime,
+bind_custom_component_sender(graph_value &input, const node_runtime &runtime,
                              wh::core::run_context &context,
                              sender_factory_t &&make_sender) -> graph_sender {
   auto request = resolve_component_request<request_t>(input, runtime);
@@ -1226,11 +1286,9 @@ bind_custom_component_sender(graph_value &input,
 }
 
 template <typename request_t, typename response_t, typename sender_factory_t>
-[[nodiscard]] inline auto
-bind_custom_component_stream_sender(graph_value &input,
-                                    const node_runtime &runtime,
-                                    wh::core::run_context &context,
-                                    sender_factory_t &&make_sender)
+[[nodiscard]] inline auto bind_custom_component_stream_sender(
+    graph_value &input, const node_runtime &runtime,
+    wh::core::run_context &context, sender_factory_t &&make_sender)
     -> graph_sender {
   auto request = resolve_component_request<request_t>(input, runtime);
   if (request.has_error()) {
@@ -1254,12 +1312,11 @@ bind_custom_component_stream_sender(graph_value &input,
 template <component_kind Kind, node_contract From, node_contract To,
           typename component_t>
 [[nodiscard]] inline auto
-bind_explicit_component_async(const component_t &component,
-                              graph_value &input,
+bind_explicit_component_async(const component_t &component, graph_value &input,
                               wh::core::run_context &context,
                               const node_runtime &runtime) -> graph_sender {
   if constexpr (component_async_contract_supported<Kind, From, To,
-                                                  component_t>) {
+                                                   component_t>) {
     return component_async_contract<Kind, From, To, component_t>::run(
         component, input, context, runtime);
   } else {
@@ -1283,14 +1340,25 @@ struct custom_component_async_contract<node_contract::value, component_t,
   static auto run(const component_t &component, graph_value &input,
                   wh::core::run_context &context, const node_runtime &runtime)
       -> graph_sender {
-    if constexpr (async_invoke_result_sender<
-                      component_t, request_t, wh::core::result<response_t>>) {
+    if constexpr (async_invoke_result_sender<component_t, request_t,
+                                             wh::core::result<response_t>>) {
       return bind_custom_component_sender<request_t, response_t>(
           input, runtime, context,
-          [&component](auto &&request,
-                       wh::core::run_context &component_context) {
-            return component.async_invoke(std::forward<decltype(request)>(request),
-                                          component_context);
+          [&component, runtime_copy = runtime](
+              auto &&request, wh::core::run_context &component_context) {
+            if constexpr (requires(const component_t &value,
+                                   wh::core::run_context &callback_context) {
+                            value.async_invoke(
+                                std::forward<decltype(request)>(request),
+                                callback_context, runtime_copy);
+                          }) {
+              return component.async_invoke(
+                  std::forward<decltype(request)>(request), component_context,
+                  runtime_copy);
+            } else {
+              return component.async_invoke(
+                  std::forward<decltype(request)>(request), component_context);
+            }
           });
     } else {
       static_assert(always_false_v<component_t>,
@@ -1307,14 +1375,25 @@ struct custom_component_async_contract<node_contract::stream, component_t,
   static auto run(const component_t &component, graph_value &input,
                   wh::core::run_context &context, const node_runtime &runtime)
       -> graph_sender {
-    if constexpr (async_stream_result_sender<
-                      component_t, request_t, wh::core::result<response_t>>) {
+    if constexpr (async_stream_result_sender<component_t, request_t,
+                                             wh::core::result<response_t>>) {
       return bind_custom_component_stream_sender<request_t, response_t>(
           input, runtime, context,
-          [&component](auto &&request,
-                       wh::core::run_context &component_context) {
-            return component.async_stream(std::forward<decltype(request)>(request),
-                                          component_context);
+          [&component, runtime_copy = runtime](
+              auto &&request, wh::core::run_context &component_context) {
+            if constexpr (requires(const component_t &value,
+                                   wh::core::run_context &callback_context) {
+                            value.async_stream(
+                                std::forward<decltype(request)>(request),
+                                callback_context, runtime_copy);
+                          }) {
+              return component.async_stream(
+                  std::forward<decltype(request)>(request), component_context,
+                  runtime_copy);
+            } else {
+              return component.async_stream(
+                  std::forward<decltype(request)>(request), component_context);
+            }
           });
     } else {
       static_assert(always_false_v<component_t>,
@@ -1328,38 +1407,41 @@ struct custom_component_async_contract<node_contract::stream, component_t,
 template <node_contract To, typename component_t, typename request_t,
           typename response_t>
 concept custom_component_sync_binding =
-    requires(const component_t &component, graph_value &input,
-             wh::core::run_context &context) {
-      { custom_component_contract<To, component_t, request_t, response_t>::run(
-            component, input, context, std::declval<const node_runtime &>()) }
-      -> std::same_as<wh::core::result<graph_value>>;
-    };
+    (To == node_contract::value &&
+     (custom_sync_invoke_result_with_runtime<component_t, request_t,
+                                             wh::core::result<response_t>> ||
+      custom_sync_invoke_result<component_t, request_t,
+                                wh::core::result<response_t>>)) ||
+    (To == node_contract::stream &&
+     (custom_sync_stream_result_with_runtime<component_t, request_t,
+                                             wh::core::result<response_t>> ||
+      custom_sync_stream_result<component_t, request_t,
+                                wh::core::result<response_t>>));
 
 template <node_contract To, typename component_t, typename request_t,
           typename response_t>
-concept custom_component_async_binding =
-    requires(const component_t &component, graph_value &input,
-             wh::core::run_context &context) {
-      { custom_component_async_contract<To, component_t, request_t,
-                                        response_t>::run(
-            component, input, context, std::declval<const node_runtime &>()) }
-      -> std::same_as<graph_sender>;
-    };
+concept custom_component_async_binding = requires(
+    const component_t &component, graph_value &input,
+    wh::core::run_context &context) {
+  {
+    custom_component_async_contract<To, component_t, request_t, response_t>::
+        run(component, input, context, std::declval<const node_runtime &>())
+  } -> std::same_as<graph_sender>;
+};
 
 template <node_contract To, typename component_t, typename request_t,
           typename response_t>
-inline constexpr bool custom_component_async_method_supported_v =
-    [] {
-      if constexpr (To == node_contract::value) {
-        return async_invoke_result_sender<component_t, request_t,
-                                          wh::core::result<response_t>>;
-      } else if constexpr (To == node_contract::stream) {
-        return async_stream_result_sender<component_t, request_t,
-                                          wh::core::result<response_t>>;
-      } else {
-        return false;
-      }
-    }();
+inline constexpr bool custom_component_async_method_supported_v = [] {
+  if constexpr (To == node_contract::value) {
+    return async_invoke_result_sender<component_t, request_t,
+                                      wh::core::result<response_t>>;
+  } else if constexpr (To == node_contract::stream) {
+    return async_stream_result_sender<component_t, request_t,
+                                      wh::core::result<response_t>>;
+  } else {
+    return false;
+  }
+}();
 
 template <node_contract From, typename request_t>
 [[nodiscard]] constexpr auto custom_component_input_gate() noexcept
@@ -1376,8 +1458,7 @@ template <node_contract To, typename response_t>
 template <node_contract From, node_contract To, typename request_t,
           typename response_t, node_exec_mode Exec, typename component_t>
 concept custom_component_binding =
-    typed_request<From, request_t> &&
-    typed_response<To, response_t> &&
+    typed_request<From, request_t> && typed_response<To, response_t> &&
     ((Exec == node_exec_mode::sync &&
       custom_component_sync_binding<To, component_t, request_t, response_t>) ||
      (Exec == node_exec_mode::async &&
@@ -1400,14 +1481,16 @@ template <component_kind Kind, node_contract From, node_contract To,
 
 } // namespace detail
 
-inline auto component_node::compile() const & -> compiled_node {
+inline auto
+component_node::compile() const & -> wh::core::result<compiled_node> {
   auto copied = *this;
   return std::move(copied).compile();
 }
 
-inline auto component_node::compile() && -> compiled_node {
+inline auto component_node::compile() && -> wh::core::result<compiled_node> {
   if (!static_cast<bool>(payload_.lower)) {
-    return {};
+    return wh::core::result<compiled_node>::failure(
+        wh::core::errc::not_supported);
   }
   return payload_.lower(std::move(descriptor_.key), std::move(options_));
 }
@@ -1438,15 +1521,15 @@ template <component_kind Kind, node_contract From, node_contract To,
           .input_contract = From,
           .output_contract = To,
           .input_gate_info = detail::explicit_component_input_gate<Kind, To>(),
-          .output_gate_info = detail::explicit_component_output_gate<Kind, To>(),
+          .output_gate_info =
+              detail::explicit_component_output_gate<Kind, To>(),
       },
       component_payload{
           .kind = Kind,
-          .lower =
-              [component =
-                   stored_component_t{std::forward<component_t>(component)}](
-                  std::string key,
-                  graph_add_node_options options) mutable -> compiled_node {
+          .lower = [component = stored_component_t{std::forward<component_t>(
+                        component)}](std::string key,
+                                     graph_add_node_options options) mutable
+              -> wh::core::result<compiled_node> {
             if constexpr (Exec == node_exec_mode::sync) {
               return make_compiled_sync_node(
                   node_kind::component,
@@ -1485,7 +1568,8 @@ template <component_kind Kind, node_contract From, node_contract To,
   requires std::constructible_from<std::string, key_t &&> &&
            std::constructible_from<graph_add_node_options, options_t &&> &&
            (Kind == component_kind::custom) &&
-           detail::custom_component_binding<From, To, request_t, response_t, Exec,
+           detail::custom_component_binding<From, To, request_t, response_t,
+                                            Exec,
                                             std::remove_cvref_t<component_t>>
 /// Creates one graph node from a custom component contract.
 [[nodiscard]] inline auto make_component_node(key_t &&key,
@@ -1511,11 +1595,10 @@ template <component_kind Kind, node_contract From, node_contract To,
       },
       component_payload{
           .kind = Kind,
-          .lower =
-              [component =
-                   stored_component_t{std::forward<component_t>(component)}](
-                  std::string key,
-                  graph_add_node_options options) mutable -> compiled_node {
+          .lower = [component = stored_component_t{std::forward<component_t>(
+                        component)}](std::string key,
+                                     graph_add_node_options options) mutable
+              -> wh::core::result<compiled_node> {
             if constexpr (Exec == node_exec_mode::sync) {
               return make_compiled_sync_node(
                   node_kind::component,

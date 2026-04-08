@@ -30,8 +30,6 @@ enum class component_kind : std::uint8_t {
   indexer,
   /// Document parsing component.
   document,
-  /// Chain composition component.
-  chain,
   /// User-defined custom component.
   custom,
 };
@@ -53,7 +51,6 @@ struct component_common_options {
   /// Distributed span id.
   std::string span_id{};
 };
-
 
 /// Optional per-call overlay fields for component options.
 struct component_override_options {
@@ -88,8 +85,7 @@ public:
   }
 
   /// Sets base options applied to all invocations.
-  auto set_base(component_common_options &&options)
-      -> component_options & {
+  auto set_base(component_common_options &&options) -> component_options & {
     base_ = std::move(options);
     return *this;
   }
@@ -115,8 +111,7 @@ public:
   }
 
   /// Returns base options.
-  [[nodiscard]] auto base() const noexcept
-      -> const component_common_options & {
+  [[nodiscard]] auto base() const noexcept -> const component_common_options & {
     return base_;
   }
 
@@ -175,10 +170,9 @@ public:
     const auto key = wh::core::any_type_key_v<stored_t>;
     auto iter = impl_specific_.find(key);
     if (iter == impl_specific_.end()) {
-      impl_specific_.emplace(
-          key,
-          wh::core::any{std::in_place_type<stored_t>,
-                        std::forward<options_t>(options)});
+      impl_specific_.emplace(key,
+                             wh::core::any{std::in_place_type<stored_t>,
+                                           std::forward<options_t>(options)});
       return *this;
     }
     iter->second.template emplace<stored_t>(std::forward<options_t>(options));

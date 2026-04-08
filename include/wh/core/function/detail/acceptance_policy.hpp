@@ -15,12 +15,13 @@ template <typename signature_t, bool accept_non_copyables_v,
           bool accept_pointers_v>
 class acceptance_policy_base;
 
-// Generates acceptance-policy specializations for each CV/ref-qualified signature.
+// Generates acceptance-policy specializations for each CV/ref-qualified
+// signature.
 #define WH_DEFINE_ACCEPTANCE_POLICY_BASE(CV, REF)                              \
   template <bool accept_non_copyables_v, bool accept_pointers_v,               \
             typename return_t, bool is_noexcept, typename... param_types>      \
-  class acceptance_policy_base<return_t(param_types...) CV REF                 \
-                                   noexcept(is_noexcept),                      \
+  class acceptance_policy_base<return_t(param_types...)                        \
+                                   CV REF noexcept(is_noexcept),               \
                                accept_non_copyables_v, accept_pointers_v> {    \
   private:                                                                     \
     template <typename fun_t>                                                  \
@@ -80,57 +81,55 @@ WH_DEFINE_ACCEPTANCE_POLICY_BASE(const, &&);
 namespace wh::core::fn {
 
 /// Accepts copyable callable values.
-template <typename signature_t>
-struct standard_accept;
+template <typename signature_t> struct standard_accept;
 
 /// Accepts move-only callable values.
-template <typename signature_t>
-struct non_copyable_accept;
+template <typename signature_t> struct non_copyable_accept;
 
 /// Accepts callables and pointer-like wrappers.
-template <typename signature_t>
-struct ptr_accept;
+template <typename signature_t> struct ptr_accept;
 
 /// Accepts move-only callables and pointer-like wrappers.
-template <typename signature_t>
-struct non_copyable_ptr_accept;
+template <typename signature_t> struct non_copyable_ptr_accept;
 
-// Generates public acceptance-policy wrappers for each CV/ref-qualified signature.
+// Generates public acceptance-policy wrappers for each CV/ref-qualified
+// signature.
 #define WH_DEFINE_ACCEPTANCE_POLICIES(CV, REF)                                 \
   template <typename return_t, bool is_noexcept, typename... param_types>      \
-  struct standard_accept<return_t(param_types...) CV REF noexcept(is_noexcept)>\
-      : fn_detail::acceptance_policy_base<                                     \
-            return_t(param_types...) CV REF noexcept(is_noexcept), false,      \
-            false> {                                                           \
+  struct standard_accept<return_t(param_types...)                              \
+                             CV REF noexcept(is_noexcept)>                     \
+      : fn_detail::acceptance_policy_base<return_t(param_types...)             \
+                                              CV REF noexcept(is_noexcept),    \
+                                          false, false> {                      \
   protected:                                                                   \
     standard_accept() = default;                                               \
     ~standard_accept() = default;                                              \
   };                                                                           \
   template <typename return_t, bool is_noexcept, typename... param_types>      \
-  struct non_copyable_accept<return_t(param_types...) CV REF                   \
-                                 noexcept(is_noexcept)>                        \
-      : fn_detail::acceptance_policy_base<                                     \
-            return_t(param_types...) CV REF noexcept(is_noexcept), true,       \
-            false> {                                                           \
+  struct non_copyable_accept<return_t(param_types...)                          \
+                                 CV REF noexcept(is_noexcept)>                 \
+      : fn_detail::acceptance_policy_base<return_t(param_types...)             \
+                                              CV REF noexcept(is_noexcept),    \
+                                          true, false> {                       \
   protected:                                                                   \
     non_copyable_accept() = default;                                           \
     ~non_copyable_accept() = default;                                          \
   };                                                                           \
   template <typename return_t, bool is_noexcept, typename... param_types>      \
   struct ptr_accept<return_t(param_types...) CV REF noexcept(is_noexcept)>     \
-      : fn_detail::acceptance_policy_base<                                     \
-            return_t(param_types...) CV REF noexcept(is_noexcept), false,      \
-            true> {                                                            \
+      : fn_detail::acceptance_policy_base<return_t(param_types...)             \
+                                              CV REF noexcept(is_noexcept),    \
+                                          false, true> {                       \
   protected:                                                                   \
     ptr_accept() = default;                                                    \
     ~ptr_accept() = default;                                                   \
   };                                                                           \
   template <typename return_t, bool is_noexcept, typename... param_types>      \
-  struct non_copyable_ptr_accept<return_t(param_types...) CV REF               \
-                                     noexcept(is_noexcept)>                    \
-      : fn_detail::acceptance_policy_base<                                     \
-            return_t(param_types...) CV REF noexcept(is_noexcept), true,       \
-            true> {                                                            \
+  struct non_copyable_ptr_accept<return_t(param_types...)                      \
+                                     CV REF noexcept(is_noexcept)>             \
+      : fn_detail::acceptance_policy_base<return_t(param_types...)             \
+                                              CV REF noexcept(is_noexcept),    \
+                                          true, true> {                        \
   protected:                                                                   \
     non_copyable_ptr_accept() = default;                                       \
     ~non_copyable_ptr_accept() = default;                                      \

@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <new>
+#include <source_location>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -157,13 +159,35 @@ inline void spin_pause() noexcept {
 #endif
 }
 
+enum class contract_kind : std::uint8_t {
+  precondition = 0U,
+  postcondition,
+  invariant,
+};
+
+[[nodiscard]] inline auto contract_kind_name(const contract_kind kind) noexcept
+    -> std::string_view {
+  switch (kind) {
+  case contract_kind::precondition:
+    return "precondition";
+  case contract_kind::postcondition:
+    return "postcondition";
+  case contract_kind::invariant:
+    return "invariant";
+  }
+  return "contract";
+}
+
 /// Reports contract violation and terminates immediately.
-[[noreturn]] inline void contract_violation(const char *kind,
-                                            const char *expression,
-                                            const char *file,
-                                            const int line) noexcept {
-  std::fprintf(stderr, "[wh-contract] %s failed: %s at %s:%d\n", kind,
-               expression, file, line);
+[[noreturn]] inline void
+contract_violation(const contract_kind kind, const std::string_view expression,
+                   const std::source_location where =
+                       std::source_location::current()) noexcept {
+  const auto kind_name = contract_kind_name(kind);
+  std::fprintf(stderr, "[wh-contract] %.*s failed: %.*s at %s:%u\n",
+               static_cast<int>(kind_name.size()), kind_name.data(),
+               static_cast<int>(expression.size()), expression.data(),
+               where.file_name(), where.line());
   std::abort();
 }
 
@@ -227,29 +251,26 @@ inline void spin_pause() noexcept {
 #define wh_cacheline_align
 #endif
 
+#ifndef NDEBUG
 #define wh_precondition(expr)                                                  \
-  do {                                                                         \
-    if (!(expr))                                                               \
-      wh_unlikely {                                                            \
-        ::wh::core::contract_violation("precondition", #expr, __FILE__,        \
-                                       __LINE__);                              \
-      }                                                                        \
-  } while (false)
+  (static_cast<bool>(expr) ||                                                  \
+   (::wh::core::contract_violation(::wh::core::contract_kind::precondition,    \
+                                   #expr, std::source_location::current()),    \
+    false))
 
 #define wh_postcondition(expr)                                                 \
-  do {                                                                         \
-    if (!(expr))                                                               \
-      wh_unlikely {                                                            \
-        ::wh::core::contract_violation("postcondition", #expr, __FILE__,       \
-                                       __LINE__);                              \
-      }                                                                        \
-  } while (false)
+  (static_cast<bool>(expr) ||                                                  \
+   (::wh::core::contract_violation(::wh::core::contract_kind::postcondition,   \
+                                   #expr, std::source_location::current()),    \
+    false))
 
 #define wh_invariant(expr)                                                     \
-  do {                                                                         \
-    if (!(expr))                                                               \
-      wh_unlikely {                                                            \
-        ::wh::core::contract_violation("invariant", #expr, __FILE__,           \
-                                       __LINE__);                              \
-      }                                                                        \
-  } while (false)
+  (static_cast<bool>(expr) ||                                                  \
+   (::wh::core::contract_violation(::wh::core::contract_kind::invariant,       \
+                                   #expr, std::source_location::current()),    \
+    false))
+#else
+#define wh_precondition(expr) ((void)0)
+#define wh_postcondition(expr) ((void)0)
+#define wh_invariant(expr) ((void)0)
+#endif

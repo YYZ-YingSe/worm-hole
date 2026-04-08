@@ -12,8 +12,8 @@ namespace wh::core {
 
 /// RapidJSON-compatible value/document concept used by generic JSON helpers.
 template <typename value_t>
-concept json_value_like =
-    requires(remove_cvref_t<value_t> value, const remove_cvref_t<value_t> cvalue) {
+concept json_value_like = requires(remove_cvref_t<value_t> value,
+                                   const remove_cvref_t<value_t> cvalue) {
   { cvalue.IsNull() } -> std::convertible_to<bool>;
   { cvalue.IsBool() } -> std::convertible_to<bool>;
   { cvalue.IsNumber() } -> std::convertible_to<bool>;

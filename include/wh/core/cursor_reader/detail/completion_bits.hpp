@@ -20,11 +20,10 @@ public:
       if ((state_bits & claimed_bit_) != 0U) {
         return false;
       }
-      const auto updated =
-          static_cast<std::uint8_t>(state_bits | claimed_bit_);
-      if (state_bits_.compare_exchange_weak(
-              state_bits, updated, std::memory_order_acq_rel,
-              std::memory_order_acquire)) {
+      const auto updated = static_cast<std::uint8_t>(state_bits | claimed_bit_);
+      if (state_bits_.compare_exchange_weak(state_bits, updated,
+                                            std::memory_order_acq_rel,
+                                            std::memory_order_acquire)) {
         return true;
       }
     }

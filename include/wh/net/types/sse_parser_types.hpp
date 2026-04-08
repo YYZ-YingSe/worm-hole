@@ -46,7 +46,8 @@ using http_stream_reader =
     wh::schema::stream::any_stream_reader<http_stream_event>;
 
 /// Final result for streaming invoke paths.
-using http_stream_result = wh::core::result<http_stream_reader, transport_error>;
+using http_stream_result =
+    wh::core::result<http_stream_reader, transport_error>;
 
 /// Borrowed parser input view for one incremental SSE parse step.
 struct sse_parse_request_view {

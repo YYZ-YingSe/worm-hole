@@ -33,8 +33,7 @@ template <typename event_t, typename callback_t>
   auto stored_callback =
       std::make_shared<stored_callback_t>(std::forward<callback_t>(callback));
 
-  return [stored_callback](const stage current_stage,
-                           const event_view event,
+  return [stored_callback](const stage current_stage, const event_view event,
                            const run_info &info) -> void {
     const auto *typed = event.get_if<event_t>();
     if (typed == nullptr) {
@@ -70,11 +69,11 @@ template <typename event_t, typename callback_t>
 template <typename event_t, typename config_t, typename callback_t>
   requires(TypedStageCallbackWithStage<callback_t, event_t> ||
            TypedStageCallbackWithoutStage<callback_t, event_t>) &&
-          wh::core::CallbackConfigLike<
-              wh::core::remove_cvref_t<config_t>>
+          wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>>
 /// Registers one typed local stage-callback table on context callback manager.
-[[nodiscard]] inline auto register_typed_local_callbacks(
-    wh::core::run_context &&context, config_t &&config, callback_t &&callback)
+[[nodiscard]] inline auto
+register_typed_local_callbacks(wh::core::run_context &&context,
+                               config_t &&config, callback_t &&callback)
     -> wh::core::result<wh::core::run_context> {
   return wh::core::register_local_callbacks(
       std::move(context), std::forward<config_t>(config),
@@ -84,12 +83,12 @@ template <typename event_t, typename config_t, typename callback_t>
 template <typename event_t, typename config_t, typename callback_t>
   requires(TypedStageCallbackWithStage<callback_t, event_t> ||
            TypedStageCallbackWithoutStage<callback_t, event_t>) &&
-          wh::core::CallbackConfigLike<
-              wh::core::remove_cvref_t<config_t>>
+          wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>>
 /// Registers one typed local stage-callback table using copied run context.
-[[nodiscard]] inline auto register_typed_local_callbacks(
-    const wh::core::run_context &context, config_t &&config,
-    callback_t &&callback) -> wh::core::result<wh::core::run_context> {
+[[nodiscard]] inline auto
+register_typed_local_callbacks(const wh::core::run_context &context,
+                               config_t &&config, callback_t &&callback)
+    -> wh::core::result<wh::core::run_context> {
   return wh::core::register_local_callbacks(
       context, std::forward<config_t>(config),
       make_typed_stage_callbacks<event_t>(std::forward<callback_t>(callback)));

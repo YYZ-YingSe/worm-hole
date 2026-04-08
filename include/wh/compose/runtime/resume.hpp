@@ -79,13 +79,10 @@ next_resume_points(const wh::core::resume_state &state,
 }
 
 /// Collects interrupt ids inside one address subtree.
-[[nodiscard]] inline auto
-collect_resume_subtree_ids(const wh::core::resume_state &state,
-                           const wh::core::address &location,
-                           const wh::core::resume_subtree_query_options
-                               options =
-                                   wh::core::resume_subtree_query_options{})
-    -> std::vector<std::string> {
+[[nodiscard]] inline auto collect_resume_subtree_ids(
+    const wh::core::resume_state &state, const wh::core::address &location,
+    const wh::core::resume_subtree_query_options options =
+        wh::core::resume_subtree_query_options{}) -> std::vector<std::string> {
   return state.collect_subtree_interrupt_ids(location, options);
 }
 
@@ -97,12 +94,10 @@ inline auto mark_resume_subtree_used(wh::core::resume_state &state,
 }
 
 /// Erases entries in one address subtree.
-inline auto erase_resume_subtree(wh::core::resume_state &state,
-                                 const wh::core::address &location,
-                                 const wh::core::resume_subtree_erase_options
-                                     options =
-                                         wh::core::resume_subtree_erase_options{})
-    -> std::size_t {
+inline auto erase_resume_subtree(
+    wh::core::resume_state &state, const wh::core::address &location,
+    const wh::core::resume_subtree_erase_options options =
+        wh::core::resume_subtree_erase_options{}) -> std::size_t {
   return state.erase_subtree(location, options);
 }
 
@@ -175,11 +170,9 @@ classify_resume_target_match(const wh::core::resume_state &state,
 }
 
 /// Applies one manual decision and injects audited resume payload.
-[[nodiscard]] inline auto
-apply_resume_decision(wh::core::resume_state &state,
-                                const wh::core::interrupt_context &context,
-                                const interrupt_resume_decision &decision)
-    -> wh::core::result<void> {
+[[nodiscard]] inline auto apply_resume_decision(
+    wh::core::resume_state &state, const wh::core::interrupt_context &context,
+    const interrupt_resume_decision &decision) -> wh::core::result<void> {
   if (decision.interrupt_context_id.empty() ||
       decision.interrupt_context_id != context.interrupt_id) {
     return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -204,17 +197,18 @@ apply_resume_decision(wh::core::resume_state &state,
 }
 
 /// Batch injects resume payloads keyed by interrupt-context id.
-[[nodiscard]] inline auto apply_resume_batch(
-    wh::core::resume_state &state,
-    const std::span<const wh::core::interrupt_context> contexts,
-    const std::span<const resume_batch_item> items,
-    const interrupt_decision_audit &audit = {})
+[[nodiscard]] inline auto
+apply_resume_batch(wh::core::resume_state &state,
+                   const std::span<const wh::core::interrupt_context> contexts,
+                   const std::span<const resume_batch_item> items,
+                   const interrupt_decision_audit &audit = {})
     -> wh::core::result<void> {
   std::unordered_map<std::string_view, const wh::core::interrupt_context *>
       context_index{};
   context_index.reserve(contexts.size());
   for (const auto &context : contexts) {
-    context_index.insert_or_assign(context.interrupt_id, std::addressof(context));
+    context_index.insert_or_assign(context.interrupt_id,
+                                   std::addressof(context));
   }
 
   for (const auto &item : items) {
@@ -226,9 +220,9 @@ apply_resume_decision(wh::core::resume_state &state,
     payload.decision = interrupt_decision_kind::edit;
     payload.data = item.data;
     payload.audit = audit;
-    auto upserted = state.upsert(item.interrupt_context_id,
-                                 context_iter->second->location,
-                                 std::move(payload));
+    auto upserted =
+        state.upsert(item.interrupt_context_id, context_iter->second->location,
+                     std::move(payload));
     if (upserted.has_error()) {
       return upserted;
     }
@@ -236,7 +230,8 @@ apply_resume_decision(wh::core::resume_state &state,
   return {};
 }
 
-/// Collects unmatched contexts and converts them to immediate re-interrupt signals.
+/// Collects unmatched contexts and converts them to immediate re-interrupt
+/// signals.
 [[nodiscard]] inline auto collect_reinterrupts(
     const wh::core::resume_state &state,
     const std::span<const wh::core::interrupt_context> contexts)

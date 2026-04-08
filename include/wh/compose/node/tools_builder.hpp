@@ -13,16 +13,62 @@
 
 namespace wh::compose {
 
-inline auto tools_node::compile() const & -> compiled_node {
+inline auto tools_node::compile() const & -> wh::core::result<compiled_node> {
   auto copied = *this;
   return std::move(copied).compile();
 }
 
-inline auto tools_node::compile() && -> compiled_node {
-  if (!static_cast<bool>(payload_.lower)) {
-    return {};
+inline auto tools_node::compile() && -> wh::core::result<compiled_node> {
+  auto key = std::move(descriptor_.key);
+  auto options = std::move(options_);
+  auto tools = std::move(payload_.registry);
+  auto tool_options = std::move(payload_.runtime_options);
+  if (descriptor_.exec_mode == node_exec_mode::sync) {
+    if (descriptor_.output_contract == node_contract::value) {
+      return make_compiled_sync_node(
+          node_kind::tools, descriptor_.exec_origin, descriptor_.input_contract,
+          descriptor_.output_contract, std::move(key),
+          [tools = std::move(tools), tool_options = std::move(tool_options)](
+              const graph_value &input, wh::core::run_context &context,
+              const node_runtime &runtime) -> wh::core::result<graph_value> {
+            return detail::run_tools_sync<node_contract::value>(
+                input, context, runtime, tools, tool_options);
+          },
+          std::move(options));
+    }
+    return make_compiled_sync_node(
+        node_kind::tools, descriptor_.exec_origin, descriptor_.input_contract,
+        descriptor_.output_contract, std::move(key),
+        [tools = std::move(tools), tool_options = std::move(tool_options)](
+            const graph_value &input, wh::core::run_context &context,
+            const node_runtime &runtime) -> wh::core::result<graph_value> {
+          return detail::run_tools_sync<node_contract::stream>(
+              input, context, runtime, tools, tool_options);
+        },
+        std::move(options));
   }
-  return payload_.lower(std::move(descriptor_.key), std::move(options_));
+  if (descriptor_.output_contract == node_contract::value) {
+    return make_compiled_async_node(
+        node_kind::tools, descriptor_.exec_origin, descriptor_.input_contract,
+        descriptor_.output_contract, std::move(key),
+        [tools = std::move(tools), tool_options = std::move(tool_options)](
+            const graph_value &input, wh::core::run_context &context,
+            const node_runtime &runtime) -> graph_sender {
+          return detail::run_tools_async<node_contract::value>(
+              input, context, runtime, tools, tool_options);
+        },
+        std::move(options));
+  }
+  return make_compiled_async_node(
+      node_kind::tools, descriptor_.exec_origin, descriptor_.input_contract,
+      descriptor_.output_contract, std::move(key),
+      [tools = std::move(tools), tool_options = std::move(tool_options)](
+          const graph_value &input, wh::core::run_context &context,
+          const node_runtime &runtime) -> graph_sender {
+        return detail::run_tools_async<node_contract::stream>(
+            input, context, runtime, tools, tool_options);
+      },
+      std::move(options));
 }
 
 template <node_contract From = node_contract::value,
@@ -35,16 +81,15 @@ template <node_contract From = node_contract::value,
            std::constructible_from<graph_add_node_options, options_t &&> &&
            std::constructible_from<tools_options, tools_options_t &&> &&
            detail::typed_request<From, tool_batch> &&
-           detail::typed_response<
-               To, std::conditional_t<To == node_contract::value,
-                                      std::vector<tool_result>,
-                                      graph_stream_reader>> &&
+           detail::typed_response<To,
+                                  std::conditional_t<To == node_contract::value,
+                                                     std::vector<tool_result>,
+                                                     graph_stream_reader>> &&
            (To == node_contract::value || To == node_contract::stream)
 /// Builds one graph node that dispatches to one of many named tools.
-[[nodiscard]] inline auto make_tools_node(key_t &&key, registry_t &&registry,
-                                          options_t &&options = {},
-                                          tools_options_t &&runtime_options = {})
-    -> tools_node {
+[[nodiscard]] inline auto
+make_tools_node(key_t &&key, registry_t &&registry, options_t &&options = {},
+                tools_options_t &&runtime_options = {}) -> tools_node {
   auto stored_key = std::string{std::forward<key_t>(key)};
   auto tools = tool_registry{std::forward<registry_t>(registry)};
   auto tool_options =
@@ -56,7 +101,7 @@ template <node_contract From = node_contract::value,
           .key = std::move(stored_key),
           .kind = node_kind::tools,
           .exec_mode = Exec,
-          .exec_origin = default_exec_origin(node_kind::tools),
+          .exec_origin = node_exec_origin::authored,
           .input_contract = From,
           .output_contract = To,
           .input_gate_info = detail::typed_input_gate<From, tool_batch>(),
@@ -64,35 +109,9 @@ template <node_contract From = node_contract::value,
               detail::typed_output_gate<To, std::vector<tool_result>>(),
       },
       tools_payload{
-          .lower =
-              [tools = std::move(tools), tool_options = std::move(tool_options)](
-                  std::string key, graph_add_node_options options) mutable
-              -> compiled_node {
-            if constexpr (Exec == node_exec_mode::sync) {
-              return make_compiled_sync_node(
-                  node_kind::tools, default_exec_origin(node_kind::tools), From,
-                  To, std::move(key),
-                  [tools = std::move(tools), tool_options = std::move(tool_options)](
-                      const graph_value &input, wh::core::run_context &context,
-                      const node_runtime &runtime)
-                      -> wh::core::result<graph_value> {
-                    return detail::run_tools_sync<To>(input, context, runtime,
-                                                      tools, tool_options);
-                  },
-                  std::move(options));
-            } else {
-              return make_compiled_async_node(
-                  node_kind::tools, default_exec_origin(node_kind::tools), From,
-                  To, std::move(key),
-                  [tools = std::move(tools), tool_options = std::move(tool_options)](
-                      const graph_value &input, wh::core::run_context &context,
-                      const node_runtime &runtime) -> graph_sender {
-                    return detail::run_tools_async<To>(input, context, runtime,
-                                                       tools, tool_options);
-                  },
-                  std::move(options));
-            }
-          }},
+          .registry = std::move(tools),
+          .runtime_options = std::move(tool_options),
+      },
       std::move(node_options)};
 }
 

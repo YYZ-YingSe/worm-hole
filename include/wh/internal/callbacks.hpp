@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cstddef>
 #include <concepts>
+#include <cstddef>
 #include <exception>
 #include <memory>
 #include <ranges>
@@ -16,7 +16,6 @@
 #include "wh/core/callback.hpp"
 #include "wh/core/small_vector.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/core/callback.hpp"
 
 namespace wh::internal {
 
@@ -61,15 +60,13 @@ public:
   }
 
   template <typename config_t, typename callbacks_t>
-    requires wh::core::CallbackConfigLike<
-                 wh::core::remove_cvref_t<config_t>> &&
+    requires wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>> &&
              std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                           wh::core::stage_callbacks>
   /// Registers one global stage-callback table by expanding to stage buckets.
   auto register_global_callbacks(config_t &&config, callbacks_t &&callbacks)
       -> void {
-    wh::core::callback_config stable_config{
-        std::forward<config_t>(config)};
+    wh::core::callback_config stable_config{std::forward<config_t>(config)};
     ensure_default_timing_checker(stable_config);
     const wh::core::stage_callbacks stable_callbacks{
         std::forward<callbacks_t>(callbacks)};
@@ -92,15 +89,13 @@ public:
   }
 
   template <typename config_t, typename callbacks_t>
-    requires wh::core::CallbackConfigLike<
-                 wh::core::remove_cvref_t<config_t>> &&
+    requires wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>> &&
              std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                           wh::core::stage_callbacks>
   /// Registers one local stage-callback table by expanding to stage buckets.
   auto register_local_callbacks(config_t &&config, callbacks_t &&callbacks)
       -> void {
-    wh::core::callback_config stable_config{
-        std::forward<config_t>(config)};
+    wh::core::callback_config stable_config{std::forward<config_t>(config)};
     ensure_default_timing_checker(stable_config);
     const wh::core::stage_callbacks stable_callbacks{
         std::forward<callbacks_t>(callbacks)};
@@ -126,16 +121,14 @@ public:
             typename name_t>
     requires std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                           wh::core::stage_callbacks> &&
-             std::convertible_to<wh::core::remove_cvref_t<name_t>,
-                                 std::string>
+             std::convertible_to<wh::core::remove_cvref_t<name_t>, std::string>
   /// Global registration overload that builds config from timing checker.
   auto register_global_callbacks(timing_checker_t &&timing_checker,
                                  callbacks_t &&callbacks, name_t &&name)
       -> void {
     return register_global_callbacks(
-        make_callback_config(
-            std::forward<timing_checker_t>(timing_checker),
-            std::string{std::forward<name_t>(name)}),
+        make_callback_config(std::forward<timing_checker_t>(timing_checker),
+                             std::string{std::forward<name_t>(name)}),
         std::forward<callbacks_t>(callbacks));
   }
 
@@ -143,16 +136,14 @@ public:
             typename name_t>
     requires std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                           wh::core::stage_callbacks> &&
-             std::convertible_to<wh::core::remove_cvref_t<name_t>,
-                                 std::string>
+             std::convertible_to<wh::core::remove_cvref_t<name_t>, std::string>
   /// Local registration overload that builds config from timing checker.
   auto register_local_callbacks(timing_checker_t &&timing_checker,
                                 callbacks_t &&callbacks, name_t &&name)
       -> void {
     return register_local_callbacks(
-        make_callback_config(
-            std::forward<timing_checker_t>(timing_checker),
-            std::string{std::forward<name_t>(name)}),
+        make_callback_config(std::forward<timing_checker_t>(timing_checker),
+                             std::string{std::forward<name_t>(name)}),
         std::forward<callbacks_t>(callbacks));
   }
 
@@ -243,20 +234,20 @@ public:
                        callback_t &&callback) const -> void {
     return dispatch_single(
         stage, std::move(payload), run_info,
-        wh::core::stage_payload_callback{
-            std::forward<callback_t>(callback)});
+        wh::core::stage_payload_callback{std::forward<callback_t>(callback)});
   }
 
-  /// Single-dispatch overload that materializes owning payload from typed value.
-  template <typename payload_t,
-            wh::core::StagePayloadCallbackLike callback_t>
-  auto dispatch_single(const wh::core::callback_stage stage, payload_t &&payload,
+  /// Single-dispatch overload that materializes owning payload from typed
+  /// value.
+  template <typename payload_t, wh::core::StagePayloadCallbackLike callback_t>
+  auto dispatch_single(const wh::core::callback_stage stage,
+                       payload_t &&payload,
                        const wh::core::callback_run_info &run_info,
                        callback_t &&callback) const -> void {
     return dispatch_single(
-        stage, wh::core::make_callback_event_payload(std::forward<payload_t>(payload)),
-        run_info,
-        std::forward<callback_t>(callback));
+        stage,
+        wh::core::make_callback_event_payload(std::forward<payload_t>(payload)),
+        run_info, std::forward<callback_t>(callback));
   }
 
   /// Returns current global registration count.
@@ -302,9 +293,9 @@ private:
     return callback;
   }
 
-  [[nodiscard]] static auto get_stage_callback(
-      const wh::core::stage_callbacks &callbacks,
-      const wh::core::callback_stage stage)
+  [[nodiscard]] static auto
+  get_stage_callback(const wh::core::stage_callbacks &callbacks,
+                     const wh::core::callback_stage stage)
       -> const wh::core::stage_view_callback * {
     switch (stage) {
     case wh::core::callback_stage::start:
@@ -323,8 +314,7 @@ private:
 
   /// Appends one registration by creating and publishing a new snapshot.
   auto append_registration(shared_registration_list &slot,
-                           stage_registration &&registration)
-      -> void {
+                           stage_registration &&registration) -> void {
     const stage_registration stable_registration{std::move(registration)};
 
     auto current_registrations =
@@ -346,8 +336,7 @@ private:
   }
 
   /// Ensures config always has a valid stage checker.
-  static auto
-  ensure_default_timing_checker(wh::core::callback_config &config)
+  static auto ensure_default_timing_checker(wh::core::callback_config &config)
       -> void {
     if (static_cast<bool>(config.timing_checker)) {
       return;
@@ -362,7 +351,8 @@ private:
 };
 
 /// Builds registration config from timing checker and optional debug name.
-template <wh::core::TimingChecker timing_checker_t, typename name_t = std::string>
+template <wh::core::TimingChecker timing_checker_t,
+          typename name_t = std::string>
   requires std::constructible_from<std::string, name_t &&>
 [[nodiscard]] inline auto
 make_callback_config(timing_checker_t &&timing_checker, name_t &&name = {})

@@ -16,8 +16,7 @@ namespace wh::internal {
 namespace detail {
 
 /// Removes cv and reference qualifiers.
-template <typename t>
-using remove_cvref_t = wh::core::remove_cvref_t<t>;
+template <typename t> using remove_cvref_t = wh::core::remove_cvref_t<t>;
 
 /// Returns whether character is ASCII digit.
 [[nodiscard]] constexpr bool is_ascii_digit(const char ch) noexcept {
@@ -137,7 +136,8 @@ template <typename t>
 inline constexpr bool has_explicit_type_alias_v =
     !type_alias<detail::remove_cvref_t<t>>::value.empty();
 
-/// Returns preferred diagnostic alias (explicit alias if present, else type name).
+/// Returns preferred diagnostic alias (explicit alias if present, else type
+/// name).
 template <typename t>
 [[nodiscard]] constexpr std::string_view diagnostic_type_alias() noexcept {
   using normalized_t = detail::remove_cvref_t<t>;

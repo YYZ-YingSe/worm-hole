@@ -1,8 +1,8 @@
 // Defines strict checkpoint restore validation against the current graph shape.
 #pragma once
 
-#include "wh/compose/graph/restore_check.hpp"
 #include "wh/compose/graph.hpp"
+#include "wh/compose/graph/restore_check.hpp"
 
 namespace wh::compose {
 

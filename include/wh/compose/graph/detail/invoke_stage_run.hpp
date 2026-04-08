@@ -2,43 +2,46 @@
 // Pregel graph runtimes.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
 #include "wh/compose/graph/detail/invoke_join.hpp"
+#include "wh/compose/graph/graph.hpp"
+#include "wh/core/compiler.hpp"
 
 namespace wh::compose {
 
-template <typename receiver_t, typename derived_t, typename graph_scheduler_t>
-class detail::invoke_runtime::run_state::stage_run
-    : public detail::invoke_runtime::run_state::join_base<receiver_t, derived_t,
-                                                          graph_scheduler_t> {
-  using join_base_t = join_base<receiver_t, derived_t, graph_scheduler_t>;
+template <typename state_t, typename receiver_t, typename derived_t,
+          typename graph_scheduler_t>
+class detail::invoke_runtime::invoke_stage_run
+    : public detail::invoke_runtime::invoke_join_base<receiver_t, derived_t,
+                                                      graph_scheduler_t> {
+  using join_base_t =
+      invoke_join_base<receiver_t, derived_t, graph_scheduler_t>;
 
 public:
   template <typename receiver_arg_t, typename graph_scheduler_u>
-  stage_run(run_state &&state, receiver_arg_t &&receiver,
-            graph_scheduler_u &&graph_scheduler)
+  invoke_stage_run(state_t &&state, receiver_arg_t &&receiver,
+                   graph_scheduler_u &&graph_scheduler)
       : join_base_t(
             state.node_count() + 1U,
-            wh::core::detail::any_resume_scheduler_t{*state.graph_scheduler_},
-            graph_scheduler_t{
-                std::forward<graph_scheduler_u>(graph_scheduler)}) {
+            graph_scheduler_t{std::forward<graph_scheduler_u>(graph_scheduler)},
+            std::forward<receiver_arg_t>(receiver)) {
     state_.emplace(std::move(state));
     state_->rebind_moved_runtime_storage();
-    this->emplace_receiver(std::forward<receiver_arg_t>(receiver));
   }
 
   auto bind_outer_stop() noexcept -> void { join_base_t::bind_outer_stop(); }
 
-  auto request_pump() noexcept -> void { join_base_t::request_pump(); }
+  auto request_drive() noexcept -> void { join_base_t::request_drive(); }
 
 protected:
-  [[nodiscard]] auto state() noexcept -> run_state & { return *state_; }
+  [[nodiscard]] auto state() noexcept -> state_t & { return *state_; }
 
-  [[nodiscard]] auto state() const noexcept -> const run_state & {
+  [[nodiscard]] auto state() const noexcept -> const state_t & {
     return *state_;
   }
 
 public:
+  auto start() noexcept -> void { join_base_t::start(); }
+
   auto prepare_finish_delivery() noexcept -> void {
     if (!state_.has_value()) {
       return;
@@ -53,7 +56,8 @@ protected:
   }
 
   auto launch_input_stage(node_frame &&frame) -> wh::core::result<void> {
-    return this->start_child(state_->build_input_sender(std::addressof(frame)),
+    return this->start_child(static_cast<derived_t &>(*this).build_input_sender(
+                                 std::addressof(frame)),
                              std::move(frame));
   }
 
@@ -64,10 +68,12 @@ protected:
 
   auto launch_freeze_stage() -> wh::core::result<void> {
     node_frame frame{};
-    frame.stage = invoke_stage::freeze;
+    frame.stage = stage::freeze;
     frame.node_id = state_->control_slot_id();
     return this->start_child(
-        state_->freeze_sender(state_->freeze_external()), std::move(frame));
+        static_cast<derived_t &>(*this).build_freeze_sender(
+            state_->freeze_external()),
+        std::move(frame));
   }
 
   auto launch_node_stage(node_frame &&frame) -> wh::core::result<void> {
@@ -79,9 +85,10 @@ protected:
         return wh::core::result<void>::failure(wh::core::errc::not_found);
       }
       if (compiled_node_is_sync(*frame.node)) {
-        auto executed = run_sync_node_execution(
+        auto executed = run_state::run_sync_node_execution(
             *frame.node, *frame.node_input, state_->context_,
-            state_->bound_call_scope_, std::addressof(*state_), frame,
+            state_->invoke_state().bound_call_scope, std::addressof(*state_),
+            frame,
             [this](const std::uint32_t node_id,
                    const std::size_t step) noexcept {
               state_->emit_debug(graph_debug_stream_event::decision_kind::retry,
@@ -89,39 +96,44 @@ protected:
             });
         return settle_node_stage(std::move(frame), std::move(executed));
       }
-      return this->start_child(
-          make_async_node_attempt_sender(
-              *frame.node, *frame.node_input, state_->context_,
-              state_->bound_call_scope_, std::addressof(*state_), frame),
-          std::move(frame));
+      return this->start_child(run_state::make_async_node_attempt_sender(
+                                   *frame.node, *frame.node_input,
+                                   state_->context_,
+                                   state_->invoke_state().bound_call_scope,
+                                   std::addressof(*state_), frame),
+                               std::move(frame));
     }
 
     auto *rerun_input = state_->rerun_state_.find(frame.node_id);
     if (rerun_input == nullptr) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
-    auto execution_input = fork_graph_value(*rerun_input);
+    auto execution_input =
+        frame.node->meta.input_contract == node_contract::stream
+            ? detail::fork_graph_reader_payload(*rerun_input)
+            : fork_graph_value(*rerun_input);
     if (execution_input.has_error()) {
       return wh::core::result<void>::failure(execution_input.error());
     }
     if (compiled_node_is_sync(*frame.node)) {
       auto live_input = std::move(execution_input).value();
-      auto executed = run_sync_node_execution(
-          *frame.node, live_input, state_->context_, state_->bound_call_scope_,
-          std::addressof(*state_), frame,
-          [this](const std::uint32_t node_id,
-                 const std::size_t step) noexcept {
+      auto executed = run_state::run_sync_node_execution(
+          *frame.node, live_input, state_->context_,
+          state_->invoke_state().bound_call_scope, std::addressof(*state_),
+          frame,
+          [this](const std::uint32_t node_id, const std::size_t step) noexcept {
             state_->emit_debug(graph_debug_stream_event::decision_kind::retry,
                                node_id, step);
           });
       return settle_node_stage(std::move(frame), std::move(executed));
     }
     frame.node_input.emplace(std::move(execution_input).value());
-    return this->start_child(
-        make_async_node_attempt_sender(
-            *frame.node, *frame.node_input, state_->context_,
-            state_->bound_call_scope_, std::addressof(*state_), frame),
-        std::move(frame));
+    return this->start_child(run_state::make_async_node_attempt_sender(
+                                 *frame.node, *frame.node_input,
+                                 state_->context_,
+                                 state_->invoke_state().bound_call_scope,
+                                 std::addressof(*state_), frame),
+                             std::move(frame));
   }
 
   auto continue_node_stage(node_frame &&frame, graph_value input)
@@ -161,8 +173,9 @@ protected:
                             wh::core::result<graph_value> &&resolved)
       -> wh::core::result<void> {
     if (resolved.has_error()) {
-      return state_->fail_node_stage(std::move(frame), resolved.error(),
-                                     "node execution input normalization failed");
+      return state_->fail_node_stage(
+          std::move(frame), resolved.error(),
+          "node execution input normalization failed");
     }
     return continue_node_stage(std::move(frame), std::move(resolved).value());
   }
@@ -174,7 +187,7 @@ protected:
       return state_->fail_node_stage(std::move(frame), resolved.error(),
                                      "node post-state handler failed");
     }
-    return state_->commit_node_output(
+    return static_cast<derived_t &>(*this).commit_node_output(
         std::move(frame), std::move(resolved).value(),
         [this](const std::uint32_t node_id) {
           static_cast<derived_t &>(*this).enqueue_committed_node(node_id);
@@ -200,18 +213,19 @@ protected:
       state_->state_table_.update(frame.node_id,
                                   graph_node_lifecycle_state::canceled,
                                   frame.retry_budget + 1U, error_code);
-      state_->append_transition(frame.node_id, graph_state_transition_event{
-                                                   .kind = graph_state_transition_kind::node_leave,
-                                                   .cause = frame.cause,
-                                                   .lifecycle = graph_node_lifecycle_state::canceled,
-                                               });
+      state_->append_transition(
+          frame.node_id, graph_state_transition_event{
+                             .kind = graph_state_transition_kind::node_leave,
+                             .cause = frame.cause,
+                             .lifecycle = graph_node_lifecycle_state::canceled,
+                         });
       state_->persist_checkpoint_best_effort();
       frame.node_local_scope.release(state_->node_local_process_states_);
       return wh::core::result<void>::failure(error_code);
     }
 
-    auto post = state_->begin_state_post(std::move(frame),
-                                         std::move(executed).value());
+    auto post =
+        state_->begin_state_post(std::move(frame), std::move(executed).value());
     if (post.has_error()) {
       return wh::core::result<void>::failure(post.error());
     }
@@ -220,7 +234,7 @@ protected:
       return launch_state_stage(std::move(stage.frame),
                                 std::move(*stage.sender));
     }
-    return state_->commit_node_output(
+    return static_cast<derived_t &>(*this).commit_node_output(
         std::move(stage.frame), std::move(stage.payload),
         [this](const std::uint32_t node_id) {
           static_cast<derived_t &>(*this).enqueue_committed_node(node_id);
@@ -237,11 +251,12 @@ protected:
       state_->state_table_.update(frame.node_id,
                                   graph_node_lifecycle_state::failed, 1U,
                                   resolved.error());
-      state_->append_transition(frame.node_id, graph_state_transition_event{
-                                                   .kind = graph_state_transition_kind::node_fail,
-                                                   .cause = frame.cause,
-                                                   .lifecycle = graph_node_lifecycle_state::failed,
-                                               });
+      state_->append_transition(
+          frame.node_id, graph_state_transition_event{
+                             .kind = graph_state_transition_kind::node_fail,
+                             .cause = frame.cause,
+                             .lifecycle = graph_node_lifecycle_state::failed,
+                         });
       state_->persist_checkpoint_best_effort();
       return wh::core::result<void>::failure(resolved.error());
     }
@@ -253,15 +268,16 @@ protected:
         state_->persist_checkpoint_best_effort();
         return wh::core::result<void>::failure(stored.error());
       }
-      state_->node_states()[frame.node_id] = node_state::executed;
+      state_->node_states()[frame.node_id] = run_state::node_state::executed;
       state_->state_table_.update(frame.node_id,
                                   graph_node_lifecycle_state::completed, 0U,
                                   std::nullopt);
-      state_->append_transition(frame.node_id, graph_state_transition_event{
-                                                   .kind = graph_state_transition_kind::route_commit,
-                                                   .cause = frame.cause,
-                                                   .lifecycle = graph_node_lifecycle_state::completed,
-                                               });
+      state_->append_transition(
+          frame.node_id, graph_state_transition_event{
+                             .kind = graph_state_transition_kind::route_commit,
+                             .cause = frame.cause,
+                             .lifecycle = graph_node_lifecycle_state::completed,
+                         });
       static_cast<derived_t &>(*this).enqueue_committed_node(frame.node_id);
       return {};
     }
@@ -280,25 +296,26 @@ protected:
       return launch_state_stage(std::move(stage.frame),
                                 std::move(*stage.sender));
     }
-    return continue_node_stage(std::move(stage.frame), std::move(stage.payload));
+    return continue_node_stage(std::move(stage.frame),
+                               std::move(stage.payload));
   }
 
   auto settle_async_node(node_frame &&frame,
                          wh::core::result<graph_value> &&executed)
       -> wh::core::result<void> {
-    if (frame.stage == invoke_stage::input) {
+    if (frame.stage == stage::input) {
       return settle_input_stage(std::move(frame), std::move(executed));
     }
-    if (frame.stage == invoke_stage::pre_state) {
+    if (frame.stage == stage::pre_state) {
       return settle_pre_state_stage(std::move(frame), std::move(executed));
     }
-    if (frame.stage == invoke_stage::prepare) {
+    if (frame.stage == stage::prepare) {
       return settle_prepare_stage(std::move(frame), std::move(executed));
     }
-    if (frame.stage == invoke_stage::post_state) {
+    if (frame.stage == stage::post_state) {
       return settle_post_state_stage(std::move(frame), std::move(executed));
     }
-    if (frame.stage == invoke_stage::freeze) {
+    if (frame.stage == stage::freeze) {
       if (executed.has_error()) {
         return wh::core::result<void>::failure(executed.error());
       }
@@ -306,28 +323,31 @@ protected:
           wh::core::result<graph_value>::failure(wh::core::errc::canceled));
       return {};
     }
+    wh_invariant(frame.stage == stage::node);
     return settle_node_stage(std::move(frame), std::move(executed));
   }
 
   auto drain_runtime_completions() noexcept -> void {
     join_base_t::drain_completions(
         [this](node_frame &frame) noexcept { release_frame(frame); },
-        [this](node_frame &&frame,
-               wh::core::result<graph_value> &&executed)
+        [this](node_frame &&frame, wh::core::result<graph_value> &&executed)
             -> wh::core::result<void> {
           return settle_async_node(std::move(frame), std::move(executed));
         });
   }
 
-  // Runs the common pump preflight once: stop polling, child completion drain,
-  // interrupt boundary checks, and freeze-stage launch.
-  [[nodiscard]] auto begin_pump_iteration() noexcept -> bool {
+  // Runs the common drive preflight once: stop polling, child completion
+  // drain, interrupt boundary checks, and freeze-stage launch.
+  [[nodiscard]] auto begin_drive_iteration() noexcept -> bool {
+    if (this->callback_active()) {
+      return false;
+    }
     this->poll_outer_stop();
     drain_runtime_completions();
-    if (!this->result_delivered_ && this->finish_status_.has_value()) {
+    if (!this->finished() && this->finish_status_.has_value()) {
       this->maybe_deliver_finish();
     }
-    if (this->result_delivered_) {
+    if (this->finished()) {
       return false;
     }
 
@@ -342,7 +362,7 @@ protected:
       return true;
     }
 
-    if (this->running_async_ == 0U) {
+    if (this->children_.active_count() == 0U) {
       auto started = launch_freeze_stage();
       if (started.has_error()) {
         this->finish(wh::core::result<graph_value>::failure(started.error()));
@@ -353,7 +373,7 @@ protected:
   }
 
   auto finish_on_quiescent_boundary() noexcept -> void {
-    if (state_->external_interrupt_wait_mode_active_) {
+    if (state_->interrupt_state().wait_mode_active) {
       state_->request_freeze(true);
       auto started = launch_freeze_stage();
       if (started.has_error()) {
@@ -366,12 +386,7 @@ protected:
     this->maybe_deliver_finish();
   }
 
-  [[nodiscard]] auto has_pending_completion() const noexcept -> bool {
-    return this->completion_head_.load(std::memory_order_acquire) !=
-           join_base_t::no_slot_;
-  }
-
-  std::optional<run_state> state_{};
+  std::optional<state_t> state_{};
 };
 
 } // namespace wh::compose

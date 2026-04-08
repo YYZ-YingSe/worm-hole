@@ -67,9 +67,9 @@ namespace detail {
   std::size_t begin = 0U;
   while (begin <= path.size()) {
     const auto end = path.find('.', begin);
-    const auto segment =
-        end == std::string_view::npos ? path.substr(begin)
-                                      : path.substr(begin, end - begin);
+    const auto segment = end == std::string_view::npos
+                             ? path.substr(begin)
+                             : path.substr(begin, end - begin);
     auto member = wh::core::json_find_member(*current, segment);
     if (member.has_error()) {
       return wh::core::result<const wh::core::json_value *>::failure(

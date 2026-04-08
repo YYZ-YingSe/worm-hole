@@ -9,8 +9,8 @@
 
 #include <stdexec/execution.hpp>
 
-#include "wh/core/stdexec/defer_sender.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/stdexec/defer_sender.hpp"
 #include "wh/core/stdexec/result_sender.hpp"
 
 namespace wh::core::detail {
@@ -24,20 +24,19 @@ template <typename result_t, typename request_t, typename call_t>
   if constexpr (std::is_lvalue_reference_v<request_t> ||
                 std::is_const_v<std::remove_reference_t<request_t>>) {
     if constexpr (std::invocable<call_t, request_t>) {
-      return normalize_result_sender<result_t>(
-          std::invoke(std::forward<call_t>(call),
-                      std::forward<request_t>(request)));
+      return normalize_result_sender<result_t>(std::invoke(
+          std::forward<call_t>(call), std::forward<request_t>(request)));
     } else {
-      static_assert(std::invocable<call_t, request_value_t>,
-                    "request_result_sender requires callable request sender factory");
+      static_assert(
+          std::invocable<call_t, request_value_t>,
+          "request_result_sender requires callable request sender factory");
       return normalize_result_sender<result_t>(
           std::invoke(std::forward<call_t>(call), request_value_t{request}));
     }
   } else {
     if constexpr (std::invocable<call_t, request_t>) {
-      return normalize_result_sender<result_t>(
-          std::invoke(std::forward<call_t>(call),
-                      std::forward<request_t>(request)));
+      return normalize_result_sender<result_t>(std::invoke(
+          std::forward<call_t>(call), std::forward<request_t>(request)));
     } else {
       return request_result_sender<result_t>(
           static_cast<const request_value_t &>(request),

@@ -16,9 +16,11 @@
 
 namespace wh::compose {
 
-/// Graph-level compile callback receiving immutable compile graph info snapshot.
-using graph_compile_callback = wh::core::callback_function<
-    wh::core::result<void>(const graph_compile_info &) const>;
+/// Graph-level compile callback receiving immutable compile graph info
+/// snapshot.
+using graph_compile_callback =
+    wh::core::callback_function<wh::core::result<void>(
+        const graph_compile_info &) const>;
 
 /// Immutable compile options snapshot bound to one compiled graph definition.
 struct graph_compile_options {
@@ -28,8 +30,8 @@ struct graph_compile_options {
   graph_boundary boundary{};
   /// Runtime mode that controls cycle and step-budget behavior.
   graph_runtime_mode mode{graph_runtime_mode::dag};
-  /// Eager dispatch flag controlling immediate/deferred dependent scheduling.
-  bool eager{true};
+  /// DAG frontier dispatch policy controlling same-wave/next-wave scheduling.
+  graph_dispatch_policy dispatch_policy{graph_dispatch_policy::same_wave};
   /// Default max step budget used by basic invoke loop.
   std::size_t max_steps{1024U};
   /// Keeps compile-time cold structures for diagnostics after compile.
@@ -66,8 +68,10 @@ serialize_graph_compile_options(const graph_compile_options &options)
   text += std::string{to_string(options.boundary.output)};
   text += ";mode=";
   text += options.mode == graph_runtime_mode::pregel ? "pregel" : "dag";
-  text += ";eager=";
-  text += options.eager ? "true" : "false";
+  text += ";dispatch_policy=";
+  text += options.dispatch_policy == graph_dispatch_policy::next_wave
+              ? "next_wave"
+              : "same_wave";
   text += ";max_steps=";
   text += std::to_string(options.max_steps);
   text += ";retain_cold_data=";
@@ -79,9 +83,6 @@ serialize_graph_compile_options(const graph_compile_options &options)
   text += ";fan_in_policy=";
   if (options.fan_in_policy == graph_fan_in_policy::require_all_sources) {
     text += "require_all_sources";
-  } else if (options.fan_in_policy ==
-             graph_fan_in_policy::require_all_sources_with_eof) {
-    text += "require_all_sources_with_eof";
   } else {
     text += "allow_partial";
   }

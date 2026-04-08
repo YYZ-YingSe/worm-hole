@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "wh/core/compiler.hpp"
+
 namespace wh::compose::detail {
 
 struct dynamic_bitset {
@@ -13,7 +15,8 @@ struct dynamic_bitset {
 
   dynamic_bitset() = default;
 
-  explicit dynamic_bitset(const std::size_t bit_count, const bool fill = false) {
+  explicit dynamic_bitset(const std::size_t bit_count,
+                          const bool fill = false) {
     reset(bit_count, fill);
   }
 
@@ -31,24 +34,28 @@ struct dynamic_bitset {
   }
 
   [[nodiscard]] auto test(const std::size_t index) const noexcept -> bool {
+    wh_precondition(index < bit_count_);
     const auto word = index / bits_per_word;
     const auto bit = index % bits_per_word;
     return (words_[word] & (std::uint64_t{1U} << bit)) != 0U;
   }
 
   auto set(const std::size_t index) noexcept -> void {
+    wh_precondition(index < bit_count_);
     const auto word = index / bits_per_word;
     const auto bit = index % bits_per_word;
     words_[word] |= (std::uint64_t{1U} << bit);
   }
 
   auto clear(const std::size_t index) noexcept -> void {
+    wh_precondition(index < bit_count_);
     const auto word = index / bits_per_word;
     const auto bit = index % bits_per_word;
     words_[word] &= ~(std::uint64_t{1U} << bit);
   }
 
   [[nodiscard]] auto set_if_unset(const std::size_t index) noexcept -> bool {
+    wh_precondition(index < bit_count_);
     const auto word = index / bits_per_word;
     const auto bit = index % bits_per_word;
     const auto mask = (std::uint64_t{1U} << bit);
@@ -57,6 +64,13 @@ struct dynamic_bitset {
     }
     words_[word] |= mask;
     return true;
+  }
+
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return bit_count_; }
+
+  auto swap(dynamic_bitset &other) noexcept -> void {
+    words_.swap(other.words_);
+    std::swap(bit_count_, other.bit_count_);
   }
 
 private:

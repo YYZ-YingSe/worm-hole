@@ -17,16 +17,17 @@ namespace wh::compose::detail::stream_runtime {
 inline auto append_debug_event(detail::runtime_state::invoke_outputs &outputs,
                                const graph_call_scope &options,
                                const graph_debug_stream_event &event) -> void {
-  if (!has_graph_stream_subscription(options, graph_stream_channel_kind::debug)) {
+  if (!has_graph_stream_subscription(options,
+                                     graph_stream_channel_kind::debug)) {
     return;
   }
   outputs.debug_events.push_back(event);
 }
 
-inline auto append_state_snapshot_event(
-    detail::runtime_state::invoke_outputs &outputs,
-    const graph_state_transition_event &event,
-    graph_event_scope scope) -> void {
+inline auto
+append_state_snapshot_event(detail::runtime_state::invoke_outputs &outputs,
+                            const graph_state_transition_event &event,
+                            graph_event_scope scope) -> void {
   outputs.state_snapshot_events.push_back(graph_state_snapshot_event{
       .scope = std::move(scope),
       .step = event.cause.step,
@@ -34,10 +35,10 @@ inline auto append_state_snapshot_event(
   });
 }
 
-inline auto append_state_delta_event(
-    detail::runtime_state::invoke_outputs &outputs,
-    const graph_state_transition_event &event,
-    graph_event_scope scope) -> void {
+inline auto
+append_state_delta_event(detail::runtime_state::invoke_outputs &outputs,
+                         const graph_state_transition_event &event,
+                         graph_event_scope scope) -> void {
   outputs.state_delta_events.push_back(graph_state_delta_event{
       .scope = std::move(scope),
       .step = event.cause.step,
@@ -45,9 +46,10 @@ inline auto append_state_delta_event(
   });
 }
 
-inline auto append_runtime_message_event(
-    detail::runtime_state::invoke_outputs &outputs, graph_event_scope scope,
-    const std::size_t step, const std::string_view text) -> void {
+inline auto
+append_runtime_message_event(detail::runtime_state::invoke_outputs &outputs,
+                             graph_event_scope scope, const std::size_t step,
+                             const std::string_view text) -> void {
   outputs.runtime_message_events.push_back(graph_runtime_message_event{
       .scope = std::move(scope),
       .step = step,
@@ -88,10 +90,8 @@ inline auto append_custom_events(detail::runtime_state::invoke_outputs &outputs,
 
 inline auto append_state_transition_events(
     detail::runtime_state::invoke_outputs &outputs,
-    const graph_call_scope &options,
-    const graph_state_transition_event &event,
-    const graph_event_scope &scope,
-    const bool emit_state_snapshot_events,
+    const graph_call_scope &options, const graph_state_transition_event &event,
+    const graph_event_scope &scope, const bool emit_state_snapshot_events,
     const bool emit_state_delta_events, const bool emit_runtime_message_events,
     const bool emit_custom_events) -> void {
   if (emit_state_snapshot_events) {
@@ -109,58 +109,44 @@ inline auto append_state_transition_events(
   }
 }
 
-inline auto append_state_transition(graph_transition_log &log,
-                                    detail::runtime_state::invoke_outputs &outputs,
-                                    const graph_call_scope &options,
-                                    const graph_state_transition_event &event,
-                                    const graph_event_scope &scope,
-                                    const bool record_log,
-                                    const bool emit_state_snapshot_events,
-                                    const bool emit_state_delta_events,
-                                    const bool emit_runtime_message_events,
-                                    const bool emit_custom_events)
+inline auto append_state_transition(
+    graph_transition_log &log, detail::runtime_state::invoke_outputs &outputs,
+    const graph_call_scope &options, const graph_state_transition_event &event,
+    const graph_event_scope &scope, const bool record_log,
+    const bool emit_state_snapshot_events, const bool emit_state_delta_events,
+    const bool emit_runtime_message_events, const bool emit_custom_events)
     -> void {
   if (record_log) {
     log.push_back(event);
-    append_state_transition_events(outputs, options, log.back(), scope,
-                                   emit_state_snapshot_events,
-                                   emit_state_delta_events,
-                                   emit_runtime_message_events,
-                                   emit_custom_events);
+    append_state_transition_events(
+        outputs, options, log.back(), scope, emit_state_snapshot_events,
+        emit_state_delta_events, emit_runtime_message_events,
+        emit_custom_events);
     return;
   }
-  append_state_transition_events(outputs, options, event, scope,
-                                 emit_state_snapshot_events,
-                                 emit_state_delta_events,
-                                 emit_runtime_message_events,
-                                 emit_custom_events);
+  append_state_transition_events(
+      outputs, options, event, scope, emit_state_snapshot_events,
+      emit_state_delta_events, emit_runtime_message_events, emit_custom_events);
 }
 
-inline auto append_state_transition(graph_transition_log &log,
-                                    detail::runtime_state::invoke_outputs &outputs,
-                                    const graph_call_scope &options,
-                                    graph_state_transition_event &&event,
-                                    const graph_event_scope &scope,
-                                    const bool record_log,
-                                    const bool emit_state_snapshot_events,
-                                    const bool emit_state_delta_events,
-                                    const bool emit_runtime_message_events,
-                                    const bool emit_custom_events)
+inline auto append_state_transition(
+    graph_transition_log &log, detail::runtime_state::invoke_outputs &outputs,
+    const graph_call_scope &options, graph_state_transition_event &&event,
+    const graph_event_scope &scope, const bool record_log,
+    const bool emit_state_snapshot_events, const bool emit_state_delta_events,
+    const bool emit_runtime_message_events, const bool emit_custom_events)
     -> void {
   if (record_log) {
     log.push_back(std::move(event));
-    append_state_transition_events(outputs, options, log.back(), scope,
-                                   emit_state_snapshot_events,
-                                   emit_state_delta_events,
-                                   emit_runtime_message_events,
-                                   emit_custom_events);
+    append_state_transition_events(
+        outputs, options, log.back(), scope, emit_state_snapshot_events,
+        emit_state_delta_events, emit_runtime_message_events,
+        emit_custom_events);
     return;
   }
-  append_state_transition_events(outputs, options, event, scope,
-                                 emit_state_snapshot_events,
-                                 emit_state_delta_events,
-                                 emit_runtime_message_events,
-                                 emit_custom_events);
+  append_state_transition_events(
+      outputs, options, event, scope, emit_state_snapshot_events,
+      emit_state_delta_events, emit_runtime_message_events, emit_custom_events);
 }
 
 } // namespace wh::compose::detail::stream_runtime

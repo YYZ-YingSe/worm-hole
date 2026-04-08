@@ -37,8 +37,8 @@ public:
     } catch (...) {
       state_.terminal = true;
       state_.close_source_if_enabled(reader_);
-      return stream_result<chunk_type>{
-          detail::make_error_chunk<chunk_type>(wh::core::map_current_exception())};
+      return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
+          wh::core::map_current_exception())};
     }
     return map_read_chunk(std::move(next));
   }
@@ -54,8 +54,8 @@ public:
     } catch (...) {
       state_.terminal = true;
       state_.close_source_if_enabled(reader_);
-      return stream_result<chunk_type>{
-          detail::make_error_chunk<chunk_type>(wh::core::map_current_exception())};
+      return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
+          wh::core::map_current_exception())};
     }
     return map_try_chunk(std::move(next));
   }
@@ -64,17 +64,15 @@ public:
     requires detail::async_stream_reader<reader_t>
   {
     using input_result_t = stream_result<chunk_type>;
-    return reader_.read_async() |
-           stdexec::then([](auto status) {
+    return reader_.read_async() | stdexec::then([](auto status) {
              return input_result_t{std::move(status)};
            }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);
            }) |
-           stdexec::then(
-               [this](input_result_t next) {
-                 return map_read_chunk(std::move(next));
-               });
+           stdexec::then([this](input_result_t next) {
+             return map_read_chunk(std::move(next));
+           });
   }
 
   auto close_impl() -> wh::core::result<void> {

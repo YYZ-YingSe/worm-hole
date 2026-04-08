@@ -13,6 +13,14 @@ enum class graph_runtime_mode : std::uint8_t {
   pregel,
 };
 
+/// DAG frontier dispatch policy used by compile-time scheduling semantics.
+enum class graph_dispatch_policy : std::uint8_t {
+  /// Newly activated dependents may join the current frontier wave.
+  same_wave = 0U,
+  /// Newly activated dependents always wait for the next frontier wave.
+  next_wave,
+};
+
 /// Node trigger policy used by compile-time topology semantics.
 enum class graph_trigger_mode : std::uint8_t {
   /// Node may run when any active predecessor becomes ready.
@@ -27,8 +35,6 @@ enum class graph_fan_in_policy : std::uint8_t {
   allow_partial = 0U,
   /// Fan-in requires all sources complete.
   require_all_sources,
-  /// Fan-in requires all sources and source EOF visibility.
-  require_all_sources_with_eof,
 };
 
 } // namespace wh::compose

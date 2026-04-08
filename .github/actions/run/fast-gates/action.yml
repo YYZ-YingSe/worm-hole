@@ -1,0 +1,8 @@
+name: run-fast-gates
+description: Run the fast gate script suite.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/jobs/run_fast_gates.sh"

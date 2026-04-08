@@ -10,8 +10,7 @@
 namespace wh::core::fn_detail {
 
 /// Raw aligned storage used by function wrappers for vtable/object payload.
-template <std::size_t size_v>
-union any_storage {
+template <std::size_t size_v> union any_storage {
   /// Pointer sentinel used by empty-state checks.
   void *head_{nullptr};
   /// Backing byte storage for in-place object construction.

@@ -20,14 +20,14 @@
 namespace wh::schema::stream {
 
 template <typename range_t>
-concept values_stream_range =
-    std::ranges::forward_range<range_t> &&
-    std::movable<std::ranges::range_value_t<range_t>>;
+concept values_stream_range = std::ranges::forward_range<range_t> &&
+                              std::movable<std::ranges::range_value_t<range_t>>;
 
 template <values_stream_range range_t>
 class values_stream_reader final
-    : public stream_base<values_stream_reader<range_t>,
-                         std::remove_cvref_t<std::ranges::range_value_t<range_t>>> {
+    : public stream_base<
+          values_stream_reader<range_t>,
+          std::remove_cvref_t<std::ranges::range_value_t<range_t>>> {
 public:
   using value_type = std::remove_cvref_t<std::ranges::range_value_t<range_t>>;
   using chunk_type = stream_chunk<value_type>;
@@ -41,7 +41,8 @@ public:
   }
 
   values_stream_reader(const values_stream_reader &) = delete;
-  auto operator=(const values_stream_reader &) -> values_stream_reader & = delete;
+  auto operator=(const values_stream_reader &)
+      -> values_stream_reader & = delete;
 
   values_stream_reader(values_stream_reader &&other) noexcept(
       std::is_nothrow_move_constructible_v<range_t>)
@@ -77,10 +78,9 @@ public:
 
   [[nodiscard]] auto read_async() & {
     using result_t = stream_result<chunk_type>;
-    return wh::core::detail::defer_sender(
-        [this]() {
-          return wh::core::detail::ready_sender<result_t>(this->read());
-        });
+    return wh::core::detail::defer_sender([this]() {
+      return wh::core::detail::ready_sender<result_t>(this->read());
+    });
   }
 
   auto close_impl() -> wh::core::result<void> {
@@ -97,7 +97,9 @@ private:
   auto restore_cursor() -> void {
     current_ = std::ranges::begin(values_);
     end_ = std::ranges::end(values_);
-    std::ranges::advance(current_, static_cast<std::ranges::range_difference_t<range_t>>(index_), end_);
+    std::ranges::advance(
+        current_, static_cast<std::ranges::range_difference_t<range_t>>(index_),
+        end_);
   }
 
   [[nodiscard]] auto take_next() -> stream_result<chunk_type> {

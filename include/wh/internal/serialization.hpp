@@ -18,9 +18,9 @@
 #include <vector>
 
 #include "wh/core/error.hpp"
+#include "wh/core/json.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/core/json.hpp"
 
 namespace wh::internal {
 
@@ -99,8 +99,7 @@ concept map_like =
 /// Detects sequence-like containers supported by generic JSON array conversion.
 template <typename type_t>
 concept sequence_like =
-    (!map_like<type_t>) &&
-    wh::core::container_like<type_t> &&
+    (!map_like<type_t>) && wh::core::container_like<type_t> &&
     requires(remove_cvref_t<type_t> value,
              typename remove_cvref_t<type_t>::value_type item) {
       typename remove_cvref_t<type_t>::value_type;
@@ -275,10 +274,9 @@ auto to_json(const type_t &input, wh::core::json_value &output,
 
       wh::core::json_value name;
       const auto &name_string = encoded_key.value();
-      name.SetString(
-          name_string.data(),
-          static_cast<wh::core::json_size_type>(name_string.size()),
-          allocator);
+      name.SetString(name_string.data(),
+                     static_cast<wh::core::json_size_type>(name_string.size()),
+                     allocator);
 
       wh::core::json_value encoded_value;
       auto encoded = to_json(value, encoded_value, allocator);
@@ -293,7 +291,8 @@ auto to_json(const type_t &input, wh::core::json_value &output,
   return wh::core::result<void>::failure(wh::core::errc::not_supported);
 }
 
-/// Generic deserialization dispatcher with built-in codecs and container support.
+/// Generic deserialization dispatcher with built-in codecs and container
+/// support.
 template <typename type_t>
 auto from_json(const wh::core::json_value &input, type_t &output)
     -> wh::core::result<void> {
@@ -448,8 +447,7 @@ auto from_json(const wh::core::json_value &input, type_t &output)
       if (decoded.has_error()) {
         return decoded;
       }
-      output.insert_or_assign(std::move(key).value(),
-                              std::move(decoded_value));
+      output.insert_or_assign(std::move(key).value(), std::move(decoded_value));
     }
     return {};
   }

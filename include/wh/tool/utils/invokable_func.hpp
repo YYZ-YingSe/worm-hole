@@ -6,8 +6,8 @@
 #include <string_view>
 #include <utility>
 
-#include "wh/core/json.hpp"
 #include "wh/core/function.hpp"
+#include "wh/core/json.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/type_traits.hpp"
 #include "wh/internal/serialization.hpp"
@@ -17,8 +17,7 @@ namespace wh::tool::utils {
 
 namespace detail {
 
-template <typename>
-inline constexpr bool always_false_v = false;
+template <typename> inline constexpr bool always_false_v = false;
 
 template <typename result_t> struct result_value;
 
@@ -76,8 +75,8 @@ template <typename output_t>
 } // namespace detail
 
 template <typename params_t>
-using input_deserializer = wh::core::function<wh::core::result<params_t>(
-    std::string_view) const>;
+using input_deserializer =
+    wh::core::function<wh::core::result<params_t>(std::string_view) const>;
 
 template <typename params_t>
 /// Decodes tool input text into typed params.
@@ -111,10 +110,11 @@ template <typename function_t>
 [[nodiscard]] inline auto make_invokable_func(function_t &&function) {
   using stored_function_t = wh::core::remove_cvref_t<function_t>;
   return [function = stored_function_t{std::forward<function_t>(function)}](
-             const std::string_view input, const tool_options &options)
-             -> wh::core::result<std::string> {
-    using output_t = wh::core::callable_result_t<stored_function_t, std::string_view,
-                                                 const tool_options &>;
+             const std::string_view input,
+             const tool_options &options) -> wh::core::result<std::string> {
+    using output_t =
+        wh::core::callable_result_t<stored_function_t, std::string_view,
+                                    const tool_options &>;
     static_assert(!std::same_as<wh::core::remove_cvref_t<output_t>, void>,
                   "invokable function must return value or result<value>");
     return detail::normalize_invokable_output(
@@ -137,25 +137,24 @@ template <typename params_t, typename function_t>
       return wh::core::result<std::string>::failure(decoded.error());
     }
 
-    if constexpr (
-        wh::core::callable_with<stored_function_t, const params_t &,
-                                const tool_options &>) {
-      using output_t = wh::core::callable_result_t<stored_function_t,
-                                                   const params_t &,
-                                                   const tool_options &>;
-      static_assert(!std::same_as<wh::core::remove_cvref_t<output_t>, void>,
-                    "typed invokable function must return value or result<value>");
+    if constexpr (wh::core::callable_with<stored_function_t, const params_t &,
+                                          const tool_options &>) {
+      using output_t =
+          wh::core::callable_result_t<stored_function_t, const params_t &,
+                                      const tool_options &>;
+      static_assert(
+          !std::same_as<wh::core::remove_cvref_t<output_t>, void>,
+          "typed invokable function must return value or result<value>");
       return detail::normalize_invokable_output(
           std::invoke(function, decoded.value(), options));
-    } else if constexpr (
-        wh::core::callable_with<stored_function_t, params_t,
-                                const tool_options &>) {
-      using output_t =
-          wh::core::callable_result_t<stored_function_t, params_t,
-                                      const tool_options &>;
+    } else if constexpr (wh::core::callable_with<stored_function_t, params_t,
+                                                 const tool_options &>) {
+      using output_t = wh::core::callable_result_t<stored_function_t, params_t,
+                                                   const tool_options &>;
       auto value = std::move(decoded).value();
-      static_assert(!std::same_as<wh::core::remove_cvref_t<output_t>, void>,
-                    "typed invokable function must return value or result<value>");
+      static_assert(
+          !std::same_as<wh::core::remove_cvref_t<output_t>, void>,
+          "typed invokable function must return value or result<value>");
       return detail::normalize_invokable_output(
           std::invoke(function, std::move(value), options));
     } else {

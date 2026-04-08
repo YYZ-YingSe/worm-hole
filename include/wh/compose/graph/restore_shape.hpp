@@ -21,6 +21,8 @@ struct graph_restore_options {
   graph_boundary boundary{};
   /// Runtime mode that shapes scheduler semantics.
   graph_runtime_mode mode{graph_runtime_mode::dag};
+  /// DAG frontier dispatch policy that shapes activation ordering.
+  graph_dispatch_policy dispatch_policy{graph_dispatch_policy::same_wave};
   /// Trigger mode that shapes readiness semantics.
   graph_trigger_mode trigger_mode{graph_trigger_mode::any_predecessor};
   /// Fan-in mode that shapes readiness semantics.
@@ -51,12 +53,10 @@ struct graph_restore_edge {
   bool no_control{false};
   /// True disables data dependency on this edge.
   bool no_data{false};
-  /// Selected adapter family.
-  edge_adapter_kind adapter_kind{edge_adapter_kind::none};
-  /// True when a custom value->stream adapter exists.
-  bool has_custom_value_to_stream{false};
-  /// True when a custom stream->value adapter exists.
-  bool has_custom_stream_to_value{false};
+  /// Compile-resolved lowering family.
+  edge_lowering_kind lowering_kind{edge_lowering_kind::none};
+  /// True when this edge uses one authored custom lowering callback.
+  bool has_custom_lowering{false};
 };
 
 /// Restore-stable branch shape captured in checkpoint payloads.
@@ -86,21 +86,21 @@ struct graph_restore_shape {
 
 namespace detail {
 
-[[nodiscard]] inline auto restore_node_less(const graph_restore_node &lhs,
-                                            const graph_restore_node &rhs)
-    noexcept -> bool {
+[[nodiscard]] inline auto
+restore_node_less(const graph_restore_node &lhs,
+                  const graph_restore_node &rhs) noexcept -> bool {
   return lhs.key < rhs.key;
 }
 
-[[nodiscard]] inline auto restore_edge_less(const graph_restore_edge &lhs,
-                                            const graph_restore_edge &rhs)
-    noexcept -> bool {
+[[nodiscard]] inline auto
+restore_edge_less(const graph_restore_edge &lhs,
+                  const graph_restore_edge &rhs) noexcept -> bool {
   return std::tie(lhs.from, lhs.to) < std::tie(rhs.from, rhs.to);
 }
 
-[[nodiscard]] inline auto restore_branch_less(const graph_restore_branch &lhs,
-                                              const graph_restore_branch &rhs)
-    noexcept -> bool {
+[[nodiscard]] inline auto
+restore_branch_less(const graph_restore_branch &lhs,
+                    const graph_restore_branch &rhs) noexcept -> bool {
   return lhs.from < rhs.from;
 }
 
@@ -110,6 +110,7 @@ namespace detail {
   shape.options = graph_restore_options{
       .boundary = snapshot.compile_options.boundary,
       .mode = snapshot.compile_options.mode,
+      .dispatch_policy = snapshot.compile_options.dispatch_policy,
       .trigger_mode = snapshot.compile_options.trigger_mode,
       .fan_in_policy = snapshot.compile_options.fan_in_policy,
   };
@@ -133,9 +134,8 @@ namespace detail {
         .to = edge.to,
         .no_control = edge.no_control,
         .no_data = edge.no_data,
-        .adapter_kind = edge.adapter_kind,
-        .has_custom_value_to_stream = edge.has_custom_value_to_stream,
-        .has_custom_stream_to_value = edge.has_custom_stream_to_value,
+        .lowering_kind = edge.lowering_kind,
+        .has_custom_lowering = edge.has_custom_lowering,
     });
   }
   std::sort(shape.edges.begin(), shape.edges.end(), restore_edge_less);

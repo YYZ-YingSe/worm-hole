@@ -10,8 +10,8 @@
 #include <rapidjson/writer.h>
 
 #include "wh/core/error.hpp"
-#include "wh/core/result.hpp"
 #include "wh/core/json/types.hpp"
+#include "wh/core/result.hpp"
 
 namespace wh::core {
 

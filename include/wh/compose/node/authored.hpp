@@ -12,6 +12,7 @@
 #include "wh/compose/graph/add_node_options.hpp"
 #include "wh/compose/node/compiled.hpp"
 #include "wh/compose/node/detail/gate.hpp"
+#include "wh/compose/node/tools_contract.hpp"
 #include "wh/compose/types.hpp"
 
 namespace wh::compose {
@@ -39,12 +40,12 @@ struct node_descriptor {
 namespace detail {
 
 using authored_node_lower =
-    wh::core::callback_function<compiled_node(std::string, graph_add_node_options)>;
+    wh::core::callback_function<wh::core::result<compiled_node>(
+        std::string, graph_add_node_options)>;
 
 template <typename options_t, typename type_t, typename label_t>
 [[nodiscard]] inline auto decorate_node_options(options_t &&options,
-                                                type_t &&type,
-                                                label_t &&label)
+                                                type_t &&type, label_t &&label)
     -> graph_add_node_options {
   auto node_options = graph_add_node_options{std::forward<options_t>(options)};
   if (node_options.type.empty()) {
@@ -57,11 +58,9 @@ template <typename options_t, typename type_t, typename label_t>
 }
 
 template <typename key_t, typename options_t, typename type_t, typename label_t>
-[[nodiscard]] inline auto decorate_named_node_options(key_t &&key,
-                                                      options_t &&options,
-                                                      type_t &&type,
-                                                      label_t &&label)
-    -> graph_add_node_options {
+[[nodiscard]] inline auto
+decorate_named_node_options(key_t &&key, options_t &&options, type_t &&type,
+                            label_t &&label) -> graph_add_node_options {
   auto node_options = decorate_node_options(std::forward<options_t>(options),
                                             std::forward<type_t>(type),
                                             std::forward<label_t>(label));
@@ -91,8 +90,10 @@ struct subgraph_payload {
 };
 
 struct tools_payload {
-  /// Callback that turns authored state into one compiled node.
-  detail::authored_node_lower lower{nullptr};
+  /// Frozen dispatch registry compiled into this tools node.
+  tool_registry registry{};
+  /// Frozen runtime options shared by all calls inside this tools node.
+  tools_options runtime_options{};
 };
 
 class graph;
@@ -162,14 +163,17 @@ public:
   [[nodiscard]] auto descriptor() const noexcept -> const node_descriptor & {
     return descriptor_;
   }
-  [[nodiscard]] auto options() const noexcept -> const graph_add_node_options & {
+  [[nodiscard]] auto options() const noexcept
+      -> const graph_add_node_options & {
     return options_;
   }
-  auto mutable_options() noexcept -> graph_add_node_options & { return options_; }
+  auto mutable_options() noexcept -> graph_add_node_options & {
+    return options_;
+  }
 
 private:
-  [[nodiscard]] auto compile() const & -> compiled_node;
-  [[nodiscard]] auto compile() && -> compiled_node;
+  [[nodiscard]] auto compile() const & -> wh::core::result<compiled_node>;
+  [[nodiscard]] auto compile() && -> wh::core::result<compiled_node>;
 
   node_descriptor descriptor_{};
   component_payload payload_{};
@@ -211,14 +215,17 @@ public:
   [[nodiscard]] auto descriptor() const noexcept -> const node_descriptor & {
     return descriptor_;
   }
-  [[nodiscard]] auto options() const noexcept -> const graph_add_node_options & {
+  [[nodiscard]] auto options() const noexcept
+      -> const graph_add_node_options & {
     return options_;
   }
-  auto mutable_options() noexcept -> graph_add_node_options & { return options_; }
+  auto mutable_options() noexcept -> graph_add_node_options & {
+    return options_;
+  }
 
 private:
-  [[nodiscard]] auto compile() const & -> compiled_node;
-  [[nodiscard]] auto compile() && -> compiled_node;
+  [[nodiscard]] auto compile() const & -> wh::core::result<compiled_node>;
+  [[nodiscard]] auto compile() && -> wh::core::result<compiled_node>;
 
   node_descriptor descriptor_{};
   lambda_payload payload_{};
@@ -260,14 +267,17 @@ public:
   [[nodiscard]] auto descriptor() const noexcept -> const node_descriptor & {
     return descriptor_;
   }
-  [[nodiscard]] auto options() const noexcept -> const graph_add_node_options & {
+  [[nodiscard]] auto options() const noexcept
+      -> const graph_add_node_options & {
     return options_;
   }
-  auto mutable_options() noexcept -> graph_add_node_options & { return options_; }
+  auto mutable_options() noexcept -> graph_add_node_options & {
+    return options_;
+  }
 
 private:
-  [[nodiscard]] auto compile() const & -> compiled_node;
-  [[nodiscard]] auto compile() && -> compiled_node;
+  [[nodiscard]] auto compile() const & -> wh::core::result<compiled_node>;
+  [[nodiscard]] auto compile() && -> wh::core::result<compiled_node>;
 
   node_descriptor descriptor_{};
   subgraph_payload payload_{};
@@ -309,14 +319,17 @@ public:
   [[nodiscard]] auto descriptor() const noexcept -> const node_descriptor & {
     return descriptor_;
   }
-  [[nodiscard]] auto options() const noexcept -> const graph_add_node_options & {
+  [[nodiscard]] auto options() const noexcept
+      -> const graph_add_node_options & {
     return options_;
   }
-  auto mutable_options() noexcept -> graph_add_node_options & { return options_; }
+  auto mutable_options() noexcept -> graph_add_node_options & {
+    return options_;
+  }
 
 private:
-  [[nodiscard]] auto compile() const & -> compiled_node;
-  [[nodiscard]] auto compile() && -> compiled_node;
+  [[nodiscard]] auto compile() const & -> wh::core::result<compiled_node>;
+  [[nodiscard]] auto compile() && -> wh::core::result<compiled_node>;
 
   node_descriptor descriptor_{};
   tools_payload payload_{};
@@ -357,14 +370,17 @@ public:
   [[nodiscard]] auto descriptor() const noexcept -> const node_descriptor & {
     return descriptor_;
   }
-  [[nodiscard]] auto options() const noexcept -> const graph_add_node_options & {
+  [[nodiscard]] auto options() const noexcept
+      -> const graph_add_node_options & {
     return options_;
   }
-  auto mutable_options() noexcept -> graph_add_node_options & { return options_; }
+  auto mutable_options() noexcept -> graph_add_node_options & {
+    return options_;
+  }
 
 private:
-  [[nodiscard]] auto compile() const & -> compiled_node;
-  [[nodiscard]] auto compile() && -> compiled_node;
+  [[nodiscard]] auto compile() const & -> wh::core::result<compiled_node>;
+  [[nodiscard]] auto compile() && -> wh::core::result<compiled_node>;
 
   node_descriptor descriptor_{};
   graph_add_node_options options_{};
@@ -381,9 +397,8 @@ concept authored_node_like =
     std::same_as<std::remove_cvref_t<node_t>, passthrough_node>;
 
 /// Sum type covering all authored node handles accepted by compose.
-using authored_node =
-    std::variant<component_node, lambda_node, subgraph_node, tools_node,
-                 passthrough_node>;
+using authored_node = std::variant<component_node, lambda_node, subgraph_node,
+                                   tools_node, passthrough_node>;
 
 template <authored_node_like node_t>
 [[nodiscard]] inline auto authored_key(const node_t &node) noexcept
@@ -410,29 +425,32 @@ template <authored_node_like node_t>
 
 namespace detail {
 
-[[nodiscard]] inline auto authored_input_gate(const authored_node &node) noexcept
-    -> input_gate {
+[[nodiscard]] inline auto
+authored_input_gate(const authored_node &node) noexcept -> input_gate {
   return std::visit([](const auto &value) { return value.input_gate(); }, node);
 }
 
-[[nodiscard]] inline auto authored_output_gate(const authored_node &node) noexcept
-    -> output_gate {
-  return std::visit([](const auto &value) { return value.output_gate(); }, node);
+[[nodiscard]] inline auto
+authored_output_gate(const authored_node &node) noexcept -> output_gate {
+  return std::visit([](const auto &value) { return value.output_gate(); },
+                    node);
 }
 
 } // namespace detail
 
-[[nodiscard]] inline auto authored_input_contract(const authored_node &node) noexcept
-    -> node_contract {
+[[nodiscard]] inline auto
+authored_input_contract(const authored_node &node) noexcept -> node_contract {
   return std::visit(
       [](const auto &value) -> node_contract { return value.input_contract(); },
       node);
 }
 
-[[nodiscard]] inline auto authored_output_contract(const authored_node &node) noexcept
-    -> node_contract {
+[[nodiscard]] inline auto
+authored_output_contract(const authored_node &node) noexcept -> node_contract {
   return std::visit(
-      [](const auto &value) -> node_contract { return value.output_contract(); },
+      [](const auto &value) -> node_contract {
+        return value.output_contract();
+      },
       node);
 }
 
@@ -445,7 +463,8 @@ template <typename node_t>
 [[nodiscard]] inline auto authored_kind(const authored_node &node) noexcept
     -> node_kind {
   return std::visit(
-      [](const auto &value) -> node_kind { return value.descriptor().kind; }, node);
+      [](const auto &value) -> node_kind { return value.descriptor().kind; },
+      node);
 }
 
 [[nodiscard]] inline auto authored_options(const authored_node &node) noexcept

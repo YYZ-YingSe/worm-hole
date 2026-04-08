@@ -58,8 +58,8 @@ public:
       : options_(std::move(options)) {}
 
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{
-        "EchoChatModel", wh::core::component_kind::model};
+    return wh::core::component_descriptor{"EchoChatModel",
+                                          wh::core::component_kind::model};
   }
 
   [[nodiscard]] auto invoke(const chat_request &request) const

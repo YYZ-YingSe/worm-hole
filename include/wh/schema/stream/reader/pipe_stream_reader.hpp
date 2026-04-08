@@ -29,7 +29,8 @@ public:
   pipe_stream_reader(const pipe_stream_reader &) = delete;
   auto operator=(const pipe_stream_reader &) -> pipe_stream_reader & = delete;
   pipe_stream_reader(pipe_stream_reader &&) noexcept = default;
-  auto operator=(pipe_stream_reader &&) noexcept -> pipe_stream_reader & = default;
+  auto operator=(pipe_stream_reader &&) noexcept
+      -> pipe_stream_reader & = default;
 
   [[nodiscard]] auto read_impl() -> stream_result<chunk_type> {
     if (!state_) {
@@ -61,10 +62,9 @@ public:
     const bool state_missing = !state_;
     const bool reader_closed =
         !state_missing && state_->reader_closed.load(std::memory_order_acquire);
-    auto target_state =
-        (state_missing || reader_closed)
-            ? detail::shared_closed_pipe_state<state_t>()
-            : state_;
+    auto target_state = (state_missing || reader_closed)
+                            ? detail::shared_closed_pipe_state<state_t>()
+                            : state_;
 
     return detail::normalize_pipe_read_sender<value_t>(
         target_state->queue.async_pop(), std::move(target_state), state_missing,
@@ -98,7 +98,8 @@ private:
                             const std::shared_ptr<state_t> &)
       -> stream_result<chunk_type> {
     if (popped.has_value()) {
-      return stream_result<chunk_type>{chunk_type::make_value(std::move(*popped))};
+      return stream_result<chunk_type>{
+          chunk_type::make_value(std::move(*popped))};
     }
     return stream_result<chunk_type>{chunk_type::make_eof()};
   }

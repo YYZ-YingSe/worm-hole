@@ -2,11 +2,14 @@
 // schema::stream primitives.
 #pragma once
 
-#include <cstddef>
+#include <concepts>
+#include <exception>
+#include <functional>
 #include <utility>
 
 #include "wh/adk/types.hpp"
 #include "wh/core/error.hpp"
+#include "wh/core/error_domain.hpp"
 #include "wh/core/result.hpp"
 #include "wh/schema/stream/core/types.hpp"
 #include "wh/schema/stream/pipe.hpp"
@@ -33,10 +36,12 @@ using agent_event_stream_try_result =
     wh::schema::stream::stream_try_result<agent_event_stream_chunk>;
 
 /// Reads one ADK event chunk and normalizes an unbound reader to EOF.
-[[nodiscard]] inline auto read_agent_event_stream(agent_event_stream_reader &reader)
+[[nodiscard]] inline auto
+read_agent_event_stream(agent_event_stream_reader &reader)
     -> agent_event_stream_result {
   auto next_chunk = reader.read();
-  if (next_chunk.has_error() && next_chunk.error() == wh::core::errc::not_found) {
+  if (next_chunk.has_error() &&
+      next_chunk.error() == wh::core::errc::not_found) {
     return agent_event_stream_chunk::make_eof();
   }
   return next_chunk;
@@ -66,7 +71,7 @@ close_agent_event_stream(agent_event_stream_reader &reader)
   return closed;
 }
 
-/// Sends one ADK event without leaking pipe-specific full/not-found errors.
+/// Sends one ADK event without leaking pipe-specific full or not-found errors.
 [[nodiscard]] inline auto send_agent_event(agent_event_stream_writer &writer,
                                            agent_event &&event)
     -> wh::core::result<void> {
@@ -91,14 +96,36 @@ close_agent_event_stream(agent_event_stream_writer &writer)
   return closed;
 }
 
-/// Creates one ADK event-stream writer/reader pair.
-[[nodiscard]] inline auto make_agent_event_stream(const std::size_t capacity = 64U)
+/// Creates one ADK event-stream writer and reader pair.
+[[nodiscard]] inline auto make_agent_event_stream()
     -> std::pair<agent_event_stream_writer, agent_event_stream_reader> {
-  const auto bounded_capacity = capacity == 0U ? 1U : capacity;
   auto [writer, reader] =
-      wh::schema::stream::make_pipe_stream<agent_event>(bounded_capacity);
+      wh::schema::stream::make_pipe_stream<agent_event>(64U);
   return {agent_event_stream_writer{std::move(writer)},
           agent_event_stream_reader{std::move(reader)}};
+}
+
+/// Executes `factory` and sends either the produced event or a structured
+/// error event derived from the thrown exception.
+template <typename factory_t>
+  requires std::invocable<factory_t>
+inline auto send_agent_event_or_error(agent_event_stream_writer &writer,
+                                      factory_t &&factory,
+                                      event_metadata metadata = {})
+    -> wh::core::result<void> {
+  try {
+    return send_agent_event(writer,
+                            std::invoke(std::forward<factory_t>(factory)));
+  } catch (const std::exception &error) {
+    return send_agent_event(
+        writer, make_error_event(wh::core::map_exception(error), error.what(),
+                                 {}, std::move(metadata)));
+  } catch (...) {
+    return send_agent_event(
+        writer,
+        make_error_event(wh::core::make_error(wh::core::errc::internal_error),
+                         "unknown", {}, std::move(metadata)));
+  }
 }
 
 } // namespace wh::adk

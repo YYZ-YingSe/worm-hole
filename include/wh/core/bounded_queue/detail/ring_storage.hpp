@@ -58,8 +58,12 @@ public:
   ~ring_storage() { destroy_all(); }
 
   [[nodiscard]] auto empty() const noexcept -> bool { return size_ == 0U; }
-  [[nodiscard]] auto full() const noexcept -> bool { return size_ == capacity_; }
-  [[nodiscard]] auto capacity() const noexcept -> std::size_t { return capacity_; }
+  [[nodiscard]] auto full() const noexcept -> bool {
+    return size_ == capacity_;
+  }
+  [[nodiscard]] auto capacity() const noexcept -> std::size_t {
+    return capacity_;
+  }
   [[nodiscard]] auto size() const noexcept -> std::size_t { return size_; }
   [[nodiscard]] auto get_allocator() const noexcept -> allocator_type {
     return allocator_;
@@ -93,8 +97,7 @@ public:
     return std::move(*result);
   }
 
-  template <typename sink_t>
-  auto consume_front(sink_t &&sink) -> void {
+  template <typename sink_t> auto consume_front(sink_t &&sink) -> void {
     assert(!empty());
     auto *slot = storage_ + head_;
     head_ = advance_index(head_);

@@ -1,5 +1,5 @@
-// Defines the authored agent entity used by ADK composition without creating
-// a parallel runtime or mutable session store.
+// Defines the authored agent entity used by business-layer composition without
+// creating a parallel runtime or mutable session store.
 #pragma once
 
 #include <cstdint>
@@ -11,16 +11,56 @@
 #include <utility>
 #include <vector>
 
-#include "wh/adk/instruction.hpp"
+#include "wh/agent/instruction.hpp"
+#include "wh/compose/graph.hpp"
+#include "wh/core/any.hpp"
+#include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/run_context.hpp"
 #include "wh/core/type_traits.hpp"
+#include "wh/schema/message.hpp"
 
 namespace wh::agent {
+
+/// One normalized transfer action emitted by an agent-family shell.
+struct agent_transfer {
+  /// Stable destination agent name requested by the current agent.
+  std::string target_agent_name{};
+  /// Stable tool-call id associated with the transfer handoff.
+  std::string tool_call_id{};
+};
+
+/// Common graph-boundary result emitted by all executable agent shells.
+struct agent_output {
+  /// Final message produced by the lowered agent graph.
+  wh::schema::message final_message{};
+  /// Externally visible conversation history emitted by the lowered agent run.
+  std::vector<wh::schema::message> history_messages{};
+  /// Optional normalized transfer action emitted by the lowered agent run.
+  std::optional<agent_transfer> transfer{};
+  /// Explicit output slots materialized by the lowered agent graph.
+  std::unordered_map<std::string, wh::core::any,
+                     wh::core::transparent_string_hash,
+                     wh::core::transparent_string_equal>
+      output_values{};
+};
+
+template <typename value_t>
+/// Typed extractor that reads one structured value from `agent_output`.
+using output_reader = wh::core::callback_function<wh::core::result<value_t>(
+    const agent_output &, wh::core::run_context &) const>;
 
 /// Mutable authored agent entity with child topology, instruction fragments,
 /// and transfer whitelist rules that freeze before execution.
 class agent {
 public:
+  /// Freeze hook used by executable authored agents before graph lowering.
+  using freeze_hook = wh::core::move_only_function<wh::core::result<void>()>;
+
+  /// Lower hook that materializes one authored agent into one compose graph.
+  using lower_graph_hook =
+      wh::core::move_only_function<wh::core::result<wh::compose::graph>()>;
+
   /// Stores one authored agent name.
   explicit agent(std::string name) noexcept : name_(std::move(name)) {}
 
@@ -45,6 +85,26 @@ public:
   /// Returns true after authoring has been frozen successfully.
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
+  /// Returns the optional human-readable agent description.
+  [[nodiscard]] auto description() const noexcept -> std::string_view {
+    return description_;
+  }
+
+  /// Returns true when this authored agent can lower into one compose graph.
+  [[nodiscard]] auto executable() const noexcept -> bool {
+    return static_cast<bool>(lower_graph_);
+  }
+
+  /// Replaces the current agent description before freeze.
+  auto set_description(std::string description) -> wh::core::result<void> {
+    auto mutable_status = ensure_mutable();
+    if (mutable_status.has_error()) {
+      return mutable_status;
+    }
+    description_ = std::move(description);
+    return {};
+  }
+
   /// Appends one instruction fragment before freeze.
   auto append_instruction(std::string text, const std::int32_t priority = 0)
       -> wh::core::result<void> {
@@ -68,8 +128,9 @@ public:
   }
 
   /// Renders the authored instruction string.
-  [[nodiscard]] auto render_instruction(
-      const std::string_view separator = "\n") const -> std::string {
+  [[nodiscard]] auto
+  render_instruction(const std::string_view separator = "\n") const
+      -> std::string {
     return instruction_.render(separator);
   }
 
@@ -130,8 +191,9 @@ public:
   }
 
   /// Returns true when transfer to the named child is whitelisted.
-  [[nodiscard]] auto allows_transfer_to_child(
-      const std::string_view child_name) const noexcept -> bool {
+  [[nodiscard]] auto
+  allows_transfer_to_child(const std::string_view child_name) const noexcept
+      -> bool {
     return allowed_transfer_children_.contains(child_name);
   }
 
@@ -197,8 +259,42 @@ public:
         return frozen;
       }
     }
+    if (freeze_) {
+      auto frozen = freeze_();
+      if (frozen.has_error()) {
+        return frozen;
+      }
+    }
     frozen_ = true;
     return {};
+  }
+
+  /// Installs executable lowering hooks before freeze.
+  auto bind_execution(freeze_hook freeze, lower_graph_hook lower)
+      -> wh::core::result<void> {
+    auto mutable_status = ensure_mutable();
+    if (mutable_status.has_error()) {
+      return mutable_status;
+    }
+    if (!lower) {
+      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+    }
+    freeze_ = std::move(freeze);
+    lower_graph_ = std::move(lower);
+    return {};
+  }
+
+  /// Lowers this authored agent into one compose graph after freeze.
+  [[nodiscard]] auto lower_graph() -> wh::core::result<wh::compose::graph> {
+    auto frozen = freeze();
+    if (frozen.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(frozen.error());
+    }
+    if (!lower_graph_) {
+      return wh::core::result<wh::compose::graph>::failure(
+          wh::core::errc::not_supported);
+    }
+    return lower_graph_();
   }
 
 private:
@@ -213,10 +309,12 @@ private:
 
   /// Stable authored agent name.
   std::string name_{};
+  /// Optional human-readable description used by agent-family wrappers.
+  std::string description_{};
   /// Stable parent name once this agent is adopted.
   std::optional<std::string> parent_name_{};
   /// Mutable instruction fragments rendered at lowering time.
-  wh::adk::instruction instruction_{};
+  wh::agent::instruction instruction_{};
   /// Owned child agents attached to this authored entity.
   std::vector<std::unique_ptr<agent>> children_{};
   /// Whitelisted downward transfer targets keyed by child name.
@@ -225,6 +323,10 @@ private:
       allowed_transfer_children_{};
   /// True when transfer back to the parent is allowed.
   bool allow_transfer_to_parent_{false};
+  /// Optional freeze hook owned by executable authored agents.
+  freeze_hook freeze_{nullptr};
+  /// Optional lowering hook owned by executable authored agents.
+  lower_graph_hook lower_graph_{nullptr};
   /// True after topology and transfer rules are frozen.
   bool frozen_{false};
 };

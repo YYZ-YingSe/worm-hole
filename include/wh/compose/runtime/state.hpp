@@ -40,8 +40,8 @@ template <typename state_t>
 [[nodiscard]] inline auto state_type_mismatch_detail(const wh::core::any &value)
     -> std::string {
   return std::string{"state type mismatch, expected="} +
-         std::string{state_type_name<state_t>()} + ", actual=" +
-         std::string{value.info().name};
+         std::string{state_type_name<state_t>()} +
+         ", actual=" + std::string{value.info().name};
 }
 
 } // namespace detail
@@ -100,7 +100,8 @@ enum class graph_state_transition_kind : std::uint8_t {
   route_commit,
 };
 
-/// Merge policy used when parallel branch decisions target one logical node-state.
+/// Merge policy used when parallel branch decisions target one logical
+/// node-state.
 enum class graph_branch_merge : std::uint8_t {
   /// Merge by set-union of selected branch destinations.
   set_union = 0U,
@@ -127,7 +128,8 @@ class graph_process_state {
 public:
   graph_process_state() = default;
 
-  explicit graph_process_state(graph_process_state *parent) noexcept : parent_(parent) {}
+  explicit graph_process_state(graph_process_state *parent) noexcept
+      : parent_(parent) {}
 
   graph_process_state(const graph_process_state &other) {
     auto lock = std::scoped_lock{other.mutex_};
@@ -152,7 +154,8 @@ public:
     other.parent_ = nullptr;
   }
 
-  auto operator=(graph_process_state &&other) noexcept -> graph_process_state & {
+  auto operator=(graph_process_state &&other) noexcept
+      -> graph_process_state & {
     if (this == &other) {
       return *this;
     }
@@ -169,7 +172,9 @@ public:
   }
 
   /// Sets parent process-state used by subgraph fallback lookup.
-  auto set_parent(graph_process_state *parent) noexcept -> void { parent_ = parent; }
+  auto set_parent(graph_process_state *parent) noexcept -> void {
+    parent_ = parent;
+  }
 
   /// Returns thread-local detail of the last typed state access failure.
   [[nodiscard]] static auto last_error_detail() -> std::string_view {
@@ -190,15 +195,16 @@ public:
 
   /// Returns mutable typed state by recursive parent lookup.
   template <typename state_t>
-  [[nodiscard]] auto get() -> wh::core::result<std::reference_wrapper<state_t>> {
+  [[nodiscard]] auto get()
+      -> wh::core::result<std::reference_wrapper<state_t>> {
     {
       auto lock = std::scoped_lock{mutex_};
       auto iter = values_.find(wh::core::any_type_key_v<state_t>);
       if (iter != values_.end()) {
         auto *typed = wh::core::any_cast<state_t>(&iter->second);
         if (typed == nullptr) {
-          last_error_detail_ = detail::state_type_mismatch_detail<state_t>(
-              iter->second);
+          last_error_detail_ =
+              detail::state_type_mismatch_detail<state_t>(iter->second);
           return wh::core::result<std::reference_wrapper<state_t>>::failure(
               wh::core::errc::type_mismatch);
         }
@@ -224,10 +230,10 @@ public:
       if (iter != values_.end()) {
         const auto *typed = wh::core::any_cast<state_t>(&iter->second);
         if (typed == nullptr) {
-          last_error_detail_ = detail::state_type_mismatch_detail<state_t>(
-              iter->second);
-          return wh::core::result<std::reference_wrapper<const state_t>>::failure(
-              wh::core::errc::type_mismatch);
+          last_error_detail_ =
+              detail::state_type_mismatch_detail<state_t>(iter->second);
+          return wh::core::result<std::reference_wrapper<const state_t>>::
+              failure(wh::core::errc::type_mismatch);
         }
         last_error_detail_.clear();
         return std::cref(*typed);
@@ -251,24 +257,26 @@ private:
 };
 
 /// Node-level state pre-handler (value path).
-using graph_state_pre_handler = wh::core::callback_function<
-    wh::core::result<void>(const graph_state_cause &, graph_process_state &, graph_value &,
-                       wh::core::run_context &) const>;
+using graph_state_pre_handler =
+    wh::core::callback_function<wh::core::result<void>(
+        const graph_state_cause &, graph_process_state &, graph_value &,
+        wh::core::run_context &) const>;
 
 /// Node-level state post-handler (value path).
-using graph_state_post_handler = wh::core::callback_function<
-    wh::core::result<void>(const graph_state_cause &, graph_process_state &, graph_value &,
-                       wh::core::run_context &) const>;
+using graph_state_post_handler =
+    wh::core::callback_function<wh::core::result<void>(
+        const graph_state_cause &, graph_process_state &, graph_value &,
+        wh::core::run_context &) const>;
 
 /// Node-level stream pre-handler (chunk path).
-using graph_stream_pre = wh::core::callback_function<
-    wh::core::result<void>(const graph_state_cause &, graph_process_state &, graph_value &,
-                       wh::core::run_context &) const>;
+using graph_stream_pre = wh::core::callback_function<wh::core::result<void>(
+    const graph_state_cause &, graph_process_state &, graph_value &,
+    wh::core::run_context &) const>;
 
 /// Node-level stream post-handler (chunk path).
-using graph_stream_post = wh::core::callback_function<
-    wh::core::result<void>(const graph_state_cause &, graph_process_state &, graph_value &,
-                       wh::core::run_context &) const>;
+using graph_stream_post = wh::core::callback_function<wh::core::result<void>(
+    const graph_state_cause &, graph_process_state &, graph_value &,
+    wh::core::run_context &) const>;
 
 /// Aggregated handler set bound to one node key.
 struct graph_node_state_handlers {
@@ -325,9 +333,10 @@ public:
   }
 
   /// Updates lifecycle/attempt/error for one node key.
-  auto update(const std::string_view key, const graph_node_lifecycle_state lifecycle,
-              const std::size_t attempts = 0U,
-              const std::optional<wh::core::error_code> last_error = std::nullopt)
+  auto
+  update(const std::string_view key, const graph_node_lifecycle_state lifecycle,
+         const std::size_t attempts = 0U,
+         const std::optional<wh::core::error_code> last_error = std::nullopt)
       -> wh::core::result<void> {
     const auto node_id = find_node_id(key);
     if (!node_id.has_value()) {
@@ -337,10 +346,11 @@ public:
   }
 
   /// Updates lifecycle/attempt/error for one stable node id.
-  auto update(const std::uint32_t node_id,
-              const graph_node_lifecycle_state lifecycle,
-              const std::size_t attempts = 0U,
-              const std::optional<wh::core::error_code> last_error = std::nullopt)
+  auto
+  update(const std::uint32_t node_id,
+         const graph_node_lifecycle_state lifecycle,
+         const std::size_t attempts = 0U,
+         const std::optional<wh::core::error_code> last_error = std::nullopt)
       -> wh::core::result<void> {
     if (node_id >= states_.size()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);

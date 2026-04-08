@@ -22,9 +22,8 @@ namespace wh::internal {
 [[nodiscard]] inline auto capture_call_stack() -> std::string {
 #if defined(_WIN32)
   std::array<void *, 64U> frames{};
-  const auto captured = static_cast<std::size_t>(
-      ::CaptureStackBackTrace(0U, static_cast<DWORD>(frames.size()),
-                              frames.data(), nullptr));
+  const auto captured = static_cast<std::size_t>(::CaptureStackBackTrace(
+      0U, static_cast<DWORD>(frames.size()), frames.data(), nullptr));
   if (captured == 0U) {
     return "stack-unavailable";
   }

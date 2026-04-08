@@ -18,8 +18,7 @@ public:
 
   ~manual_lifetime_box() { reset(); }
 
-  template <typename... args_t>
-  auto emplace(args_t &&...args) -> value_t & {
+  template <typename... args_t> auto emplace(args_t &&...args) -> value_t & {
     reset();
     auto *value = std::construct_at(reinterpret_cast<value_t *>(storage_),
                                     std::forward<args_t>(args)...);

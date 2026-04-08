@@ -83,8 +83,7 @@ public:
   }
 
   /// Builds stage callback table from current builder state.
-  [[nodiscard]] auto build_callbacks()
-      -> wh::core::result<stage_callbacks> {
+  [[nodiscard]] auto build_callbacks() -> wh::core::result<stage_callbacks> {
     if (empty()) {
       return wh::core::result<stage_callbacks>::failure(
           wh::core::errc::not_found);

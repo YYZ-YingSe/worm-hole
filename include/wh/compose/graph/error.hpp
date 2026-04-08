@@ -127,7 +127,8 @@ to_compose_error(const graph_step_limit_error_detail &detail) -> compose_error {
 
 /// Converts node-timeout detail to one compose error record.
 [[nodiscard]] inline auto
-to_compose_error(const graph_node_timeout_error_detail &detail) -> compose_error {
+to_compose_error(const graph_node_timeout_error_detail &detail)
+    -> compose_error {
   compose_error error{};
   error.code = wh::core::errc::timeout;
   error.phase = compose_error_phase::execute;

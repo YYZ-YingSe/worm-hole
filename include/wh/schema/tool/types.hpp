@@ -194,9 +194,10 @@ build_parameter_schema(const tool_parameter_schema &parameter,
       }
 
       wh::core::json_value key;
-      key.SetString(property->name.data(),
-                    static_cast<wh::core::json_size_type>(property->name.size()),
-                    allocator);
+      key.SetString(
+          property->name.data(),
+          static_cast<wh::core::json_size_type>(property->name.size()),
+          allocator);
       properties.AddMember(key.Move(), std::move(property_schema).value(),
                            allocator);
       if (property->required) {
@@ -273,11 +274,10 @@ build_parameter_schema(const tool_parameter_schema &parameter,
   for (const auto &parameter : parameters) {
     sorted_parameters.push_back(&parameter);
   }
-  std::ranges::sort(sorted_parameters,
-                    [](const tool_parameter_schema *left,
-                       const tool_parameter_schema *right) {
-                      return left->name < right->name;
-                    });
+  std::ranges::sort(sorted_parameters, [](const tool_parameter_schema *left,
+                                          const tool_parameter_schema *right) {
+    return left->name < right->name;
+  });
   for (const auto *parameter : sorted_parameters) {
     auto schema =
         detail::build_parameter_schema(*parameter, output.GetAllocator());

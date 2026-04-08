@@ -54,7 +54,8 @@ public:
       : reader_(std::move(reader)), bindings_(std::move(bindings)),
         afters_(std::move(afters)) {}
 
-  [[nodiscard]] auto read_impl() -> wh::schema::stream::stream_result<chunk_type> {
+  [[nodiscard]] auto read_impl()
+      -> wh::schema::stream::stream_result<chunk_type> {
     return map(reader_.read());
   }
 
@@ -64,8 +65,9 @@ public:
   }
 
   [[nodiscard]] auto read_async() & {
-    return reader_.read_async() |
-           stdexec::then([this](result_t status) { return map(std::move(status)); });
+    return reader_.read_async() | stdexec::then([this](result_t status) {
+             return map(std::move(status));
+           });
   }
 
   auto close_impl() -> wh::core::result<void> {
@@ -81,8 +83,9 @@ public:
     return reader_.is_source_closed();
   }
 
-  auto set_automatic_close(
-      const wh::schema::stream::auto_close_options &options) -> void {
+  auto
+  set_automatic_close(const wh::schema::stream::auto_close_options &options)
+      -> void {
     reader_.set_automatic_close(options);
   }
 
@@ -162,9 +165,8 @@ private:
 [[nodiscard]] inline auto make_tool_event_stream_reader(
     graph_stream_reader reader, tool_stream_binding_map bindings,
     std::vector<tool_after> afters) -> graph_stream_reader {
-  return graph_stream_reader{
-      tool_event_stream_reader{std::move(reader), std::move(bindings),
-                               std::move(afters)}};
+  return graph_stream_reader{tool_event_stream_reader{
+      std::move(reader), std::move(bindings), std::move(afters)}};
 }
 
 } // namespace detail

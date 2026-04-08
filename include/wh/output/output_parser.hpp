@@ -5,20 +5,21 @@
 #include <type_traits>
 #include <utility>
 
+#include "wh/callbacks/interface.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
-#include "wh/callbacks/interface.hpp"
 #include "wh/schema/stream.hpp"
 
 namespace wh::output {
 
 template <typename parser_t, typename input_t, typename output_t>
-concept output_parser_impl = requires(parser_t &parser, const input_t &input,
-                                      const wh::callbacks::event_payload &extra) {
-  {
-    parser.parse_value_impl(input, extra)
-  } -> std::same_as<wh::core::result<output_t>>;
-};
+concept output_parser_impl =
+    requires(parser_t &parser, const input_t &input,
+             const wh::callbacks::event_payload &extra) {
+      {
+        parser.parse_value_impl(input, extra)
+      } -> std::same_as<wh::core::result<output_t>>;
+    };
 
 template <typename parser_t, typename input_t, typename output_t>
 concept output_parser_view_impl =
@@ -52,7 +53,8 @@ public:
   using input_chunk = wh::schema::stream::stream_chunk<input_t>;
   using output_chunk = wh::schema::stream::stream_chunk<output_t>;
 
-  /// Parses a fully materialized input value and emits parser callbacks with typed result output.
+  /// Parses a fully materialized input value and emits parser callbacks with
+  /// typed result output.
   [[nodiscard]] auto parse_value(const input_t &input,
                                  const wh::callbacks::event_payload &extra = {})
       -> wh::core::result<output_t> {
@@ -68,9 +70,10 @@ public:
   }
 
   /// Parses an input view and emits parser callbacks with typed result output.
-  [[nodiscard]] auto parse_value_view(
-      const input_t &input, const wh::callbacks::event_view &extra = {},
-      const wh::callbacks::event_payload &fallback_extra = {})
+  [[nodiscard]] auto
+  parse_value_view(const input_t &input,
+                   const wh::callbacks::event_view &extra = {},
+                   const wh::callbacks::event_payload &fallback_extra = {})
       -> wh::core::result<output_t> {
     if constexpr (output_parser_view_impl<derived_t, input_t, output_t>) {
       try {
@@ -118,15 +121,16 @@ public:
 
   template <wh::schema::stream::stream_reader reader_t>
   /// Parses a stream reader to completion and returns all parsed items.
-  [[nodiscard]] auto parse_stream(reader_t &&reader,
-                                  const wh::callbacks::event_payload &extra = {})
-      -> decltype(auto)
+  [[nodiscard]] auto
+  parse_stream(reader_t &&reader,
+               const wh::callbacks::event_payload &extra = {}) -> decltype(auto)
     requires std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
                           input_t>
   {
     return wh::schema::stream::make_transform_stream_reader(
         std::forward<reader_t>(reader),
-        [this, extra](const input_t &value) mutable -> wh::core::result<output_t> {
+        [this,
+         extra](const input_t &value) mutable -> wh::core::result<output_t> {
           auto parsed = parse_value(value, extra);
           if (parsed.has_error()) {
             notify_error(parsed.error(), extra);
@@ -147,8 +151,8 @@ public:
   {
     return wh::schema::stream::make_transform_stream_reader(
         std::forward<reader_t>(reader),
-        [this, extra, fallback_extra](const input_t &value) mutable
-            -> wh::core::result<output_t> {
+        [this, extra, fallback_extra](
+            const input_t &value) mutable -> wh::core::result<output_t> {
           auto parsed = parse_value_view(value, extra, fallback_extra);
           if (parsed.has_error()) {
             notify_error_view(parsed.error(), extra, fallback_extra);
@@ -169,7 +173,8 @@ private:
   /// Emits parser error callback with non-owning payload metadata view.
   auto notify_error_view(const wh::core::error_code error,
                          const wh::callbacks::event_view &extra,
-                         const wh::callbacks::event_payload &fallback_extra) -> void {
+                         const wh::callbacks::event_payload &fallback_extra)
+      -> void {
     if constexpr (output_parser_error_observer_view<derived_t>) {
       derived().on_error_view_impl(error, extra);
     } else {

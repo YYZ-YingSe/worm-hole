@@ -1,14 +1,14 @@
 // Defines the public tools-node contract surface.
 #pragma once
 
-#include <exec/any_sender_of.hpp>
-#include <stdexec/execution.hpp>
-
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <exec/any_sender_of.hpp>
+#include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/types.hpp"
@@ -61,25 +61,26 @@ using tools_invoke_sender = graph_value_sender;
 
 /// Type-erased async stream result boundary used by tools-node runtime.
 using tools_stream_sender =
-    exec::any_receiver_ref<stdexec::completion_signatures<stdexec::set_value_t(
-        wh::core::result<graph_stream_reader>),
-                                   stdexec::set_stopped_t()>>::any_sender<>;
+    exec::any_receiver_ref<stdexec::completion_signatures<
+        stdexec::set_value_t(wh::core::result<graph_stream_reader>),
+        stdexec::set_stopped_t()>>::any_sender<>;
 
 /// Tool invoke endpoint contract.
-using tool_invoke = wh::core::callback_function<
-    wh::core::result<graph_value>(const tool_call &, wh::tool::call_scope) const>;
+using tool_invoke = wh::core::callback_function<wh::core::result<graph_value>(
+    const tool_call &, wh::tool::call_scope) const>;
 
 /// Tool stream endpoint contract.
-using tool_stream = wh::core::callback_function<
-    wh::core::result<graph_stream_reader>(const tool_call &, wh::tool::call_scope) const>;
+using tool_stream =
+    wh::core::callback_function<wh::core::result<graph_stream_reader>(
+        const tool_call &, wh::tool::call_scope) const>;
 
 /// Async tool invoke endpoint contract.
-using tool_async_invoke = wh::core::callback_function<
-    tools_invoke_sender(tool_call, wh::tool::call_scope) const>;
+using tool_async_invoke = wh::core::callback_function<tools_invoke_sender(
+    tool_call, wh::tool::call_scope) const>;
 
 /// Async tool stream endpoint contract.
-using tool_async_stream = wh::core::callback_function<
-    tools_stream_sender(tool_call, wh::tool::call_scope) const>;
+using tool_async_stream = wh::core::callback_function<tools_stream_sender(
+    tool_call, wh::tool::call_scope) const>;
 
 /// One tool endpoint bundle used by tools node dispatch.
 struct tool_entry {
@@ -96,10 +97,9 @@ struct tool_entry {
 };
 
 /// Tool registry keyed by tool name.
-using tool_registry =
-    std::unordered_map<std::string, tool_entry,
-                       wh::core::transparent_string_hash,
-                       wh::core::transparent_string_equal>;
+using tool_registry = std::unordered_map<std::string, tool_entry,
+                                         wh::core::transparent_string_hash,
+                                         wh::core::transparent_string_equal>;
 
 /// Before/after hooks shared by invoke and stream paths.
 struct tool_middleware {
@@ -130,11 +130,13 @@ struct tools_rerun {
                      wh::core::transparent_string_equal>
       ids{};
   /// Extra rerun metadata keyed by tool-call id.
-  std::unordered_map<std::string, graph_value, wh::core::transparent_string_hash,
+  std::unordered_map<std::string, graph_value,
+                     wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       extra{};
   /// Reusable executed tool outputs keyed by tool-call id.
-  std::unordered_map<std::string, graph_value, wh::core::transparent_string_hash,
+  std::unordered_map<std::string, graph_value,
+                     wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       outputs{};
 };

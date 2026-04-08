@@ -92,8 +92,7 @@ struct stream_fallback_report {
 };
 
 using chat_invoke_result = wh::core::result<chat_response>;
-using chat_message_stream_result =
-    wh::core::result<chat_message_stream_reader>;
+using chat_message_stream_result = wh::core::result<chat_message_stream_reader>;
 
 namespace detail {
 
@@ -347,7 +346,8 @@ stream_sender(const impl_t &impl,
             wh::core::detail::resume_if<Resume>(
                 make_stream_sender(impl, request), std::move(scheduler)),
             [&impl, request = std::move(request), sink = std::move(sink),
-             state = std::move(state)](chat_message_stream_result &status) mutable {
+             state =
+                 std::move(state)](chat_message_stream_result &status) mutable {
               if (!state.has_value()) {
                 return;
               }
@@ -925,18 +925,20 @@ template <typename model_t, typename request_t>
 } // namespace detail
 
 template <chat_model_like model_t>
-[[nodiscard]] inline auto invoke_with_fallback_report_only(
-    const std::span<const model_t> models,
-    const chat_request &request, const bool provider_native_supported = false)
+[[nodiscard]] inline auto
+invoke_with_fallback_report_only(const std::span<const model_t> models,
+                                 const chat_request &request,
+                                 const bool provider_native_supported = false)
     -> invoke_fallback_report {
   return detail::invoke_with_fallback_report_only_impl<model_t>(
       models, request, provider_native_supported);
 }
 
 template <chat_model_like model_t>
-[[nodiscard]] inline auto invoke_with_fallback_report_only(
-    const std::span<const model_t> models,
-    chat_request &&request, const bool provider_native_supported = false)
+[[nodiscard]] inline auto
+invoke_with_fallback_report_only(const std::span<const model_t> models,
+                                 chat_request &&request,
+                                 const bool provider_native_supported = false)
     -> invoke_fallback_report {
   return detail::invoke_with_fallback_report_only_impl<model_t>(
       models, std::move(request), provider_native_supported);
@@ -973,18 +975,20 @@ invoke_with_fallback(const std::span<const model_t> models,
 }
 
 template <chat_model_like model_t>
-[[nodiscard]] inline auto stream_with_fallback_report_only(
-    const std::span<const model_t> models,
-    const chat_request &request, const bool provider_native_supported = false)
+[[nodiscard]] inline auto
+stream_with_fallback_report_only(const std::span<const model_t> models,
+                                 const chat_request &request,
+                                 const bool provider_native_supported = false)
     -> stream_fallback_report {
   return detail::stream_with_fallback_report_only_impl<model_t>(
       models, request, provider_native_supported);
 }
 
 template <chat_model_like model_t>
-[[nodiscard]] inline auto stream_with_fallback_report_only(
-    const std::span<const model_t> models,
-    chat_request &&request, const bool provider_native_supported = false)
+[[nodiscard]] inline auto
+stream_with_fallback_report_only(const std::span<const model_t> models,
+                                 chat_request &&request,
+                                 const bool provider_native_supported = false)
     -> stream_fallback_report {
   return detail::stream_with_fallback_report_only_impl<model_t>(
       models, std::move(request), provider_native_supported);

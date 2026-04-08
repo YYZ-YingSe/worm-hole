@@ -1,0 +1,35 @@
+name: setup-ccache
+description: Export standard ccache env vars and restore the matching cache entry.
+
+inputs:
+  dir:
+    description: Cache directory path.
+    required: true
+  key_stem:
+    description: Cache key prefix before the repository content hash.
+    required: true
+  restore_keys:
+    description: Optional newline-separated restore key prefixes.
+    required: false
+    default: ""
+  max_size:
+    description: ccache maximum size.
+    required: false
+    default: "750M"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        printf '%s=%s\n' "CCACHE_DIR" "${{ inputs.dir }}" >> "$GITHUB_ENV"
+        printf '%s=%s\n' "CCACHE_COMPRESS" "true" >> "$GITHUB_ENV"
+        printf '%s=%s\n' "CCACHE_MAXSIZE" "${{ inputs.max_size }}" >> "$GITHUB_ENV"
+        printf '%s=%s\n' "CCACHE_BASEDIR" "${{ github.workspace }}" >> "$GITHUB_ENV"
+        printf '%s=%s\n' "CCACHE_NOHASHDIR" "true" >> "$GITHUB_ENV"
+
+    - uses: actions/cache@v4
+      with:
+        path: ${{ inputs.dir }}
+        key: ${{ inputs.key_stem }}-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', 'tests/**/*.cmake', 'example/CMakeLists.txt', 'benchmark/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'build.sh', 'scripts/build/*.sh', 'scripts/ci/*.sh', 'scripts/nightly/*.sh') }}
+        restore-keys: ${{ inputs.restore_keys }}

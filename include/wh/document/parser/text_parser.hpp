@@ -11,8 +11,8 @@ namespace wh::document::parser {
 class text_parser {
 public:
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{
-        "TextParser", wh::core::component_kind::document};
+    return wh::core::component_descriptor{"TextParser",
+                                          wh::core::component_kind::document};
   }
 
   [[nodiscard]] auto parse(const parse_request &request) const

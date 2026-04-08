@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exception>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -10,6 +11,7 @@
 #include "wh/core/error.hpp"
 #include "wh/core/error_domain.hpp"
 #include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/manual_lifetime_box.hpp"
 
 namespace wh::core::cursor_reader_detail {
 
@@ -19,6 +21,15 @@ public:
   using scheduler_t = wh::core::detail::any_resume_scheduler_t;
   using sender_t = decltype(stdexec::starts_on(
       std::declval<scheduler_t>(), std::declval<source_t &>().read_async()));
+
+  struct stop_env {
+    stdexec::inplace_stop_token stop_token{};
+
+    [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept
+        -> stdexec::inplace_stop_token {
+      return stop_token;
+    }
+  };
 
   struct receiver {
     using receiver_concept = stdexec::receiver_t;
@@ -35,19 +46,23 @@ public:
     auto set_error(error_t &&error) noexcept -> void {
       auto *owner = pull->owner_;
       owner->finish_source_pull(
-          pull, owner->async_failure(map_error_code(std::forward<error_t>(error))),
+          pull,
+          owner->async_failure(map_error_code(std::forward<error_t>(error))),
           true);
       owner->reset_active_pull(pull);
     }
 
     auto set_stopped() noexcept -> void {
       auto *owner = pull->owner_;
-      owner->finish_source_pull(pull, owner->async_failure(wh::core::errc::internal_error), true);
+      owner->finish_source_pull_stopped(pull);
       owner->reset_active_pull(pull);
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> {
-      return {};
+    [[nodiscard]] auto get_env() const noexcept -> stop_env {
+      if (pull->stop_source_ == nullptr) {
+        return stop_env{};
+      }
+      return stop_env{pull->stop_source_->get_token()};
     }
   };
 
@@ -55,12 +70,22 @@ public:
 
   explicit pull_op(owner_t *owner) noexcept : owner_(owner) {}
 
-  auto start(source_t &source, scheduler_t scheduler) -> void {
-    op_state_.emplace_from(stdexec::connect,
-                           stdexec::starts_on(std::move(scheduler),
-                                              source.read_async()),
-                           receiver{this});
+  auto start(source_t &source, scheduler_t scheduler,
+             std::shared_ptr<stdexec::inplace_stop_source> stop_source)
+      -> void {
+    stop_source_ = std::move(stop_source);
+    op_state_.emplace_from(
+        stdexec::connect,
+        stdexec::starts_on(std::move(scheduler), source.read_async()),
+        receiver{this});
     stdexec::start(op_state_.get());
+  }
+
+  auto request_stop() const noexcept -> void {
+    if (stop_source_ == nullptr) {
+      return;
+    }
+    stop_source_->request_stop();
   }
 
 private:
@@ -85,6 +110,7 @@ private:
   }
 
   owner_t *owner_{nullptr};
+  std::shared_ptr<stdexec::inplace_stop_source> stop_source_{};
   wh::core::detail::manual_lifetime_box<op_state_t> op_state_{};
 };
 

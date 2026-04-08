@@ -19,15 +19,13 @@ namespace wh::core {
 
 namespace detail {
 
-template <typename value_t>
-struct has_tuple_size_value : std::false_type {};
+template <typename value_t> struct has_tuple_size_value : std::false_type {};
 
 template <typename value_t>
   requires requires { std::tuple_size<const value_t>::value; }
 struct has_tuple_size_value<value_t> : std::true_type {};
 
-template <typename value_t>
-struct has_value_type : std::false_type {};
+template <typename value_t> struct has_value_type : std::false_type {};
 
 template <typename value_t>
   requires requires { typename value_t::value_type; }
@@ -50,11 +48,11 @@ template <typename value_t>
 [[nodiscard]] consteval auto dispatch_is_equality_comparable() -> bool;
 
 template <typename value_t, std::size_t... index>
-[[nodiscard]] consteval auto unpack_maybe_equality_comparable(
-    std::index_sequence<index...>) -> bool {
-  return (dispatch_is_equality_comparable<
-          std::tuple_element_t<index, value_t>>() &&
-          ...);
+[[nodiscard]] consteval auto
+unpack_maybe_equality_comparable(std::index_sequence<index...>) -> bool {
+  return (
+      dispatch_is_equality_comparable<std::tuple_element_t<index, value_t>>() &&
+      ...);
 }
 
 template <typename value_t>
@@ -196,7 +194,8 @@ private:
       }
     }
 
-    static auto copy_construct(const basic_any &source, basic_any &target) -> void {
+    static auto copy_construct(const basic_any &source, basic_any &target)
+        -> void {
       if constexpr (std::copy_constructible<value_t>) {
         if constexpr (fits_inline_v<value_t>) {
           ::new (static_cast<void *>(target.storage_.buffer))
@@ -257,7 +256,8 @@ private:
       }
     }
 
-    [[nodiscard]] static auto mutable_ptr(basic_any &self) noexcept -> value_t * {
+    [[nodiscard]] static auto mutable_ptr(basic_any &self) noexcept
+        -> value_t * {
       if (self.policy_ == any_policy::inline_owner) {
         return inline_ptr(self);
       }
@@ -279,13 +279,15 @@ private:
       return nullptr;
     }
 
-    [[nodiscard]] static auto inline_ptr(basic_any &self) noexcept -> value_t * {
+    [[nodiscard]] static auto inline_ptr(basic_any &self) noexcept
+        -> value_t * {
       return std::launder(reinterpret_cast<value_t *>(self.storage_.buffer));
     }
 
     [[nodiscard]] static auto inline_ptr(const basic_any &self) noexcept
         -> const value_t * {
-      return std::launder(reinterpret_cast<const value_t *>(self.storage_.buffer));
+      return std::launder(
+          reinterpret_cast<const value_t *>(self.storage_.buffer));
     }
 
     [[nodiscard]] static auto heap_ptr(basic_any &self) noexcept -> value_t * {
@@ -339,7 +341,8 @@ public:
   }
 
   template <typename value_t>
-  [[nodiscard]] static constexpr auto info_of() noexcept -> const any_type_info & {
+  [[nodiscard]] static constexpr auto info_of() noexcept
+      -> const any_type_info & {
     return model<std::remove_cvref_t<value_t>>::info;
   }
 
@@ -376,14 +379,10 @@ public:
 
   /// Copies one container. Borrowed states stay borrowed; non-copyable owners
   /// become empty.
-  basic_any(const basic_any &other) {
-    copy_from(other);
-  }
+  basic_any(const basic_any &other) { copy_from(other); }
 
   /// Moves one container and transfers its policy.
-  basic_any(basic_any &&other) noexcept {
-    move_from(std::move(other));
-  }
+  basic_any(basic_any &&other) noexcept { move_from(std::move(other)); }
 
   auto operator=(const basic_any &other) -> basic_any & {
     if (this != &other) {
@@ -504,7 +503,8 @@ public:
   }
 
   /// Reassigns from one typed value when the contained type matches exactly.
-  template <typename value_t> [[nodiscard]] auto assign(value_t &&value) -> bool {
+  template <typename value_t>
+  [[nodiscard]] auto assign(value_t &&value) -> bool {
     using stored_t = std::remove_cvref_t<value_t>;
     if (!has_value<stored_t>() || policy_ == any_policy::cref) {
       return false;
@@ -539,11 +539,13 @@ public:
     return vtable_ == &model<std::remove_cvref_t<value_t>>::vtable;
   }
 
-  [[nodiscard]] auto has_value(const any_type_key query) const noexcept -> bool {
+  [[nodiscard]] auto has_value(const any_type_key query) const noexcept
+      -> bool {
     return key() == query;
   }
 
-  [[nodiscard]] auto has_value(const any_type_info &query) const noexcept -> bool {
+  [[nodiscard]] auto has_value(const any_type_info &query) const noexcept
+      -> bool {
     return has_value(query.key);
   }
 
@@ -552,7 +554,8 @@ public:
   }
 
   [[nodiscard]] auto owner() const noexcept -> bool {
-    return policy_ == any_policy::inline_owner || policy_ == any_policy::heap_owner;
+    return policy_ == any_policy::inline_owner ||
+           policy_ == any_policy::heap_owner;
   }
 
   [[nodiscard]] auto borrowed() const noexcept -> bool {
@@ -561,9 +564,7 @@ public:
 
   [[nodiscard]] auto policy() const noexcept -> any_policy { return policy_; }
 
-  [[nodiscard]] auto key() const noexcept -> any_type_key {
-    return info().key;
-  }
+  [[nodiscard]] auto key() const noexcept -> any_type_key { return info().key; }
 
   [[nodiscard]] auto type() const noexcept -> const std::type_info & {
     return info().type();
@@ -597,7 +598,8 @@ public:
     return const_cast<void *>(std::as_const(*this).data());
   }
 
-  [[nodiscard]] auto data(const any_type_key query) const noexcept -> const void * {
+  [[nodiscard]] auto data(const any_type_key query) const noexcept -> const
+      void * {
     return has_value(query) ? data() : nullptr;
   }
 
@@ -605,7 +607,8 @@ public:
     return has_value(query) ? data() : nullptr;
   }
 
-  [[nodiscard]] auto data(const any_type_info &query) const noexcept -> const void * {
+  [[nodiscard]] auto data(const any_type_info &query) const noexcept -> const
+      void * {
     return data(query.key);
   }
 
@@ -630,7 +633,8 @@ public:
     return model<stored_t>::const_ptr(*this);
   }
 
-  template <typename value_t> [[nodiscard]] auto get_if() noexcept -> value_t * {
+  template <typename value_t>
+  [[nodiscard]] auto get_if() noexcept -> value_t * {
     return data<value_t>();
   }
 
@@ -686,7 +690,9 @@ private:
         .name = ::wh::internal::stable_type_name<void>(),
         .size = 0U,
         .alignment = 0U,
-        .type = []() noexcept -> const std::type_info & { return typeid(void); },
+        .type = []() noexcept -> const std::type_info & {
+          return typeid(void);
+        },
     };
     return current;
   }

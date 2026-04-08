@@ -19,12 +19,6 @@ jobs:
   build-test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/build-test-${{ matrix.os }}-${{ matrix.build_type }}
-      CCACHE_COMPRESS: "true"
-      CCACHE_MAXSIZE: "750M"
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -38,54 +32,21 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install required tools (ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ripgrep \
-            clang \
-            cmake \
-            ninja-build \
-            ccache
-
-      - name: Install required tools (macos)
-        if: runner.os == 'macOS'
-        run: |
-          brew update
-          brew install ripgrep llvm cmake ninja ccache
-          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
-
-      - name: Install required tools (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install -y ripgrep llvm ninja
-          choco install -y ccache
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "ccache install unavailable on this runner, continuing without ccache"
-            $global:LASTEXITCODE = 0
-          }
-          "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Restore ccache
-        uses: actions/cache@v4
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_cmake_build_and_test.sh') }}
-          restore-keys: |
+          install_profile: build
+          env_profile: build-matrix
+          env_build_type: ${{ matrix.build_type }}
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup/ccache
+        with:
+          dir: ${{ github.workspace }}/.ccache/build-test-${{ matrix.os }}-${{ matrix.build_type }}
+          key_stem: ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}
+          restore_keys: |
             ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}-
             ccache-build-test-${{ runner.os }}-
 
-      - name: Guard branch policy
-        run: bash scripts/ci/guard_branch_policy.sh
-
-      - name: Configure build env
-        run: |
-          echo "WH_CI_STRICT=1" >> "$GITHUB_ENV"
-          echo "WH_CI_BUILD_TYPE=${{ matrix.build_type }}" >> "$GITHUB_ENV"
-          echo "CC=clang" >> "$GITHUB_ENV"
-          echo "CXX=clang++" >> "$GITHUB_ENV"
-
       - name: Build and test
-        run: bash scripts/ci/run_cmake_build_and_test.sh
+        uses: ./.github/actions/run/build-and-test

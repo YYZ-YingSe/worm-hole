@@ -13,19 +13,20 @@ namespace wh::compose {
 namespace detail {
 
 using call_completion_sender =
-    exec::any_receiver_ref<stdexec::completion_signatures<stdexec::set_value_t(
-        wh::core::result<call_completion>),
-                                   stdexec::set_stopped_t()>>::any_sender<>;
+    exec::any_receiver_ref<stdexec::completion_signatures<
+        stdexec::set_value_t(wh::core::result<call_completion>),
+        stdexec::set_stopped_t()>>::any_sender<>;
 using stream_completion_sender =
-    exec::any_receiver_ref<stdexec::completion_signatures<stdexec::set_value_t(
-        wh::core::result<stream_completion>),
-                                   stdexec::set_stopped_t()>>::any_sender<>;
+    exec::any_receiver_ref<stdexec::completion_signatures<
+        stdexec::set_value_t(wh::core::result<stream_completion>),
+        stdexec::set_stopped_t()>>::any_sender<>;
 
 template <stdexec::sender sender_t>
 [[nodiscard]] inline auto erase_tools_invoke(sender_t &&sender)
     -> tools_invoke_sender {
-  return tools_invoke_sender{wh::core::detail::normalize_result_sender<
-      wh::core::result<graph_value>>(std::forward<sender_t>(sender))};
+  return tools_invoke_sender{
+      wh::core::detail::normalize_result_sender<wh::core::result<graph_value>>(
+          std::forward<sender_t>(sender))};
 }
 
 [[nodiscard]] inline auto erase_tools_invoke(tools_invoke_sender sender)
@@ -75,7 +76,8 @@ template <stdexec::sender sender_t>
       wh::core::result<stream_completion>>(std::forward<sender_t>(sender))};
 }
 
-[[nodiscard]] inline auto erase_stream_completion(stream_completion_sender sender)
+[[nodiscard]] inline auto
+erase_stream_completion(stream_completion_sender sender)
     -> stream_completion_sender {
   return sender;
 }
@@ -90,7 +92,8 @@ template <stdexec::sender sender_t>
   return make_values_stream_reader(*values);
 }
 
-[[nodiscard]] inline auto clone_call_context(const wh::core::run_context &context)
+[[nodiscard]] inline auto
+clone_call_context(const wh::core::run_context &context)
     -> wh::core::run_context {
   return context;
 }
@@ -130,7 +133,8 @@ template <stdexec::sender sender_t>
         tool == nullptr ? wh::core::errc::not_found
                         : wh::core::errc::not_supported);
   }
-  return erase_tools_invoke(tool->async_invoke(std::move(call), std::move(scope)));
+  return erase_tools_invoke(
+      tool->async_invoke(std::move(call), std::move(scope)));
 }
 
 [[nodiscard]] inline auto start_stream(const tools_state &state, tool_call call,
@@ -143,7 +147,8 @@ template <stdexec::sender sender_t>
         tool == nullptr ? wh::core::errc::not_found
                         : wh::core::errc::not_supported);
   }
-  return erase_tools_stream(tool->async_stream(std::move(call), std::move(scope)));
+  return erase_tools_stream(
+      tool->async_stream(std::move(call), std::move(scope)));
 }
 
 [[nodiscard]] inline auto run_before(const tools_options &options,
@@ -163,8 +168,7 @@ template <stdexec::sender sender_t>
 }
 
 [[nodiscard]] inline auto run_after(const tools_options &options,
-                                    const tool_call &call,
-                                    graph_value &value,
+                                    const tool_call &call, graph_value &value,
                                     const wh::tool::call_scope &scope)
     -> wh::core::result<void> {
   for (const auto &middleware : options.middleware) {
@@ -190,7 +194,8 @@ template <stdexec::sender sender_t>
   if (!rerun.ids.empty() && !rerun.ids.contains(call.call_id)) {
     const auto cached = rerun.outputs.find(call.call_id);
     if (cached == rerun.outputs.end()) {
-      return wh::core::result<call_completion>::failure(wh::core::errc::not_found);
+      return wh::core::result<call_completion>::failure(
+          wh::core::errc::not_found);
     }
     return call_completion{
         .index = index,
@@ -203,18 +208,23 @@ template <stdexec::sender sender_t>
   auto scope = make_scope(call, call_context);
   auto before = run_before(*state.options, call, scope);
   if (before.has_error()) {
+    merge_call_context(context, call_context);
     return wh::core::result<call_completion>::failure(before.error());
   }
 
   auto invoked = call_value(state, call, scope);
   if (invoked.has_error()) {
+    merge_call_context(context, call_context);
     return wh::core::result<call_completion>::failure(invoked.error());
   }
   auto value = std::move(invoked).value();
   auto after = run_after(*state.options, call, value, scope);
   if (after.has_error()) {
+    merge_call_context(context, call_context);
     return wh::core::result<call_completion>::failure(after.error());
   }
+
+  merge_call_context(context, call_context);
 
   return call_completion{
       .index = index,
@@ -235,7 +245,8 @@ template <stdexec::sender sender_t>
   if (!rerun.ids.empty() && !rerun.ids.contains(call.call_id)) {
     const auto cached = rerun.outputs.find(call.call_id);
     if (cached == rerun.outputs.end()) {
-      return wh::core::result<stream_completion>::failure(wh::core::errc::not_found);
+      return wh::core::result<stream_completion>::failure(
+          wh::core::errc::not_found);
     }
     auto replayed = replay_stream(cached->second);
     if (replayed.has_error()) {
@@ -253,13 +264,17 @@ template <stdexec::sender sender_t>
   auto scope = make_scope(call, call_context);
   auto before = run_before(*state.options, call, scope);
   if (before.has_error()) {
+    merge_call_context(context, call_context);
     return wh::core::result<stream_completion>::failure(before.error());
   }
 
   auto streamed = call_stream(state, call, scope);
   if (streamed.has_error()) {
+    merge_call_context(context, call_context);
     return wh::core::result<stream_completion>::failure(streamed.error());
   }
+
+  merge_call_context(context, call_context);
 
   return stream_completion{
       .index = index,
@@ -286,12 +301,12 @@ template <stdexec::sender sender_t>
                             wh::core::result<call_completion>>(
           wh::core::errc::not_found);
     }
-    return ready_sender<call_completion_sender>(wh::core::result<call_completion>{
-        call_completion{.index = index,
-                        .call = std::move(call),
-                        .value = cached->second,
-                        .rerun_extra = wh::core::any(
-                            std::string{plan.call->arguments})}});
+    return ready_sender<call_completion_sender>(
+        wh::core::result<call_completion>{call_completion{
+            .index = index,
+            .call = std::move(call),
+            .value = cached->second,
+            .rerun_extra = wh::core::any(std::string{plan.call->arguments})}});
   }
 
   auto scope = make_scope(call, *call_context);
@@ -302,28 +317,28 @@ template <stdexec::sender sender_t>
   }
 
   auto invoke = start_value(state, tool_call{call}, scope);
-  return erase_call_completion(std::move(invoke) |
-                               stdexec::then([options = *state.options,
-                                              call = std::move(call), index,
-                                              call_context = std::move(call_context),
-                                              rerun_extra = wh::core::any(
-                                                  std::string{plan.call->arguments})](
-                                                 wh::core::result<graph_value> status) mutable
-                                            -> wh::core::result<call_completion> {
-    if (status.has_error()) {
-      return wh::core::result<call_completion>::failure(status.error());
-    }
-    auto value = std::move(status).value();
-    auto scope = make_scope(call, *call_context);
-    auto after = run_after(options, call, value, scope);
-    if (after.has_error()) {
-      return wh::core::result<call_completion>::failure(after.error());
-    }
-    return call_completion{.index = index,
-                           .call = std::move(call),
-                           .value = std::move(value),
-                           .rerun_extra = std::move(rerun_extra)};
-  }));
+  return erase_call_completion(
+      std::move(invoke) |
+      stdexec::then(
+          [options = *state.options, call = std::move(call), index,
+           call_context = std::move(call_context),
+           rerun_extra = wh::core::any(std::string{plan.call->arguments})](
+              wh::core::result<graph_value> status) mutable
+              -> wh::core::result<call_completion> {
+            if (status.has_error()) {
+              return wh::core::result<call_completion>::failure(status.error());
+            }
+            auto value = std::move(status).value();
+            auto scope = make_scope(call, *call_context);
+            auto after = run_after(options, call, value, scope);
+            if (after.has_error()) {
+              return wh::core::result<call_completion>::failure(after.error());
+            }
+            return call_completion{.index = index,
+                                   .call = std::move(call),
+                                   .value = std::move(value),
+                                   .rerun_extra = std::move(rerun_extra)};
+          }));
 }
 
 [[nodiscard]] inline auto start_stream_call(const tools_state &state,
@@ -365,22 +380,23 @@ template <stdexec::sender sender_t>
   }
 
   auto stream = start_stream(state, tool_call{call}, scope);
-  return erase_stream_completion(std::move(stream) |
-                                 stdexec::then([call = std::move(call), index,
-                                                call_context = std::move(call_context),
-                                                rerun_extra = wh::core::any(
-                                                    std::string{plan.call->arguments})](
-                                                   wh::core::result<graph_stream_reader> status) mutable
-                                              -> wh::core::result<stream_completion> {
-    if (status.has_error()) {
-      return wh::core::result<stream_completion>::failure(status.error());
-    }
-    return stream_completion{.index = index,
-                             .call = std::move(call),
-                             .stream = std::move(status).value(),
-                             .rerun_extra = std::move(rerun_extra),
-                             .context = std::move(*call_context)};
-  }));
+  return erase_stream_completion(
+      std::move(stream) |
+      stdexec::then([call = std::move(call), index,
+                     call_context = std::move(call_context),
+                     rerun_extra =
+                         wh::core::any(std::string{plan.call->arguments})](
+                        wh::core::result<graph_stream_reader> status) mutable
+                        -> wh::core::result<stream_completion> {
+        if (status.has_error()) {
+          return wh::core::result<stream_completion>::failure(status.error());
+        }
+        return stream_completion{.index = index,
+                                 .call = std::move(call),
+                                 .stream = std::move(status).value(),
+                                 .rerun_extra = std::move(rerun_extra),
+                                 .context = std::move(*call_context)};
+      }));
 }
 
 } // namespace detail

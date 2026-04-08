@@ -80,15 +80,13 @@ using graph_interrupt_node_hook = wh::core::callback_function<
         std::string_view, const graph_value &, wh::core::run_context &) const>;
 
 template <typename interrupt_id_t, typename location_t,
-          typename state_t = wh::core::any,
-          typename payload_t = wh::core::any>
+          typename state_t = wh::core::any, typename payload_t = wh::core::any>
   requires std::constructible_from<std::string, interrupt_id_t &&> &&
            std::constructible_from<wh::core::address, location_t &&>
 /// Builds one interrupt signal with explicit id/location and boxed payloads.
-[[nodiscard]] inline auto make_interrupt_signal(interrupt_id_t &&interrupt_id,
-                                                location_t &&location,
-                                                state_t &&state = {},
-                                                payload_t &&layer_payload = {})
+[[nodiscard]] inline auto
+make_interrupt_signal(interrupt_id_t &&interrupt_id, location_t &&location,
+                      state_t &&state = {}, payload_t &&layer_payload = {})
     -> wh::core::interrupt_signal {
   using state_value_t = wh::core::remove_cvref_t<state_t>;
   using payload_value_t = wh::core::remove_cvref_t<payload_t>;
@@ -112,9 +110,7 @@ template <typename interrupt_id_t, typename location_t,
   return wh::core::interrupt_signal{
       std::string{std::forward<interrupt_id_t>(interrupt_id)},
       wh::core::address{std::forward<location_t>(location)},
-      std::move(boxed_state),
-      std::move(boxed_payload),
-      false};
+      std::move(boxed_state), std::move(boxed_payload), false};
 }
 
 template <typename location_t, typename state_t = wh::core::any,
@@ -126,10 +122,9 @@ template <typename location_t, typename state_t = wh::core::any,
                                                 state_t &&state = {},
                                                 payload_t &&layer_payload = {})
     -> wh::core::interrupt_signal {
-  return make_interrupt_signal(make_interrupt_id(),
-                               std::forward<location_t>(location),
-                               std::forward<state_t>(state),
-                               std::forward<payload_t>(layer_payload));
+  return make_interrupt_signal(
+      make_interrupt_id(), std::forward<location_t>(location),
+      std::forward<state_t>(state), std::forward<payload_t>(layer_payload));
 }
 
 /// Converts signal shape into resume-context shape (copy view).
@@ -188,7 +183,8 @@ flatten_interrupt_signals(std::vector<wh::core::interrupt_signal> &&signals)
   return wh::core::flatten_interrupt_signal_tree(roots);
 }
 
-/// Filters one interrupt context location by allowed address segments (copy path).
+/// Filters one interrupt context location by allowed address segments (copy
+/// path).
 [[nodiscard]] inline auto project_interrupt_context(
     const wh::core::interrupt_context &context,
     const std::span<const std::string_view> allowed_segments)
@@ -196,7 +192,8 @@ flatten_interrupt_signals(std::vector<wh::core::interrupt_signal> &&signals)
   return wh::core::project_interrupt_context(context, allowed_segments);
 }
 
-/// Filters one interrupt context location by allowed address segments (move path).
+/// Filters one interrupt context location by allowed address segments (move
+/// path).
 [[nodiscard]] inline auto project_interrupt_context(
     wh::core::interrupt_context &&context,
     const std::span<const std::string_view> allowed_segments)
@@ -213,7 +210,8 @@ to_reinterrupt_signal(const wh::core::interrupt_context &context)
       .interrupt_id = context.interrupt_id,
       .location = context.location,
       .state = wh::core::clone_interrupt_payload_any(context.state),
-      .layer_payload = wh::core::clone_interrupt_payload_any(context.layer_payload),
+      .layer_payload =
+          wh::core::clone_interrupt_payload_any(context.layer_payload),
       .used = context.used,
       .parent_locations = context.parent_locations,
       .trigger_reason = context.trigger_reason,
@@ -246,13 +244,15 @@ to_reinterrupt_signal(wh::core::interrupt_context &&context)
                      wh::core::transparent_string_equal>
       seen_ids{};
   for (const auto &context : root_contexts) {
-    if (context.interrupt_id.empty() || !seen_ids.insert(context.interrupt_id).second) {
+    if (context.interrupt_id.empty() ||
+        !seen_ids.insert(context.interrupt_id).second) {
       continue;
     }
     merged.push_back(context);
   }
   for (const auto &signal : subgraph_signals) {
-    if (signal.interrupt_id.empty() || !seen_ids.insert(signal.interrupt_id).second) {
+    if (signal.interrupt_id.empty() ||
+        !seen_ids.insert(signal.interrupt_id).second) {
       continue;
     }
     merged.push_back(wh::core::to_interrupt_context(signal));
@@ -265,9 +265,10 @@ namespace detail {
 template <typename contexts_t>
   requires std::same_as<wh::core::remove_cvref_t<contexts_t>,
                         std::vector<wh::core::interrupt_context>>
-[[nodiscard]] inline auto fallback_to_single_interrupt_when_empty_impl(
-    contexts_t &&contexts, const wh::core::address &location,
-    wh::core::any state)
+[[nodiscard]] inline auto
+fallback_to_single_interrupt_when_empty_impl(contexts_t &&contexts,
+                                             const wh::core::address &location,
+                                             wh::core::any state)
     -> std::vector<wh::core::interrupt_context> {
   std::vector<wh::core::interrupt_context> owned{};
   if constexpr (std::is_lvalue_reference_v<contexts_t>) {
@@ -295,8 +296,8 @@ template <typename contexts_t>
     const std::vector<wh::core::interrupt_context> &contexts,
     const wh::core::address &location, wh::core::any state = {})
     -> std::vector<wh::core::interrupt_context> {
-  return detail::fallback_to_single_interrupt_when_empty_impl(contexts, location,
-                                                              std::move(state));
+  return detail::fallback_to_single_interrupt_when_empty_impl(
+      contexts, location, std::move(state));
 }
 
 /// Falls back to single-point interrupt when child list is empty (move path).

@@ -2,13 +2,13 @@
 #pragma once
 
 #include <concepts>
-#include <exec/completion_signatures.hpp>
 #include <functional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
+#include <exec/completion_signatures.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/core/stdexec/manual_lifetime_box.hpp"

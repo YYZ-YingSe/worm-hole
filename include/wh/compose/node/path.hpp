@@ -41,7 +41,8 @@ make_node_path(const std::span<const std::string_view> segments) -> node_path {
     const auto stop = end == std::string_view::npos ? text.size() : end;
     const auto segment = text.substr(begin, stop - begin);
     if (segment.empty()) {
-      return wh::core::result<node_path>::failure(wh::core::errc::invalid_argument);
+      return wh::core::result<node_path>::failure(
+          wh::core::errc::invalid_argument);
     }
     segments.push_back(segment);
     if (end == std::string_view::npos) {

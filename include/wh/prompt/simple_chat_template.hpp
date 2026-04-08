@@ -63,8 +63,8 @@ private:
   [[nodiscard]] auto render_common(request_t &&request,
                                    prompt_callback_event &event) const
       -> prompt_result {
-    const auto extract_missing_variable = [](const std::string &text)
-        -> std::string {
+    const auto extract_missing_variable =
+        [](const std::string &text) -> std::string {
       const auto open = text.find("{{");
       if (open == std::string::npos) {
         return {};
@@ -87,17 +87,17 @@ private:
     output.reserve(templates_.size());
 
     for (const auto &entry : templates_) {
-      auto rendered =
-          wh::prompt::render_text_template(entry.text, request.context,
-                                           options.syntax);
+      auto rendered = wh::prompt::render_text_template(
+          entry.text, request.context, options.syntax);
       if (rendered.has_error()) {
         if (rendered.error() == wh::core::errc::not_found &&
             !options.strict_missing_variables) {
           rendered = std::string{entry.text};
         } else {
           event.rendered_message_count = output.size();
-          event.failed_template =
-              entry.name.empty() ? std::string{options.template_name} : entry.name;
+          event.failed_template = entry.name.empty()
+                                      ? std::string{options.template_name}
+                                      : entry.name;
           event.failed_variable = extract_missing_variable(entry.text);
           return prompt_result::failure(rendered.error());
         }
@@ -106,7 +106,8 @@ private:
       wh::schema::message message{};
       message.role = entry.role;
       message.name = entry.name;
-      message.parts.emplace_back(wh::schema::text_part{std::move(rendered).value()});
+      message.parts.emplace_back(
+          wh::schema::text_part{std::move(rendered).value()});
       output.push_back(std::move(message));
     }
 
@@ -127,7 +128,8 @@ public:
   explicit simple_chat_template(
       const std::vector<prompt_message_template> &templates)
       : base_t(detail::simple_chat_template_impl{templates}) {}
-  explicit simple_chat_template(std::vector<prompt_message_template> &&templates)
+  explicit simple_chat_template(
+      std::vector<prompt_message_template> &&templates)
       : base_t(detail::simple_chat_template_impl{std::move(templates)}) {}
 
   auto add_template(const prompt_message_template &value)

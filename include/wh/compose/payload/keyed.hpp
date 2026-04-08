@@ -55,7 +55,8 @@ template <typename key_t, typename value_t>
 
 /// Packs movable payload into keyed map payload for keyed contracts.
 [[nodiscard]] inline auto pack_keyed_payload(const std::string_view key,
-                                             graph_value &&value) -> graph_value {
+                                             graph_value &&value)
+    -> graph_value {
   graph_value_map output{};
   write_keyed_output(output, key, std::move(value));
   return value_map_to_payload(std::move(output));

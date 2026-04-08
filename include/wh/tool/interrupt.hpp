@@ -37,16 +37,17 @@ struct aggregated_interrupts {
 }
 
 /// Converts core interrupt signal back to tool interrupt.
-[[nodiscard]] inline auto from_interrupt_signal(
-    const wh::core::interrupt_signal &signal) -> tool_interrupt {
+[[nodiscard]] inline auto
+from_interrupt_signal(const wh::core::interrupt_signal &signal)
+    -> tool_interrupt {
   return tool_interrupt{signal.interrupt_id, signal.location, signal.state};
 }
 
 /// Checks whether interrupt location matches current resume target.
-[[nodiscard]] inline auto
-is_resume_target(const tool_interrupt &interrupt,
-                 const wh::core::resume_state &state,
-                 const bool exact = false) noexcept -> bool {
+[[nodiscard]] inline auto is_resume_target(const tool_interrupt &interrupt,
+                                           const wh::core::resume_state &state,
+                                           const bool exact = false) noexcept
+    -> bool {
   if (exact) {
     return state.is_exact_resume_target(interrupt.location);
   }
@@ -62,8 +63,8 @@ is_resume_target(const tool_interrupt &interrupt,
 }
 
 /// Selects first failing cause as root cause.
-[[nodiscard]] inline auto infer_root_cause(
-    const std::span<const wh::core::error_code> causes)
+[[nodiscard]] inline auto
+infer_root_cause(const std::span<const wh::core::error_code> causes)
     -> std::optional<wh::core::error_code> {
   if (causes.empty()) {
     return std::nullopt;
@@ -77,10 +78,9 @@ is_resume_target(const tool_interrupt &interrupt,
 }
 
 /// Packs interrupts plus optional root-cause into aggregate payload.
-[[nodiscard]] inline auto
-aggregate_interrupts(const std::span<const tool_interrupt> interrupts,
-                     const std::optional<wh::core::error_code> &root_cause =
-                         std::nullopt)
+[[nodiscard]] inline auto aggregate_interrupts(
+    const std::span<const tool_interrupt> interrupts,
+    const std::optional<wh::core::error_code> &root_cause = std::nullopt)
     -> wh::core::result<aggregated_interrupts> {
   if (interrupts.empty()) {
     return wh::core::result<aggregated_interrupts>::failure(

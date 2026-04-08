@@ -17,8 +17,8 @@
 #include <utility>
 #include <vector>
 
-#include "wh/core/any.hpp"
 #include "wh/core/address.hpp"
+#include "wh/core/any.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/type_traits.hpp"
@@ -65,16 +65,16 @@ public:
 
   /// Iterates all interrupt ids under a path prefix.
   template <typename callback_t>
-  auto for_each_prefix(const std::string_view prefix, callback_t &&callback) const
-      -> void {
+  auto for_each_prefix(const std::string_view prefix,
+                       callback_t &&callback) const -> void {
     const auto begin = index_.lower_bound(prefix);
     if (begin == index_.end()) {
       return;
     }
 
     const auto upper_key = next_lexicographic_key(prefix);
-    const auto end = upper_key.has_value() ? index_.lower_bound(*upper_key)
-                                           : index_.end();
+    const auto end =
+        upper_key.has_value() ? index_.lower_bound(*upper_key) : index_.end();
     for (auto iter = begin; iter != end; ++iter) {
       callback(std::string_view{iter->second});
     }
@@ -175,18 +175,20 @@ struct interrupt_context_tree_node {
 };
 
 /// Deep-copies one interrupt payload object for external/exported snapshots.
-[[nodiscard]] inline auto clone_interrupt_payload_any(const wh::core::any &payload)
-    -> wh::core::any {
+[[nodiscard]] inline auto
+clone_interrupt_payload_any(const wh::core::any &payload) -> wh::core::any {
   return payload;
 }
 
 /// Converts signal view to context view (copy).
 [[nodiscard]] inline auto to_interrupt_context(const interrupt_signal &signal)
     -> interrupt_context {
-  return interrupt_context{signal.interrupt_id, signal.location,
+  return interrupt_context{signal.interrupt_id,
+                           signal.location,
                            clone_interrupt_payload_any(signal.state),
                            clone_interrupt_payload_any(signal.layer_payload),
-                           signal.used, signal.parent_locations,
+                           signal.used,
+                           signal.parent_locations,
                            signal.trigger_reason};
 }
 
@@ -194,8 +196,10 @@ struct interrupt_context_tree_node {
 [[nodiscard]] inline auto to_interrupt_context(interrupt_signal &&signal)
     -> interrupt_context {
   return interrupt_context{std::move(signal.interrupt_id),
-                           std::move(signal.location), std::move(signal.state),
-                           std::move(signal.layer_payload), signal.used,
+                           std::move(signal.location),
+                           std::move(signal.state),
+                           std::move(signal.layer_payload),
+                           signal.used,
                            std::move(signal.parent_locations),
                            std::move(signal.trigger_reason)};
 }
@@ -203,10 +207,12 @@ struct interrupt_context_tree_node {
 /// Converts context view to signal view (copy).
 [[nodiscard]] inline auto to_interrupt_signal(const interrupt_context &context)
     -> interrupt_signal {
-  return interrupt_signal{context.interrupt_id, context.location,
+  return interrupt_signal{context.interrupt_id,
+                          context.location,
                           clone_interrupt_payload_any(context.state),
                           clone_interrupt_payload_any(context.layer_payload),
-                          context.used, context.parent_locations,
+                          context.used,
+                          context.parent_locations,
                           context.trigger_reason};
 }
 
@@ -214,8 +220,10 @@ struct interrupt_context_tree_node {
 [[nodiscard]] inline auto to_interrupt_signal(interrupt_context &&context)
     -> interrupt_signal {
   return interrupt_signal{std::move(context.interrupt_id),
-                          std::move(context.location), std::move(context.state),
-                          std::move(context.layer_payload), context.used,
+                          std::move(context.location),
+                          std::move(context.state),
+                          std::move(context.layer_payload),
+                          context.used,
                           std::move(context.parent_locations),
                           std::move(context.trigger_reason)};
 }
@@ -456,10 +464,9 @@ struct interrupt_snapshot {
   using address_map =
       std::unordered_map<std::string, address, detail::transparent_string_hash,
                          detail::transparent_string_equal>;
-  using state_map =
-      std::unordered_map<std::string, wh::core::any,
-                         detail::transparent_string_hash,
-                         detail::transparent_string_equal>;
+  using state_map = std::unordered_map<std::string, wh::core::any,
+                                       detail::transparent_string_hash,
+                                       detail::transparent_string_equal>;
 
   /// Maps interrupt id to its capture location in the workflow address space.
   address_map interrupt_id_to_address{};
@@ -533,14 +540,13 @@ public:
              std::constructible_from<address, location_t &&> &&
              (!std::same_as<remove_cvref_t<value_t>, wh::core::any>)
   /// Inserts or replaces one resume entry with typed payload.
-  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location, value_t &&data)
-      -> result<void> {
+  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location,
+              value_t &&data) -> result<void> {
     using stored_t = remove_cvref_t<value_t>;
-    return upsert(
-        std::forward<interrupt_id_t>(interrupt_id),
-        std::forward<location_t>(location),
-        wh::core::any{std::in_place_type<stored_t>,
-                      std::forward<value_t>(data)});
+    return upsert(std::forward<interrupt_id_t>(interrupt_id),
+                  std::forward<location_t>(location),
+                  wh::core::any{std::in_place_type<stored_t>,
+                                std::forward<value_t>(data)});
   }
 
   template <typename interrupt_id_t, typename location_t, typename any_t>
@@ -548,8 +554,8 @@ public:
              std::constructible_from<address, location_t &&> &&
              std::same_as<remove_cvref_t<any_t>, wh::core::any>
   /// Inserts or replaces one resume entry using pre-built `wh::core::any`.
-  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location, any_t &&data)
-      -> result<void> {
+  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location,
+              any_t &&data) -> result<void> {
     std::string stored_interrupt_id{std::forward<interrupt_id_t>(interrupt_id)};
     address stored_location{std::forward<location_t>(location)};
     wh::core::any stored_data{std::forward<any_t>(data)};
@@ -568,11 +574,11 @@ public:
     auto materialized_path = materialize_location_key(stored_location);
 
     auto updated =
-        entries_.insert_or_assign(
-                    std::move(stored_interrupt_id),
-                    resume_entry{std::move(stored_location),
-                                 std::move(stored_data),
-                                 std::move(materialized_path), false})
+        entries_
+            .insert_or_assign(std::move(stored_interrupt_id),
+                              resume_entry{std::move(stored_location),
+                                           std::move(stored_data),
+                                           std::move(materialized_path), false})
             .first;
     add_active_location(updated->second.location);
     index_location(updated->first, updated->second.materialized_path);
@@ -650,8 +656,8 @@ public:
   }
 
   /// Returns all interrupt ids currently stored in this state.
-  [[nodiscard]] auto interrupt_ids(
-      const bool include_used = true) const -> std::vector<std::string> {
+  [[nodiscard]] auto interrupt_ids(const bool include_used = true) const
+      -> std::vector<std::string> {
     std::vector<std::string> ids{};
     ids.reserve(entries_.size());
     for (const auto &[interrupt_id, entry] : entries_) {
@@ -734,16 +740,17 @@ public:
       -> std::vector<std::string> {
     std::vector<std::string> interrupt_ids{};
     const auto prefix = materialize_location_key(location);
-    path_index_.for_each_prefix(prefix, [&](const std::string_view interrupt_id) {
-      const auto entry_iter = entries_.find(interrupt_id);
-      if (entry_iter == entries_.end()) {
-        return;
-      }
-      if (!options.include_used && entry_iter->second.used) {
-        return;
-      }
-      interrupt_ids.emplace_back(interrupt_id);
-    });
+    path_index_.for_each_prefix(
+        prefix, [&](const std::string_view interrupt_id) {
+          const auto entry_iter = entries_.find(interrupt_id);
+          if (entry_iter == entries_.end()) {
+            return;
+          }
+          if (!options.include_used && entry_iter->second.used) {
+            return;
+          }
+          interrupt_ids.emplace_back(interrupt_id);
+        });
     std::ranges::sort(interrupt_ids);
     return interrupt_ids;
   }
@@ -752,30 +759,30 @@ public:
   auto mark_subtree_used(const address &location) -> std::size_t {
     std::size_t marked_count = 0U;
     const auto prefix = materialize_location_key(location);
-    path_index_.for_each_prefix(prefix, [&](const std::string_view interrupt_id) {
-      const auto entry_iter = entries_.find(interrupt_id);
-      if (entry_iter == entries_.end() || entry_iter->second.used) {
-        return;
-      }
-      remove_active_location(entry_iter->second.location);
-      entry_iter->second.used = true;
-      ++marked_count;
-    });
+    path_index_.for_each_prefix(
+        prefix, [&](const std::string_view interrupt_id) {
+          const auto entry_iter = entries_.find(interrupt_id);
+          if (entry_iter == entries_.end() || entry_iter->second.used) {
+            return;
+          }
+          remove_active_location(entry_iter->second.location);
+          entry_iter->second.used = true;
+          ++marked_count;
+        });
     return marked_count;
   }
 
   /// Erases all entries under subtree.
-  auto erase_subtree(
-      const address &location,
-      const resume_subtree_erase_options options =
-          resume_subtree_erase_options{})
-      -> std::size_t {
+  auto erase_subtree(const address &location,
+                     const resume_subtree_erase_options options =
+                         resume_subtree_erase_options{}) -> std::size_t {
     std::size_t removed_count = 0U;
     std::vector<std::string> matched_interrupt_ids{};
     const auto prefix = materialize_location_key(location);
-    path_index_.for_each_prefix(prefix, [&](const std::string_view interrupt_id) {
-      matched_interrupt_ids.emplace_back(interrupt_id);
-    });
+    path_index_.for_each_prefix(
+        prefix, [&](const std::string_view interrupt_id) {
+          matched_interrupt_ids.emplace_back(interrupt_id);
+        });
 
     for (const auto &interrupt_id : matched_interrupt_ids) {
       const auto entry_iter = entries_.find(interrupt_id);

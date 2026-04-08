@@ -35,8 +35,8 @@ template <typename selector_t>
     { selector(edge) } -> std::same_as<edge_activity>;
   }
 /// Classifies one edge list by external runtime selector policy.
-[[nodiscard]] inline auto classify_edges(const std::span<const graph_edge> edges,
-                                         selector_t &&selector)
+[[nodiscard]] inline auto
+classify_edges(const std::span<const graph_edge> edges, selector_t &&selector)
     -> edge_activity_sets {
   edge_activity_sets sets{};
   sets.active.reserve(edges.size());

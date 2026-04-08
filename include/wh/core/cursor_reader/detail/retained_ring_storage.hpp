@@ -26,8 +26,8 @@ public:
   }
 
   retained_ring_storage(const retained_ring_storage &) = delete;
-  auto operator=(const retained_ring_storage &) -> retained_ring_storage & =
-      delete;
+  auto operator=(const retained_ring_storage &)
+      -> retained_ring_storage & = delete;
 
   retained_ring_storage(retained_ring_storage &&other) noexcept
       : allocator_(std::move(other.allocator_)), capacity_(other.capacity_),
@@ -70,10 +70,12 @@ public:
       return;
     }
 
-    value_type *new_storage = allocator_traits::allocate(allocator_, new_capacity);
+    value_type *new_storage =
+        allocator_traits::allocate(allocator_, new_capacity);
     std::size_t constructed = 0U;
     try {
-      for (auto sequence = first_sequence; sequence < last_sequence; ++sequence) {
+      for (auto sequence = first_sequence; sequence < last_sequence;
+           ++sequence) {
         allocator_traits::construct(
             allocator_,
             new_storage + static_cast<std::size_t>(sequence % new_capacity),
@@ -104,8 +106,8 @@ public:
 
   template <typename... args_t>
     requires std::constructible_from<value_type, args_t &&...>
-  auto construct_at_sequence(const std::uint64_t sequence,
-                             args_t &&...args) -> void {
+  auto construct_at_sequence(const std::uint64_t sequence, args_t &&...args)
+      -> void {
     assert(capacity_ != 0U);
     allocator_traits::construct(allocator_, slot(sequence),
                                 std::forward<args_t>(args)...);
@@ -122,8 +124,9 @@ public:
     return *slot(sequence);
   }
 
-  [[nodiscard]] auto value_at_sequence(const std::uint64_t sequence) const
-      noexcept -> const value_type & {
+  [[nodiscard]] auto
+  value_at_sequence(const std::uint64_t sequence) const noexcept
+      -> const value_type & {
     assert(capacity_ != 0U);
     return *slot(sequence);
   }

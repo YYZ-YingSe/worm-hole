@@ -1,4 +1,5 @@
-// Defines typed invoke-time config/runtime state used by compose graph execution.
+// Defines typed invoke-time config/runtime state used by compose graph
+// execution.
 #pragma once
 
 #include <cstddef>
@@ -9,29 +10,23 @@
 #include <utility>
 #include <vector>
 
-#include "wh/compose/graph/error.hpp"
 #include "wh/compose/graph/call_options.hpp"
+#include "wh/compose/graph/error.hpp"
 #include "wh/compose/node/execution.hpp"
-#include "wh/compose/reduce/stream_concat.hpp"
-#include "wh/compose/runtime/interrupt.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
+#include "wh/compose/runtime/interrupt.hpp"
 #include "wh/compose/runtime/resume.hpp"
 #include "wh/compose/runtime/state.hpp"
-#include "wh/compose/reduce/values_merge.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/internal/merge.hpp"
 
 namespace wh::compose::detail::runtime_state {
 
-/// Snapshot of run-scoped external graph configuration resolved once at invoke start.
+/// Snapshot of run-scoped external graph configuration resolved once at invoke
+/// start.
 struct invoke_config {
   /// Optional state-handler registry injected by caller.
   const graph_state_handler_registry *state_handlers{nullptr};
-  /// Optional values-merge registry used by fan-in of value outputs.
-  const wh::internal::values_merge_registry *values_merge_registry{nullptr};
-  /// Optional stream-concat registry reserved for fan-in stream composition.
-  const wh::internal::stream_concat_registry *stream_concat_registry{nullptr};
   /// Optional checkpoint store injected by caller.
   checkpoint_store *checkpoint_store{nullptr};
   /// Optional checkpoint backend injected by caller.
@@ -77,8 +72,7 @@ struct invoke_config {
   /// Pregel max-step override inherited from ambient context.
   std::optional<std::size_t> pregel_max_steps_override{};
   /// Parallel-branch merge policy for this invoke run.
-  graph_branch_merge branch_merge{
-      graph_branch_merge::set_union};
+  graph_branch_merge branch_merge{graph_branch_merge::set_union};
 };
 
 /// Mutable invoke-owned publishable outputs accumulated during one graph run.
@@ -130,6 +124,38 @@ struct graph_trace_state {
   std::uint64_t next_span_sequence{1U};
 };
 
+/// Invoke-owned node cache resolved once from graph topology and call scope.
+struct node_cache_state {
+  /// Trace state shared by the graph root and all node attempts.
+  graph_trace_state trace{};
+  /// Lazily materialized runtime node paths indexed by node id.
+  std::vector<node_path> runtime_node_paths{};
+  /// Lazily materialized stream scopes indexed by node id.
+  std::vector<graph_event_scope> runtime_stream_scopes{};
+  /// Lazily materialized runtime node execution addresses indexed by node id.
+  std::vector<wh::core::address> runtime_node_execution_addresses{};
+  /// Resolved component option maps indexed by node id.
+  std::vector<graph_component_option_map> resolved_component_options{};
+  /// Resolved observation overrides indexed by node id.
+  std::vector<graph_resolved_node_observation> resolved_node_observations{};
+  /// Resolved state-handler bindings indexed by node id.
+  std::vector<const graph_node_state_handlers *> resolved_state_handlers{};
+  /// True when invoke-level component option overrides are present.
+  bool has_component_option_overrides{false};
+  /// True when debug events should be emitted.
+  bool emit_debug_events{false};
+  /// True when transition log collection is enabled.
+  bool collect_transition_log{false};
+  /// True when state snapshot events should be emitted.
+  bool emit_state_snapshot_events{false};
+  /// True when state delta events should be emitted.
+  bool emit_state_delta_events{false};
+  /// True when runtime message events should be emitted.
+  bool emit_runtime_message_events{false};
+  /// True when custom events should be emitted.
+  bool emit_custom_events{false};
+};
+
 /// Per-node typed runtime scope stored on the execution frame.
 struct node_scope {
   /// Fully resolved runtime path of the currently executing node.
@@ -152,12 +178,14 @@ inline auto merge_nested_outputs(invoke_outputs &target,
       !nested.last_completed_nodes.empty()) {
     target.last_completed_nodes = std::move(nested.last_completed_nodes);
   }
-  target.transition_log.insert(target.transition_log.end(),
-                               std::make_move_iterator(nested.transition_log.begin()),
-                               std::make_move_iterator(nested.transition_log.end()));
-  target.debug_events.insert(target.debug_events.end(),
-                             std::make_move_iterator(nested.debug_events.begin()),
-                             std::make_move_iterator(nested.debug_events.end()));
+  target.transition_log.insert(
+      target.transition_log.end(),
+      std::make_move_iterator(nested.transition_log.begin()),
+      std::make_move_iterator(nested.transition_log.end()));
+  target.debug_events.insert(
+      target.debug_events.end(),
+      std::make_move_iterator(nested.debug_events.begin()),
+      std::make_move_iterator(nested.debug_events.end()));
   target.state_snapshot_events.insert(
       target.state_snapshot_events.end(),
       std::make_move_iterator(nested.state_snapshot_events.begin()),
@@ -170,11 +198,13 @@ inline auto merge_nested_outputs(invoke_outputs &target,
       target.runtime_message_events.end(),
       std::make_move_iterator(nested.runtime_message_events.begin()),
       std::make_move_iterator(nested.runtime_message_events.end()));
-  target.custom_events.insert(target.custom_events.end(),
-                              std::make_move_iterator(nested.custom_events.begin()),
-                              std::make_move_iterator(nested.custom_events.end()));
+  target.custom_events.insert(
+      target.custom_events.end(),
+      std::make_move_iterator(nested.custom_events.begin()),
+      std::make_move_iterator(nested.custom_events.end()));
 
-  if (!target.step_limit_error.has_value() && nested.step_limit_error.has_value()) {
+  if (!target.step_limit_error.has_value() &&
+      nested.step_limit_error.has_value()) {
     target.step_limit_error = std::move(nested.step_limit_error);
   }
   if (!target.node_timeout_error.has_value() &&
@@ -184,7 +214,8 @@ inline auto merge_nested_outputs(invoke_outputs &target,
   if (!target.node_run_error.has_value() && nested.node_run_error.has_value()) {
     target.node_run_error = std::move(nested.node_run_error);
   }
-  if (!target.graph_run_error.has_value() && nested.graph_run_error.has_value()) {
+  if (!target.graph_run_error.has_value() &&
+      nested.graph_run_error.has_value()) {
     target.graph_run_error = std::move(nested.graph_run_error);
   }
   if (!target.stream_read_error.has_value() &&

@@ -25,8 +25,8 @@ concept same_scheduler_queryable =
 
 struct same_scheduler_t {
   template <typename scheduler_t>
-  [[nodiscard]] constexpr auto operator()(const scheduler_t &scheduler) const
-      noexcept -> bool {
+  [[nodiscard]] constexpr auto
+  operator()(const scheduler_t &scheduler) const noexcept -> bool {
     if constexpr (detail::same_scheduler_queryable<scheduler_t>) {
       return static_cast<bool>(scheduler.query(*this));
     } else {
@@ -79,8 +79,8 @@ template <typename scheduler_t> struct sender_env {
 template <typename scheduler_t> class schedule_handoff_sender {
 public:
   using sender_concept = stdexec::sender_t;
-  using completion_signatures =
-      stdexec::__completion_signatures_of_t<stdexec::schedule_result_t<scheduler_t>>;
+  using completion_signatures = stdexec::__completion_signatures_of_t<
+      stdexec::schedule_result_t<scheduler_t>>;
   using wh_scheduler_handoff_sender_tag = void;
   static constexpr bool is_try_sender = false;
 
@@ -110,8 +110,8 @@ private:
 template <typename scheduler_t> class try_schedule_handoff_sender {
 public:
   using sender_concept = stdexec::sender_t;
-  using completion_signatures =
-      stdexec::__completion_signatures_of_t<wh::core::try_schedule_result_t<scheduler_t>>;
+  using completion_signatures = stdexec::__completion_signatures_of_t<
+      wh::core::try_schedule_result_t<scheduler_t>>;
   using wh_scheduler_handoff_sender_tag = void;
   static constexpr bool is_try_sender = true;
 

@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <string>
+
 #include "wh/schema/message.hpp"
 
 namespace wh::model {

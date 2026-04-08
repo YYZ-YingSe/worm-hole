@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "wh/core/component.hpp"
-#include "wh/core/component.hpp"
 
 namespace wh::retriever {
 
@@ -59,7 +58,8 @@ public:
   retriever_options() = default;
 
   /// Sets baseline options used when no per-call override is provided.
-  auto set_base(const retriever_common_options &options) -> retriever_options & {
+  auto set_base(const retriever_common_options &options)
+      -> retriever_options & {
     base_ = options;
     return *this;
   }
@@ -139,13 +139,15 @@ public:
   }
 
   template <typename options_t>
-  /// Returns provider-specific options when the stored type matches `options_t`.
+  /// Returns provider-specific options when the stored type matches
+  /// `options_t`.
   [[nodiscard]] auto impl_specific_if() const -> const options_t * {
     return component_options_.impl_specific_if<options_t>();
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept
+      -> wh::core::component_options & {
     return component_options_;
   }
 

@@ -85,24 +85,27 @@ private:
   using traits_t = detail::filter_map_result_traits<filter_map_result_t>;
 
 public:
-  static_assert(wh::core::is_result_v<filter_map_result_t>,
-                "filter_map callback must return wh::core::result<filter_map_step<T>>");
-  static_assert(traits_t::valid,
-                "filter_map callback must return wh::core::result<filter_map_step<T>>");
+  static_assert(
+      wh::core::is_result_v<filter_map_result_t>,
+      "filter_map callback must return wh::core::result<filter_map_step<T>>");
+  static_assert(
+      traits_t::valid,
+      "filter_map callback must return wh::core::result<filter_map_step<T>>");
 
   using value_type = typename traits_t::value_type;
   using step_type = typename traits_t::step_type;
   using input_chunk_type = stream_chunk<input_value_t>;
   using input_chunk_view_type = stream_chunk_view<input_value_t>;
   using chunk_type = stream_chunk<value_type>;
-  using async_result_sender = typename exec::any_receiver_ref<
-      stdexec::completion_signatures<stdexec::set_value_t(
-          stream_result<chunk_type>),
-                                     stdexec::set_stopped_t()>>::template any_sender<>;
+  using async_result_sender =
+      typename exec::any_receiver_ref<stdexec::completion_signatures<
+          stdexec::set_value_t(stream_result<chunk_type>),
+          stdexec::set_error_t(std::exception_ptr),
+          stdexec::set_stopped_t()>>::template any_sender<>;
 
   template <typename source_reader_t, typename source_filter_map_t>
     requires std::constructible_from<reader_t, source_reader_t &&> &&
-             std::constructible_from<filter_map_t, source_filter_map_t &&>
+                 std::constructible_from<filter_map_t, source_filter_map_t &&>
   filter_map_stream_reader(source_reader_t &&reader,
                            source_filter_map_t &&filter_map)
       : reader_(std::forward<source_reader_t>(reader)),
@@ -119,9 +122,8 @@ public:
       } catch (...) {
         state_.terminal = true;
         state_.close_source_if_enabled(reader_);
-        return stream_result<chunk_type>{
-            detail::make_error_chunk<chunk_type>(
-                wh::core::map_current_exception())};
+        return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
+            wh::core::map_current_exception())};
       }
     }
   }
@@ -142,9 +144,8 @@ public:
       } catch (...) {
         state_.terminal = true;
         state_.close_source_if_enabled(reader_);
-        return stream_result<chunk_type>{
-            detail::make_error_chunk<chunk_type>(
-                wh::core::map_current_exception())};
+        return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
+            wh::core::map_current_exception())};
       }
     }
   }
@@ -154,8 +155,7 @@ public:
   {
     using input_result_t = stream_result<input_chunk_type>;
     return async_result_sender{
-        reader_.read_async() |
-        stdexec::then([](auto status) {
+        reader_.read_async() | stdexec::then([](auto status) {
           return input_result_t{std::move(status)};
         }) |
         stdexec::upon_error([](auto &&) noexcept {
@@ -188,8 +188,9 @@ public:
 private:
   using mapped_read_t = std::variant<skip_t, stream_result<chunk_type>>;
 
-  [[nodiscard]] auto map_read_borrowed(
-      stream_result<input_chunk_view_type> next) const -> mapped_read_t {
+  [[nodiscard]] auto
+  map_read_borrowed(stream_result<input_chunk_view_type> next) const
+      -> mapped_read_t {
     if (next.has_error()) {
       state_.terminal = true;
       state_.close_source_if_enabled(reader_);
@@ -261,9 +262,8 @@ private:
     } catch (...) {
       state_.terminal = true;
       state_.close_source_if_enabled(reader_);
-      return stream_result<chunk_type>{
-          detail::make_error_chunk<chunk_type>(
-              wh::core::map_current_exception())};
+      return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
+          wh::core::map_current_exception())};
     }
 
     if (converted.has_error()) {
@@ -293,8 +293,8 @@ private:
 
 template <typename reader_t, typename filter_map_t>
   requires borrowed_stream_reader<std::remove_cvref_t<reader_t>>
-[[nodiscard]] inline auto make_filter_map_stream_reader(
-    reader_t &&reader, filter_map_t &&filter_map)
+[[nodiscard]] inline auto
+make_filter_map_stream_reader(reader_t &&reader, filter_map_t &&filter_map)
     -> filter_map_stream_reader<std::remove_cvref_t<reader_t>,
                                 std::remove_cvref_t<filter_map_t>> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;

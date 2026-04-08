@@ -1,0 +1,8 @@
+name: run-sanitizer-smoke
+description: Run the sanitizer smoke build and test suite.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/jobs/run_sanitizer_smoke.sh"

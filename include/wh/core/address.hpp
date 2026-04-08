@@ -22,8 +22,8 @@ public:
 
   /// Builds address from ordered path segments passed as individual values.
   template <typename... segment_ts>
-    requires (sizeof...(segment_ts) > 0U &&
-              (std::constructible_from<std::string_view, segment_ts &&> && ...))
+    requires(sizeof...(segment_ts) > 0U &&
+             (std::constructible_from<std::string_view, segment_ts &&> && ...))
   explicit address(segment_ts &&...segments) {
     segments_.reserve(sizeof...(segment_ts));
     (append_segment(std::forward<segment_ts>(segments)), ...);
@@ -45,8 +45,8 @@ public:
   }
 
   /// Builds address from one pre-materialized segment span.
-  [[nodiscard]] static auto from_segments(
-      const std::span<const std::string_view> segments) -> address {
+  [[nodiscard]] static auto
+  from_segments(const std::span<const std::string_view> segments) -> address {
     address built{};
     built.append_segments(segments);
     return built;
@@ -55,7 +55,8 @@ public:
   /// Returns a new address with one segment appended.
   [[nodiscard]] auto append(std::string_view segment) const -> address {
     address next{*this};
-    [[maybe_unused]] auto &stored_segment = next.segments_.emplace_back(segment);
+    [[maybe_unused]] auto &stored_segment =
+        next.segments_.emplace_back(segment);
     return next;
   }
 
@@ -139,7 +140,8 @@ private:
     [[maybe_unused]] auto &stored_segment = segments_.emplace_back(segment);
   }
 
-  auto append_segments(const std::span<const std::string_view> segments) -> void {
+  auto append_segments(const std::span<const std::string_view> segments)
+      -> void {
     segments_.reserve(segments.size());
     for (const auto segment : segments) {
       append_segment(segment);
@@ -158,7 +160,8 @@ make_address(const std::span<const std::string_view> segments) -> address {
 
 /// Builds one address from one ordered initializer-list of path segments.
 [[nodiscard]] inline auto
-make_address(const std::initializer_list<std::string_view> segments) -> address {
+make_address(const std::initializer_list<std::string_view> segments)
+    -> address {
   return address::from_segments(
       std::span<const std::string_view>{segments.begin(), segments.size()});
 }

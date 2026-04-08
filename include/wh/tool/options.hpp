@@ -82,7 +82,8 @@ public:
   }
 
   /// Resolves effective options into a borrowed view without deep copies.
-  [[nodiscard]] auto resolve_view() const noexcept -> resolved_tool_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept
+      -> resolved_tool_options_view {
     resolved_tool_options_view view{};
     view.failure_policy = base_.failure_policy;
     view.max_retries = base_.max_retries;
@@ -128,7 +129,8 @@ public:
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept
+      -> wh::core::component_options & {
     return component_options_;
   }
 

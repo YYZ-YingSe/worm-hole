@@ -14,14 +14,12 @@ namespace detail {
 template <typename type_t> inline constexpr bool stream_always_false_v = false;
 
 template <typename derived_t>
-concept stream_read_impl = requires(derived_t &derived) {
-  derived.read_impl();
-};
+concept stream_read_impl =
+    requires(derived_t &derived) { derived.read_impl(); };
 
 template <typename derived_t>
-concept stream_try_read_impl = requires(derived_t &derived) {
-  derived.try_read_impl();
-};
+concept stream_try_read_impl =
+    requires(derived_t &derived) { derived.try_read_impl(); };
 
 } // namespace detail
 
@@ -66,8 +64,7 @@ public:
     if (std::holds_alternative<stream_signal>(next)) {
       return stream_pending;
     }
-    borrowed_poll_cache_.emplace(
-        std::move(std::get<chunk_result_type>(next)));
+    borrowed_poll_cache_.emplace(std::move(std::get<chunk_result_type>(next)));
     if (borrowed_poll_cache_->has_error()) {
       return chunk_view_result_type::failure(borrowed_poll_cache_->error());
     }

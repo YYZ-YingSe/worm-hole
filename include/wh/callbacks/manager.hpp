@@ -5,8 +5,8 @@
 #include <string>
 #include <utility>
 
-#include "wh/internal/callbacks.hpp"
 #include "wh/callbacks/interface.hpp"
+#include "wh/internal/callbacks.hpp"
 
 namespace wh::callbacks {
 

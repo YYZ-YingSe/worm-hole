@@ -12,8 +12,7 @@
 namespace wh::core::fn_detail {
 
 /// Type-dependent `false` utility for deferred static assertions.
-template <typename type_t>
-inline consteval auto make_false() -> bool {
+template <typename type_t> inline consteval auto make_false() -> bool {
   return false;
 }
 
@@ -41,7 +40,8 @@ using ref_non_trivials =
 template <typename type_t, typename return_t, bool is_noexcept,
           typename... param_types>
 using is_invocable =
-    std::conditional_t<is_noexcept, std::is_nothrow_invocable<type_t, param_types...>,
+    std::conditional_t<is_noexcept,
+                       std::is_nothrow_invocable<type_t, param_types...>,
                        std::is_invocable<type_t, param_types...>>;
 
 /// Detects pointer-like types exposing `pointer_traits::element_type`.
@@ -67,8 +67,7 @@ template <typename type_t>
 using is_function_pointer = std::bool_constant<is_function_pointer_v<type_t>>;
 
 /// Detects `std::in_place_type_t<T>` marker types.
-template <typename>
-inline constexpr bool is_in_place_type_v = false;
+template <typename> inline constexpr bool is_in_place_type_v = false;
 
 template <typename type_t>
 inline constexpr bool is_in_place_type_v<std::in_place_type_t<type_t>> = true;
@@ -83,8 +82,7 @@ using strip_rvalue_t =
                        std::remove_reference_t<type_t>, type_t>;
 
 /// Executes cleanup logic on scope exit unless disarmed.
-template <typename cleanup_t>
-class scope_guard {
+template <typename cleanup_t> class scope_guard {
 private:
   cleanup_t cleanup_;
   bool active_;

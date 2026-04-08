@@ -30,8 +30,8 @@ public:
   explicit ext_parser(parser &&fallback) : fallback_(std::move(fallback)) {}
 
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{
-        "ExtParser", wh::core::component_kind::document};
+    return wh::core::component_descriptor{"ExtParser",
+                                          wh::core::component_kind::document};
   }
 
   auto register_parser(const std::string &extension, const parser &value)
@@ -52,7 +52,8 @@ public:
 
   template <typename parser_t, typename extension_t, typename... args_t>
     requires parser_like<wh::core::remove_cvref_t<parser_t>> &&
-             std::constructible_from<wh::core::remove_cvref_t<parser_t>, args_t...> &&
+             std::constructible_from<wh::core::remove_cvref_t<parser_t>,
+                                     args_t...> &&
              std::constructible_from<std::string, extension_t &&>
   auto register_parser(extension_t &&extension, args_t &&...args)
       -> wh::core::result<void> {
@@ -62,14 +63,17 @@ public:
   }
 
   auto set_fallback(const parser &fallback) -> void { fallback_ = fallback; }
-  auto set_fallback(parser &&fallback) -> void { fallback_ = std::move(fallback); }
+  auto set_fallback(parser &&fallback) -> void {
+    fallback_ = std::move(fallback);
+  }
 
   template <typename parser_t, typename... args_t>
     requires parser_like<wh::core::remove_cvref_t<parser_t>> &&
-             std::constructible_from<wh::core::remove_cvref_t<parser_t>, args_t...>
+             std::constructible_from<wh::core::remove_cvref_t<parser_t>,
+                                     args_t...>
   auto set_fallback(args_t &&...args) -> void {
-    fallback_ = parser{wh::core::remove_cvref_t<parser_t>{
-        std::forward<args_t>(args)...}};
+    fallback_ = parser{
+        wh::core::remove_cvref_t<parser_t>{std::forward<args_t>(args)...}};
   }
 
   auto clear_fallback() noexcept -> void { fallback_.reset(); }
@@ -114,16 +118,19 @@ private:
   }
 
   template <typename request_t>
-  [[nodiscard]] auto parse_with(const parser &selected, request_t &&request) const
+  [[nodiscard]] auto parse_with(const parser &selected,
+                                request_t &&request) const
       -> wh::core::result<document_batch> {
     if (!selected.has_value()) {
-      return wh::core::result<document_batch>::failure(wh::core::errc::not_supported);
+      return wh::core::result<document_batch>::failure(
+          wh::core::errc::not_supported);
     }
     return selected.parse(std::forward<request_t>(request));
   }
 
   template <typename request_t>
-  [[nodiscard]] auto parse_and_strip(const parser &selected, request_t &&request) const
+  [[nodiscard]] auto parse_and_strip(const parser &selected,
+                                     request_t &&request) const
       -> wh::core::result<document_batch> {
     auto parsed = parse_with(selected, std::forward<request_t>(request));
     if (parsed.has_error()) {

@@ -266,8 +266,7 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
 
   void construct_handoff() noexcept {
     ::new (static_cast<void *>(handoff_storage_)) handoff_op_t(
-        stdexec::connect(stdexec::schedule(scheduler),
-                         handoff_receiver{this}));
+        stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this}));
     handoff_constructed_ = true;
   }
 
@@ -283,8 +282,7 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
 
     auto set_value() noexcept -> void { self->complete(); }
 
-    template <typename error_t>
-    auto set_error(error_t &&) noexcept -> void {
+    template <typename error_t> auto set_error(error_t &&) noexcept -> void {
       stdexec::set_stopped(std::move(self->receiver));
     }
 
@@ -298,10 +296,11 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
   template <typename receiver_value_t>
     requires std::constructible_from<receiver_t, receiver_value_t &&>
   lock_operation(async_mutex *mutex_ptr, receiver_value_t &&receiver_value)
-        : mutex(mutex_ptr),
+      : mutex(mutex_ptr),
         receiver(std::forward<receiver_value_t>(receiver_value)),
-        scheduler(wh::core::detail::select_resume_scheduler<
-                  stdexec::set_value_t>(stdexec::get_env(receiver))) {
+        scheduler(
+            wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
+                stdexec::get_env(receiver))) {
     this->complete_fn = [](waiter_base *base) noexcept {
       static_cast<lock_operation *>(base)->complete_ready();
     };
@@ -429,23 +428,22 @@ public:
       stdexec::completion_signatures<stdexec::set_value_t(lock_guard),
                                      stdexec::set_stopped_t()>;
 
-  explicit lock_sender(async_mutex *mutex_ptr) noexcept
-      : mutex_(mutex_ptr) {}
+  explicit lock_sender(async_mutex *mutex_ptr) noexcept : mutex_(mutex_ptr) {}
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver) &&
-      -> lock_operation<std::remove_cvref_t<receiver_t>> {
+  [[nodiscard]] auto connect(receiver_t receiver)
+      && -> lock_operation<std::remove_cvref_t<receiver_t>> {
     return lock_operation<std::remove_cvref_t<receiver_t>>{mutex_,
-                                                            std::move(receiver)};
+                                                           std::move(receiver)};
   }
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver) const &
-      -> lock_operation<std::remove_cvref_t<receiver_t>> {
+  [[nodiscard]] auto connect(receiver_t receiver)
+      const & -> lock_operation<std::remove_cvref_t<receiver_t>> {
     return lock_operation<std::remove_cvref_t<receiver_t>>{mutex_,
-                                                            std::move(receiver)};
+                                                           std::move(receiver)};
   }
 
   template <typename promise_t>
@@ -456,8 +454,8 @@ public:
 
   template <typename promise_t>
     requires wh::core::detail::promise_with_resume_scheduler<promise_t>
-  [[nodiscard]] auto as_awaitable(promise_t &promise) const &
-      -> decltype(auto) {
+  [[nodiscard]] auto
+  as_awaitable(promise_t &promise) const & -> decltype(auto) {
     return stdexec::as_awaitable(make_await_sender(*this), promise);
   }
 
@@ -469,10 +467,9 @@ public:
 private:
   template <typename self_t>
   [[nodiscard]] static auto make_await_sender(self_t &&self) {
-    return stdexec::then(static_cast<self_t &&>(self),
-                         [](lock_guard guard) noexcept -> lock_guard {
-                           return guard;
-                         });
+    return stdexec::then(
+        static_cast<self_t &&>(self),
+        [](lock_guard guard) noexcept -> lock_guard { return guard; });
   }
 
   async_mutex *mutex_{nullptr};

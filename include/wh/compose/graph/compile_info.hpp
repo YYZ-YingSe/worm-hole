@@ -1,4 +1,5 @@
-// Defines compile-time graph introspection snapshots passed to compile callbacks.
+// Defines compile-time graph introspection snapshots passed to compile
+// callbacks.
 #pragma once
 
 #include <chrono>
@@ -63,7 +64,8 @@ struct graph_compile_node_options_info {
   bool allow_no_data{false};
   /// Optional node-level retry budget override.
   std::optional<std::size_t> retry_budget_override{};
-  /// Optional node-level timeout override (`nullopt` falls back to graph default).
+  /// Optional node-level timeout override (`nullopt` falls back to graph
+  /// default).
   std::optional<std::chrono::milliseconds> timeout_override{};
   /// Optional node-level retry window override (`timeout` must be smaller).
   std::optional<std::chrono::milliseconds> retry_window_override{};
@@ -111,8 +113,8 @@ struct graph_compile_info {
   std::string name{"graph"};
   /// Runtime mode (`dag`/`pregel`) used by this graph.
   graph_runtime_mode mode{graph_runtime_mode::dag};
-  /// Eager dispatch flag controlling immediate/deferred dependent scheduling.
-  bool eager{true};
+  /// DAG frontier dispatch policy controlling same-wave/next-wave scheduling.
+  graph_dispatch_policy dispatch_policy{graph_dispatch_policy::same_wave};
   /// Compile-time max-step budget.
   std::size_t max_steps{1024U};
   /// Graph-level trigger policy.

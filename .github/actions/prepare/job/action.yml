@@ -1,0 +1,49 @@
+name: prepare-ci-job
+description: Prepare a CI job by installing tools, optionally pinning clang-format, guarding branches, and exporting CI env.
+
+inputs:
+  install_profile:
+    description: Tool installation profile.
+    required: true
+  env_profile:
+    description: Optional env export profile.
+    required: false
+    default: ""
+  env_build_type:
+    description: Optional build type argument for env_profile.
+    required: false
+    default: ""
+  setup_clang_format:
+    description: Whether to pin clang-format in a venv.
+    required: false
+    default: "false"
+  run_branch_guard:
+    description: Whether to run branch policy guard.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup/install-tools
+      with:
+        profile: ${{ inputs.install_profile }}
+
+    - if: inputs.setup_clang_format == 'true'
+      shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/setup/setup_clang_format_venv.sh"
+
+    - if: inputs.run_branch_guard == 'true'
+      shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/checks/guard_branch_policy.sh"
+
+    - if: inputs.env_profile != '' && inputs.env_build_type == ''
+      uses: ./.github/actions/setup/export-ci-env
+      with:
+        profile: ${{ inputs.env_profile }}
+
+    - if: inputs.env_profile != '' && inputs.env_build_type != ''
+      uses: ./.github/actions/setup/export-ci-env
+      with:
+        profile: ${{ inputs.env_profile }}
+        build_type: ${{ inputs.env_build_type }}

@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "wh/core/cursor_reader/detail/pull_state.hpp"
-#include "wh/core/cursor_reader/detail/waiter_ready_list.hpp"
 #include "wh/core/cursor_reader/detail/waiter_list.hpp"
+#include "wh/core/cursor_reader/detail/waiter_ready_list.hpp"
 #include "wh/core/small_vector.hpp"
 
 namespace wh::core::cursor_reader_detail {
@@ -46,9 +46,7 @@ template <typename result_t> struct async_waiter_base {
     status.emplace(std::move(value));
   }
 
-  [[nodiscard]] auto take_ready() -> result_t {
-    return std::move(*status);
-  }
+  [[nodiscard]] auto take_ready() -> result_t { return std::move(*status); }
 };
 
 template <typename result_t> struct reader_state {

@@ -17,8 +17,9 @@
 namespace wh::compose {
 namespace detail {
 
-[[nodiscard]] inline auto resolve_parallel_call_budget(
-    const std::size_t total, const std::size_t parallel_gate) noexcept
+[[nodiscard]] inline auto
+resolve_parallel_call_budget(const std::size_t total,
+                             const std::size_t parallel_gate) noexcept
     -> std::size_t {
   if (total == 0U) {
     return 0U;
@@ -42,25 +43,25 @@ namespace detail {
     -> wh::core::result<std::vector<std::reference_wrapper<const tool_call>>> {
   const auto *batch = wh::core::any_cast<tool_batch>(&input);
   if (batch == nullptr) {
-    return wh::core::result<
-        std::vector<std::reference_wrapper<const tool_call>>>::failure(
-        wh::core::errc::type_mismatch);
+    return wh::core::
+        result<std::vector<std::reference_wrapper<const tool_call>>>::failure(
+            wh::core::errc::type_mismatch);
   }
 
   std::vector<std::reference_wrapper<const tool_call>> calls{};
   calls.reserve(batch->calls.size());
   for (const auto &call : batch->calls) {
     if (call.tool_name.empty()) {
-      return wh::core::result<
-          std::vector<std::reference_wrapper<const tool_call>>>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::
+          result<std::vector<std::reference_wrapper<const tool_call>>>::failure(
+              wh::core::errc::invalid_argument);
     }
     calls.push_back(call);
   }
   if (calls.empty()) {
-    return wh::core::result<
-        std::vector<std::reference_wrapper<const tool_call>>>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::
+        result<std::vector<std::reference_wrapper<const tool_call>>>::failure(
+            wh::core::errc::invalid_argument);
   }
   return calls;
 }
@@ -137,9 +138,9 @@ struct tools_state {
   }
 };
 
-[[nodiscard]] inline auto resolve_tools_state(
-    const graph_value &input, const tool_registry &tools,
-    const tools_options &options, const node_runtime &runtime)
+[[nodiscard]] inline auto
+resolve_tools_state(const graph_value &input, const tool_registry &tools,
+                    const tools_options &options, const node_runtime &runtime)
     -> wh::core::result<tools_state> {
   auto calls = extract_calls(input);
   if (calls.has_error()) {
@@ -151,8 +152,9 @@ struct tools_state {
   state.default_tools = std::addressof(tools);
   state.sequential = options.sequential;
 
-  if (runtime.call_options != nullptr && runtime.call_options->tools().has_value()) {
-    const auto &tool_options = *runtime.call_options->tools();
+  if (runtime.call_options() != nullptr &&
+      runtime.call_options()->tools().has_value()) {
+    const auto &tool_options = *runtime.call_options()->tools();
     if (tool_options.registry.has_value()) {
       state.override_tools = tool_options.registry;
     }
@@ -193,10 +195,12 @@ struct tools_state {
   return state;
 }
 
-[[nodiscard]] inline auto make_sync_tools_state(
-    const graph_value &input, const tool_registry &tools,
-    const tools_options &options, wh::core::run_context &context,
-    const node_runtime &runtime) -> wh::core::result<tools_state> {
+[[nodiscard]] inline auto make_sync_tools_state(const graph_value &input,
+                                                const tool_registry &tools,
+                                                const tools_options &options,
+                                                wh::core::run_context &context,
+                                                const node_runtime &runtime)
+    -> wh::core::result<tools_state> {
   auto resolved = resolve_tools_state(input, tools, options, runtime);
   if (resolved.has_error()) {
     return resolved;
@@ -210,18 +214,20 @@ struct tools_state {
   return state;
 }
 
-[[nodiscard]] inline auto make_async_tools_state(
-    const graph_value &input, const tool_registry &tools,
-    const tools_options &options, wh::core::run_context &context,
-    const node_runtime &runtime) -> wh::core::result<tools_state> {
+[[nodiscard]] inline auto make_async_tools_state(const graph_value &input,
+                                                 const tool_registry &tools,
+                                                 const tools_options &options,
+                                                 wh::core::run_context &context,
+                                                 const node_runtime &runtime)
+    -> wh::core::result<tools_state> {
   auto resolved = resolve_tools_state(input, tools, options, runtime);
   if (resolved.has_error()) {
     return resolved;
   }
   auto state = std::move(resolved).value();
   state.parent_context = std::addressof(context);
-  auto node_context =
-      make_node_context(context, node_observation(runtime), node_trace(runtime));
+  auto node_context = make_node_context(context, node_observation(runtime),
+                                        node_trace(runtime));
   if (node_context.has_value()) {
     state.owned_context = std::move(*node_context);
   }
@@ -257,6 +263,12 @@ struct tools_state {
       .tool_name = call.tool_name,
       .call_id = call.call_id,
   };
+}
+
+inline auto merge_call_context(wh::core::run_context &target,
+                               const wh::core::run_context &source) -> void {
+  target.resume_info = source.resume_info;
+  target.interrupt_info = source.interrupt_info;
 }
 
 } // namespace detail

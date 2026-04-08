@@ -16,12 +16,14 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/manual_lifetime_box.hpp"
 
 namespace wh::core::cursor_reader_detail {
 
 template <wh::core::cursor_reader_source source_t, typename policy_t>
   requires wh::core::cursor_reader_detail::policy_for<source_t, policy_t>
-class shared_state : public std::enable_shared_from_this<shared_state<source_t, policy_t>> {
+class shared_state
+    : public std::enable_shared_from_this<shared_state<source_t, policy_t>> {
 public:
   using result_type = typename policy_t::result_type;
   using try_result_type = typename policy_t::try_result_type;
@@ -46,11 +48,9 @@ public:
 
 public:
   explicit shared_state(source_t source, const std::size_t reader_count)
-      : source_(std::move(source)),
-        slots_(initial_capacity()),
+      : source_(std::move(source)), slots_(initial_capacity()),
         reader_counts_(initial_capacity() + 1U, 0U),
-        capacity_(initial_capacity()),
-        readers_(reader_count),
+        capacity_(initial_capacity()), readers_(reader_count),
         open_reader_count_(reader_count) {
     policy_t::set_automatic_close(source_, automatic_close_);
     for (auto &reader : readers_) {
@@ -59,8 +59,8 @@ public:
     }
   }
 
-  [[nodiscard]] auto async_failure(const wh::core::error_code code) const noexcept
-      -> result_type {
+  [[nodiscard]] auto
+  async_failure(const wh::core::error_code code) const noexcept -> result_type {
     if constexpr (std::same_as<typename result_type::error_type,
                                wh::core::error_code>) {
       return result_type::failure(code);
@@ -80,18 +80,18 @@ public:
     return source_closed_ || pull_state_ == pull_state::terminal;
   }
 
-  [[nodiscard]] auto reader_is_closed(const std::size_t reader_index) const noexcept
-      -> bool {
+  [[nodiscard]] auto
+  reader_is_closed(const std::size_t reader_index) const noexcept -> bool {
     std::scoped_lock lock(lock_);
     const auto &reader = readers_[reader_index];
-    return reader.closed ||
-           (pull_state_ == pull_state::terminal &&
-            reader.next_sequence >= write_sequence_);
+    return reader.closed || (pull_state_ == pull_state::terminal &&
+                             reader.next_sequence >= write_sequence_);
   }
 
   auto close_reader(const std::size_t reader_index) noexcept -> void {
     async_ready_list_t async_ready{};
     bool start_close = false;
+    std::shared_ptr<stdexec::inplace_stop_source> stop_source{};
     std::shared_ptr<shared_state> keepalive{};
     {
       std::scoped_lock lock(lock_);
@@ -125,6 +125,8 @@ public:
         case pull_state::try_reading:
         case pull_state::blocking_reading:
         case pull_state::async_reading:
+          stop_source = active_pull_stop_source_;
+          break;
         case pull_state::closing:
           break;
         case pull_state::terminal:
@@ -135,6 +137,9 @@ public:
 
     if (start_close) {
       run_close_source();
+    }
+    if (stop_source != nullptr) {
+      stop_source->request_stop();
     }
     notify_async_waiters(async_ready);
   }
@@ -218,15 +223,13 @@ public:
     std::scoped_lock lock(lock_);
     auto &reader = readers_[reader_index];
     if (reader.closed) {
-      return {.ready = policy_t::closed_result(),
-              .start_pull = false};
+      return {.ready = policy_t::closed_result(), .start_pull = false};
     }
     if (auto ready = consume_local_locked(reader); ready.has_value()) {
       return {.ready = std::move(*ready), .start_pull = false};
     }
     if (pull_state_ == pull_state::terminal) {
-      return {.ready = policy_t::closed_result(),
-              .start_pull = false};
+      return {.ready = policy_t::closed_result(), .start_pull = false};
     }
 
     reader.async_waiters.push_back(waiter);
@@ -240,35 +243,50 @@ public:
 
   auto remove_async_waiter(const std::size_t reader_index,
                            async_waiter_t *waiter) noexcept -> bool {
-    std::scoped_lock lock(lock_);
-    auto removed = readers_[reader_index].async_waiters.try_remove(waiter);
-    if (!removed) {
-      return false;
+    std::shared_ptr<stdexec::inplace_stop_source> stop_source{};
+    {
+      std::scoped_lock lock(lock_);
+      auto removed = readers_[reader_index].async_waiters.try_remove(waiter);
+      if (!removed) {
+        return false;
+      }
+      decrement_async_waiter_count_locked();
+      if (pull_state_ == pull_state::async_reading &&
+          async_waiter_count_ == 0U) {
+        if (active_pull_.has_value()) {
+          stop_source = active_pull_stop_source_;
+        } else if (!close_requested_) {
+          pull_state_ = pull_state::idle;
+        }
+      }
     }
-    decrement_async_waiter_count_locked();
-    if (pull_state_ == pull_state::async_reading && !active_pull_.has_value() &&
-        async_waiter_count_ == 0U && !close_requested_) {
-      pull_state_ = pull_state::idle;
+    if (stop_source != nullptr) {
+      stop_source->request_stop();
     }
     return true;
   }
 
-  auto start_async_pull(wh::core::detail::any_resume_scheduler_t scheduler) noexcept
+  auto
+  start_async_pull(wh::core::detail::any_resume_scheduler_t scheduler) noexcept
       -> void
     requires wh::core::cursor_reader_detail::async_source<source_t>
   {
     try {
       auto keepalive = this->shared_from_this();
+      auto stop_source = std::make_shared<stdexec::inplace_stop_source>();
       {
         std::scoped_lock lock(lock_);
-        if (active_pull_.has_value() || pull_state_ != pull_state::async_reading) {
+        if (active_pull_.has_value() ||
+            pull_state_ != pull_state::async_reading) {
           return;
         }
         pull_keepalive_ = std::move(keepalive);
+        active_pull_stop_source_ = stop_source;
         active_pull_.emplace_from(
             [](shared_state *owner) { return pull_op_t{owner}; }, this);
       }
-      active_pull_.get().start(source_, std::move(scheduler));
+      active_pull_.get().start(source_, std::move(scheduler),
+                               std::move(stop_source));
     } catch (...) {
       finish_source_pull(nullptr, policy_t::internal_result(), true);
       reset_active_pull(nullptr);
@@ -283,7 +301,8 @@ public:
     {
       std::scoped_lock lock(lock_);
       if (pull != nullptr) {
-        if (!active_pull_.has_value() || std::addressof(active_pull_.get()) != pull) {
+        if (!active_pull_.has_value() ||
+            std::addressof(active_pull_.get()) != pull) {
           return;
         }
       } else if (!active_pull_.has_value()) {
@@ -302,7 +321,35 @@ public:
     if (discard_result) {
       return;
     }
-    publish(std::move(status), terminal_override || policy_t::is_terminal(status));
+    publish(std::move(status),
+            terminal_override || policy_t::is_terminal(status));
+  }
+
+  auto finish_source_pull_stopped(const pull_op_t *pull) noexcept -> void {
+    bool start_close = false;
+    std::shared_ptr<shared_state> keepalive{};
+    {
+      std::scoped_lock lock(lock_);
+      if (pull != nullptr) {
+        if (!active_pull_.has_value() ||
+            std::addressof(active_pull_.get()) != pull) {
+          return;
+        }
+      } else if (!active_pull_.has_value()) {
+        return;
+      }
+
+      if (open_reader_count_ == 0U && close_requested_) {
+        pull_state_ = pull_state::closing;
+        keepalive = this->shared_from_this();
+        start_close = true;
+      } else {
+        pull_state_ = pull_state::idle;
+      }
+    }
+    if (start_close) {
+      run_close_source();
+    }
   }
 
   auto reset_active_pull(const pull_op_t *pull) noexcept -> void {
@@ -314,11 +361,13 @@ public:
       return;
     }
     active_pull_.reset();
+    active_pull_stop_source_.reset();
     pull_keepalive_.reset();
   }
 
 private:
-  [[nodiscard]] static constexpr auto initial_capacity() noexcept -> std::size_t {
+  [[nodiscard]] static constexpr auto initial_capacity() noexcept
+      -> std::size_t {
     return 4U;
   }
 
@@ -493,7 +542,8 @@ private:
   auto grow_locked(const std::size_t new_capacity) -> void {
     sequence_count_buffer next_counts{};
     next_counts.resize(new_capacity + 1U, 0U);
-    for (auto sequence = base_sequence_; sequence <= write_sequence_; ++sequence) {
+    for (auto sequence = base_sequence_; sequence <= write_sequence_;
+         ++sequence) {
       next_counts[static_cast<std::size_t>(sequence - base_sequence_)] =
           sequence_count_at_locked(sequence);
     }
@@ -513,15 +563,17 @@ private:
     }
   }
 
-  [[nodiscard]] auto sequence_count_index_locked(
-      const std::uint64_t sequence) const noexcept -> std::size_t {
+  [[nodiscard]] auto
+  sequence_count_index_locked(const std::uint64_t sequence) const noexcept
+      -> std::size_t {
     const auto span = capacity_ + 1U;
     return static_cast<std::size_t>(
         (reader_counts_base_ + (sequence - base_sequence_)) % span);
   }
 
-  [[nodiscard]] auto sequence_count_at_locked(
-      const std::uint64_t sequence) const noexcept -> std::size_t {
+  [[nodiscard]] auto
+  sequence_count_at_locked(const std::uint64_t sequence) const noexcept
+      -> std::size_t {
     return reader_counts_[sequence_count_index_locked(sequence)];
   }
 
@@ -538,7 +590,8 @@ private:
     }
   }
 
-  auto clear_sequence_count_locked(const std::uint64_t sequence) noexcept -> void {
+  auto clear_sequence_count_locked(const std::uint64_t sequence) noexcept
+      -> void {
     reader_counts_[sequence_count_index_locked(sequence)] = 0U;
   }
 
@@ -547,7 +600,8 @@ private:
     reader_counts_base_ = (reader_counts_base_ + 1U) % span;
   }
 
-  static auto notify_sync_waiters(const sync_ready_buffer_t &ready_waiters) -> void {
+  static auto notify_sync_waiters(const sync_ready_buffer_t &ready_waiters)
+      -> void {
     for (auto *waiter : ready_waiters) {
       waiter->ready.test_and_set(std::memory_order_release);
       waiter->ready.notify_one();
@@ -574,6 +628,7 @@ private:
   std::size_t open_reader_count_{0U};
   std::size_t async_waiter_count_{0U};
   wh::core::detail::manual_lifetime_box<pull_op_t> active_pull_{};
+  std::shared_ptr<stdexec::inplace_stop_source> active_pull_stop_source_{};
   std::shared_ptr<shared_state> pull_keepalive_{};
 };
 

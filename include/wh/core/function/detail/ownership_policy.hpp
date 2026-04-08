@@ -97,9 +97,9 @@ protected:
   }
 
   template <typename... args_t>
-  static auto create(allocator_type &alloc, stored_type *target,
-                     args_t &&...args) noexcept(can_nothrow_construct<args_t...>)
-      -> void {
+  static auto
+  create(allocator_type &alloc, stored_type *target,
+         args_t &&...args) noexcept(can_nothrow_construct<args_t...>) -> void {
     allocator_traits::construct(alloc, target, std::forward<args_t>(args)...);
   }
 
@@ -174,8 +174,9 @@ protected:
                   "Target object must be constructible");
 
     *target = allocator_traits::allocate(alloc, 1U);
-    fn_detail::scope_guard allocation_guard{
-        [&alloc, &target]() { allocator_traits::deallocate(alloc, *target, 1U); }};
+    fn_detail::scope_guard allocation_guard{[&alloc, &target]() {
+      allocator_traits::deallocate(alloc, *target, 1U);
+    }};
 
     allocator_traits::construct(alloc, *target, std::forward<args_t>(args)...);
     allocation_guard.disarm();

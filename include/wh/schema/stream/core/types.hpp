@@ -125,7 +125,8 @@ borrow_chunk_until_next(const stream_chunk<value_t> &chunk)
 
 /// Materializes owned chunk from borrowed chunk view.
 template <typename value_t>
-[[nodiscard]] inline auto materialize_chunk(const stream_chunk_view<value_t> &view)
+[[nodiscard]] inline auto
+materialize_chunk(const stream_chunk_view<value_t> &view)
     -> stream_chunk<value_t> {
   stream_chunk<value_t> chunk{};
   if (view.value != nullptr) {

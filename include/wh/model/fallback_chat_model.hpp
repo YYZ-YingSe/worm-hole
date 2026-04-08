@@ -18,8 +18,7 @@ namespace wh::model {
 
 /// Compose-ready chat-model wrapper with optional catalog-backed tool binding
 /// and invoke/stream fallback routing.
-template <chat_model_like model_t>
-class fallback_chat_model {
+template <chat_model_like model_t> class fallback_chat_model {
 public:
   using catalog_cache_type = wh::tool::tool_catalog_cache;
 
@@ -42,17 +41,18 @@ public:
       : candidates_(std::move(candidates)), catalog_(std::move(catalog)) {}
 
   /// Stores fallback candidates, static tools, and one optional catalog cache.
-  fallback_chat_model(
-      std::vector<model_t> candidates,
-      std::vector<wh::schema::tool_schema_definition> tools,
-      std::optional<catalog_cache_type> catalog) noexcept
+  fallback_chat_model(std::vector<model_t> candidates,
+                      std::vector<wh::schema::tool_schema_definition> tools,
+                      std::optional<catalog_cache_type> catalog) noexcept
       : candidates_(std::move(candidates)), bound_tools_(std::move(tools)),
         catalog_(std::move(catalog)) {}
 
   fallback_chat_model(const fallback_chat_model &) = default;
   fallback_chat_model(fallback_chat_model &&) noexcept = default;
-  auto operator=(const fallback_chat_model &) -> fallback_chat_model & = default;
-  auto operator=(fallback_chat_model &&) noexcept -> fallback_chat_model & = default;
+  auto operator=(const fallback_chat_model &)
+      -> fallback_chat_model & = default;
+  auto operator=(fallback_chat_model &&) noexcept
+      -> fallback_chat_model & = default;
   ~fallback_chat_model() = default;
 
   /// Stable descriptor metadata for compose/component bindings.
@@ -79,7 +79,8 @@ public:
   }
 
   /// Runs invoke fallback using request tools, bound tools, or catalog tools.
-  [[nodiscard]] auto invoke(chat_request &&request, wh::core::run_context &context) const
+  [[nodiscard]] auto invoke(chat_request &&request,
+                            wh::core::run_context &context) const
       -> wh::core::result<chat_response> {
     return invoke(static_cast<const chat_request &>(request), context);
   }
@@ -104,7 +105,8 @@ public:
   }
 
   /// Runs stream fallback using request tools, bound tools, or catalog tools.
-  [[nodiscard]] auto stream(chat_request &&request, wh::core::run_context &context) const
+  [[nodiscard]] auto stream(chat_request &&request,
+                            wh::core::run_context &context) const
       -> wh::core::result<chat_message_stream_reader> {
     return stream(static_cast<const chat_request &>(request), context);
   }
@@ -125,7 +127,8 @@ public:
   }
 
   /// Exposes the stored candidate models for tests and diagnostics.
-  [[nodiscard]] auto candidates() const noexcept -> const std::vector<model_t> & {
+  [[nodiscard]] auto candidates() const noexcept
+      -> const std::vector<model_t> & {
     return candidates_;
   }
 

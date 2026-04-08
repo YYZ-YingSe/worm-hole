@@ -16,13 +16,14 @@
 namespace wh::agent::middlewares::reduction {
 
 /// Token estimator used by tool-result reduction.
-using token_estimator = wh::core::callback_function<
-    std::size_t(const wh::schema::message &) const>;
+using token_estimator =
+    wh::core::callback_function<std::size_t(const wh::schema::message &) const>;
 
 /// Request mutator used by callers to shrink old tool results before the next
 /// model turn begins.
-using clear_tool_result_middleware = wh::core::callback_function<
-    wh::core::result<void>(wh::model::chat_request &) const>;
+using clear_tool_result_middleware =
+    wh::core::callback_function<wh::core::result<void>(
+        wh::model::chat_request &) const>;
 
 /// Public configuration for the clear-tool-result request mutator.
 struct clear_tool_result_options {
@@ -42,8 +43,8 @@ struct clear_tool_result_options {
 
 namespace detail {
 
-[[nodiscard]] inline auto count_part_tokens(const wh::schema::message_part &part)
-    -> std::size_t {
+[[nodiscard]] inline auto
+count_part_tokens(const wh::schema::message_part &part) -> std::size_t {
   if (const auto *text = std::get_if<wh::schema::text_part>(&part);
       text != nullptr) {
     return (text->text.size() + 3U) / 4U;
@@ -55,8 +56,8 @@ namespace detail {
   return 0U;
 }
 
-[[nodiscard]] inline auto default_estimate_tokens(
-    const wh::schema::message &message) -> std::size_t {
+[[nodiscard]] inline auto
+default_estimate_tokens(const wh::schema::message &message) -> std::size_t {
   std::size_t total = 0U;
   for (const auto &part : message.parts) {
     total += count_part_tokens(part);
@@ -64,9 +65,9 @@ namespace detail {
   return total;
 }
 
-[[nodiscard]] inline auto should_reduce_message(
-    const wh::schema::message &message,
-    const clear_tool_result_options &options) -> bool {
+[[nodiscard]] inline auto
+should_reduce_message(const wh::schema::message &message,
+                      const clear_tool_result_options &options) -> bool {
   return message.role == wh::schema::message_role::tool &&
          !options.excluded_tool_names.contains(message.tool_name);
 }
@@ -75,15 +76,16 @@ namespace detail {
 
 /// Creates a request mutator that clears old tool-message content once the
 /// configured total-token threshold is exceeded.
-[[nodiscard]] inline auto make_clear_tool_result_middleware(
-    clear_tool_result_options options = {}) -> clear_tool_result_middleware {
+[[nodiscard]] inline auto
+make_clear_tool_result_middleware(clear_tool_result_options options = {})
+    -> clear_tool_result_middleware {
   if (options.placeholder.empty()) {
     options.placeholder = "[tool result omitted]";
   }
 
   return clear_tool_result_middleware{
-      [options = std::move(options)](wh::model::chat_request &request)
-          -> wh::core::result<void> {
+      [options = std::move(options)](
+          wh::model::chat_request &request) -> wh::core::result<void> {
         const auto &estimate =
             static_cast<bool>(options.estimate_tokens)
                 ? options.estimate_tokens

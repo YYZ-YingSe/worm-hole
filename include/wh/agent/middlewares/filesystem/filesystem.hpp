@@ -53,16 +53,16 @@ enum class filesystem_grep_mode {
 /// Host filesystem operations injected by the caller.
 struct filesystem_backend {
   /// Lists entries below one directory path.
-  wh::core::callback_function<wh::core::result<std::vector<filesystem_ls_entry>>(
-      std::string_view) const>
+  wh::core::callback_function<wh::core::result<
+      std::vector<filesystem_ls_entry>>(std::string_view) const>
       ls{nullptr};
   /// Reads one file slice from `offset` with the supplied `limit`.
   wh::core::callback_function<wh::core::result<std::string>(
       std::string_view, std::size_t, std::size_t) const>
       read{nullptr};
   /// Writes one new file payload.
-  wh::core::callback_function<wh::core::result<void>(
-      std::string_view, std::string_view) const>
+  wh::core::callback_function<wh::core::result<void>(std::string_view,
+                                                     std::string_view) const>
       write{nullptr};
   /// Edits one file by replacing one search string.
   wh::core::callback_function<wh::core::result<void>(
@@ -73,12 +73,13 @@ struct filesystem_backend {
       std::string_view, std::string_view) const>
       glob{nullptr};
   /// Greps one pattern below the supplied base path.
-  wh::core::callback_function<wh::core::result<std::vector<filesystem_grep_match>>(
-      std::string_view, std::string_view) const>
+  wh::core::callback_function<
+      wh::core::result<std::vector<filesystem_grep_match>>(
+          std::string_view, std::string_view) const>
       grep{nullptr};
   /// Persists one oversized tool result at the supplied path.
-  wh::core::callback_function<wh::core::result<void>(
-      std::string_view, std::string_view) const>
+  wh::core::callback_function<wh::core::result<void>(std::string_view,
+                                                     std::string_view) const>
       write_large_result{nullptr};
 };
 
@@ -96,7 +97,8 @@ struct filesystem_large_result_options {
 struct filesystem_tool_options {
   /// Optional instruction fragment describing the mounted tools.
   std::string instruction{
-      "Filesystem tools are available for listing, reading, writing, editing, globbing, and grepping files."};
+      "Filesystem tools are available for listing, reading, writing, editing, "
+      "globbing, and grepping files."};
   /// Public description for `ls`.
   std::string ls_description{"List files below one directory path."};
   /// Public description for `read_file`.
@@ -124,9 +126,8 @@ struct filesystem_tool_binding {
 namespace detail {
 
 using graph_value_result = wh::core::result<wh::compose::graph_value>;
-using graph_reader_result = wh::core::result<wh::compose::graph_stream_reader>;
-using invoke_handler = wh::core::callback_function<
-    graph_value_result(const wh::compose::tool_call &, wh::tool::call_scope) const>;
+using invoke_handler = wh::core::callback_function<graph_value_result(
+    const wh::compose::tool_call &, wh::tool::call_scope) const>;
 
 [[nodiscard]] inline auto parse_json_object(const std::string_view input_json)
     -> wh::core::result<wh::core::json_document> {
@@ -141,48 +142,55 @@ using invoke_handler = wh::core::callback_function<
   return parsed;
 }
 
-[[nodiscard]] inline auto optional_string_member(const wh::core::json_value &value,
-                                                 const std::string_view key)
+[[nodiscard]] inline auto
+optional_string_member(const wh::core::json_value &value,
+                       const std::string_view key)
     -> wh::core::result<std::optional<std::string>> {
   auto member = wh::core::json_find_member(value, key);
   if (member.has_error()) {
     if (member.error() == wh::core::errc::not_found) {
       return std::optional<std::string>{};
     }
-    return wh::core::result<std::optional<std::string>>::failure(member.error());
+    return wh::core::result<std::optional<std::string>>::failure(
+        member.error());
   }
   if (!member.value()->IsString()) {
     return wh::core::result<std::optional<std::string>>::failure(
         wh::core::errc::type_mismatch);
   }
-  return std::optional<std::string>{std::string{
-      member.value()->GetString(),
-      static_cast<std::size_t>(member.value()->GetStringLength())}};
+  return std::optional<std::string>{
+      std::string{member.value()->GetString(),
+                  static_cast<std::size_t>(member.value()->GetStringLength())}};
 }
 
-[[nodiscard]] inline auto required_string_member(const wh::core::json_value &value,
-                                                 const std::string_view key)
+[[nodiscard]] inline auto
+required_string_member(const wh::core::json_value &value,
+                       const std::string_view key)
     -> wh::core::result<std::string> {
   auto member = wh::core::json_find_member(value, key);
   if (member.has_error()) {
     return wh::core::result<std::string>::failure(member.error());
   }
   if (!member.value()->IsString()) {
-    return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
+    return wh::core::result<std::string>::failure(
+        wh::core::errc::type_mismatch);
   }
-  return std::string{member.value()->GetString(),
-                     static_cast<std::size_t>(member.value()->GetStringLength())};
+  return std::string{
+      member.value()->GetString(),
+      static_cast<std::size_t>(member.value()->GetStringLength())};
 }
 
-[[nodiscard]] inline auto optional_signed_member(const wh::core::json_value &value,
-                                                 const std::string_view key)
+[[nodiscard]] inline auto
+optional_signed_member(const wh::core::json_value &value,
+                       const std::string_view key)
     -> wh::core::result<std::optional<std::int64_t>> {
   auto member = wh::core::json_find_member(value, key);
   if (member.has_error()) {
     if (member.error() == wh::core::errc::not_found) {
       return std::optional<std::int64_t>{};
     }
-    return wh::core::result<std::optional<std::int64_t>>::failure(member.error());
+    return wh::core::result<std::optional<std::int64_t>>::failure(
+        member.error());
   }
   if (!member.value()->IsInt64()) {
     return wh::core::result<std::optional<std::int64_t>>::failure(
@@ -191,8 +199,9 @@ using invoke_handler = wh::core::callback_function<
   return std::optional<std::int64_t>{member.value()->GetInt64()};
 }
 
-[[nodiscard]] inline auto optional_bool_member(const wh::core::json_value &value,
-                                               const std::string_view key)
+[[nodiscard]] inline auto
+optional_bool_member(const wh::core::json_value &value,
+                     const std::string_view key)
     -> wh::core::result<std::optional<bool>> {
   auto member = wh::core::json_find_member(value, key);
   if (member.has_error()) {
@@ -208,31 +217,35 @@ using invoke_handler = wh::core::callback_function<
   return std::optional<bool>{member.value()->GetBool()};
 }
 
-[[nodiscard]] inline auto normalize_directory_path(
-    const std::optional<std::string> &path) -> std::string {
+[[nodiscard]] inline auto
+normalize_directory_path(const std::optional<std::string> &path)
+    -> std::string {
   if (!path.has_value() || path->empty()) {
     return "/";
   }
   return *path;
 }
 
-[[nodiscard]] inline auto normalize_offset(
-    const std::optional<std::int64_t> offset) noexcept -> std::size_t {
+[[nodiscard]] inline auto
+normalize_offset(const std::optional<std::int64_t> offset) noexcept
+    -> std::size_t {
   if (!offset.has_value() || *offset < 0) {
     return 0U;
   }
   return static_cast<std::size_t>(*offset);
 }
 
-[[nodiscard]] inline auto normalize_limit(
-    const std::optional<std::int64_t> limit) noexcept -> std::size_t {
+[[nodiscard]] inline auto
+normalize_limit(const std::optional<std::int64_t> limit) noexcept
+    -> std::size_t {
   if (!limit.has_value() || *limit <= 0) {
     return 4096U;
   }
   return static_cast<std::size_t>(*limit);
 }
 
-[[nodiscard]] inline auto parse_grep_mode(const std::optional<std::string> &mode)
+[[nodiscard]] inline auto
+parse_grep_mode(const std::optional<std::string> &mode)
     -> filesystem_grep_mode {
   if (!mode.has_value() || mode->empty() || *mode == "files_with_matches") {
     return filesystem_grep_mode::files_with_matches;
@@ -258,8 +271,9 @@ using invoke_handler = wh::core::callback_function<
   return joined;
 }
 
-[[nodiscard]] inline auto format_ls_entries(
-    const std::vector<filesystem_ls_entry> &entries) -> std::string {
+[[nodiscard]] inline auto
+format_ls_entries(const std::vector<filesystem_ls_entry> &entries)
+    -> std::string {
   std::vector<std::string> lines{};
   lines.reserve(entries.size());
   for (const auto &entry : entries) {
@@ -268,14 +282,14 @@ using invoke_handler = wh::core::callback_function<
   return join_lines(lines);
 }
 
-[[nodiscard]] inline auto format_glob_entries(
-    const std::vector<std::string> &entries) -> std::string {
+[[nodiscard]] inline auto
+format_glob_entries(const std::vector<std::string> &entries) -> std::string {
   return join_lines(entries);
 }
 
-[[nodiscard]] inline auto format_grep_entries(
-    const std::vector<filesystem_grep_match> &entries,
-    const filesystem_grep_mode mode) -> std::string {
+[[nodiscard]] inline auto
+format_grep_entries(const std::vector<filesystem_grep_match> &entries,
+                    const filesystem_grep_mode mode) -> std::string {
   if (mode == filesystem_grep_mode::count) {
     return std::to_string(entries.size());
   }
@@ -301,9 +315,9 @@ using invoke_handler = wh::core::callback_function<
   return join_lines(lines);
 }
 
-[[nodiscard]] inline auto large_result_path(
-    const filesystem_large_result_options &options,
-    const std::string_view call_id) -> std::string {
+[[nodiscard]] inline auto
+large_result_path(const filesystem_large_result_options &options,
+                  const std::string_view call_id) -> std::string {
   std::string path = options.path_prefix;
   if (path.empty() || path.back() != '/') {
     path.push_back('/');
@@ -312,13 +326,14 @@ using invoke_handler = wh::core::callback_function<
   return path;
 }
 
-[[nodiscard]] inline auto preview_text(const std::string_view text) -> std::string {
+[[nodiscard]] inline auto preview_text(const std::string_view text)
+    -> std::string {
   std::vector<std::string> lines{};
   std::size_t start = 0U;
   while (start <= text.size() && lines.size() < 10U) {
     const auto end = text.find('\n', start);
-    const auto count = end == std::string_view::npos ? text.size() - start
-                                                     : end - start;
+    const auto count =
+        end == std::string_view::npos ? text.size() - start : end - start;
     auto line = std::string{text.substr(start, count)};
     if (line.size() > 1000U) {
       line.resize(1000U);
@@ -341,7 +356,8 @@ using invoke_handler = wh::core::callback_function<
     return std::string{text};
   }
   if (!static_cast<bool>(backend.write_large_result)) {
-    return wh::core::result<std::string>::failure(wh::core::errc::invalid_argument);
+    return wh::core::result<std::string>::failure(
+        wh::core::errc::invalid_argument);
   }
 
   const auto output_path = large_result_path(options.large_result, call_id);
@@ -357,42 +373,15 @@ using invoke_handler = wh::core::callback_function<
   return summary;
 }
 
-[[nodiscard]] inline auto graph_string_value(std::string text) -> graph_value_result {
+[[nodiscard]] inline auto graph_string_value(std::string text)
+    -> graph_value_result {
   return wh::compose::graph_value{std::move(text)};
-}
-
-[[nodiscard]] inline auto graph_string_reader(const std::string &text)
-    -> graph_reader_result {
-  return wh::compose::to_graph_stream_reader(
-      wh::schema::stream::make_single_value_stream_reader<std::string>(text));
-}
-
-[[nodiscard]] inline auto graph_value_string(const wh::compose::graph_value &value)
-    -> wh::core::result<std::string> {
-  if (const auto *typed = wh::core::any_cast<std::string>(&value);
-      typed != nullptr) {
-    return *typed;
-  }
-  return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
 }
 
 [[nodiscard]] inline auto wrap_text_invoke(invoke_handler invoke)
     -> wh::compose::tool_entry {
   wh::compose::tool_entry entry{};
   entry.invoke = wh::compose::tool_invoke{invoke};
-  entry.stream = wh::compose::tool_stream{
-      [invoke](const wh::compose::tool_call &call, wh::tool::call_scope scope)
-          -> graph_reader_result {
-        auto status = invoke(call, scope);
-        if (status.has_error()) {
-          return graph_reader_result::failure(status.error());
-        }
-        auto text = graph_value_string(status.value());
-        if (text.has_error()) {
-          return graph_reader_result::failure(text.error());
-        }
-        return graph_string_reader(text.value());
-      }};
   return entry;
 }
 
@@ -434,15 +423,18 @@ using invoke_handler = wh::core::callback_function<
 
 } // namespace detail
 
-/// Returns the instruction fragment that documents the mounted filesystem tools.
-[[nodiscard]] inline auto make_filesystem_instruction(
-    const filesystem_tool_options &options) -> std::string {
+/// Returns the instruction fragment that documents the mounted filesystem
+/// tools.
+[[nodiscard]] inline auto
+make_filesystem_instruction(const filesystem_tool_options &options)
+    -> std::string {
   return options.instruction;
 }
 
 /// Builds the six default filesystem tools in stable order.
-[[nodiscard]] inline auto make_filesystem_tool_bindings(
-    const filesystem_backend &backend, filesystem_tool_options options = {})
+[[nodiscard]] inline auto
+make_filesystem_tool_bindings(const filesystem_backend &backend,
+                              filesystem_tool_options options = {})
     -> wh::core::result<std::vector<filesystem_tool_binding>> {
   if (!static_cast<bool>(backend.ls) || !static_cast<bool>(backend.read) ||
       !static_cast<bool>(backend.write) || !static_cast<bool>(backend.edit) ||
@@ -462,8 +454,8 @@ using invoke_handler = wh::core::callback_function<
   filesystem_tool_binding ls{};
   ls.schema.name = "ls";
   ls.schema.description = options.ls_description;
-  ls.schema.parameters.push_back(detail::make_string_parameter(
-      "path", "Directory path to list.", false));
+  ls.schema.parameters.push_back(
+      detail::make_string_parameter("path", "Directory path to list.", false));
   ls.entry = detail::wrap_text_invoke(detail::invoke_handler{
       [backend](const wh::compose::tool_call &call,
                 wh::tool::call_scope) -> detail::graph_value_result {
@@ -475,11 +467,13 @@ using invoke_handler = wh::core::callback_function<
         if (path.has_error()) {
           return detail::graph_value_result::failure(path.error());
         }
-        auto listed = backend.ls(detail::normalize_directory_path(path.value()));
+        auto listed =
+            backend.ls(detail::normalize_directory_path(path.value()));
         if (listed.has_error()) {
           return detail::graph_value_result::failure(listed.error());
         }
-        return detail::graph_string_value(detail::format_ls_entries(listed.value()));
+        return detail::graph_string_value(
+            detail::format_ls_entries(listed.value()));
       }});
   bindings.push_back(std::move(ls));
 
@@ -517,9 +511,8 @@ using invoke_handler = wh::core::callback_function<
         if (content.has_error()) {
           return detail::graph_value_result::failure(content.error());
         }
-        auto materialized =
-            detail::materialize_text_result(content.value(), call.call_id, backend,
-                                           options);
+        auto materialized = detail::materialize_text_result(
+            content.value(), call.call_id, backend, options);
         if (materialized.has_error()) {
           return detail::graph_value_result::failure(materialized.error());
         }
@@ -542,7 +535,8 @@ using invoke_handler = wh::core::callback_function<
           return detail::graph_value_result::failure(parsed.error());
         }
         auto path = detail::required_string_member(parsed.value(), "path");
-        auto content = detail::required_string_member(parsed.value(), "content");
+        auto content =
+            detail::required_string_member(parsed.value(), "content");
         if (path.has_error()) {
           return detail::graph_value_result::failure(path.error());
         }
@@ -577,7 +571,8 @@ using invoke_handler = wh::core::callback_function<
         }
         auto path = detail::required_string_member(parsed.value(), "path");
         auto search = detail::required_string_member(parsed.value(), "search");
-        auto replace = detail::required_string_member(parsed.value(), "replace");
+        auto replace =
+            detail::required_string_member(parsed.value(), "replace");
         auto replace_all =
             detail::optional_bool_member(parsed.value(), "replace_all");
         if (path.has_error()) {
@@ -617,16 +612,16 @@ using invoke_handler = wh::core::callback_function<
           return detail::graph_value_result::failure(parsed.error());
         }
         auto path = detail::optional_string_member(parsed.value(), "path");
-        auto pattern = detail::required_string_member(parsed.value(), "pattern");
+        auto pattern =
+            detail::required_string_member(parsed.value(), "pattern");
         if (path.has_error()) {
           return detail::graph_value_result::failure(path.error());
         }
         if (pattern.has_error()) {
           return detail::graph_value_result::failure(pattern.error());
         }
-        auto matched =
-            backend.glob(detail::normalize_directory_path(path.value()),
-                         pattern.value());
+        auto matched = backend.glob(
+            detail::normalize_directory_path(path.value()), pattern.value());
         if (matched.has_error()) {
           return detail::graph_value_result::failure(matched.error());
         }
@@ -652,7 +647,8 @@ using invoke_handler = wh::core::callback_function<
           return detail::graph_value_result::failure(parsed.error());
         }
         auto path = detail::optional_string_member(parsed.value(), "path");
-        auto pattern = detail::required_string_member(parsed.value(), "pattern");
+        auto pattern =
+            detail::required_string_member(parsed.value(), "pattern");
         auto mode = detail::optional_string_member(parsed.value(), "mode");
         if (path.has_error()) {
           return detail::graph_value_result::failure(path.error());
@@ -663,9 +659,8 @@ using invoke_handler = wh::core::callback_function<
         if (mode.has_error()) {
           return detail::graph_value_result::failure(mode.error());
         }
-        auto matched =
-            backend.grep(detail::normalize_directory_path(path.value()),
-                         pattern.value());
+        auto matched = backend.grep(
+            detail::normalize_directory_path(path.value()), pattern.value());
         if (matched.has_error()) {
           return detail::graph_value_result::failure(matched.error());
         }
@@ -687,7 +682,8 @@ using invoke_handler = wh::core::callback_function<
     return wh::core::result<std::string>::failure(bindings.error());
   }
   for (auto &binding : bindings.value()) {
-    auto added = toolset.add_entry(std::move(binding.schema), std::move(binding.entry));
+    auto added =
+        toolset.add_entry(std::move(binding.schema), std::move(binding.entry));
     if (added.has_error()) {
       return wh::core::result<std::string>::failure(added.error());
     }

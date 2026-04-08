@@ -13,8 +13,7 @@
 
 namespace wh::compose {
 
-template <graph_runtime_mode Mode>
-class mode_graph {
+template <graph_runtime_mode Mode> class mode_graph {
 private:
   [[nodiscard]] static constexpr auto default_name() noexcept
       -> std::string_view {
@@ -81,12 +80,12 @@ public:
   }
 
   /// Returns a mutable graph view for internal generic integrations.
-  [[nodiscard]] auto graph_view() noexcept -> graph & {
-    return graph_;
-  }
+  [[nodiscard]] auto graph_view() noexcept -> graph & { return graph_; }
 
   /// Releases the owned graph while keeping the fixed mode guarantee.
-  [[nodiscard]] auto release_graph() && noexcept -> graph { return std::move(graph_); }
+  [[nodiscard]] auto release_graph() && noexcept -> graph {
+    return std::move(graph_);
+  }
 
   /// Registers a component node.
   auto add_component(const component_node &node) -> wh::core::result<void> {
@@ -129,8 +128,7 @@ public:
   }
 
   /// Registers a passthrough node.
-  auto add_passthrough(const passthrough_node &node)
-      -> wh::core::result<void> {
+  auto add_passthrough(const passthrough_node &node) -> wh::core::result<void> {
     return graph_.add_passthrough(node);
   }
 
@@ -142,8 +140,7 @@ public:
   template <node_contract From = node_contract::value,
             node_contract To = node_contract::value,
             node_exec_mode Exec = node_exec_mode::sync, typename key_t,
-            typename lambda_t,
-            typename options_t = graph_add_node_options>
+            typename lambda_t, typename options_t = graph_add_node_options>
   /// Registers a lambda node.
   auto add_lambda(key_t &&key, lambda_t &&lambda, options_t &&options = {})
       -> wh::core::result<void> {
@@ -154,9 +151,8 @@ public:
 
   template <component_kind Kind, node_contract From, node_contract To,
             node_exec_mode Exec = node_exec_mode::sync, typename key_t,
-            typename component_t,
-            typename options_t = graph_add_node_options>
-    requires (Kind != component_kind::custom)
+            typename component_t, typename options_t = graph_add_node_options>
+    requires(Kind != component_kind::custom)
   /// Registers a component node.
   auto add_component(key_t &&key, component_t &&component,
                      options_t &&options = {}) -> wh::core::result<void> {
@@ -168,8 +164,8 @@ public:
   template <typename key_t, typename graph_t,
             typename options_t = graph_add_node_options>
   /// Registers a subgraph node.
-  auto add_subgraph(key_t &&key, graph_t &&subgraph,
-                    options_t &&options = {}) -> wh::core::result<void> {
+  auto add_subgraph(key_t &&key, graph_t &&subgraph, options_t &&options = {})
+      -> wh::core::result<void> {
     return graph_.add_subgraph(std::forward<key_t>(key),
                                std::forward<graph_t>(subgraph),
                                std::forward<options_t>(options));
@@ -178,8 +174,7 @@ public:
   template <node_contract From = node_contract::value,
             node_contract To = node_contract::value,
             node_exec_mode Exec = node_exec_mode::sync, typename key_t,
-            typename registry_t,
-            typename options_t = graph_add_node_options,
+            typename registry_t, typename options_t = graph_add_node_options,
             typename tool_options_t = tools_options>
   /// Registers a tools node.
   auto add_tools(key_t &&key, registry_t &&registry, options_t &&options = {},
@@ -232,14 +227,27 @@ public:
     return graph_.add_exit_edge(std::forward<from_t>(from), std::move(options));
   }
 
-  /// Registers one branch declaration by expanding to multiple edges.
-  auto add_branch(const graph_branch &branch) -> wh::core::result<void> {
-    return graph_.add_branch(branch);
+  /// Registers one value-branch declaration by expanding to multiple edges.
+  auto add_value_branch(const graph_value_branch &branch)
+      -> wh::core::result<void> {
+    return graph_.add_value_branch(branch);
   }
 
-  /// Registers one branch declaration by expanding to multiple edges.
-  auto add_branch(graph_branch &&branch) -> wh::core::result<void> {
-    return graph_.add_branch(std::move(branch));
+  /// Registers one value-branch declaration by expanding to multiple edges.
+  auto add_value_branch(graph_value_branch &&branch) -> wh::core::result<void> {
+    return graph_.add_value_branch(std::move(branch));
+  }
+
+  /// Registers one stream-branch declaration by expanding to multiple edges.
+  auto add_stream_branch(const graph_stream_branch &branch)
+      -> wh::core::result<void> {
+    return graph_.add_stream_branch(branch);
+  }
+
+  /// Registers one stream-branch declaration by expanding to multiple edges.
+  auto add_stream_branch(graph_stream_branch &&branch)
+      -> wh::core::result<void> {
+    return graph_.add_stream_branch(std::move(branch));
   }
 
   /// Runs compile validation and freezes graph structure.

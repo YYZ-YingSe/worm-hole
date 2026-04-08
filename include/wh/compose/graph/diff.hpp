@@ -1,8 +1,8 @@
 // Defines public graph diff entrypoints.
 #pragma once
 
-#include "wh/compose/graph/diff_check.hpp"
 #include "wh/compose/graph.hpp"
+#include "wh/compose/graph/diff_check.hpp"
 
 namespace wh::compose {
 

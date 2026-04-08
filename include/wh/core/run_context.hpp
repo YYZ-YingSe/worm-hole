@@ -38,9 +38,9 @@ struct callback_runtime {
 
 /// Per-run mutable state shared across components.
 struct run_context {
-  using session_store =
-      std::unordered_map<std::string, wh::core::any, detail::session_string_hash,
-                         detail::session_string_equal>;
+  using session_store = std::unordered_map<std::string, wh::core::any,
+                                           detail::session_string_hash,
+                                           detail::session_string_equal>;
 
   session_store session_values{};
   std::optional<callback_runtime> callbacks{};
@@ -60,9 +60,8 @@ auto set_session_value(run_context &context, key_t &&key, value_t &&value)
                                             std::forward<value_t>(value));
   } else {
     context.session_values.insert_or_assign(
-        std::move(stored_key),
-        wh::core::any{std::in_place_type<stored_t>,
-                      std::forward<value_t>(value)});
+        std::move(stored_key), wh::core::any{std::in_place_type<stored_t>,
+                                             std::forward<value_t>(value)});
   }
 }
 
@@ -129,16 +128,15 @@ has_callback_manager(const run_context &context) noexcept -> bool {
   return context.callbacks.has_value();
 }
 
-/// Registers one local stage-callback table on context callback manager and returns
-/// context.
+/// Registers one local stage-callback table on context callback manager and
+/// returns context.
 template <typename config_t, typename callbacks_t>
-  requires wh::core::CallbackConfigLike<
-               wh::core::remove_cvref_t<config_t>> &&
+  requires wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>> &&
            std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                         wh::core::stage_callbacks>
 [[nodiscard]] inline auto
 register_local_callbacks(wh::core::run_context &&context, config_t &&config,
-                     callbacks_t &&callbacks)
+                         callbacks_t &&callbacks)
     -> wh::core::result<wh::core::run_context> {
   if (!context.callbacks.has_value()) {
     return wh::core::result<wh::core::run_context>::failure(
@@ -153,17 +151,17 @@ register_local_callbacks(wh::core::run_context &&context, config_t &&config,
 /// Registers one local stage-callback table on context callback manager and
 /// returns context.
 template <typename config_t, typename callbacks_t>
-  requires wh::core::CallbackConfigLike<
-               wh::core::remove_cvref_t<config_t>> &&
+  requires wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>> &&
            std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                         wh::core::stage_callbacks>
 [[nodiscard]] inline auto
-register_local_callbacks(const wh::core::run_context &context, config_t &&config,
-                     callbacks_t &&callbacks)
+register_local_callbacks(const wh::core::run_context &context,
+                         config_t &&config, callbacks_t &&callbacks)
     -> wh::core::result<wh::core::run_context> {
   wh::core::run_context copied = context;
-  return register_local_callbacks(std::move(copied), std::forward<config_t>(config),
-                              std::forward<callbacks_t>(callbacks));
+  return register_local_callbacks(std::move(copied),
+                                  std::forward<config_t>(config),
+                                  std::forward<callbacks_t>(callbacks));
 }
 
 /// Timing-checker overload for local registration with context return.
@@ -171,12 +169,11 @@ template <wh::core::TimingChecker timing_checker_t, typename callbacks_t,
           typename name_t>
   requires std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                         wh::core::stage_callbacks> &&
-           std::convertible_to<wh::core::remove_cvref_t<name_t>,
-                               std::string>
+           std::convertible_to<wh::core::remove_cvref_t<name_t>, std::string>
 [[nodiscard]] inline auto
 register_local_callbacks(wh::core::run_context &&context,
-                     timing_checker_t &&timing_checker, callbacks_t &&callbacks,
-                     name_t &&name)
+                         timing_checker_t &&timing_checker,
+                         callbacks_t &&callbacks, name_t &&name)
     -> wh::core::result<wh::core::run_context> {
   return register_local_callbacks(
       std::move(context),
@@ -191,12 +188,11 @@ template <wh::core::TimingChecker timing_checker_t, typename callbacks_t,
           typename name_t>
   requires std::same_as<wh::core::remove_cvref_t<callbacks_t>,
                         wh::core::stage_callbacks> &&
-           std::convertible_to<wh::core::remove_cvref_t<name_t>,
-                               std::string>
+           std::convertible_to<wh::core::remove_cvref_t<name_t>, std::string>
 [[nodiscard]] inline auto
 register_local_callbacks(const wh::core::run_context &context,
-                     timing_checker_t &&timing_checker, callbacks_t &&callbacks,
-                     name_t &&name)
+                         timing_checker_t &&timing_checker,
+                         callbacks_t &&callbacks, name_t &&name)
     -> wh::core::result<wh::core::run_context> {
   return register_local_callbacks(
       context,
@@ -211,7 +207,8 @@ template <typename payload_t>
 auto inject_callback_event(wh::core::run_context &context,
                            const wh::core::callback_stage stage,
                            const payload_t &payload,
-                           const wh::core::callback_run_info &run_info) -> void {
+                           const wh::core::callback_run_info &run_info)
+    -> void {
   if (!context.callbacks.has_value()) {
     return;
   }

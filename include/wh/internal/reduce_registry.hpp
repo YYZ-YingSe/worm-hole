@@ -22,19 +22,22 @@ using dynamic_reduce_value = wh::core::any;
 /// Span view over type-erased reducer inputs.
 using dynamic_reduce_values = std::span<const dynamic_reduce_value>;
 /// Runtime reducer function signature for type-erased inputs.
-using dynamic_reduce_function = wh::core::function<
-    wh::core::result<dynamic_reduce_value>(dynamic_reduce_values) const>;
+using dynamic_reduce_function =
+    wh::core::function<wh::core::result<dynamic_reduce_value>(
+        dynamic_reduce_values) const>;
 
 /// Shared storage and registration logic for typed/type-erased reducers.
 class reduce_registry_core {
 public:
   template <typename value_t>
-  using typed_reduce_fn_t = wh::core::function<wh::core::result<value_t>(
-      std::span<const value_t>) const>;
+  using typed_reduce_fn_t =
+      wh::core::function<wh::core::result<value_t>(std::span<const value_t>)
+                             const>;
 
   template <typename value_t>
-  using typed_ptr_reduce_fn_t = wh::core::function<wh::core::result<value_t>(
-      std::span<const value_t *>) const>;
+  using typed_ptr_reduce_fn_t =
+      wh::core::function<wh::core::result<value_t>(std::span<const value_t *>)
+                             const>;
 
   reduce_registry_core() = default;
 
@@ -75,42 +78,34 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
     }
 
-    const auto dynamic_inserted = dynamic_table_
-                                      .emplace(
-                                          type,
-                                          [bridge = std::move(bridge)](
-                                              const dynamic_reduce_values values)
-                                              -> wh::core::result<dynamic_reduce_value> {
-                                            wh::core::small_vector<value_t, 8U>
-                                                typed_values{};
-                                            typed_values.reserve(
-                                                static_cast<typename decltype(
-                                                    typed_values)::size_type>(
-                                                    values.size()));
-                                            for (const auto &value : values) {
-                                              const auto *typed =
-                                                  wh::core::any_cast<value_t>(&value);
-                                              if (typed == nullptr) {
-                                                return wh::core::result<
-                                                    dynamic_reduce_value>::failure(
-                                                    wh::core::errc::type_mismatch);
-                                              }
-                                              typed_values.push_back(*typed);
-                                            }
+    const auto dynamic_inserted =
+        dynamic_table_
+            .emplace(
+                type,
+                [bridge = std::move(bridge)](const dynamic_reduce_values values)
+                    -> wh::core::result<dynamic_reduce_value> {
+                  wh::core::small_vector<value_t, 8U> typed_values{};
+                  typed_values.reserve(
+                      static_cast<typename decltype(typed_values)::size_type>(
+                          values.size()));
+                  for (const auto &value : values) {
+                    const auto *typed = wh::core::any_cast<value_t>(&value);
+                    if (typed == nullptr) {
+                      return wh::core::result<dynamic_reduce_value>::failure(
+                          wh::core::errc::type_mismatch);
+                    }
+                    typed_values.push_back(*typed);
+                  }
 
-                                            auto reduced = bridge(
-                                                std::span<const value_t>{
-                                                    typed_values.data(),
-                                                    typed_values.size()});
-                                            if (reduced.has_error()) {
-                                              return wh::core::result<
-                                                  dynamic_reduce_value>::failure(
-                                                  reduced.error());
-                                            }
-                                            return dynamic_reduce_value{
-                                                std::move(reduced).value()};
-                                          })
-                                      .second;
+                  auto reduced = bridge(std::span<const value_t>{
+                      typed_values.data(), typed_values.size()});
+                  if (reduced.has_error()) {
+                    return wh::core::result<dynamic_reduce_value>::failure(
+                        reduced.error());
+                  }
+                  return dynamic_reduce_value{std::move(reduced).value()};
+                })
+            .second;
     if (!dynamic_inserted) {
       typed_table_.erase(typed_iter);
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
@@ -157,43 +152,35 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
     }
 
-    const auto dynamic_inserted = dynamic_table_
-                                      .emplace(
-                                          type,
-                                          [function = std::move(function)](
-                                              const dynamic_reduce_values values)
-                                              -> wh::core::result<dynamic_reduce_value> {
-                                            wh::core::small_vector<
-                                                const value_t *, 8U>
-                                                typed_values{};
-                                            typed_values.reserve(
-                                                static_cast<typename decltype(
-                                                    typed_values)::size_type>(
-                                                    values.size()));
-                                            for (const auto &value : values) {
-                                              const auto *typed =
-                                                  wh::core::any_cast<value_t>(&value);
-                                              if (typed == nullptr) {
-                                                return wh::core::result<
-                                                    dynamic_reduce_value>::failure(
-                                                    wh::core::errc::type_mismatch);
-                                              }
-                                              typed_values.push_back(typed);
-                                            }
+    const auto dynamic_inserted =
+        dynamic_table_
+            .emplace(
+                type,
+                [function =
+                     std::move(function)](const dynamic_reduce_values values)
+                    -> wh::core::result<dynamic_reduce_value> {
+                  wh::core::small_vector<const value_t *, 8U> typed_values{};
+                  typed_values.reserve(
+                      static_cast<typename decltype(typed_values)::size_type>(
+                          values.size()));
+                  for (const auto &value : values) {
+                    const auto *typed = wh::core::any_cast<value_t>(&value);
+                    if (typed == nullptr) {
+                      return wh::core::result<dynamic_reduce_value>::failure(
+                          wh::core::errc::type_mismatch);
+                    }
+                    typed_values.push_back(typed);
+                  }
 
-                                            auto reduced = function(
-                                                std::span<const value_t *>{
-                                                    typed_values.data(),
-                                                    typed_values.size()});
-                                            if (reduced.has_error()) {
-                                              return wh::core::result<
-                                                  dynamic_reduce_value>::failure(
-                                                  reduced.error());
-                                            }
-                                            return dynamic_reduce_value{
-                                                std::move(reduced).value()};
-                                          })
-                                      .second;
+                  auto reduced = function(std::span<const value_t *>{
+                      typed_values.data(), typed_values.size()});
+                  if (reduced.has_error()) {
+                    return wh::core::result<dynamic_reduce_value>::failure(
+                        reduced.error());
+                  }
+                  return dynamic_reduce_value{std::move(reduced).value()};
+                })
+            .second;
     if (!dynamic_inserted) {
       typed_table_.erase(typed_iter);
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
@@ -203,7 +190,8 @@ public:
   }
 
   /// Looks up one dynamic reducer by runtime type key.
-  [[nodiscard]] auto find_dynamic(const wh::core::any_type_key type) const noexcept
+  [[nodiscard]] auto
+  find_dynamic(const wh::core::any_type_key type) const noexcept
       -> const dynamic_reduce_function * {
     const auto iter = dynamic_table_.find(type);
     if (iter == dynamic_table_.end()) {

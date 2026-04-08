@@ -6,12 +6,12 @@
 #include <unordered_map>
 #include <utility>
 
+#include "wh/core/address.hpp"
 #include "wh/core/any.hpp"
+#include "wh/core/component/types.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/function.hpp"
-#include "wh/core/address.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/core/component/types.hpp"
 
 namespace wh::core {
 
@@ -160,8 +160,9 @@ struct callback_run_metadata {
 };
 
 /// Applies callback metadata on top of one emitted run-info payload.
-[[nodiscard]] inline auto apply_callback_run_metadata(
-    callback_run_info run_info, const callback_run_metadata &metadata)
+[[nodiscard]] inline auto
+apply_callback_run_metadata(callback_run_info run_info,
+                            const callback_run_metadata &metadata)
     -> callback_run_info {
   if (!metadata.trace_id.empty()) {
     run_info.trace_id = metadata.trace_id;
@@ -179,9 +180,10 @@ struct callback_run_metadata {
 }
 
 /// Applies resolved component metadata on top of one callback run-info payload.
-[[nodiscard]] inline auto apply_component_run_info(
-    callback_run_info run_info,
-    const resolved_component_options_view options) -> callback_run_info {
+[[nodiscard]] inline auto
+apply_component_run_info(callback_run_info run_info,
+                         const resolved_component_options_view options)
+    -> callback_run_info {
   if (!options.trace_id.empty()) {
     run_info.trace_id = std::string{options.trace_id};
   }
@@ -192,8 +194,9 @@ struct callback_run_metadata {
 }
 
 /// Applies resolved component metadata on top of one callback run-info payload.
-[[nodiscard]] inline auto apply_component_run_info(
-    callback_run_info run_info, const component_options &options)
+[[nodiscard]] inline auto
+apply_component_run_info(callback_run_info run_info,
+                         const component_options &options)
     -> callback_run_info {
   return apply_component_run_info(std::move(run_info), options.resolve_view());
 }
@@ -202,9 +205,9 @@ struct callback_run_metadata {
 using stage_view_callback = wh::core::callback_function<void(
     callback_stage, callback_event_view, const callback_run_info &) const>;
 /// Single-consumer callback signature for owning payload dispatch.
-using stage_payload_callback = wh::core::callback_function<
-    void(callback_stage, callback_event_payload &&, const callback_run_info &)
-        const>;
+using stage_payload_callback =
+    wh::core::callback_function<void(callback_stage, callback_event_payload &&,
+                                     const callback_run_info &) const>;
 
 /// Per-stage callback table used by registration-time stage expansion.
 struct stage_callbacks {

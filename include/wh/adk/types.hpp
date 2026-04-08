@@ -1,12 +1,11 @@
-// Defines ADK event/message/control protocol types on top of existing
-// schema/core stream and serialization capabilities.
+// Defines ADK event, message, and control protocol types on top of existing
+// schema and core capabilities.
 #pragma once
 
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <variant>
-#include <vector>
 
 #include "wh/core/address.hpp"
 #include "wh/core/any.hpp"
@@ -41,7 +40,7 @@ enum class control_action_kind {
   exit = 0U,
   /// Transfer execution to another named agent.
   transfer,
-  /// Surface an interrupt to the caller/resume boundary.
+  /// Surface an interrupt to the caller or resume boundary.
   interrupt,
   /// Break the current authored loop body.
   break_loop,
@@ -86,7 +85,8 @@ struct event_metadata {
   /// Tool name associated with the event, if any.
   std::string tool_name{};
   /// Arbitrary metadata fields attached by bridges or governance wrappers.
-  std::unordered_map<std::string, wh::core::any, wh::core::transparent_string_hash,
+  std::unordered_map<std::string, wh::core::any,
+                     wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       attributes{};
 };
@@ -104,8 +104,9 @@ struct agent_event {
 };
 
 /// Builds a message event from one owned message value.
-[[nodiscard]] inline auto make_message_event(
-    wh::schema::message message, event_metadata metadata = {}) -> agent_event {
+[[nodiscard]] inline auto make_message_event(wh::schema::message message,
+                                             event_metadata metadata = {})
+    -> agent_event {
   return agent_event{
       .payload = message_event{.content = std::move(message)},
       .metadata = std::move(metadata),
@@ -133,36 +134,42 @@ struct agent_event {
 }
 
 /// Builds a custom event from one type-erased payload.
-[[nodiscard]] inline auto make_custom_event(std::string name, wh::core::any payload,
+[[nodiscard]] inline auto make_custom_event(std::string name,
+                                            wh::core::any payload,
                                             event_metadata metadata = {})
     -> agent_event {
   return agent_event{
-      .payload = custom_event{.name = std::move(name), .payload = std::move(payload)},
+      .payload =
+          custom_event{
+              .name = std::move(name),
+              .payload = std::move(payload),
+          },
       .metadata = std::move(metadata),
   };
 }
 
 /// Builds an error event with optional typed detail payload.
-[[nodiscard]] inline auto make_error_event(wh::core::error_code code,
-                                           std::string message,
-                                           wh::core::any detail = {},
-                                           event_metadata metadata = {})
+[[nodiscard]] inline auto
+make_error_event(wh::core::error_code code, std::string message,
+                 wh::core::any detail = {}, event_metadata metadata = {})
     -> agent_event {
   return agent_event{
-      .payload = error_event{
-          .code = code,
-          .message = std::move(message),
-          .detail = std::move(detail),
-      },
+      .payload =
+          error_event{
+              .code = code,
+              .message = std::move(message),
+              .detail = std::move(detail),
+          },
       .metadata = std::move(metadata),
   };
 }
 
 namespace detail {
 
-[[nodiscard]] inline auto validate_registered_payload(
-    const wh::core::any &payload,
-    const wh::schema::serialization_registry &registry) -> wh::core::result<void> {
+[[nodiscard]] inline auto
+validate_registered_payload(const wh::core::any &payload,
+                            const wh::schema::serialization_registry &registry)
+    -> wh::core::result<void> {
   if (!payload.has_value()) {
     return {};
   }
@@ -179,7 +186,8 @@ namespace detail {
 /// Validates whether one event is safe to cross a checkpoint serialization
 /// boundary without inventing a second serialization protocol.
 [[nodiscard]] inline auto validate_agent_event_checkpoint_serializable(
-    const agent_event &event, const wh::schema::serialization_registry &registry)
+    const agent_event &event,
+    const wh::schema::serialization_registry &registry)
     -> wh::core::result<void> {
   if (const auto *message = std::get_if<message_event>(&event.payload);
       message != nullptr) {
