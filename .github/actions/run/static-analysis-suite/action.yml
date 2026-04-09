@@ -3,15 +3,15 @@ description: Select the clang-tidy toolchain and run the full static analysis su
 
 inputs:
   select_toolchain:
-    description: Whether to preselect a versioned clang-tidy toolchain.
+    description: "Whether to preselect a versioned clang-tidy toolchain."
     required: false
     default: "true"
   mode:
-    description: Which static-analysis stage to run: clang-tidy, backend, or full.
+    description: "Which static-analysis stage to run: clang-tidy, backend, or full."
     required: false
     default: "full"
   path_filter:
-    description: ripgrep filter used by clang-tidy source discovery.
+    description: "ripgrep filter used by clang-tidy source discovery."
     required: false
     default: ""
 

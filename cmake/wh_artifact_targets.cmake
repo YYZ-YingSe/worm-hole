@@ -1,7 +1,5 @@
 include_guard(GLOBAL)
 
-include(CheckCXXCompilerFlag)
-
 include(wh_support_targets)
 include(wh_source_targets)
 
@@ -65,17 +63,8 @@ function(wh_setup_test_support_targets)
     "${WH_TARGET_TEST_SUPPORT}"
     LINK_LIBRARIES wh::core Catch2::Catch2WithMain
     INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/tests")
-
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(wh_old_required_flags "${CMAKE_REQUIRED_FLAGS}")
-    set(CMAKE_REQUIRED_FLAGS
-        "${CMAKE_REQUIRED_FLAGS} -Werror=unknown-warning-option")
-    check_cxx_compiler_flag("-Wno-c2y-extensions"
-                            WH_HAVE_WNO_C2Y_EXTENSIONS)
-    set(CMAKE_REQUIRED_FLAGS "${wh_old_required_flags}")
-    set_property(GLOBAL PROPERTY WH_HAVE_WNO_C2Y_EXTENSIONS
-                                 "${WH_HAVE_WNO_C2Y_EXTENSIONS}")
-  endif()
+  target_compile_definitions("${WH_TARGET_TEST_SUPPORT}"
+                             INTERFACE CATCH_CONFIG_NO_COUNTER)
 
   wh_define_support_target(
     "${WH_TARGET_UT_SUPPORT}"

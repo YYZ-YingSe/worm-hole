@@ -33,14 +33,6 @@ function(wh_add_catch_test_source out_var)
     LINK_LIBRARIES ${ARG_LINK_LIBRARIES}
     INCLUDE_DIRECTORIES ${ARG_INCLUDE_DIRECTORIES})
 
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    get_property(wh_have_wno_c2y_extensions GLOBAL
-                 PROPERTY WH_HAVE_WNO_C2Y_EXTENSIONS)
-    if(wh_have_wno_c2y_extensions)
-      target_compile_options("${target_name}" PRIVATE -Wno-c2y-extensions)
-    endif()
-  endif()
-
   wh_source_test_prefix(discovery_prefix "${ARG_TEST_PREFIX}"
                         "${ARG_SOURCE_ROOT}" "${ARG_SOURCE_FILE}")
 

@@ -51,21 +51,52 @@ public:
   /// Copy-on-write publication slot for one stage snapshot.
   class registration_snapshot_slot {
   public:
-    auto store(shared_registration_list snapshot,
-               const std::memory_order order) -> void {
-#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
-        snapshot_.store(std::move(snapshot), order);
+    registration_snapshot_slot() = default;
+
+    registration_snapshot_slot(
+        const registration_snapshot_slot &other) noexcept {
+      store(other.load(std::memory_order_acquire), std::memory_order_relaxed);
+    }
+
+    auto operator=(const registration_snapshot_slot &other) noexcept
+        -> registration_snapshot_slot & {
+      if (this == std::addressof(other)) {
+        return *this;
+      }
+      store(other.load(std::memory_order_acquire), std::memory_order_release);
+      return *this;
+    }
+
+    registration_snapshot_slot(registration_snapshot_slot &&other) noexcept {
+      store(other.load(std::memory_order_acquire), std::memory_order_relaxed);
+    }
+
+    auto operator=(registration_snapshot_slot &&other) noexcept
+        -> registration_snapshot_slot & {
+      if (this == std::addressof(other)) {
+        return *this;
+      }
+      store(other.load(std::memory_order_acquire), std::memory_order_release);
+      return *this;
+    }
+
+    auto store(shared_registration_list snapshot, const std::memory_order order)
+        -> void {
+#if defined(__cpp_lib_atomic_shared_ptr) &&                                    \
+    __cpp_lib_atomic_shared_ptr >= 201711L
+      snapshot_.store(std::move(snapshot), order);
 #else
-        std::atomic_store_explicit(&snapshot_, std::move(snapshot), order);
+      std::atomic_store_explicit(&snapshot_, std::move(snapshot), order);
 #endif
     }
 
     [[nodiscard]] auto load(const std::memory_order order) const
         -> shared_registration_list {
-#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
-        return snapshot_.load(order);
+#if defined(__cpp_lib_atomic_shared_ptr) &&                                    \
+    __cpp_lib_atomic_shared_ptr >= 201711L
+      return snapshot_.load(order);
 #else
-        return std::atomic_load_explicit(&snapshot_, order);
+      return std::atomic_load_explicit(&snapshot_, order);
 #endif
     }
 
@@ -73,17 +104,19 @@ public:
                                const shared_registration_list &desired,
                                const std::memory_order success,
                                const std::memory_order failure) -> bool {
-#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
-        return snapshot_.compare_exchange_weak(expected, desired, success,
-                                               failure);
+#if defined(__cpp_lib_atomic_shared_ptr) &&                                    \
+    __cpp_lib_atomic_shared_ptr >= 201711L
+      return snapshot_.compare_exchange_weak(expected, desired, success,
+                                             failure);
 #else
-        return std::atomic_compare_exchange_weak_explicit(
-            &snapshot_, &expected, desired, success, failure);
+      return std::atomic_compare_exchange_weak_explicit(
+          &snapshot_, &expected, desired, success, failure);
 #endif
     }
 
   private:
-#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
+#if defined(__cpp_lib_atomic_shared_ptr) &&                                    \
+    __cpp_lib_atomic_shared_ptr >= 201711L
     std::atomic<shared_registration_list> snapshot_{};
 #else
     shared_registration_list snapshot_{};
@@ -102,6 +135,11 @@ public:
                           std::memory_order_relaxed);
     }
   }
+
+  callback_manager(const callback_manager &) = default;
+  callback_manager(callback_manager &&) noexcept = default;
+  auto operator=(const callback_manager &) -> callback_manager & = default;
+  auto operator=(callback_manager &&) noexcept -> callback_manager & = default;
 
   template <typename config_t, typename callbacks_t>
     requires wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>> &&
