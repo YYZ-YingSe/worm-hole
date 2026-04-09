@@ -83,14 +83,14 @@ class vtable_handler;
     manager_t manager_;                                                        \
     template <typename type_t>                                                 \
     [[nodiscard]] static consteval auto basic_constraint() -> bool {           \
-      return std::is_constructible_v<std::decay_t<invocable_t>, type_t> &&     \
+      return is_direct_constructible_v<std::decay_t<invocable_t>, type_t> &&   \
              (!std::is_same_v<vtable_handler,                                  \
                               wh::core::remove_cvref_t<type_t>>);              \
     }                                                                          \
     template <typename... args_t>                                              \
       requires(sizeof...(args_t) > 1U)                                         \
     [[nodiscard]] static consteval auto basic_constraint() -> bool {           \
-      return std::is_constructible_v<std::decay_t<invocable_t>, args_t...>;    \
+      return is_direct_constructible_v<std::decay_t<invocable_t>, args_t...>;  \
     }                                                                          \
                                                                                \
   public:                                                                      \
@@ -98,7 +98,7 @@ class vtable_handler;
     template <typename... args_t>                                              \
       requires(basic_constraint<args_t...>())                                  \
     explicit vtable_handler(args_t &&...args) noexcept(                        \
-        std::is_nothrow_constructible_v<manager_t, args_t...>)                 \
+        is_nothrow_direct_constructible_v<manager_t, args_t...>)               \
         : manager_(std::forward<args_t>(args)...) {}                           \
     vtable_handler(const vtable_handler &other) = default;                     \
     vtable_handler(vtable_handler &&other) noexcept = delete;                  \

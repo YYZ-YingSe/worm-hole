@@ -81,7 +81,7 @@ public:
 
   template <typename... args_t>
   static constexpr bool can_nothrow_construct =
-      std::is_nothrow_constructible_v<stored_type, args_t...>;
+      fn_detail::is_nothrow_direct_constructible_v<stored_type, args_t...>;
 
   static constexpr bool can_nothrow_copy =
       can_nothrow_construct<const stored_type &>;
@@ -170,7 +170,8 @@ protected:
   template <typename... args_t>
   static auto create(allocator_type &alloc, stored_type *target,
                      args_t &&...args) -> void {
-    static_assert(std::is_constructible_v<std::decay_t<target_t>, args_t...>,
+    static_assert(
+        fn_detail::is_direct_constructible_v<std::decay_t<target_t>, args_t...>,
                   "Target object must be constructible");
 
     *target = allocator_traits::allocate(alloc, 1U);
@@ -230,7 +231,8 @@ protected:
   template <typename... args_t>
   static auto create(allocator_type &alloc, stored_type *target,
                      args_t &&...args) -> void {
-    static_assert(std::is_constructible_v<std::decay_t<target_t>, args_t...>,
+    static_assert(
+        fn_detail::is_direct_constructible_v<std::decay_t<target_t>, args_t...>,
                   "Target object must be constructible");
 
     *target = wrapped_target::create_new(alloc, std::forward<args_t>(args)...);

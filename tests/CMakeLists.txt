@@ -27,3 +27,5 @@ endif()
 if(WH_BUILD_UT)
   add_subdirectory(UT)
 endif()
+
+wh_write_catch_test_manifest("${CMAKE_BINARY_DIR}/wh_test_manifest.tsv")

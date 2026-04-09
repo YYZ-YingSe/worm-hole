@@ -39,7 +39,7 @@ public:
   template <typename... args_t>
   static constexpr bool is_constructible =
       buffer_type::template can_construct<stored_type>() &&
-      std::is_constructible_v<std::decay_t<target_t>, args_t...>;
+      is_direct_constructible_v<std::decay_t<target_t>, args_t...>;
 
   static constexpr bool is_copy_constructible =
       buffer_type::template can_construct<stored_type>() &&

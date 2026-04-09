@@ -165,3 +165,44 @@ TEST_CASE("agent shell rejects invalid mutations duplicate topology and missing 
                               })
               .error() == wh::core::errc::contract_violation);
 }
+
+TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-only captures",
+          "[UT][wh/agent/agent.hpp][agent::bind_execution][condition][boundary]") {
+  wh::agent::agent named{"named"};
+  const std::string copied_name = "named_node";
+  auto copied_bound = named.bind_execution(
+      nullptr,
+      [copied_name]() mutable -> wh::core::result<wh::compose::graph> {
+        return wh::testing::helper::make_passthrough_graph(copied_name);
+      });
+  REQUIRE(copied_bound.has_value());
+  auto named_graph = named.lower_graph();
+  REQUIRE(named_graph.has_value());
+  REQUIRE(named_graph->compiled());
+
+  wh::agent::agent move_only{"move-only"};
+  auto shell_name = std::make_unique<std::string>("move_only_node");
+  auto move_only_bound = move_only.bind_execution(
+      nullptr,
+      [shell_name = std::move(shell_name)]() mutable
+          -> wh::core::result<wh::compose::graph> {
+        return wh::testing::helper::make_passthrough_graph(*shell_name);
+      });
+  REQUIRE(move_only_bound.has_value());
+  auto move_only_graph = move_only.lower_graph();
+  REQUIRE(move_only_graph.has_value());
+  REQUIRE(move_only_graph->compiled());
+
+  auto frozen_graph =
+      wh::testing::helper::make_passthrough_graph("prebuilt_node");
+  REQUIRE(frozen_graph.has_value());
+  wh::agent::agent prebuilt{"prebuilt"};
+  auto prebuilt_bound = prebuilt.bind_execution(
+      nullptr,
+      [graph = std::move(frozen_graph).value()]() mutable
+          -> wh::core::result<wh::compose::graph> { return graph; });
+  REQUIRE(prebuilt_bound.has_value());
+  auto prebuilt_graph = prebuilt.lower_graph();
+  REQUIRE(prebuilt_graph.has_value());
+  REQUIRE(prebuilt_graph->compiled());
+}

@@ -141,7 +141,8 @@ using is_function = std::bool_constant<is_function_v<type_t>>;
       static_assert(storage::template is_invocable_v<decayed_fun_t>);          \
     }                                                                          \
     template <typename fun_t, typename... args_t>                              \
-      requires std::is_constructible_v<fun_t, args_t...> && storage::template  \
+      requires fn_detail::is_direct_constructible_v<fun_t, args_t...> &&       \
+               storage::template                                                \
     is_invocable_v<std::decay_t<fun_t>> explicit function(                     \
         std::in_place_type_t<fun_t>,                                           \
         args_t &&...args) noexcept(base::template check_nothrow<fun_t,         \
@@ -151,8 +152,8 @@ using is_function = std::bool_constant<is_function_v<type_t>>;
       static_assert(storage::template is_invocable_v<std::decay_t<fun_t>>);    \
     }                                                                          \
     template <typename fun_t, typename type_t, typename... args_t>             \
-      requires std::is_constructible_v<fun_t, std::initializer_list<type_t> &, \
-                                       args_t...> &&                           \
+      requires fn_detail::is_direct_constructible_v<                           \
+                   fun_t, std::initializer_list<type_t> &, args_t...> &&       \
                storage::template                                               \
     is_invocable_v<std::decay_t<fun_t>> explicit function(                     \
         std::in_place_type_t<fun_t>, std::initializer_list<type_t> init_list,  \

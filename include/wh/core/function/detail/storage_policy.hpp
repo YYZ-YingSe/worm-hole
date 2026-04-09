@@ -18,12 +18,12 @@ template <typename buffer_t, typename handler_t> struct storage_traits {
   template <typename... args_t>
   static constexpr bool is_constructible =
       buffer_t::template can_construct<handler_t>() &&
-      std::is_constructible_v<handler_t, args_t...>;
+      is_direct_constructible_v<handler_t, args_t...>;
 
   template <typename... args_t>
   static constexpr bool is_nothrow_constructible =
       is_constructible<args_t...> &&
-      std::is_nothrow_constructible_v<handler_t, args_t...>;
+      is_nothrow_direct_constructible_v<handler_t, args_t...>;
 };
 
 /// Storage base that manages callable lifetime.
@@ -277,13 +277,12 @@ protected:
       acceptance::template is_eligible<fun_t>;
 
   template <typename fun_t, typename... args_t>
-    requires(acceptance::template is_eligible<fun_t>)
-  static auto create(buffer_type &target, args_t &&...args) noexcept(
-      std::is_nothrow_constructible_v<handler<fun_t>, args_t...>) -> void {
+    requires(acceptance::template is_eligible<fun_t> &&
+             traits<fun_t>::template is_constructible<args_t...>)
+  static auto create(buffer_type &target,
+                     args_t &&...args) noexcept(
+      traits<fun_t>::template is_nothrow_constructible<args_t...>) -> void {
     ::new (target.address()) handler<fun_t>(std::forward<args_t>(args)...);
-
-    static_assert(traits<fun_t>::template is_constructible<args_t...>,
-                  "Storage is not constructible!");
   }
 
   owning_storage() = default;
@@ -344,10 +343,6 @@ protected:
              std::remove_reference_t<fun_t> *>)
   {
     ::new (target.address()) handler<fun_t>(std::addressof(invocable));
-
-    static_assert(traits<fun_t>::template is_constructible<
-                      std::remove_reference_t<fun_t> *>,
-                  "Storage is not constructible!");
   }
 
   ref_only_storage() = default;

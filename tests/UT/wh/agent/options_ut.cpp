@@ -106,8 +106,8 @@ TEST_CASE("agent options apply_agent_options overlays structured output onto exi
           "[UT][wh/agent/options.hpp][apply_agent_options][condition][branch][boundary]") {
   wh::model::chat_request request{};
   request.options.set_call_override(
-      wh::model::chat_model_common_options{.max_tokens = 128,
-                                           .model_id = "base-model"});
+      wh::model::chat_model_common_options{.model_id = "base-model",
+                                           .max_tokens = 128});
 
   wh::agent::agent_options options{};
   options.structured_output = wh::agent::structured_output_strategy::tool;

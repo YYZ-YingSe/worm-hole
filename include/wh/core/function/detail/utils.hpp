@@ -81,6 +81,34 @@ using strip_rvalue_t =
     std::conditional_t<std::is_rvalue_reference_v<type_t>,
                        std::remove_reference_t<type_t>, type_t>;
 
+/// Checks whether `type_t(args...)` is a valid direct-initialization expression.
+template <typename type_t, typename... args_t>
+inline constexpr bool is_direct_constructible_v =
+    requires { type_t(std::declval<args_t>()...); };
+
+template <typename type_t, typename... args_t>
+using is_direct_constructible =
+    std::bool_constant<is_direct_constructible_v<type_t, args_t...>>;
+
+/// Checks whether direct initialization is valid and marked `noexcept`.
+template <typename type_t, typename... args_t>
+[[nodiscard]] inline consteval auto is_nothrow_direct_constructible_impl()
+    -> bool {
+  if constexpr (!is_direct_constructible_v<type_t, args_t...>) {
+    return false;
+  } else {
+    return noexcept(type_t(std::declval<args_t>()...));
+  }
+}
+
+template <typename type_t, typename... args_t>
+inline constexpr bool is_nothrow_direct_constructible_v =
+    is_nothrow_direct_constructible_impl<type_t, args_t...>();
+
+template <typename type_t, typename... args_t>
+using is_nothrow_direct_constructible =
+    std::bool_constant<is_nothrow_direct_constructible_v<type_t, args_t...>>;
+
 /// Executes cleanup logic on scope exit unless disarmed.
 template <typename cleanup_t> class scope_guard {
 private:
