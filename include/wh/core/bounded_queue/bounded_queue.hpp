@@ -493,7 +493,7 @@ private:
     // Avoids connect(schedule(scheduler), ...) cost on the fast path.
     alignas(handoff_op_t) std::byte handoff_op_storage_[sizeof(handoff_op_t)];
     bool handoff_op_constructed_{false};
-    [[no_unique_address]] try_handoff_storage_t try_handoff_{};
+    wh_no_unique_address try_handoff_storage_t try_handoff_{};
     completion_bits_t completion_bits_{};
     std::optional<stop_callback_t> stop_callback_{};
 
@@ -793,7 +793,7 @@ private:
     // Lazy handoff_op: only constructed when scheduler handoff is needed.
     alignas(handoff_op_t) std::byte handoff_op_storage_[sizeof(handoff_op_t)];
     bool handoff_op_constructed_{false};
-    [[no_unique_address]] try_handoff_storage_t try_handoff_{};
+    wh_no_unique_address try_handoff_storage_t try_handoff_{};
     completion_bits_t completion_bits_{};
     std::optional<stop_callback_t> stop_callback_{};
 

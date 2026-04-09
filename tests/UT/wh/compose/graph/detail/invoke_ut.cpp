@@ -8,48 +8,96 @@
 #include "wh/compose/graph/detail/invoke.hpp"
 #include "wh/compose/node/lambda.hpp"
 
-TEST_CASE("make_graph_run_report promotes node-run failure into graph-run failure",
-          "[UT][wh/compose/graph/detail/invoke.hpp][make_graph_run_report][condition][branch][boundary]") {
+TEST_CASE("graph invoke report promotes node run error into graph run error",
+          "[UT][wh/compose/graph/detail/invoke.hpp][make_graph_run_report][condition][branch]") {
   wh::compose::detail::runtime_state::invoke_outputs outputs{};
   outputs.node_run_error = wh::compose::graph_node_run_error_detail{
-      .path = wh::compose::make_node_path({"worker"}),
+      .path = wh::compose::make_node_path({"graph", "worker"}),
       .node = "worker",
-      .code = wh::core::errc::invalid_argument,
+      .code = wh::core::errc::internal_error,
       .raw_error = wh::core::errc::invalid_argument,
       .message = "node-failed",
   };
 
-  auto report = wh::compose::detail::make_graph_run_report(
-      wh::core::result<wh::compose::graph_value>::failure(
-          wh::core::errc::invalid_argument),
-      std::move(outputs));
-  REQUIRE(report.node_run_error.has_value());
+  const auto status = wh::core::result<wh::compose::graph_value>::failure(
+      wh::core::errc::internal_error);
+  auto report =
+      wh::compose::detail::make_graph_run_report(status, std::move(outputs));
+
   REQUIRE(report.graph_run_error.has_value());
   REQUIRE(report.graph_run_error->phase ==
           wh::compose::compose_error_phase::execute);
-  REQUIRE(report.graph_run_error->code == wh::core::errc::invalid_argument);
+  REQUIRE(report.graph_run_error->path ==
+          std::optional{wh::compose::make_node_path({"graph", "worker"})});
   REQUIRE(report.graph_run_error->node == "worker");
+  REQUIRE(report.graph_run_error->code == wh::core::errc::internal_error);
+  REQUIRE(report.graph_run_error->raw_error ==
+          std::optional{wh::core::error_code{wh::core::errc::invalid_argument}});
   REQUIRE(report.graph_run_error->message == "node-failed");
 }
 
-TEST_CASE("make_graph_run_report also promotes stream-read failures when no node-run error exists",
-          "[UT][wh/compose/graph/detail/invoke.hpp][make_graph_run_report][condition][branch]") {
+TEST_CASE("graph invoke report promotes stream read error when node run error is absent",
+          "[UT][wh/compose/graph/detail/invoke.hpp][make_graph_run_report][branch][boundary]") {
   wh::compose::detail::runtime_state::invoke_outputs outputs{};
   outputs.stream_read_error = wh::compose::graph_new_stream_read_error_detail{
-      .path = wh::compose::make_node_path({"reader"}),
-      .node = "reader",
-      .code = wh::core::errc::timeout,
-      .raw_error = wh::core::errc::timeout,
-      .message = "stream-timeout",
+      .path = wh::compose::make_node_path({"graph", "stream"}),
+      .node = "stream",
+      .code = wh::core::errc::invalid_argument,
+      .raw_error = wh::core::errc::protocol_error,
+      .message = "stream-read-failed",
   };
 
-  auto report = wh::compose::detail::make_graph_run_report(
-      wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::timeout),
-      std::move(outputs));
-  REQUIRE(report.stream_read_error.has_value());
+  const auto status = wh::core::result<wh::compose::graph_value>::failure(
+      wh::core::errc::invalid_argument);
+  auto report =
+      wh::compose::detail::make_graph_run_report(status, std::move(outputs));
+
   REQUIRE(report.graph_run_error.has_value());
-  REQUIRE(report.graph_run_error->node == "reader");
-  REQUIRE(report.graph_run_error->message == "stream-timeout");
+  REQUIRE(report.graph_run_error->phase ==
+          wh::compose::compose_error_phase::execute);
+  REQUIRE(report.graph_run_error->path ==
+          std::optional{wh::compose::make_node_path({"graph", "stream"})});
+  REQUIRE(report.graph_run_error->node == "stream");
+  REQUIRE(report.graph_run_error->code == wh::core::errc::invalid_argument);
+  REQUIRE(report.graph_run_error->raw_error ==
+          std::optional{wh::core::error_code{wh::core::errc::protocol_error}});
+  REQUIRE(report.graph_run_error->message == "stream-read-failed");
+}
+
+TEST_CASE("graph invoke report keeps existing graph run error detail intact",
+          "[UT][wh/compose/graph/detail/invoke.hpp][make_graph_run_report][condition][boundary]") {
+  wh::compose::detail::runtime_state::invoke_outputs outputs{};
+  outputs.graph_run_error = wh::compose::graph_run_error_detail{
+      .phase = wh::compose::compose_error_phase::checkpoint,
+      .path = wh::compose::make_node_path({"graph", "checkpoint"}),
+      .node = "checkpoint",
+      .code = wh::core::errc::config_error,
+      .raw_error = wh::core::error_code{wh::core::errc::parse_error},
+      .message = "existing-graph-error",
+  };
+  outputs.node_run_error = wh::compose::graph_node_run_error_detail{
+      .path = wh::compose::make_node_path({"graph", "worker"}),
+      .node = "worker",
+      .code = wh::core::errc::internal_error,
+      .raw_error = wh::core::errc::invalid_argument,
+      .message = "node-failed",
+  };
+
+  const auto status = wh::core::result<wh::compose::graph_value>::failure(
+      wh::core::errc::config_error);
+  auto report =
+      wh::compose::detail::make_graph_run_report(status, std::move(outputs));
+
+  REQUIRE(report.graph_run_error.has_value());
+  REQUIRE(report.graph_run_error->phase ==
+          wh::compose::compose_error_phase::checkpoint);
+  REQUIRE(report.graph_run_error->path ==
+          std::optional{wh::compose::make_node_path({"graph", "checkpoint"})});
+  REQUIRE(report.graph_run_error->node == "checkpoint");
+  REQUIRE(report.graph_run_error->code == wh::core::errc::config_error);
+  REQUIRE(report.graph_run_error->raw_error ==
+          std::optional{wh::core::error_code{wh::core::errc::parse_error}});
+  REQUIRE(report.graph_run_error->message == "existing-graph-error");
 }
 
 TEST_CASE("graph invoke sender returns output status and report through public completion channel",

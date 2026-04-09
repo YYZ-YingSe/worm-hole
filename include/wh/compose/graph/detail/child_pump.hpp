@@ -96,8 +96,8 @@ private:
 
   std::vector<graph_sender> senders_{};
   std::remove_cvref_t<stage_t> stage_;
-  [[no_unique_address]] std::remove_cvref_t<consume_fn_t> consume_;
-  [[no_unique_address]] std::remove_cvref_t<finish_fn_t> finish_;
+  wh_no_unique_address std::remove_cvref_t<consume_fn_t> consume_;
+  wh_no_unique_address std::remove_cvref_t<finish_fn_t> finish_;
   std::size_t next_index_{0U};
   std::size_t active_index_{no_index_};
 };
@@ -365,7 +365,7 @@ template <typename policy_t> class child_pump_sender {
 
     receiver_type receiver_;
     receiver_env_t receiver_env_;
-    [[no_unique_address]] policy_type policy_;
+    wh_no_unique_address policy_type policy_;
     wh::core::detail::manual_lifetime_box<child_op_t> child_op_{};
     wh::core::detail::single_completion_slot<completion_t> completion_{};
     wh::core::detail::callback_guard<controller> callbacks_{};
@@ -401,7 +401,7 @@ public:
   }
 
 private:
-  [[no_unique_address]] std::remove_cvref_t<policy_t> policy_;
+  wh_no_unique_address std::remove_cvref_t<policy_t> policy_;
   wh::core::detail::any_resume_scheduler_t graph_scheduler_;
 };
 

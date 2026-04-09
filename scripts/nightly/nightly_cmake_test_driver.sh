@@ -46,7 +46,20 @@ case "$mode" in
     esac
 
     build_dir="$(wh_nightly_build_dir "sanitizer-${value}")"
-    san_flag="-fsanitize=${value} -fno-omit-frame-pointer"
+    san_kind=""
+    case "$value" in
+      asan)
+        san_kind="address"
+        ;;
+      ubsan)
+        san_kind="undefined"
+        ;;
+      tsan)
+        san_kind="thread"
+        ;;
+    esac
+
+    san_flag="-fsanitize=${san_kind} -fno-omit-frame-pointer"
     configure_and_build "$build_dir" \
       -DCMAKE_CXX_COMPILER=clang++ \
       -DCMAKE_CXX_FLAGS="$san_flag"

@@ -53,20 +53,20 @@ make_graph_run_report(const wh::core::result<graph_value> &status,
     if (report.node_run_error.has_value()) {
       report.graph_run_error = graph_run_error_detail{
           .phase = compose_error_phase::execute,
+          .path = report.node_run_error->path,
+          .node = report.node_run_error->node,
           .code = report.node_run_error->code,
           .raw_error = report.node_run_error->raw_error,
           .message = report.node_run_error->message,
-          .path = report.node_run_error->path,
-          .node = report.node_run_error->node,
       };
     } else if (report.stream_read_error.has_value()) {
       report.graph_run_error = graph_run_error_detail{
           .phase = compose_error_phase::execute,
+          .path = report.stream_read_error->path,
+          .node = report.stream_read_error->node,
           .code = report.stream_read_error->code,
           .raw_error = report.stream_read_error->raw_error,
           .message = report.stream_read_error->message,
-          .path = report.stream_read_error->path,
-          .node = report.stream_read_error->node,
       };
     }
   }
@@ -236,7 +236,7 @@ public:
 private:
   const graph *owner_{nullptr};
   wh::core::run_context *context_{nullptr};
-  [[no_unique_address]] request_t request_{};
+  wh_no_unique_address request_t request_{};
 };
 
 template <typename request_t>

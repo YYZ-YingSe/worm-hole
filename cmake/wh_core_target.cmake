@@ -1,9 +1,13 @@
 include_guard(GLOBAL)
 
+include(wh_atomic_runtime)
+
 function(wh_setup_core_target)
   if(TARGET wh_core)
     return()
   endif()
+
+  wh_setup_atomic_runtime_target()
 
   add_library(wh_core INTERFACE)
   add_library(wh::core ALIAS wh_core)
@@ -21,14 +25,11 @@ function(wh_setup_core_target)
       STDEXEC::stdexec
       rapidjson::rapidjson
       nlohmann_json::nlohmann_json
-      minja::minja)
+      minja::minja
+      wh_atomic_runtime)
 
   if(WIN32)
     target_compile_definitions(wh_core INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
-  endif()
-
-  if(UNIX AND NOT APPLE)
-    target_link_libraries(wh_core INTERFACE atomic)
   endif()
 
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -75,7 +76,12 @@ function(wh_setup_core_target)
   install(DIRECTORY "${WH_NLOHMANN_JSON_DIR}/include/"
           DESTINATION include/thirdy_party/dependencies/nlohmann_json)
   install(
-    TARGETS wh_core wh_stdexec wh_rapidjson wh_nlohmann_json wh_minja
+    TARGETS wh_atomic_runtime
+            wh_core
+            wh_stdexec
+            wh_rapidjson
+            wh_nlohmann_json
+            wh_minja
     EXPORT worm_hole_targets)
   install(
     EXPORT worm_hole_targets

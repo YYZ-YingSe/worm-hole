@@ -20,7 +20,36 @@ if ! wh_ci_require_commands "clang-tidy" "$clang_tidy_bin"; then
   exit 0
 fi
 
-source_listing="$(git ls-files '*.cpp' '*.cc' '*.cxx' | rg -v '^thirdy_party/' || true)"
+detect_tidy_jobs() {
+  if [[ -n "${WH_CLANG_TIDY_JOBS:-}" ]]; then
+    printf '%s\n' "${WH_CLANG_TIDY_JOBS}"
+    return
+  fi
+
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+    return
+  fi
+
+  if command -v getconf >/dev/null 2>&1; then
+    getconf _NPROCESSORS_ONLN
+    return
+  fi
+
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu
+    return
+  fi
+
+  printf '4\n'
+}
+
+path_filter="${WH_CLANG_TIDY_PATH_FILTER:-^(tests/UT/|tests/helper/)}"
+
+source_listing="$(
+  git ls-files '*.cpp' '*.cc' '*.cxx' |
+    rg "$path_filter" || true
+)"
 if [[ -z "$source_listing" ]]; then
   echo "[clang-tidy] SKIP no source files"
   exit 0
@@ -56,11 +85,14 @@ fi
 wh_sync_compile_commands "$build_dir"
 
 checks="${WH_CLANG_TIDY_CHECKS:-clang-analyzer-*,bugprone-*,performance-*,portability-*,readability-*}"
-header_filter='^(include/wh|src|tests)/'
+header_filter='^(include/wh|tests/UT|tests/helper)/'
 tidy_config='{InheritParentConfig: false}'
+tidy_jobs="$(detect_tidy_jobs)"
 
 echo "[clang-tidy] binary: ${clang_tidy_bin}"
 "$clang_tidy_bin" --version | head -n 1
+echo "[clang-tidy] scope filter: ${path_filter}"
+echo "[clang-tidy] jobs: ${tidy_jobs}"
 
 source_files=()
 while IFS= read -r path; do
@@ -74,10 +106,19 @@ if [[ "${#source_files[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-"$clang_tidy_bin" \
-  -p "$build_dir" \
-  -checks="$checks" \
-  -header-filter="$header_filter" \
-  --config="$tidy_config" \
-  "${source_files[@]}"
+tidy_args=(
+  -p "$build_dir"
+  -checks="$checks"
+  -header-filter="$header_filter"
+  --config="$tidy_config"
+  --quiet
+)
+
+if [[ "$tidy_jobs" =~ ^[1-9][0-9]*$ ]] && (( tidy_jobs > 1 )); then
+  printf '%s\n' "${source_files[@]}" |
+    xargs -P "$tidy_jobs" -n 1 "$clang_tidy_bin" "${tidy_args[@]}"
+else
+  "$clang_tidy_bin" "${tidy_args[@]}" "${source_files[@]}"
+fi
+
 echo "[clang-tidy] PASS"

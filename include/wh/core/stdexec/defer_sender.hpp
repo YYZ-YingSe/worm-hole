@@ -13,6 +13,7 @@
 #include <exec/completion_signatures.hpp>
 #include <stdexec/execution.hpp>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/stdexec/result_sender.hpp"
 
 namespace wh::core::detail {
@@ -58,7 +59,7 @@ template <typename factory_t> class defer_sender_impl {
     }
 
     receiver_t receiver_;
-    [[no_unique_address]] factory_t factory_;
+    wh_no_unique_address factory_t factory_;
     alignas(child_op_t) std::byte child_op_storage_[sizeof(child_op_t)];
     bool child_started_{false};
   };
@@ -104,7 +105,7 @@ public:
             std::exception_ptr)>{});
   }
 
-  [[no_unique_address]] factory_t factory_;
+  wh_no_unique_address factory_t factory_;
 };
 
 template <typename factory_t>

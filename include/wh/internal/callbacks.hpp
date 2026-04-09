@@ -47,15 +47,59 @@ public:
   using registration_list = wh::core::small_vector<stage_registration, 4U>;
   /// Immutable stage registration snapshot shared across dispatchers.
   using shared_registration_list = std::shared_ptr<const registration_list>;
+
+  /// Copy-on-write publication slot for one stage snapshot.
+  class registration_snapshot_slot {
+  public:
+    auto store(shared_registration_list snapshot,
+               const std::memory_order order) -> void {
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
+        snapshot_.store(std::move(snapshot), order);
+#else
+        std::atomic_store_explicit(&snapshot_, std::move(snapshot), order);
+#endif
+    }
+
+    [[nodiscard]] auto load(const std::memory_order order) const
+        -> shared_registration_list {
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
+        return snapshot_.load(order);
+#else
+        return std::atomic_load_explicit(&snapshot_, order);
+#endif
+    }
+
+    auto compare_exchange_weak(shared_registration_list &expected,
+                               const shared_registration_list &desired,
+                               const std::memory_order success,
+                               const std::memory_order failure) -> bool {
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
+        return snapshot_.compare_exchange_weak(expected, desired, success,
+                                               failure);
+#else
+        return std::atomic_compare_exchange_weak_explicit(
+            &snapshot_, &expected, desired, success, failure);
+#endif
+    }
+
+  private:
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
+    std::atomic<shared_registration_list> snapshot_{};
+#else
+    shared_registration_list snapshot_{};
+#endif
+  };
+
   /// Global stage buckets published with snapshot semantics.
   using global_registration_buckets =
-      std::array<shared_registration_list, stage_count>;
+      std::array<registration_snapshot_slot, stage_count>;
   /// Local stage buckets owned by current manager.
   using local_registration_buckets = std::array<registration_list, stage_count>;
 
   callback_manager() {
     for (auto &registrations : global_registrations_) {
-      registrations = std::make_shared<registration_list>();
+      registrations.store(std::make_shared<registration_list>(),
+                          std::memory_order_relaxed);
     }
   }
 
@@ -173,8 +217,8 @@ public:
                 const wh::core::callback_event_view event,
                 const wh::core::callback_run_info &run_info) const -> void {
     const std::size_t current_stage_index = stage_index(stage);
-    const auto global_registrations = std::atomic_load_explicit(
-        &global_registrations_[current_stage_index], std::memory_order_acquire);
+    const auto global_registrations =
+        load_snapshot(global_registrations_[current_stage_index]);
 
     auto execute_registrations = [&](const registration_list &registrations,
                                      const bool reverse_order) -> void {
@@ -255,9 +299,8 @@ public:
     std::size_t count = 0U;
     std::ranges::for_each(
         global_registrations_,
-        [&count](const shared_registration_list &slot) -> void {
-          const auto registrations =
-              std::atomic_load_explicit(&slot, std::memory_order_acquire);
+        [&count](const registration_snapshot_slot &slot) -> void {
+          const auto registrations = load_snapshot(slot);
           count += registrations->size();
         });
     return count;
@@ -294,6 +337,12 @@ private:
   }
 
   [[nodiscard]] static auto
+  load_snapshot(const registration_snapshot_slot &slot)
+      -> shared_registration_list {
+    return slot.load(std::memory_order_acquire);
+  }
+
+  [[nodiscard]] static auto
   get_stage_callback(const wh::core::stage_callbacks &callbacks,
                      const wh::core::callback_stage stage)
       -> const wh::core::stage_view_callback * {
@@ -313,23 +362,21 @@ private:
   }
 
   /// Appends one registration by creating and publishing a new snapshot.
-  auto append_registration(shared_registration_list &slot,
+  auto append_registration(registration_snapshot_slot &slot,
                            stage_registration &&registration) -> void {
     const stage_registration stable_registration{std::move(registration)};
 
-    auto current_registrations =
-        std::atomic_load_explicit(&slot, std::memory_order_acquire);
+    auto current_registrations = load_snapshot(slot);
     while (true) {
       auto next_registrations =
           std::make_shared<registration_list>(*current_registrations);
       auto registration_copy = stable_registration;
       next_registrations->push_back(std::move(registration_copy));
 
-      std::shared_ptr<const registration_list> next_snapshot{
-          std::move(next_registrations)};
-      if (std::atomic_compare_exchange_weak_explicit(
-              &slot, &current_registrations, std::move(next_snapshot),
-              std::memory_order_release, std::memory_order_acquire)) {
+      shared_registration_list next_snapshot{std::move(next_registrations)};
+      if (slot.compare_exchange_weak(current_registrations, next_snapshot,
+                                     std::memory_order_release,
+                                     std::memory_order_acquire)) {
         return;
       }
     }

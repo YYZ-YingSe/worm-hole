@@ -433,7 +433,7 @@ private:
     return false;
   }
 
-  [[no_unique_address]] scheduler_type scheduler_;
+  wh_no_unique_address scheduler_type scheduler_;
   std::atomic<std::uint64_t> pending_work_{0U};
   std::atomic<bool> drive_claimed_{false};
   std::mutex turn_mutex_{};

@@ -7,6 +7,8 @@
 #include <optional>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
+
 namespace wh::core::detail {
 
 template <typename value_t, typename allocator_t = std::allocator<value_t>>
@@ -147,7 +149,7 @@ private:
     capacity_ = 0U;
   }
 
-  [[no_unique_address]] allocator_type allocator_{};
+  wh_no_unique_address allocator_type allocator_{};
   std::size_t capacity_{0U};
   std::size_t size_{0U};
   std::size_t head_{0U};

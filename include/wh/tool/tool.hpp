@@ -15,6 +15,7 @@
 
 #include "wh/callbacks/callbacks.hpp"
 #include "wh/core/component.hpp"
+#include "wh/core/compiler.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/json.hpp"
 #include "wh/core/result.hpp"
@@ -1005,7 +1006,7 @@ private:
   }
 
   wh::schema::tool_schema_definition schema_{};
-  [[no_unique_address]] impl_t impl_{};
+  wh_no_unique_address impl_t impl_{};
   tool_options default_options_{};
 };
 

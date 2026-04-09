@@ -14,6 +14,7 @@
 
 #include "wh/core/any.hpp"
 #include "wh/core/component.hpp"
+#include "wh/core/compiler.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/document/document.hpp"
 #include "wh/embedding/embedding.hpp"
@@ -230,8 +231,8 @@ struct missing_tool_path final {};
 template <typename invoke_impl_t = missing_tool_path,
           typename stream_impl_t = missing_tool_path>
 struct sync_tool_impl {
-  [[no_unique_address]] invoke_impl_t invoke_impl{};
-  [[no_unique_address]] stream_impl_t stream_impl{};
+  wh_no_unique_address invoke_impl_t invoke_impl{};
+  wh_no_unique_address stream_impl_t stream_impl{};
 
   [[nodiscard]] auto invoke(const wh::tool::tool_request &request) const
       -> decltype(auto)
@@ -282,8 +283,8 @@ sender_tool_stream_impl(fn_t) -> sender_tool_stream_impl<fn_t>;
 template <typename invoke_impl_t = missing_tool_path,
           typename stream_impl_t = missing_tool_path>
 struct sender_tool_impl {
-  [[no_unique_address]] invoke_impl_t invoke_impl{};
-  [[no_unique_address]] stream_impl_t stream_impl{};
+  wh_no_unique_address invoke_impl_t invoke_impl{};
+  wh_no_unique_address stream_impl_t stream_impl{};
 
   [[nodiscard]] auto invoke_sender(wh::tool::tool_request request) const
       -> decltype(auto)

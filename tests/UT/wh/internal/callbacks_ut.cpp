@@ -7,6 +7,8 @@
 TEST_CASE("internal callback manager tracks registrations and dispatch order",
           "[UT][wh/internal/callbacks.hpp][callback_manager::dispatch][branch][boundary]") {
   wh::internal::callback_manager manager{};
+  REQUIRE(manager.local_registration_count() == 0U);
+  REQUIRE(manager.global_registration_count() == 0U);
 
   std::vector<int> start_order{};
   wh::core::stage_callbacks first{};
@@ -21,6 +23,12 @@ TEST_CASE("internal callback manager tracks registrations and dispatch order",
                                    const wh::core::callback_run_info &) {
     start_order.push_back(2);
   };
+  wh::core::stage_callbacks third{};
+  third.on_start = [&start_order](const wh::core::callback_stage,
+                                  const wh::core::callback_event_view,
+                                  const wh::core::callback_run_info &) {
+    start_order.push_back(3);
+  };
 
   manager.register_local_callbacks(
       wh::internal::make_callback_config(
@@ -34,14 +42,20 @@ TEST_CASE("internal callback manager tracks registrations and dispatch order",
             return stage == wh::core::callback_stage::start;
           }),
       std::move(second));
+  manager.register_global_callbacks(
+      wh::internal::make_callback_config(
+          [](const wh::core::callback_stage stage) noexcept {
+            return stage == wh::core::callback_stage::start;
+          }),
+      std::move(third));
 
   REQUIRE(manager.local_registration_count() == 1U);
-  REQUIRE(manager.global_registration_count() == 1U);
+  REQUIRE(manager.global_registration_count() == 2U);
 
   int payload = 7;
   manager.dispatch(wh::core::callback_stage::start,
                    wh::core::make_callback_event_view(payload), {});
-  REQUIRE(start_order == std::vector<int>{1, 2});
+  REQUIRE(start_order == std::vector<int>{1, 3, 2});
 
   std::vector<int> end_order{};
   wh::core::stage_callbacks local_end{};
@@ -69,9 +83,54 @@ TEST_CASE("internal callback manager tracks registrations and dispatch order",
           }),
       std::move(global_end));
 
+  REQUIRE(manager.local_registration_count() == 2U);
+  REQUIRE(manager.global_registration_count() == 3U);
+
   manager.dispatch(wh::core::callback_stage::end,
                    wh::core::make_callback_event_view(payload), {});
   REQUIRE(end_order == std::vector<int>{2, 1});
+}
+
+TEST_CASE("internal callback manager keeps stage registrations isolated",
+          "[UT][wh/internal/callbacks.hpp][callback_manager::dispatch][condition][branch]") {
+  wh::internal::callback_manager manager{};
+  std::vector<int> seen{};
+
+  wh::core::stage_callbacks start_only{};
+  start_only.on_start = [&seen](const wh::core::callback_stage,
+                                const wh::core::callback_event_view,
+                                const wh::core::callback_run_info &) {
+    seen.push_back(1);
+  };
+  wh::core::stage_callbacks stream_end_only{};
+  stream_end_only.on_stream_end =
+      [&seen](const wh::core::callback_stage,
+              const wh::core::callback_event_view,
+              const wh::core::callback_run_info &) { seen.push_back(2); };
+
+  manager.register_global_callbacks(
+      wh::internal::make_callback_config(
+          [](const wh::core::callback_stage stage) noexcept {
+            return stage == wh::core::callback_stage::start;
+          }),
+      std::move(start_only));
+  manager.register_local_callbacks(
+      wh::internal::make_callback_config(
+          [](const wh::core::callback_stage stage) noexcept {
+            return stage == wh::core::callback_stage::stream_end;
+          }),
+      std::move(stream_end_only));
+
+  int payload = 3;
+  manager.dispatch(wh::core::callback_stage::error,
+                   wh::core::make_callback_event_view(payload), {});
+  REQUIRE(seen.empty());
+
+  manager.dispatch(wh::core::callback_stage::start,
+                   wh::core::make_callback_event_view(payload), {});
+  manager.dispatch(wh::core::callback_stage::stream_end,
+                   wh::core::make_callback_event_view(payload), {});
+  REQUIRE(seen == std::vector<int>{1, 2});
 }
 
 TEST_CASE("internal callback manager dispatch_single preserves typed payloads",

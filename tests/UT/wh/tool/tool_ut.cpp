@@ -11,6 +11,7 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/test_thread_wait.hpp"
+#include "wh/core/compiler.hpp"
 #include "wh/tool/tool.hpp"
 
 namespace {
@@ -48,8 +49,8 @@ struct missing_tool_path final {};
 template <typename invoke_impl_t = missing_tool_path,
           typename stream_impl_t = missing_tool_path>
 struct sync_tool_impl {
-  [[no_unique_address]] invoke_impl_t invoke_impl{};
-  [[no_unique_address]] stream_impl_t stream_impl{};
+  wh_no_unique_address invoke_impl_t invoke_impl{};
+  wh_no_unique_address stream_impl_t stream_impl{};
 
   [[nodiscard]] auto invoke(const wh::tool::tool_request &request) const
       -> decltype(auto)
@@ -85,8 +86,8 @@ template <typename fn_t> struct sender_tool_stream_impl {
 template <typename invoke_impl_t = missing_tool_path,
           typename stream_impl_t = missing_tool_path>
 struct sender_tool_impl {
-  [[no_unique_address]] invoke_impl_t invoke_impl{};
-  [[no_unique_address]] stream_impl_t stream_impl{};
+  wh_no_unique_address invoke_impl_t invoke_impl{};
+  wh_no_unique_address stream_impl_t stream_impl{};
 
   [[nodiscard]] auto invoke_sender(wh::tool::tool_request request) const
       -> decltype(auto)
@@ -161,7 +162,8 @@ TEST_CASE("tool detail helpers validate schema and resolve options",
   REQUIRE(merged.resolve_view().timeout_label == "budget");
 
   wh::tool::detail::callback_state state{};
-  auto resolved = wh::tool::detail::resolve_options_view(merged.resolve());
+  auto resolved_options = merged.resolve();
+  auto resolved = wh::tool::detail::resolve_options_view(resolved_options);
   wh::tool::detail::mark_error(state, wh::core::errc::timeout, resolved);
   REQUIRE(state.event.error_context == "budget");
   REQUIRE_FALSE(state.event.interrupted);
@@ -376,11 +378,11 @@ TEST_CASE(
   REQUIRE(error_path == "$.ids[0]");
 
   wh::tool::detail::callback_state state{};
-  auto resolved = wh::tool::detail::resolve_options_view(
-      wh::tool::tool_common_options{
-          .failure_policy = wh::tool::tool_failure_policy::fail_fast,
-          .max_retries = 0U,
-          .timeout_label = "budgetB"});
+  wh::tool::tool_common_options common_options{
+      .failure_policy = wh::tool::tool_failure_policy::fail_fast,
+      .max_retries = 0U,
+      .timeout_label = "budgetB"};
+  auto resolved = wh::tool::detail::resolve_options_view(common_options);
   wh::tool::detail::mark_error(state, wh::core::errc::canceled, resolved);
   REQUIRE(state.event.interrupted);
   REQUIRE(state.event.error_context == "budgetB");

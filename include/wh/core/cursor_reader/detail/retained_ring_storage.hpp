@@ -7,6 +7,8 @@
 #include <new>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
+
 namespace wh::core::cursor_reader_detail {
 
 template <typename value_t, typename allocator_t = std::allocator<value_t>>
@@ -156,7 +158,7 @@ private:
     capacity_ = 0U;
   }
 
-  [[no_unique_address]] allocator_type allocator_{};
+  wh_no_unique_address allocator_type allocator_{};
   std::size_t capacity_{0U};
   value_type *storage_{nullptr};
 };

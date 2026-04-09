@@ -73,11 +73,8 @@ function(wh_setup_test_support_targets)
     check_cxx_compiler_flag("-Wno-c2y-extensions"
                             WH_HAVE_WNO_C2Y_EXTENSIONS)
     set(CMAKE_REQUIRED_FLAGS "${wh_old_required_flags}")
-
-    if(WH_HAVE_WNO_C2Y_EXTENSIONS)
-      target_compile_options("${WH_TARGET_TEST_SUPPORT}" INTERFACE
-                             -Wno-c2y-extensions)
-    endif()
+    set_property(GLOBAL PROPERTY WH_HAVE_WNO_C2Y_EXTENSIONS
+                                 "${WH_HAVE_WNO_C2Y_EXTENSIONS}")
   endif()
 
   wh_define_support_target(

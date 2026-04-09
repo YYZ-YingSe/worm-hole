@@ -11,6 +11,7 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/core/component.hpp"
+#include "wh/core/compiler.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/stdexec.hpp"
@@ -154,7 +155,7 @@ public:
         });
   }
 
-  [[no_unique_address]] impl_t impl_;
+  wh_no_unique_address impl_t impl_;
 };
 
 template <typename impl_t>

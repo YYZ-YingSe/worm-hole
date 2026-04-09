@@ -1,6 +1,7 @@
 // Defines graph stream rewrite policy used by graph state-stream rewriting.
 #pragma once
 
+#include "wh/core/compiler.hpp"
 #include "wh/compose/graph/detail/child_pump.hpp"
 
 namespace wh::compose::detail {
@@ -12,7 +13,7 @@ template <typename handler_t> struct rewrite_policy {
 
   graph_stream_reader reader{};
   graph_stream_writer writer{};
-  [[no_unique_address]] handler_t handler;
+  wh_no_unique_address handler_t handler;
 
   [[nodiscard]] auto next_step()
       -> wh::core::result<child_pump_step<child_sender_type>> {
