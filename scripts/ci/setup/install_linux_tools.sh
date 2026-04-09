@@ -14,7 +14,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 packages=()
-versioned_llvm=0
+preferred_llvm_version=""
 
 case "$profile" in
   fast-gates)
@@ -24,8 +24,7 @@ case "$profile" in
     packages=(ripgrep clang cmake ninja-build ccache)
     ;;
   deep-analysis)
-    packages=(ripgrep clang clang-tidy clang-tools cppcheck cmake ninja-build)
-    versioned_llvm=1
+    packages=(ripgrep cppcheck cmake ninja-build)
     ;;
   coverage)
     packages=(ripgrep clang cmake ninja-build gcovr ccache)
@@ -40,19 +39,28 @@ case "$profile" in
 esac
 
 sudo apt-get update
-sudo apt-get install -y "${packages[@]}"
+if [[ "${#packages[@]}" -gt 0 ]]; then
+  sudo apt-get install -y "${packages[@]}"
+fi
 
-if [[ "$versioned_llvm" == "1" ]]; then
+if [[ "$profile" == "deep-analysis" ]]; then
   for ver in 20 19 18; do
     if apt-cache show "clang-${ver}" >/dev/null 2>&1 && \
        apt-cache show "clang-tidy-${ver}" >/dev/null 2>&1 && \
        apt-cache show "clang-tools-${ver}" >/dev/null 2>&1; then
-      sudo apt-get install -y \
-        "clang-${ver}" \
-        "clang-tidy-${ver}" \
-        "clang-tools-${ver}"
+      preferred_llvm_version="$ver"
+      break
     fi
   done
+
+  if [[ -n "$preferred_llvm_version" ]]; then
+    sudo apt-get install -y \
+      "clang-${preferred_llvm_version}" \
+      "clang-tidy-${preferred_llvm_version}" \
+      "clang-tools-${preferred_llvm_version}"
+  else
+    sudo apt-get install -y clang clang-tidy clang-tools
+  fi
 fi
 
 echo "[install-linux-tools] PASS $profile"

@@ -8,7 +8,7 @@ WH_BUILD_COMMON_SH_LOADED=1
 WH_BUILD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 wh_enter_build_root() {
-  cd "$WH_BUILD_ROOT"
+  cd "$WH_BUILD_ROOT" || return 1
 }
 
 wh_lowercase() {

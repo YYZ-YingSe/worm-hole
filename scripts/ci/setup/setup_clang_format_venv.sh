@@ -14,6 +14,7 @@ fi
 venv_dir="${WH_CLANG_FORMAT_VENV_DIR:-.cache/ci/clang-format}"
 
 python3 -m venv "$venv_dir"
+# shellcheck source=/dev/null
 source "$venv_dir/bin/activate"
 
 if [[ ! -x "$venv_dir/bin/clang-format" ]]; then
