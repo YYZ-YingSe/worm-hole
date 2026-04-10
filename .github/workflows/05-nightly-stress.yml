@@ -1,25 +1,32 @@
-name: ci-05-nightly-stress
+name: ci-05-nightly-heavy
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    - cron: "0 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: nightly-stress-${{ github.workflow }}-${{ github.ref }}
+  group: nightly-heavy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  sanitizer:
+  heavy-tests:
+    name: heavy-tests (${{ matrix.shard_index }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        mode: [asan, ubsan, tsan]
+        include:
+          - shard_count: 3
+            shard_index: 0
+          - shard_count: 3
+            shard_index: 1
+          - shard_count: 3
+            shard_index: 2
 
     steps:
       - name: Checkout
@@ -32,37 +39,17 @@ jobs:
         uses: ./.github/actions/prepare/job
         with:
           install_profile: nightly
-          run_branch_guard: "false"
 
-      - name: Nightly sanitizer ${{ matrix.mode }}
-        uses: ./.github/actions/run/nightly-driver
-        with:
-          mode: sanitizer
-          value: ${{ matrix.mode }}
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
-  label-suite:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        suite: [linearizability, stress, fuzz]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Prepare CI job
-        uses: ./.github/actions/prepare/job
-        with:
-          install_profile: nightly
-          run_branch_guard: "false"
-
-      - name: Nightly label ${{ matrix.suite }}
-        uses: ./.github/actions/run/nightly-driver
-        with:
-          mode: label
-          value: ${{ matrix.suite }}
+      - name: Run heavy nightly shard ${{ matrix.shard_index }}
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci build-test \
+            --configure-preset ci-linux-release \
+            --build-preset ci-linux-release \
+            --shard-count "${{ matrix.shard_count }}" \
+            --shard-index "${{ matrix.shard_index }}" \
+            --include-label ci.nightly

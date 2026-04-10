@@ -9,7 +9,7 @@
 #include <string>
 
 #if defined(_WIN32)
-#include <windows.h>
+#include "wh/internal/windows_sdk.hpp"
 #elif defined(__unix__) || defined(__APPLE__)
 #include <execinfo.h>
 #endif

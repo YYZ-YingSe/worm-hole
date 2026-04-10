@@ -17,14 +17,85 @@ concurrency:
 
 jobs:
   build-test:
+    name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        build_type: [Debug, Release]
-        shard_index: [0, 1, 2, 3, 4, 5]
+        include:
+          - name: ubuntu-debug
+            os: ubuntu-latest
+            configure_preset: ci-linux-debug
+            build_preset: ci-linux-debug
+            shard_count: 4
+            shard_index: 0
+          - name: ubuntu-debug
+            os: ubuntu-latest
+            configure_preset: ci-linux-debug
+            build_preset: ci-linux-debug
+            shard_count: 4
+            shard_index: 1
+          - name: ubuntu-debug
+            os: ubuntu-latest
+            configure_preset: ci-linux-debug
+            build_preset: ci-linux-debug
+            shard_count: 4
+            shard_index: 2
+          - name: ubuntu-debug
+            os: ubuntu-latest
+            configure_preset: ci-linux-debug
+            build_preset: ci-linux-debug
+            shard_count: 4
+            shard_index: 3
+          - name: ubuntu-release
+            os: ubuntu-latest
+            configure_preset: ci-linux-release
+            build_preset: ci-linux-release
+            shard_count: 4
+            shard_index: 0
+          - name: ubuntu-release
+            os: ubuntu-latest
+            configure_preset: ci-linux-release
+            build_preset: ci-linux-release
+            shard_count: 4
+            shard_index: 1
+          - name: ubuntu-release
+            os: ubuntu-latest
+            configure_preset: ci-linux-release
+            build_preset: ci-linux-release
+            shard_count: 4
+            shard_index: 2
+          - name: ubuntu-release
+            os: ubuntu-latest
+            configure_preset: ci-linux-release
+            build_preset: ci-linux-release
+            shard_count: 4
+            shard_index: 3
+          - name: macos-release
+            os: macos-latest
+            configure_preset: ci-macos-release
+            build_preset: ci-macos-release
+            shard_count: 2
+            shard_index: 0
+          - name: macos-release
+            os: macos-latest
+            configure_preset: ci-macos-release
+            build_preset: ci-macos-release
+            shard_count: 2
+            shard_index: 1
+          - name: windows-release
+            os: windows-latest
+            configure_preset: ci-windows-release
+            build_preset: ci-windows-release
+            shard_count: 2
+            shard_index: 0
+          - name: windows-release
+            os: windows-latest
+            configure_preset: ci-windows-release
+            build_preset: ci-windows-release
+            shard_count: 2
+            shard_index: 1
 
     steps:
       - name: Checkout
@@ -37,20 +108,18 @@ jobs:
         uses: ./.github/actions/prepare/job
         with:
           install_profile: build
-          env_profile: build-matrix
-          env_build_type: ${{ matrix.build_type }}
 
-      - name: Setup ccache
-        uses: ./.github/actions/setup/ccache
-        with:
-          dir: ${{ github.workspace }}/.ccache/build-test-${{ matrix.os }}-${{ matrix.build_type }}
-          key_stem: ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}
-          restore_keys: |
-            ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}-
-            ccache-build-test-${{ runner.os }}-
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
       - name: Build and test
-        uses: ./.github/actions/run/build-and-test
-        env:
-          WH_TEST_SHARD_COUNT: "6"
-          WH_TEST_SHARD_INDEX: ${{ matrix.shard_index }}
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci build-test \
+            --configure-preset "${{ matrix.configure_preset }}" \
+            --build-preset "${{ matrix.build_preset }}" \
+            --shard-count "${{ matrix.shard_count }}" \
+            --shard-index "${{ matrix.shard_index }}" \
+            --include-label ci.pr \
+            --exclude-label ci.nightly

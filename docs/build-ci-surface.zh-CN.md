@@ -1,80 +1,81 @@
 # 构建与 CI 面
 
-`worm-hole` 只保留少量公开的构建与验证入口。
+`worm-hole` 现在把本地流程和 GitHub Actions 都收口到同一个工具链编排入口。
 
-## 对人公开的入口
+## 公开入口
 
 - `./build.sh`
-  - 本地 configure / build / test 的统一入口
-- `scripts/ci/run_phase01_gates.sh`
-  - 本地快速门禁入口
-- `scripts/nightly/nightly_cmake_test_driver.sh`
-  - 本地 nightly sanitizer / label suite 驱动入口
+  - 面向人的本地入口，负责 configure、build、test、clean 和子模块同步
+- `scripts/toolchain.py`
+  - 面向自动化和 CI 的标准入口
+- `CMakePresets.json`
+  - 本地与 CI 共用的 configure / build preset
+- `CTestPresets.json`
+  - 共用的 CTest preset 注册表
 
-这些入口是给人直接使用的。  
-只要这几个入口保持稳定，内部脚本路径可以继续调整。
+## 本地使用面
+
+典型本地流程：
+
+```bash
+./build.sh sync-thirdy-party
+./build.sh configure --preset dev-debug
+./build.sh build --preset dev-debug --artifacts tests
+./build.sh test --preset dev-debug --build-first
+```
+
+常用变体：
+
+```bash
+./build.sh clean --preset dev-debug
+./build.sh test --preset dev-debug --build-first --suite UT
+./build.sh test --preset dev-debug --build-first --suite FT
+./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
+./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
+```
+
+根目录 `build.sh` 只是对 `scripts/toolchain.py local ...` 的轻包装。
+
+## CI 使用面
+
+GitHub Actions 现在直接调用 `scripts/toolchain.py ci ...`。
+
+当前跟踪的 workflow：
+
+- `01-pr-fast-gates.yml`
+  - actionlint、gitleaks、shellcheck、clang-format
+- `02-build-test-matrix.yml`
+  - 面向 `ci.pr` 的跨平台 build/test 分片
+- `03-deep-quality.yml`
+  - clang-tidy、CodeChecker、ASan/UBSan、TSan
+- `04-security-coverage.yml`
+  - CodeQL、dependency review、Trivy、LLVM coverage
+- `05-nightly-stress.yml`
+  - `ci.nightly` 重型测试的 nightly 分片
+
+代表性 CI 命令：
+
+```bash
+python3 scripts/toolchain.py ci fast-gates
+python3 scripts/toolchain.py ci build-test --configure-preset ci-linux-debug --shard-count 4 --shard-index 0 --include-label ci.pr --exclude-label ci.nightly
+python3 scripts/toolchain.py ci clang-tidy --configure-preset ci-static-analysis --shard-count 4 --shard-index 0
+python3 scripts/toolchain.py ci sanitizer --configure-preset ci-asan-ubsan --shard-count 2 --shard-index 0
+python3 scripts/toolchain.py ci coverage --configure-preset ci-coverage --coverage-min-lines 0.70
+```
 
 ## 内部实现层
 
-下面这些路径属于实现层，不承诺是稳定人工接口：
+下面这些路径属于实现层，不是对外承诺的人类接口：
 
-- `scripts/build/**`
-- `scripts/ci/**`，但不含 `scripts/ci/run_phase01_gates.sh`
-- `.github/actions/**`
 - `.github/workflows/**`
+- `.github/actions/prepare/**`
+- `.github/actions/setup/**`
+- `scripts/ci/setup/**`
+- `cmake/**`
 
-## Workflow 概览
+下面这些旧层已经被移除，不再属于支持面：
 
-当前跟踪的 GitHub Actions workflow：
-
-- `01-pr-fast-gates.yml`
-  - PR 快速门禁
-- `02-build-test-matrix.yml`
-  - 跨平台 build/test 矩阵
-- `03-deep-quality.yml`
-  - clang-tidy、后端静态分析、sanitizer smoke
-- `04-security-coverage.yml`
-  - codeql、dependency review、SCA、coverage
-- `05-nightly-stress.yml`
-  - nightly sanitizer 和压力类任务
-
-## 常用本地命令
-
-Debug 构建：
-
-```bash
-./build.sh --configure --build-type Debug
-./build.sh --build --build-type Debug
-```
-
-带测试的 Release 构建：
-
-```bash
-./build.sh --configure --build-type Release --enable-tests --disable-examples --disable-benchmarks
-./build.sh --build --build-type Release
-```
-
-列出测试：
-
-```bash
-./build.sh --test --list-tests
-```
-
-只跑单元测试：
-
-```bash
-./build.sh --test --build-type Debug --test-scope ut
-```
-
-只跑功能测试：
-
-```bash
-./build.sh --test --build-type Debug --test-scope ft
-```
-
-Nightly 本地驱动示例：
-
-```bash
-bash scripts/nightly/nightly_cmake_test_driver.sh sanitizer asan
-bash scripts/nightly/nightly_cmake_test_driver.sh label stress
-```
+- `.github/actions/run/**`
+- `scripts/ci/jobs/**`
+- `scripts/ci/checks/**`
+- `scripts/build/**`

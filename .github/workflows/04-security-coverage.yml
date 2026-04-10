@@ -6,7 +6,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '30 3 * * *'
+    - cron: "30 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -30,6 +30,14 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
@@ -38,11 +46,13 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Build for CodeQL extraction
-        uses: ./.github/actions/run/codeql-build
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci codeql-build --configure-preset ci-codeql
 
       - name: Analyze
         uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
-        continue-on-error: true
 
   sca:
     runs-on: ubuntu-latest
@@ -63,18 +73,18 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln
+          scanners: vuln,misconfig,license
           vuln-type: library
           format: table
           ignore-unfixed: true
           severity: HIGH,CRITICAL
-          exit-code: '1'
+          exit-code: "1"
           skip-dirs: thirdy_party,build
 
   coverage:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -86,17 +96,14 @@ jobs:
         uses: ./.github/actions/prepare/job
         with:
           install_profile: coverage
-          env_profile: strict-clang
 
-      - name: Setup ccache
-        uses: ./.github/actions/setup/ccache
-        with:
-          dir: ${{ github.workspace }}/.ccache/coverage
-          key_stem: ccache-coverage-${{ runner.os }}
-          restore_keys: |
-            ccache-coverage-${{ runner.os }}-
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
       - name: Run coverage gate
-        uses: ./.github/actions/run/coverage-gate
-        with:
-          coverage_min_lines: "0.70"
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci coverage \
+            --configure-preset ci-coverage \
+            --coverage-min-lines 0.70

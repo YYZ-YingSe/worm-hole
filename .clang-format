@@ -1,1 +1,18 @@
 BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 100
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<([[:alnum:]_]+\.h|[[:alnum:]_]+)>$'
+    Priority: 1
+  - Regex: '^<(sys/|netinet/|arpa/|mach/|pthread\.h|signal\.h|unistd\.h|windows\.h|winsock2\.h|ws2tcpip\.h)'
+    Priority: 1
+  - Regex: '^<(catch2/|exec/|minja/|nlohmann/|rapidjson/|stdexec/)'
+    Priority: 2
+  - Regex: '^"(wh/|tests/|helper/)'
+    Priority: 3
+  - Regex: '^<wh/'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 4

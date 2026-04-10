@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/function/detail/error_policy.hpp"
 #include "wh/core/function/detail/ownership_policy.hpp"
 #include "wh/core/function/detail/storage.hpp"
@@ -16,21 +17,18 @@
 namespace wh::core::fn_detail {
 
 /// Shared type and trait aliases for object manager policies.
-template <
-    typename target_t,
-    template <typename, template <typename> class> class ownership_template,
-    std::size_t buffer_size, template <typename> class allocator_t>
+template <typename target_t,
+          template <typename, template <typename> class> class ownership_template,
+          std::size_t buffer_size, template <typename> class allocator_t>
 class manager_helper {
 protected:
   using max_buffer = any_storage<buffer_size>;
 
-  static constexpr bool using_soo =
-      max_buffer::template can_construct<target_t>();
+  static constexpr bool using_soo = max_buffer::template can_construct<target_t>();
 
 public:
-  using ownership_policy =
-      std::conditional_t<using_soo, local_ownership<target_t, allocator_t>,
-                         ownership_template<target_t, allocator_t>>;
+  using ownership_policy = std::conditional_t<using_soo, local_ownership<target_t, allocator_t>,
+                                              ownership_template<target_t, allocator_t>>;
 
   using allocator_type = typename ownership_policy::allocator_type;
   using stored_type = typename ownership_policy::stored_type;
@@ -47,24 +45,20 @@ public:
 };
 
 /// Type-erased callable/object holder with pluggable ownership policy.
-template <
-    typename target_t,
-    template <typename, template <typename> class> class ownership_template =
-        fn::reference_counting,
-    typename error_policy = fn::assert_on_error,
-    std::size_t buffer_size = sizeof(void *),
-    template <typename> class allocator_t = std::allocator>
-class object_manager
-    : private manager_helper<target_t, ownership_template, buffer_size,
-                             allocator_t>,
+template <typename target_t,
+          template <typename, template <typename> class> class ownership_template =
+              fn::reference_counting,
+          typename error_policy = fn::assert_on_error, std::size_t buffer_size = sizeof(void *),
+          template <typename> class allocator_t = std::allocator>
+class wh_empty_bases object_manager
+    : private manager_helper<target_t, ownership_template, buffer_size, allocator_t>,
       private manager_helper<target_t, ownership_template, buffer_size,
                              allocator_t>::allocator_type,
       public manager_helper<target_t, ownership_template, buffer_size,
                             allocator_t>::ownership_policy,
       public error_policy {
 private:
-  using helper =
-      manager_helper<target_t, ownership_template, buffer_size, allocator_t>;
+  using helper = manager_helper<target_t, ownership_template, buffer_size, allocator_t>;
 
   using typename helper::allocator_type;
   using typename helper::buffer_type;
@@ -99,17 +93,14 @@ private:
 
 public:
   template <typename... args_t>
-  static constexpr bool is_constructible =
-      helper::template is_constructible<args_t...>;
+  static constexpr bool is_constructible = helper::template is_constructible<args_t...>;
 
   template <typename... args_t>
   static constexpr bool is_nothrow_constructible =
-      is_constructible<args_t...> &&
-      ownership_policy::template can_nothrow_construct<args_t...>;
+      is_constructible<args_t...> && ownership_policy::template can_nothrow_construct<args_t...>;
 
   /// Returns readonly access to the managed object.
-  [[nodiscard]] auto access() const & noexcept(can_nothrow_access())
-      -> const target_t & {
+  [[nodiscard]] auto access() const & noexcept(can_nothrow_access()) -> const target_t & {
     if constexpr (error_policy::check_before_access) {
       if (is_invalid()) {
         error_policy::on_access();
@@ -121,30 +112,24 @@ public:
 
   /// Returns mutable access to the managed object.
   [[nodiscard]] auto access() & noexcept(can_nothrow_access()) -> target_t & {
-    return const_cast<target_t &>(
-        static_cast<const object_manager &>(*this).access());
+    return const_cast<target_t &>(static_cast<const object_manager &>(*this).access());
   }
 
   /// Returns moved readonly access to the managed object.
-  [[nodiscard]] auto access() const && noexcept(can_nothrow_access())
-      -> const target_t && {
-    return static_cast<const target_t &&>(
-        static_cast<const object_manager &>(*this).access());
+  [[nodiscard]] auto access() const && noexcept(can_nothrow_access()) -> const target_t && {
+    return static_cast<const target_t &&>(static_cast<const object_manager &>(*this).access());
   }
 
   /// Returns moved mutable access to the managed object.
   [[nodiscard]] auto access() && noexcept(can_nothrow_access()) -> target_t && {
-    return const_cast<target_t &&>(
-        static_cast<const object_manager &>(*this).access());
+    return const_cast<target_t &&>(static_cast<const object_manager &>(*this).access());
   }
 
   using helper::using_soo;
 
   template <typename... args_t>
-    requires(
-        !((std::is_same_v<object_manager, wh::core::remove_cvref_t<args_t>> &&
-           ...) &&
-          (sizeof...(args_t) == 1U)))
+    requires(!((std::is_same_v<object_manager, wh::core::remove_cvref_t<args_t>> && ...) &&
+               (sizeof...(args_t) == 1U)))
   explicit object_manager(args_t &&...args) noexcept(
       ownership_policy::template can_nothrow_construct<args_t...>)
     requires(helper::template is_constructible<args_t...>)
@@ -153,8 +138,7 @@ public:
                   "Buffer size is too small for the specified target object "
                   "and the ownership policy!");
 
-    ownership_policy::create(allocator(), stored_object_ptr(),
-                             std::forward<args_t>(args)...);
+    ownership_policy::create(allocator(), stored_object_ptr(), std::forward<args_t>(args)...);
   }
 
   ~object_manager() {
@@ -167,8 +151,8 @@ public:
     ownership_policy::destroy(allocator(), stored_object_ptr());
   }
 
-  object_manager(const object_manager &other) noexcept(
-      noexcept(error_policy::on_copy()) && ownership_policy::can_nothrow_copy)
+  object_manager(const object_manager &other) noexcept(noexcept(error_policy::on_copy()) &&
+                                                       ownership_policy::can_nothrow_copy)
     requires(helper::is_copy_constructible)
       : allocator_type(other), ownership_policy(other), error_policy(other) {
     if constexpr (error_policy::check_before_copy) {
@@ -178,19 +162,17 @@ public:
         return;
       }
     }
-    ownership_policy::copy(allocator(), other.stored_object(),
-                           stored_object_ptr());
+    ownership_policy::copy(allocator(), other.stored_object(), stored_object_ptr());
   }
 
   object_manager(object_manager &&other) noexcept
       : allocator_type(std::move(other)), ownership_policy(std::move(other)),
-        error_policy(std::move(other)),
-        local_buffer_(std::move(other.local_buffer_)) {
+        error_policy(std::move(other)), local_buffer_(std::move(other.local_buffer_)) {
     other.invalidate();
   }
 
-  auto operator=(const object_manager &other) noexcept(
-      noexcept(error_policy::on_copy()) && ownership_policy::can_nothrow_copy)
+  auto operator=(const object_manager &other) noexcept(noexcept(error_policy::on_copy()) &&
+                                                       ownership_policy::can_nothrow_copy)
       -> object_manager & {
     object_manager{other}.swap(*this);
     return *this;
@@ -218,10 +200,8 @@ public:
   template <typename other_t, typename other_error = std::decay_t<other_t>>
     requires(helper::is_copy_constructible)
   auto swap(other_t &&other) noexcept -> void {
-    if constexpr (ownership_policy::allocator_traits::
-                      propagate_on_container_swap::value ||
-                  std::decay_t<other_t>::allocator_traits::
-                      propagate_on_container_swap::value) {
+    if constexpr (ownership_policy::allocator_traits::propagate_on_container_swap::value ||
+                  std::decay_t<other_t>::allocator_traits::propagate_on_container_swap::value) {
       using std::swap;
       swap(allocator(), other.allocator());
     }
@@ -233,9 +213,7 @@ public:
   }
 
   /// Marks storage as invalid without deallocating.
-  auto invalidate() noexcept -> void {
-    local_buffer_.head() = local_buffer_.address();
-  }
+  auto invalidate() noexcept -> void { local_buffer_.head() = local_buffer_.address(); }
 
   /// Returns whether storage is marked invalid.
   [[nodiscard]] auto is_invalid() const noexcept -> bool {

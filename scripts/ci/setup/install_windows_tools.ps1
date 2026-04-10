@@ -9,11 +9,6 @@ $ErrorActionPreference = "Stop"
 switch ($Profile) {
   "build" {
     choco install -y ripgrep llvm ninja
-    choco install -y ccache
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "[install-windows-tools] WARN ccache install unavailable, continuing without ccache"
-      $global:LASTEXITCODE = 0
-    }
   }
 }
 

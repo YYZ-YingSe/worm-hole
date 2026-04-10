@@ -28,6 +28,22 @@ compile_commands.json
 *.gcno
 *.gcda
 *.gcov
+*.profraw
+*.profdata
+.coverage
+coverage.xml
+
+# Python caches / local tooling
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
 
 # object / library / binary
 *.o
@@ -43,6 +59,8 @@ compile_commands.json
 .DS_Store
 .vscode/
 .idea/
+.clangd/
+.direnv/
 *.swp
 *.swo
 

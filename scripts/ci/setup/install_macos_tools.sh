@@ -17,7 +17,7 @@ packages=()
 
 case "$profile" in
   build)
-    packages=(ripgrep llvm cmake ninja ccache)
+    packages=(ripgrep llvm cmake ninja)
     ;;
   *)
     echo "[install-macos-tools] FAIL unknown profile: $profile"

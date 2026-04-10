@@ -150,7 +150,9 @@ TEST_CASE("component helpers cover request resolution context projection and pay
   REQUIRE(*mutable_request == 9);
   REQUIRE(wh::compose::detail::read_request<std::string>(mutable_input) == nullptr);
 
-  auto borrowed = wh::compose::detail::component_request_state<int>::borrow(4);
+  int borrowed_source = 4;
+  auto borrowed =
+      wh::compose::detail::component_request_state<int>::borrow(borrowed_source);
   REQUIRE(std::move(borrowed).apply([](auto &&value) { return value + 1; }) == 5);
 
   auto owned = wh::compose::detail::component_request_state<int>::own(6);

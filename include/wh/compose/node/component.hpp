@@ -90,6 +90,8 @@ template <typename request_t> struct component_request_state {
     return component_request_state{.borrowed = std::addressof(request)};
   }
 
+  static auto borrow(request_t &&) -> component_request_state = delete;
+
   [[nodiscard]] static auto own(request_t request) -> component_request_state {
     return component_request_state{.owned = std::move(request)};
   }

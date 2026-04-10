@@ -1,8 +1,0 @@
-name: run-build-and-test
-description: Run configure/build/test verification for the current CI environment.
-
-runs:
-  using: composite
-  steps:
-    - shell: bash
-      run: bash "${{ github.workspace }}/scripts/ci/jobs/run_cmake_build_and_test.sh"

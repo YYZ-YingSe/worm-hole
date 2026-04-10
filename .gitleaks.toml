@@ -1,0 +1,11 @@
+title = "worm-hole-gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore vendored third-party and generated build output"
+paths = [
+  '''^thirdy_party/''',
+  '''^build/''',
+]

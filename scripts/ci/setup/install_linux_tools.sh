@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-  echo "[install-linux-tools] FAIL usage: $0 <fast-gates|build|deep-analysis|coverage|nightly>"
+  echo "[install-linux-tools] FAIL usage: $0 <fast-gates|build|analysis|coverage|nightly>"
   exit 2
 fi
 
@@ -21,16 +21,16 @@ case "$profile" in
     packages=(ripgrep shellcheck python3 python3-venv)
     ;;
   build)
-    packages=(ripgrep clang cmake ninja-build ccache)
+    packages=(ripgrep clang cmake ninja-build python3)
     ;;
-  deep-analysis)
-    packages=(ripgrep cppcheck cmake ninja-build)
+  analysis)
+    packages=(ripgrep clang cmake ninja-build python3 python3-venv)
     ;;
   coverage)
-    packages=(ripgrep clang cmake ninja-build gcovr ccache)
+    packages=(ripgrep clang llvm cmake ninja-build python3)
     ;;
   nightly)
-    packages=(ripgrep clang clang-tools cmake ninja-build)
+    packages=(ripgrep clang clang-tools llvm cmake ninja-build python3)
     ;;
   *)
     echo "[install-linux-tools] FAIL unknown profile: $profile"
@@ -43,7 +43,7 @@ if [[ "${#packages[@]}" -gt 0 ]]; then
   sudo apt-get install -y "${packages[@]}"
 fi
 
-if [[ "$profile" == "deep-analysis" ]]; then
+if [[ "$profile" == "analysis" ]]; then
   for ver in 20 19 18; do
     if apt-cache show "clang-${ver}" >/dev/null 2>&1 && \
        apt-cache show "clang-tidy-${ver}" >/dev/null 2>&1 && \

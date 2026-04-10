@@ -1,81 +1,85 @@
 # Build and CI Surface
 
-`worm-hole` keeps a small public build and verification surface.
+`worm-hole` now uses one toolchain orchestrator for local workflows and GitHub
+Actions.
 
 ## Public Entrypoints
 
 - `./build.sh`
-  - unified local entrypoint for configure, build, and test
-- `scripts/ci/run_phase01_gates.sh`
-  - local fast gate driver
-- `scripts/nightly/nightly_cmake_test_driver.sh`
-  - local nightly sanitizer and labeled-suite driver
+  - human-friendly wrapper for local configure, build, test, clean, and
+    submodule sync
+- `scripts/toolchain.py`
+  - canonical machine-oriented entrypoint for local automation and CI
+- `CMakePresets.json`
+  - shared configure/build presets for local and CI execution
+- `CTestPresets.json`
+  - shared CTest preset registry
 
-These are the entrypoints intended for humans. Internal helper scripts remain
-free to move as long as the public surface stays stable.
+## Local Surface
 
-## Internal Layers
+Typical local flow:
 
-The following paths are implementation layers rather than stable user-facing
-interfaces:
+```bash
+./build.sh sync-thirdy-party
+./build.sh configure --preset dev-debug
+./build.sh build --preset dev-debug --artifacts tests
+./build.sh test --preset dev-debug --build-first
+```
 
-- `scripts/build/**`
-- `scripts/ci/**` except `scripts/ci/run_phase01_gates.sh`
-- `.github/actions/**`
-- `.github/workflows/**`
+Common variants:
 
-## Workflow Overview
+```bash
+./build.sh clean --preset dev-debug
+./build.sh test --preset dev-debug --build-first --suite UT
+./build.sh test --preset dev-debug --build-first --suite FT
+./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
+./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
+```
 
-Tracked GitHub Actions workflows:
+The root wrapper simply forwards to `scripts/toolchain.py local ...`.
+
+## CI Surface
+
+GitHub Actions now call `scripts/toolchain.py ci ...` directly.
+
+Tracked workflows:
 
 - `01-pr-fast-gates.yml`
-  - pull-request fast checks
+  - actionlint, gitleaks, shellcheck, clang-format
 - `02-build-test-matrix.yml`
-  - cross-platform build and test matrix
+  - cross-platform build/test shards for `ci.pr`
 - `03-deep-quality.yml`
-  - clang-tidy, backend static analysis, sanitizer smoke
+  - clang-tidy, CodeChecker, ASan/UBSan, TSan
 - `04-security-coverage.yml`
-  - codeql, dependency review, SCA, coverage
+  - CodeQL, dependency review, Trivy, LLVM coverage
 - `05-nightly-stress.yml`
-  - nightly sanitizer and stress-oriented jobs
+  - nightly `ci.nightly` heavy-test shards
 
-## Common Local Commands
-
-Debug build:
+Representative CI commands:
 
 ```bash
-./build.sh --configure --build-type Debug
-./build.sh --build --build-type Debug
+python3 scripts/toolchain.py ci fast-gates
+python3 scripts/toolchain.py ci build-test --configure-preset ci-linux-debug --shard-count 4 --shard-index 0 --include-label ci.pr --exclude-label ci.nightly
+python3 scripts/toolchain.py ci clang-tidy --configure-preset ci-static-analysis --shard-count 4 --shard-index 0
+python3 scripts/toolchain.py ci sanitizer --configure-preset ci-asan-ubsan --shard-count 2 --shard-index 0
+python3 scripts/toolchain.py ci coverage --configure-preset ci-coverage --coverage-min-lines 0.70
 ```
 
-Release build with tests:
+## Internal Implementation Layers
 
-```bash
-./build.sh --configure --build-type Release --enable-tests --disable-examples --disable-benchmarks
-./build.sh --build --build-type Release
-```
+The following paths are implementation layers rather than user-facing
+contracts:
 
-List tests:
+- `.github/workflows/**`
+- `.github/actions/prepare/**`
+- `.github/actions/setup/**`
+- `scripts/ci/setup/**`
+- `cmake/**`
 
-```bash
-./build.sh --test --list-tests
-```
+The deleted legacy layers are intentionally no longer part of the supported
+surface:
 
-Run only unit tests:
-
-```bash
-./build.sh --test --build-type Debug --test-scope ut
-```
-
-Run only functional tests:
-
-```bash
-./build.sh --test --build-type Debug --test-scope ft
-```
-
-Nightly local driver examples:
-
-```bash
-bash scripts/nightly/nightly_cmake_test_driver.sh sanitizer asan
-bash scripts/nightly/nightly_cmake_test_driver.sh label stress
-```
+- `.github/actions/run/**`
+- `scripts/ci/jobs/**`
+- `scripts/ci/checks/**`
+- `scripts/build/**`

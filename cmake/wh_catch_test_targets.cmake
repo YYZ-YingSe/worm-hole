@@ -19,9 +19,198 @@ function(wh_source_test_prefix out_var suite_prefix source_root source_file)
   set("${out_var}" "${suite_prefix}${relative_stem}::" PARENT_SCOPE)
 endfunction()
 
+function(wh_normalize_test_source_path out_var source_file)
+  cmake_path(ABSOLUTE_PATH source_file
+             BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+             NORMALIZE
+             OUTPUT_VARIABLE absolute_source)
+  set("${out_var}" "${absolute_source}" PARENT_SCOPE)
+endfunction()
+
+function(wh_test_source_profile_property_name out_var source_file property_suffix)
+  wh_normalize_test_source_path(normalized_source "${source_file}")
+  string(MD5 source_key "${normalized_source}")
+  set("${out_var}" "WH_TEST_PROFILE_${source_key}_${property_suffix}" PARENT_SCOPE)
+endfunction()
+
+function(wh_get_test_source_profile_property out_var)
+  set(options)
+  set(one_value_args SOURCE_FILE PROPERTY_NAME)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}" "" ${ARGN})
+
+  foreach(required_arg SOURCE_FILE PROPERTY_NAME)
+    if(NOT ARG_${required_arg})
+      message(FATAL_ERROR
+              "wh_get_test_source_profile_property missing ${required_arg}")
+    endif()
+  endforeach()
+
+  wh_test_source_profile_property_name(property_name "${ARG_SOURCE_FILE}"
+                                       "${ARG_PROPERTY_NAME}")
+  get_property(property_set GLOBAL PROPERTY "${property_name}" SET)
+  if(property_set)
+    get_property(property_value GLOBAL PROPERTY "${property_name}")
+  else()
+    set(property_value "")
+  endif()
+
+  set("${out_var}" "${property_value}" PARENT_SCOPE)
+endfunction()
+
+function(wh_set_test_source_profile_property)
+  set(options)
+  set(one_value_args SOURCE_FILE PROPERTY_NAME)
+  set(multi_value_args VALUES)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}"
+                        "${multi_value_args}" ${ARGN})
+
+  foreach(required_arg SOURCE_FILE PROPERTY_NAME)
+    if(NOT ARG_${required_arg})
+      message(FATAL_ERROR
+              "wh_set_test_source_profile_property missing ${required_arg}")
+    endif()
+  endforeach()
+
+  wh_test_source_profile_property_name(property_name "${ARG_SOURCE_FILE}"
+                                       "${ARG_PROPERTY_NAME}")
+  set_property(GLOBAL PROPERTY "${property_name}" "${ARG_VALUES}")
+endfunction()
+
+function(wh_append_test_source_profile_property)
+  set(options)
+  set(one_value_args SOURCE_FILE PROPERTY_NAME)
+  set(multi_value_args VALUES)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}"
+                        "${multi_value_args}" ${ARGN})
+
+  foreach(required_arg SOURCE_FILE PROPERTY_NAME)
+    if(NOT ARG_${required_arg})
+      message(FATAL_ERROR
+              "wh_append_test_source_profile_property missing ${required_arg}")
+    endif()
+  endforeach()
+
+  wh_get_test_source_profile_property(existing_values
+                                      SOURCE_FILE "${ARG_SOURCE_FILE}"
+                                      PROPERTY_NAME "${ARG_PROPERTY_NAME}")
+  set(merged_values ${existing_values} ${ARG_VALUES})
+  list(REMOVE_DUPLICATES merged_values)
+
+  wh_set_test_source_profile_property(
+    SOURCE_FILE "${ARG_SOURCE_FILE}"
+    PROPERTY_NAME "${ARG_PROPERTY_NAME}"
+    VALUES ${merged_values})
+endfunction()
+
+function(wh_set_test_source_profile)
+  set(options)
+  set(one_value_args SOURCE_FILE WEIGHT TIMEOUT_SECONDS)
+  set(multi_value_args ADD_LABELS REMOVE_LABELS)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}"
+                        "${multi_value_args}" ${ARGN})
+
+  if(NOT ARG_SOURCE_FILE)
+    message(FATAL_ERROR "wh_set_test_source_profile missing SOURCE_FILE")
+  endif()
+
+  if(ARG_ADD_LABELS)
+    wh_append_test_source_profile_property(
+      SOURCE_FILE "${ARG_SOURCE_FILE}"
+      PROPERTY_NAME "ADD_LABELS"
+      VALUES ${ARG_ADD_LABELS})
+  endif()
+
+  if(ARG_REMOVE_LABELS)
+    wh_append_test_source_profile_property(
+      SOURCE_FILE "${ARG_SOURCE_FILE}"
+      PROPERTY_NAME "REMOVE_LABELS"
+      VALUES ${ARG_REMOVE_LABELS})
+  endif()
+
+  if(ARG_WEIGHT)
+    wh_set_test_source_profile_property(
+      SOURCE_FILE "${ARG_SOURCE_FILE}"
+      PROPERTY_NAME "WEIGHT"
+      VALUES "${ARG_WEIGHT}")
+  endif()
+
+  if(ARG_TIMEOUT_SECONDS)
+    wh_set_test_source_profile_property(
+      SOURCE_FILE "${ARG_SOURCE_FILE}"
+      PROPERTY_NAME "TIMEOUT_SECONDS"
+      VALUES "${ARG_TIMEOUT_SECONDS}")
+  endif()
+endfunction()
+
+function(wh_compute_test_metadata labels_out weight_out timeout_out)
+  set(options)
+  set(one_value_args SOURCE_FILE)
+  set(multi_value_args LABELS)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}"
+                        "${multi_value_args}" ${ARGN})
+
+  if(NOT ARG_SOURCE_FILE)
+    message(FATAL_ERROR "wh_compute_test_metadata missing SOURCE_FILE")
+  endif()
+
+  set(labels ${ARG_LABELS})
+  set(weight 1)
+  set(timeout_seconds 120)
+
+  if("UT" IN_LIST labels)
+    list(APPEND labels "kind.ut")
+    set(weight 1)
+    set(timeout_seconds 120)
+  endif()
+
+  if("FT" IN_LIST labels)
+    list(APPEND labels "kind.ft")
+    set(weight 4)
+    set(timeout_seconds 180)
+  endif()
+
+  list(APPEND labels "ci.pr" "sanitizer.safe")
+
+  # Test profile overrides must survive directory boundaries between
+  # tests/test_profiles.cmake and the bundle registration helpers.
+  wh_get_test_source_profile_property(add_labels
+                                      SOURCE_FILE "${ARG_SOURCE_FILE}"
+                                      PROPERTY_NAME "ADD_LABELS")
+  if(add_labels)
+    list(APPEND labels ${add_labels})
+  endif()
+
+  wh_get_test_source_profile_property(remove_labels
+                                      SOURCE_FILE "${ARG_SOURCE_FILE}"
+                                      PROPERTY_NAME "REMOVE_LABELS")
+  if(remove_labels)
+    list(REMOVE_ITEM labels ${remove_labels})
+  endif()
+
+  wh_get_test_source_profile_property(weight_override
+                                      SOURCE_FILE "${ARG_SOURCE_FILE}"
+                                      PROPERTY_NAME "WEIGHT")
+  if(weight_override)
+    set(weight "${weight_override}")
+  endif()
+
+  wh_get_test_source_profile_property(timeout_override
+                                      SOURCE_FILE "${ARG_SOURCE_FILE}"
+                                      PROPERTY_NAME "TIMEOUT_SECONDS")
+  if(timeout_override)
+    set(timeout_seconds "${timeout_override}")
+  endif()
+
+  list(REMOVE_DUPLICATES labels)
+
+  set("${labels_out}" "${labels}" PARENT_SCOPE)
+  set("${weight_out}" "${weight}" PARENT_SCOPE)
+  set("${timeout_out}" "${timeout_seconds}" PARENT_SCOPE)
+endfunction()
+
 function(wh_register_catch_test_target)
   set(options)
-  set(one_value_args TARGET_NAME SOURCE_FILE TEST_PREFIX)
+  set(one_value_args TARGET_NAME SOURCE_FILE TEST_PREFIX WEIGHT TIMEOUT_SECONDS)
   set(multi_value_args LABELS)
   cmake_parse_arguments(ARG "${options}" "${one_value_args}"
                         "${multi_value_args}" ${ARGN})
@@ -48,7 +237,7 @@ function(wh_register_catch_test_target)
   wh_escape_manifest_field(escaped_labels "${labels_csv}")
 
   set(row
-      "${escaped_suite}\t${escaped_target}\t$<TARGET_FILE:${ARG_TARGET_NAME}>\t${escaped_source}\t${source_size}\t${escaped_labels}\n")
+      "${escaped_suite}\t${escaped_target}\t$<TARGET_FILE:${ARG_TARGET_NAME}>\t${escaped_source}\t${source_size}\t${ARG_WEIGHT}\t${ARG_TIMEOUT_SECONDS}\t${escaped_labels}\n")
   set_property(GLOBAL APPEND_STRING PROPERTY WH_CATCH_TEST_MANIFEST_ROWS
                "${row}")
 endfunction()
@@ -64,7 +253,7 @@ function(wh_write_catch_test_manifest output_path)
   file(GENERATE
        OUTPUT "${absolute_output}"
        CONTENT
-         "suite\ttarget\texecutable\tsource\tsource_size\tlabels\n${rows}")
+         "suite\ttarget\texecutable\tsource\tsource_size\tweight\ttimeout_seconds\tlabels\n${rows}")
 endfunction()
 
 function(wh_add_catch_test_source out_var)
@@ -91,20 +280,32 @@ function(wh_add_catch_test_source out_var)
   wh_source_test_prefix(discovery_prefix "${ARG_TEST_PREFIX}"
                         "${ARG_SOURCE_ROOT}" "${ARG_SOURCE_FILE}")
 
-  if(ARG_LABELS)
+  wh_compute_test_metadata(
+    resolved_labels
+    resolved_weight
+    resolved_timeout_seconds
+    SOURCE_FILE "${ARG_SOURCE_FILE}"
+    LABELS ${ARG_LABELS})
+
+  if(resolved_labels)
     catch_discover_tests("${target_name}" TEST_PREFIX "${discovery_prefix}"
                          DISCOVERY_MODE PRE_TEST
-                         PROPERTIES LABELS "${ARG_LABELS}")
+                         PROPERTIES
+                           LABELS "${resolved_labels}"
+                           TIMEOUT "${resolved_timeout_seconds}")
   else()
     catch_discover_tests("${target_name}" TEST_PREFIX "${discovery_prefix}"
-                         DISCOVERY_MODE PRE_TEST)
+                         DISCOVERY_MODE PRE_TEST
+                         PROPERTIES TIMEOUT "${resolved_timeout_seconds}")
   endif()
 
   wh_register_catch_test_target(
     TARGET_NAME "${target_name}"
     SOURCE_FILE "${ARG_SOURCE_FILE}"
     TEST_PREFIX "${ARG_TEST_PREFIX}"
-    LABELS ${ARG_LABELS})
+    WEIGHT "${resolved_weight}"
+    TIMEOUT_SECONDS "${resolved_timeout_seconds}"
+    LABELS ${resolved_labels})
 
   set("${out_var}" "${target_name}" PARENT_SCOPE)
 endfunction()

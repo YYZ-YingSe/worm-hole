@@ -16,18 +16,21 @@ concurrency:
 
 jobs:
   clang-tidy:
+    name: clang-tidy (${{ matrix.shard_index }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard:
-          - name: compose
-            path_filter: '^(tests/UT/wh/compose/)'
-          - name: foundations
-            path_filter: '^(tests/helper/|tests/UT/wh/(callbacks|core|internal|schema)/)'
-          - name: surface
-            path_filter: '^(tests/UT/wh/(adk|agent|document|embedding|flow|indexer|model|net|output|prompt|retriever|scheduler|sync|tool|workflow)/|tests/UT/wh/flow_ut\.cpp)'
+        include:
+          - shard_count: 4
+            shard_index: 0
+          - shard_count: 4
+            shard_index: 1
+          - shard_count: 4
+            shard_index: 2
+          - shard_count: 4
+            shard_index: 3
 
     steps:
       - name: Checkout
@@ -39,17 +42,25 @@ jobs:
       - name: Prepare CI job
         uses: ./.github/actions/prepare/job
         with:
-          install_profile: deep-analysis
-          env_profile: strict
+          install_profile: analysis
 
-      - name: Run clang-tidy shard ${{ matrix.shard.name }}
-        uses: ./.github/actions/run/static-analysis-suite
-        with:
-          select_toolchain: "true"
-          mode: clang-tidy
-          path_filter: ${{ matrix.shard.path_filter }}
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
-  static-analysis-backend:
+      - name: Select clang toolchain
+        shell: bash
+        run: bash "${{ github.workspace }}/scripts/ci/setup/select_clang_tidy_toolchain.sh"
+
+      - name: Run clang-tidy shard ${{ matrix.shard_index }}
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci clang-tidy \
+            --configure-preset ci-static-analysis \
+            --shard-count "${{ matrix.shard_count }}" \
+            --shard-index "${{ matrix.shard_index }}"
+
+  codechecker:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -63,22 +74,46 @@ jobs:
       - name: Prepare CI job
         uses: ./.github/actions/prepare/job
         with:
-          install_profile: deep-analysis
-          env_profile: strict
+          install_profile: analysis
+          setup_codechecker: "true"
 
-      - name: Run cppcheck and scan-build
-        uses: ./.github/actions/run/static-analysis-suite
-        with:
-          select_toolchain: "true"
-          mode: backend
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
-  sanitizer-smoke:
+      - name: Select clang toolchain
+        shell: bash
+        run: bash "${{ github.workspace }}/scripts/ci/setup/select_clang_tidy_toolchain.sh"
+
+      - name: Run CodeChecker
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci codechecker --configure-preset ci-static-analysis
+
+  sanitizer:
+    name: sanitizer (${{ matrix.name }}, ${{ matrix.shard_index }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard_index: [0, 1, 2]
+        include:
+          - name: asan-ubsan
+            configure_preset: ci-asan-ubsan
+            build_preset: ci-asan-ubsan
+            shard_count: 2
+            shard_index: 0
+          - name: asan-ubsan
+            configure_preset: ci-asan-ubsan
+            build_preset: ci-asan-ubsan
+            shard_count: 2
+            shard_index: 1
+          - name: tsan
+            configure_preset: ci-tsan
+            build_preset: ci-tsan
+            shard_count: 1
+            shard_index: 0
+
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -90,18 +125,16 @@ jobs:
         uses: ./.github/actions/prepare/job
         with:
           install_profile: build
-          env_profile: strict-clang
 
-      - name: Setup ccache
-        uses: ./.github/actions/setup/ccache
-        with:
-          dir: ${{ github.workspace }}/.ccache/deep-quality-sanitizer
-          key_stem: ccache-deep-quality-sanitizer-${{ runner.os }}
-          restore_keys: |
-            ccache-deep-quality-sanitizer-${{ runner.os }}-
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
-      - name: Run sanitizer smoke
-        uses: ./.github/actions/run/sanitizer-smoke
-        env:
-          WH_TEST_SHARD_COUNT: "3"
-          WH_TEST_SHARD_INDEX: ${{ matrix.shard_index }}
+      - name: Run sanitizer shard ${{ matrix.shard_index }}
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci sanitizer \
+            --configure-preset "${{ matrix.configure_preset }}" \
+            --build-preset "${{ matrix.build_preset }}" \
+            --shard-count "${{ matrix.shard_count }}" \
+            --shard-index "${{ matrix.shard_index }}"

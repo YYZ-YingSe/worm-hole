@@ -65,17 +65,16 @@ inline constexpr bool supports_native_stacktrace_capture = false;
 
 #if defined(__cpp_lib_hardware_interference_size)
 inline constexpr std::size_t default_cacheline_size =
-    std::hardware_destructive_interference_size > 0
-        ? std::hardware_destructive_interference_size
-        : 64U;
+    std::hardware_destructive_interference_size > 0 ? std::hardware_destructive_interference_size
+                                                    : 64U;
 #else
 inline constexpr std::size_t default_cacheline_size = 64U;
 #endif
 
 /// True when a value can be moved by raw relocation safely.
 template <typename t>
-concept trivially_relocatable = std::is_trivially_move_constructible_v<t> &&
-                                std::is_trivially_destructible_v<t>;
+concept trivially_relocatable =
+    std::is_trivially_move_constructible_v<t> && std::is_trivially_destructible_v<t>;
 
 /// True when a value is bitwise copyable.
 template <typename t>
@@ -87,8 +86,8 @@ concept trivially_copyable_value = std::is_trivially_copyable_v<t>;
 }
 
 /// Aligns `value` upward to `alignment` when alignment is power-of-two.
-[[nodiscard]] constexpr std::size_t
-align_up(const std::size_t value, const std::size_t alignment) noexcept {
+[[nodiscard]] constexpr std::size_t align_up(const std::size_t value,
+                                             const std::size_t alignment) noexcept {
   if (!is_power_of_two(alignment)) {
     return value;
   }
@@ -96,14 +95,12 @@ align_up(const std::size_t value, const std::size_t alignment) noexcept {
 }
 
 /// Computes the next power of two greater than or equal to `value`.
-[[nodiscard]] constexpr std::size_t
-next_power_of_two(std::size_t value) noexcept {
+[[nodiscard]] constexpr std::size_t next_power_of_two(std::size_t value) noexcept {
   if (value <= 1U) {
     return 1U;
   }
   value -= 1U;
-  for (std::size_t shift = 1U; shift < (sizeof(std::size_t) * 8U);
-       shift <<= 1U) {
+  for (std::size_t shift = 1U; shift < (sizeof(std::size_t) * 8U); shift <<= 1U) {
     value |= value >> shift;
   }
   return value + 1U;
@@ -147,8 +144,7 @@ inline void assume(condition_t &&condition) noexcept {
 
 /// Emits a short CPU pause/yield for spin-wait loops.
 inline void spin_pause() noexcept {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) ||             \
-    defined(_M_IX86)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 #if defined(_MSC_VER)
   _mm_pause();
 #else
@@ -181,13 +177,12 @@ enum class contract_kind : std::uint8_t {
 /// Reports contract violation and terminates immediately.
 [[noreturn]] inline void
 contract_violation(const contract_kind kind, const std::string_view expression,
-                   const std::source_location where =
-                       std::source_location::current()) noexcept {
+                   const std::source_location where = std::source_location::current()) noexcept {
   const auto kind_name = contract_kind_name(kind);
   std::fprintf(stderr, "[wh-contract] %.*s failed: %.*s at %s:%u\n",
                static_cast<int>(kind_name.size()), kind_name.data(),
-               static_cast<int>(expression.size()), expression.data(),
-               where.file_name(), where.line());
+               static_cast<int>(expression.size()), expression.data(), where.file_name(),
+               where.line());
   std::abort();
 }
 
@@ -222,6 +217,12 @@ contract_violation(const contract_kind kind, const std::string_view expression,
 #define wh_no_unique_address
 #endif
 
+#if defined(_MSC_VER)
+#define wh_empty_bases __declspec(empty_bases)
+#else
+#define wh_empty_bases
+#endif
+
 #if defined(__GNUC__) || defined(__clang__)
 #define wh_force_inline [[gnu::always_inline]] inline
 #define wh_noinline [[gnu::noinline]]
@@ -252,22 +253,22 @@ contract_violation(const contract_kind kind, const std::string_view expression,
 #endif
 
 #ifndef NDEBUG
-#define wh_precondition(expr)                                                  \
-  (static_cast<bool>(expr) ||                                                  \
-   (::wh::core::contract_violation(::wh::core::contract_kind::precondition,    \
-                                   #expr, std::source_location::current()),    \
+#define wh_precondition(expr)                                                                      \
+  (static_cast<bool>(expr) ||                                                                      \
+   (::wh::core::contract_violation(::wh::core::contract_kind::precondition, #expr,                 \
+                                   std::source_location::current()),                               \
     false))
 
-#define wh_postcondition(expr)                                                 \
-  (static_cast<bool>(expr) ||                                                  \
-   (::wh::core::contract_violation(::wh::core::contract_kind::postcondition,   \
-                                   #expr, std::source_location::current()),    \
+#define wh_postcondition(expr)                                                                     \
+  (static_cast<bool>(expr) ||                                                                      \
+   (::wh::core::contract_violation(::wh::core::contract_kind::postcondition, #expr,                \
+                                   std::source_location::current()),                               \
     false))
 
-#define wh_invariant(expr)                                                     \
-  (static_cast<bool>(expr) ||                                                  \
-   (::wh::core::contract_violation(::wh::core::contract_kind::invariant,       \
-                                   #expr, std::source_location::current()),    \
+#define wh_invariant(expr)                                                                         \
+  (static_cast<bool>(expr) ||                                                                      \
+   (::wh::core::contract_violation(::wh::core::contract_kind::invariant, #expr,                    \
+                                   std::source_location::current()),                               \
     false))
 #else
 #define wh_precondition(expr) ((void)0)

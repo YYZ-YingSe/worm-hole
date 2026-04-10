@@ -89,7 +89,7 @@ That example:
 Example build entrypoint:
 
 ```bash
-./build.sh --build --build-type Debug --enable-examples
+./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
 ```
 
 ## CMake Integration
@@ -105,27 +105,35 @@ target_link_libraries(my_app PRIVATE wh::core)
 
 ## Build and Test
 
-Configure, build, and test with the repository entrypoint:
+The repository now exposes one preset-driven local surface:
 
 ```bash
-./build.sh --all --build-type Debug --enable-tests
+./build.sh configure --preset dev-debug
+./build.sh build --preset dev-debug --artifacts tests
+./build.sh test --preset dev-debug --build-first
 ```
 
 Common variants:
 
 ```bash
-./build.sh --build --build-type Release --enable-tests
-./build.sh --test --build-type Debug --test-scope ut
-./build.sh --test --build-type Debug --test-scope ft
-./build.sh --build --build-type Release --enable-benchmarks
+./build.sh test --preset dev-debug --build-first --suite UT
+./build.sh test --preset dev-debug --build-first --suite FT
+./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
+./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
+```
+
+For machine-oriented automation, the canonical orchestrator is:
+
+```bash
+python3 scripts/toolchain.py --help
 ```
 
 ## Supported Surface
 
 - CMake 3.25+
 - C++20
-- CI coverage on Ubuntu, macOS, and Windows
-- Nightly sanitizer and stress-oriented jobs on Linux
+- build/test CI across Ubuntu, macOS, and Windows
+- deep analysis, coverage, and nightly heavy-test jobs on Linux
 
 ## Documentation
 

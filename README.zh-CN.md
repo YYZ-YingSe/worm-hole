@@ -83,7 +83,7 @@ Lowered Compose Graph
 示例构建入口：
 
 ```bash
-./build.sh --build --build-type Debug --enable-examples
+./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
 ```
 
 ## CMake 集成
@@ -99,27 +99,35 @@ target_link_libraries(my_app PRIVATE wh::core)
 
 ## 构建与测试
 
-统一入口：
+当前仓库对本地只公开一套基于 preset 的入口：
 
 ```bash
-./build.sh --all --build-type Debug --enable-tests
+./build.sh configure --preset dev-debug
+./build.sh build --preset dev-debug --artifacts tests
+./build.sh test --preset dev-debug --build-first
 ```
 
 常用变体：
 
 ```bash
-./build.sh --build --build-type Release --enable-tests
-./build.sh --test --build-type Debug --test-scope ut
-./build.sh --test --build-type Debug --test-scope ft
-./build.sh --build --build-type Release --enable-benchmarks
+./build.sh test --preset dev-debug --build-first --suite UT
+./build.sh test --preset dev-debug --build-first --suite FT
+./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
+./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
+```
+
+如果是自动化或 CI 场景，统一编排入口是：
+
+```bash
+python3 scripts/toolchain.py --help
 ```
 
 ## 支持范围
 
 - CMake 3.25+
 - C++20
-- CI 覆盖 Ubuntu、macOS、Windows
-- Nightly 在 Linux 上补充 sanitizer 和压力类任务
+- build/test CI 覆盖 Ubuntu、macOS、Windows
+- 深度分析、coverage 和 nightly 重型任务运行在 Linux
 
 ## 文档入口
 

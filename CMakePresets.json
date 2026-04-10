@@ -1,0 +1,295 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "WH_BUILD_TESTING": "ON",
+        "WH_BUILD_EXAMPLES": "OFF",
+        "WH_BUILD_BENCHMARKS": "OFF",
+        "WH_REQUIRE_GIT_LOCKED_THIRDY_PARTY": "ON",
+        "WH_THIRDY_PARTY_DIR": "${sourceDir}/thirdy_party"
+      }
+    },
+    {
+      "name": "dev-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "WH_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "dev-debug",
+      "inherits": "dev-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "dev-release",
+      "inherits": "dev-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "dev-asan-ubsan",
+      "inherits": "dev-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "dev-tsan",
+      "inherits": "dev-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -O1 -g",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "dev-coverage",
+      "inherits": "dev-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping -O0 -g",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "ci-base",
+      "hidden": true,
+      "inherits": "base"
+    },
+    {
+      "name": "ci-linux-debug",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "WH_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "ci-linux-release",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "WH_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "ci-macos-release",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "WH_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "ci-windows-release",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "WH_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "ci-static-analysis",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "ci-codeql",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "ci-asan-ubsan",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "ci-tsan",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -O1 -g",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "ci-coverage",
+      "inherits": "ci-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping -O0 -g",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev-debug",
+      "configurePreset": "dev-debug"
+    },
+    {
+      "name": "dev-release",
+      "configurePreset": "dev-release"
+    },
+    {
+      "name": "dev-asan-ubsan",
+      "configurePreset": "dev-asan-ubsan"
+    },
+    {
+      "name": "dev-tsan",
+      "configurePreset": "dev-tsan"
+    },
+    {
+      "name": "dev-coverage",
+      "configurePreset": "dev-coverage"
+    },
+    {
+      "name": "ci-linux-debug",
+      "configurePreset": "ci-linux-debug"
+    },
+    {
+      "name": "ci-linux-release",
+      "configurePreset": "ci-linux-release"
+    },
+    {
+      "name": "ci-macos-release",
+      "configurePreset": "ci-macos-release"
+    },
+    {
+      "name": "ci-windows-release",
+      "configurePreset": "ci-windows-release"
+    },
+    {
+      "name": "ci-static-analysis",
+      "configurePreset": "ci-static-analysis"
+    },
+    {
+      "name": "ci-codeql",
+      "configurePreset": "ci-codeql"
+    },
+    {
+      "name": "ci-asan-ubsan",
+      "configurePreset": "ci-asan-ubsan"
+    },
+    {
+      "name": "ci-tsan",
+      "configurePreset": "ci-tsan"
+    },
+    {
+      "name": "ci-coverage",
+      "configurePreset": "ci-coverage"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test-base",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true,
+        "shortProgress": true
+      },
+      "execution": {
+        "stopOnFailure": false,
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "dev-debug-all",
+      "inherits": "test-base",
+      "configurePreset": "dev-debug"
+    },
+    {
+      "name": "dev-release-all",
+      "inherits": "test-base",
+      "configurePreset": "dev-release"
+    },
+    {
+      "name": "ci-linux-debug-pr",
+      "inherits": "test-base",
+      "configurePreset": "ci-linux-debug",
+      "filter": {
+        "include": {
+          "label": "ci[.]pr"
+        }
+      }
+    },
+    {
+      "name": "ci-linux-release-pr",
+      "inherits": "test-base",
+      "configurePreset": "ci-linux-release",
+      "filter": {
+        "include": {
+          "label": "ci[.]pr"
+        }
+      }
+    },
+    {
+      "name": "ci-sanitizer-safe",
+      "inherits": "test-base",
+      "configurePreset": "ci-asan-ubsan",
+      "filter": {
+        "include": {
+          "label": "sanitizer[.]safe"
+        }
+      }
+    },
+    {
+      "name": "ci-nightly-heavy",
+      "inherits": "test-base",
+      "configurePreset": "ci-linux-release",
+      "filter": {
+        "include": {
+          "label": "ci[.]nightly"
+        }
+      }
+    },
+    {
+      "name": "ci-coverage-pr",
+      "inherits": "test-base",
+      "configurePreset": "ci-coverage",
+      "filter": {
+        "include": {
+          "label": "ci[.]pr"
+        }
+      }
+    }
+  ]
+}

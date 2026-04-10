@@ -1,15 +1,15 @@
 # Documentation
 
-This directory contains formal user-facing documentation for `worm-hole`.
+This directory only tracks formal user-facing documentation for `worm-hole`.
 
-## Documents
+## Core Documents
 
 - [`build-ci-surface.md`](build-ci-surface.md)
-  - public build, CI, and nightly entrypoints
+  - supported local and CI toolchain surface
 - [`build-ci-surface.zh-CN.md`](build-ci-surface.zh-CN.md)
   - Chinese version of the build and CI surface guide
 - [`troubleshooting.md`](troubleshooting.md)
-  - common local build and test troubleshooting
+  - common local build and verification troubleshooting
 - [`troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md)
   - Chinese version of the troubleshooting guide
 
@@ -21,4 +21,4 @@ This directory contains formal user-facing documentation for `worm-hole`.
   - functional-test layout rules
 
 Internal planning notes and local working material are intentionally excluded
-from the tracked `docs/` surface.
+from tracked `docs/`.

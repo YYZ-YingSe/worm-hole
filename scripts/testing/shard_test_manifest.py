@@ -6,6 +6,7 @@ import argparse
 import csv
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,7 +18,15 @@ class TestEntry:
     executable: str
     source: str
     source_size: int
+    weight: int
+    timeout_seconds: int
     labels: tuple[str, ...]
+
+
+def parse_positive_int(raw: str | None, fallback: int) -> int:
+    if raw is None or raw == "":
+        return fallback
+    return max(1, int(raw))
 
 
 def load_manifest(path: Path) -> list[TestEntry]:
@@ -28,23 +37,40 @@ def load_manifest(path: Path) -> list[TestEntry]:
             labels = tuple(
                 label for label in (row.get("labels") or "").split(",") if label
             )
+            source_size = parse_positive_int(row.get("source_size"), 1)
+            weight = parse_positive_int(row.get("weight"), source_size)
+            timeout_seconds = parse_positive_int(row.get("timeout_seconds"), 180)
             rows.append(
                 TestEntry(
                     suite=row["suite"],
                     target=row["target"],
                     executable=row["executable"],
                     source=row["source"],
-                    source_size=max(1, int(row["source_size"])),
+                    source_size=source_size,
+                    weight=weight,
+                    timeout_seconds=timeout_seconds,
                     labels=labels,
                 )
             )
     return rows
 
 
-def filter_entries(entries: list[TestEntry], suites: set[str]) -> list[TestEntry]:
-    if not suites:
-        return list(entries)
-    return [entry for entry in entries if entry.suite in suites]
+def filter_entries(
+    entries: list[TestEntry],
+    suites: set[str],
+    include_labels: set[str],
+    exclude_labels: set[str],
+) -> list[TestEntry]:
+    filtered: list[TestEntry] = []
+    for entry in entries:
+        if suites and entry.suite not in suites:
+            continue
+        if include_labels and not include_labels.issubset(set(entry.labels)):
+            continue
+        if exclude_labels and exclude_labels.intersection(entry.labels):
+            continue
+        filtered.append(entry)
+    return filtered
 
 
 def shard_entries(
@@ -55,7 +81,7 @@ def shard_entries(
 
     ordered = sorted(
         entries,
-        key=lambda entry: (-entry.source_size, entry.target, entry.source),
+        key=lambda entry: (-entry.weight, -entry.source_size, entry.target, entry.source),
     )
 
     for entry in ordered:
@@ -64,7 +90,7 @@ def shard_entries(
             key=lambda index: (shard_weights[index], len(shards[index]), index),
         )
         shards[lightest_index].append(entry)
-        shard_weights[lightest_index] += entry.source_size
+        shard_weights[lightest_index] += entry.weight
 
     return sorted(shards[shard_index], key=lambda entry: (entry.target, entry.source))
 
@@ -75,7 +101,9 @@ def emit_entries(entries: list[TestEntry], field: str) -> int:
     return 0
 
 
-def run_entries(entries: list[TestEntry], reporter: str, timeout_seconds: int) -> int:
+def run_entries(
+    entries: list[TestEntry], reporter: str, default_timeout_seconds: int
+) -> int:
     for entry in entries:
         executable = Path(entry.executable)
         if not executable.exists():
@@ -87,14 +115,23 @@ def run_entries(entries: list[TestEntry], reporter: str, timeout_seconds: int) -
             )
             return 1
 
+        timeout_seconds = entry.timeout_seconds or default_timeout_seconds
         print(
             f"[test-shard] RUN {entry.target} "
-            f"({entry.suite}, weight={entry.source_size})",
+            f"({entry.suite}, weight={entry.weight}, timeout={timeout_seconds}s, "
+            f"labels={','.join(entry.labels)})",
             flush=True,
         )
+
+        start = time.monotonic()
         try:
             completed = subprocess.run(
-                [str(executable), "--reporter", reporter],
+                [
+                    str(executable),
+                    "--reporter",
+                    reporter,
+                    "--allow-running-no-tests",
+                ],
                 check=False,
                 timeout=timeout_seconds,
             )
@@ -106,6 +143,13 @@ def run_entries(entries: list[TestEntry], reporter: str, timeout_seconds: int) -
                 flush=True,
             )
             return 124
+
+        elapsed = time.monotonic() - start
+        print(
+            f"[test-shard] DONE {entry.target} elapsed={elapsed:.2f}s",
+            flush=True,
+        )
+
         if completed.returncode != 0:
             print(
                 f"[test-shard] FAIL target {entry.target} exited with "
@@ -127,6 +171,8 @@ def main() -> int:
     parser.add_argument("--shard-count", type=int, required=True)
     parser.add_argument("--shard-index", type=int, required=True)
     parser.add_argument("--suite", action="append", default=[])
+    parser.add_argument("--include-label", action="append", default=[])
+    parser.add_argument("--exclude-label", action="append", default=[])
     parser.add_argument(
         "--emit",
         choices=("targets", "executables", "sources"),
@@ -134,7 +180,7 @@ def main() -> int:
     )
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--reporter", default="compact")
-    parser.add_argument("--timeout-seconds", type=int, default=120)
+    parser.add_argument("--default-timeout-seconds", type=int, default=180)
     args = parser.parse_args()
 
     if args.shard_count <= 0:
@@ -149,7 +195,12 @@ def main() -> int:
         print(f"[test-shard] FAIL missing manifest: {manifest_path}", file=sys.stderr)
         return 2
 
-    entries = filter_entries(load_manifest(manifest_path), set(args.suite))
+    entries = filter_entries(
+        load_manifest(manifest_path),
+        set(args.suite),
+        set(args.include_label),
+        set(args.exclude_label),
+    )
     if not entries:
         print("[test-shard] FAIL manifest filter selected no tests", file=sys.stderr)
         return 2
@@ -160,7 +211,7 @@ def main() -> int:
         return 2
 
     if args.run:
-      return run_entries(shard, args.reporter, args.timeout_seconds)
+        return run_entries(shard, args.reporter, args.default_timeout_seconds)
 
     field_name = {
         "targets": "target",

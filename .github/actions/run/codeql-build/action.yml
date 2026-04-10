@@ -1,8 +1,0 @@
-name: run-codeql-build
-description: Run the manual CodeQL extraction build.
-
-runs:
-  using: composite
-  steps:
-    - shell: bash
-      run: bash "${{ github.workspace }}/scripts/ci/jobs/run_codeql_build.sh"
