@@ -59,8 +59,7 @@ named_stream_reader(source_t, reader_t, bool = false)
 namespace detail {
 
 template <typename error_t>
-[[nodiscard]] inline auto map_merge_async_error(error_t &&error) noexcept
-    -> wh::core::error_code {
+[[nodiscard]] inline auto map_merge_async_error(error_t &&error) noexcept -> wh::core::error_code {
   using error_type = std::remove_cvref_t<error_t>;
 
   if constexpr (std::same_as<error_type, wh::core::error_code>) {
@@ -79,9 +78,7 @@ template <typename error_t>
 }
 
 template <stream_reader reader_t>
-inline auto
-sort_named_stream_readers(std::vector<named_stream_reader<reader_t>> &readers)
-    -> void {
+inline auto sort_named_stream_readers(std::vector<named_stream_reader<reader_t>> &readers) -> void {
   std::ranges::sort(readers, [](const named_stream_reader<reader_t> &left,
                                 const named_stream_reader<reader_t> &right) {
     return left.source < right.source;
@@ -89,14 +86,13 @@ sort_named_stream_readers(std::vector<named_stream_reader<reader_t>> &readers)
 }
 
 template <stream_reader reader_t>
-[[nodiscard]] inline auto
-make_named_stream_readers(std::vector<reader_t> &&readers)
+[[nodiscard]] inline auto make_named_stream_readers(std::vector<reader_t> &&readers)
     -> std::vector<named_stream_reader<reader_t>> {
   std::vector<named_stream_reader<reader_t>> named_readers{};
   named_readers.reserve(readers.size());
   for (std::size_t index = 0U; index < readers.size(); ++index) {
-    named_readers.push_back(named_stream_reader<reader_t>{
-        std::to_string(index), std::move(readers[index]), false});
+    named_readers.push_back(
+        named_stream_reader<reader_t>{std::to_string(index), std::move(readers[index]), false});
   }
   return named_readers;
 }
@@ -106,8 +102,7 @@ make_named_stream_readers(std::vector<reader_t> &&readers)
 /// Merges multiple named readers into one interleaved output stream.
 template <stream_reader reader_t>
 class merge_stream_reader final
-    : public stream_base<merge_stream_reader<reader_t>,
-                         typename reader_t::value_type> {
+    : public stream_base<merge_stream_reader<reader_t>, typename reader_t::value_type> {
 public:
   using value_type = typename reader_t::value_type;
   using lane_type = named_stream_reader<reader_t>;
@@ -153,8 +148,8 @@ private:
       stopped_without_winner_.store(false, std::memory_order_release);
     }
 
-    [[nodiscard]] auto note_status(const std::size_t position,
-                                   status_type status) noexcept -> bool {
+    [[nodiscard]] auto note_status(const std::size_t position, status_type status) noexcept
+        -> bool {
       const auto candidate_rank = classify_winner(status);
       if (candidate_rank == 0U) {
         return false;
@@ -162,12 +157,10 @@ private:
 
       slots_[position].status.emplace(std::move(status));
       const auto candidate_key = make_winner_key(
-          candidate_rank,
-          finish_sequence_.fetch_add(1U, std::memory_order_acq_rel));
+          candidate_rank, finish_sequence_.fetch_add(1U, std::memory_order_acq_rel));
       auto winner_key = winner_key_.load(std::memory_order_acquire);
       while (candidate_key > winner_key) {
-        if (winner_key_.compare_exchange_weak(winner_key, candidate_key,
-                                              std::memory_order_acq_rel,
+        if (winner_key_.compare_exchange_weak(winner_key, candidate_key, std::memory_order_acq_rel,
                                               std::memory_order_acquire)) {
           winner_position_.store(position, std::memory_order_release);
           return candidate_rank >= 2U;
@@ -186,16 +179,13 @@ private:
 
     [[nodiscard]] auto take_outcome() noexcept -> round_outcome {
       round_outcome outcome{};
-      const auto winner_position =
-          winner_position_.load(std::memory_order_acquire);
+      const auto winner_position = winner_position_.load(std::memory_order_acquire);
       if (winner_position != no_winner_position) {
         outcome.winner_position = winner_position;
-        outcome.winner_status.emplace(
-            std::move(*slots_[winner_position].status));
+        outcome.winner_status.emplace(std::move(*slots_[winner_position].status));
         return outcome;
       }
-      outcome.stopped_without_winner =
-          stopped_without_winner_.load(std::memory_order_acquire);
+      outcome.stopped_without_winner = stopped_without_winner_.load(std::memory_order_acquire);
       return outcome;
     }
 
@@ -204,24 +194,21 @@ private:
       std::optional<status_type> status{};
     };
 
-    [[nodiscard]] static auto
-    classify_winner(const status_type &status) noexcept -> std::uint8_t {
+    [[nodiscard]] static auto classify_winner(const status_type &status) noexcept -> std::uint8_t {
       if (status.has_error()) {
         return 3U;
       }
       return status.value().eof ? 1U : 2U;
     }
 
-    [[nodiscard]] static auto
-    make_winner_key(const std::uint8_t rank,
-                    const std::uint64_t sequence) noexcept -> std::uint64_t {
-      constexpr auto sequence_mask =
-          std::numeric_limits<std::uint64_t>::max() >> 8U;
+    [[nodiscard]] static auto make_winner_key(const std::uint8_t rank,
+                                              const std::uint64_t sequence) noexcept
+        -> std::uint64_t {
+      constexpr auto sequence_mask = std::numeric_limits<std::uint64_t>::max() >> 8U;
       return (std::uint64_t{rank} << 56U) | (sequence_mask - sequence);
     }
 
-    static constexpr auto no_winner_position =
-        std::numeric_limits<std::size_t>::max();
+    static constexpr auto no_winner_position = std::numeric_limits<std::size_t>::max();
 
     std::unique_ptr<slot[]> slots_{};
     std::size_t capacity_{0U};
@@ -255,20 +242,17 @@ private:
           return stop_token;
         }
 
-        [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept
-            -> scheduler_t {
+        [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> scheduler_t {
           return {};
         }
 
-        [[nodiscard]] auto
-        query(stdexec::get_delegation_scheduler_t) const noexcept
+        [[nodiscard]] auto query(stdexec::get_delegation_scheduler_t) const noexcept
             -> scheduler_t {
           return {};
         }
 
         template <typename cpo_t>
-        [[nodiscard]] auto
-        query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
+        [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
             -> scheduler_t {
           return {};
         }
@@ -291,17 +275,15 @@ private:
                                              });
         }
 
-        template <typename error_t>
-        auto set_error(error_t &&error) noexcept -> void {
+        template <typename error_t> auto set_error(error_t &&error) noexcept -> void {
           auto scope = round->callbacks_.enter(round);
           round->enqueue_completion(
-              slot_id,
-              child_completion{
-                  .position = position,
-                  .status = status_type::failure(detail::map_merge_async_error(
-                      std::forward<error_t>(error))),
-                  .stopped_signal = false,
-              });
+              slot_id, child_completion{
+                           .position = position,
+                           .status = status_type::failure(
+                               detail::map_merge_async_error(std::forward<error_t>(error))),
+                           .stopped_signal = false,
+                       });
         }
 
         auto set_stopped() noexcept -> void {
@@ -314,17 +296,14 @@ private:
         }
 
         [[nodiscard]] auto get_env() const noexcept -> child_env {
-          return child_env{stop_source == nullptr
-                               ? stdexec::inplace_stop_token{}
-                               : stop_source->get_token()};
+          return child_env{stop_source == nullptr ? stdexec::inplace_stop_token{}
+                                                  : stop_source->get_token()};
         }
       };
 
-      using child_op_t =
-          stdexec::connect_result_t<child_sender_t, child_receiver>;
+      using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
       using child_set_t = wh::core::detail::child_set<child_op_t>;
-      using mailbox_t =
-          wh::core::detail::child_completion_mailbox<child_completion>;
+      using mailbox_t = wh::core::detail::child_completion_mailbox<child_completion>;
 
       explicit blocking_read_op(shared_state &state) : state_(state) {}
 
@@ -352,10 +331,8 @@ private:
           return status_type::failure(wh::core::errc::internal_error);
         }
 
-        for (std::size_t position = 0U; position < lane_indices_.size();
-             ++position) {
-          const auto lane_index =
-              static_cast<std::uint32_t>(lane_indices_[position]);
+        for (std::size_t position = 0U; position < lane_indices_.size(); ++position) {
+          const auto lane_index = static_cast<std::uint32_t>(lane_indices_[position]);
           if (stop_source_->stop_requested()) {
             record_completion(child_completion{
                 .position = position,
@@ -366,8 +343,7 @@ private:
           }
 
           auto started = children_.start_child(lane_index, [&](auto &slot) {
-            slot.emplace_from(stdexec::connect,
-                              state_.lane_read_async(lane_indices_[position]),
+            slot.emplace_from(stdexec::connect, state_.lane_read_async(lane_indices_[position]),
                               child_receiver{
                                   .round = this,
                                   .slot_id = lane_index,
@@ -386,8 +362,7 @@ private:
 
         while (true) {
           drain_completions();
-          if (result_.has_value() && children_.active_count() == 0U &&
-              !callbacks_.active()) {
+          if (result_.has_value() && children_.active_count() == 0U && !callbacks_.active()) {
             auto status = std::move(*result_);
             cleanup();
             return status;
@@ -398,8 +373,7 @@ private:
 
           const auto observed = wake_epoch_.load(std::memory_order_acquire);
           if (completions_.has_ready() ||
-              (result_.has_value() && children_.active_count() == 0U &&
-               !callbacks_.active())) {
+              (result_.has_value() && children_.active_count() == 0U && !callbacks_.active())) {
             continue;
           }
           wake_epoch_.wait(observed, std::memory_order_acquire);
@@ -414,8 +388,8 @@ private:
 
       auto on_callback_exit() noexcept -> void { notify_owner(); }
 
-      auto enqueue_completion(const std::uint32_t slot_id,
-                              child_completion completion) noexcept -> void {
+      auto enqueue_completion(const std::uint32_t slot_id, child_completion completion) noexcept
+          -> void {
         if (!completions_.publish(slot_id, std::move(completion))) {
           std::terminate();
         }
@@ -425,8 +399,7 @@ private:
       auto record_completion(child_completion completion) noexcept -> void {
         if (completion.stopped_signal) {
           tracker_.note_stop();
-        } else if (tracker_.note_status(completion.position,
-                                        std::move(completion.status))) {
+        } else if (tracker_.note_status(completion.position, std::move(completion.status))) {
           if (stop_source_ != nullptr) {
             stop_source_->request_stop();
           }
@@ -441,11 +414,10 @@ private:
       }
 
       auto drain_completions() noexcept -> void {
-        completions_.drain(
-            [this](const std::uint32_t slot_id, child_completion completion) {
-              children_.reclaim_child(slot_id);
-              record_completion(std::move(completion));
-            });
+        completions_.drain([this](const std::uint32_t slot_id, child_completion completion) {
+          children_.reclaim_child(slot_id);
+          record_completion(std::move(completion));
+        });
         if (round_finished_ && children_.active_count() == 0U) {
           finalize_round();
         }
@@ -458,11 +430,10 @@ private:
         round_finished_ = false;
         auto outcome = tracker_.take_outcome();
 
-        if (outcome.winner_position.has_value() &&
-            outcome.winner_status.has_value()) {
-          auto resolution = state_.complete_round_winner(
-              lane_indices_[*outcome.winner_position], *outcome.winner_position,
-              std::move(*outcome.winner_status));
+        if (outcome.winner_position.has_value() && outcome.winner_status.has_value()) {
+          auto resolution = state_.complete_round_winner(lane_indices_[*outcome.winner_position],
+                                                         *outcome.winner_position,
+                                                         std::move(*outcome.winner_status));
           state_.close_lane_if_needed(resolution.close_lane);
           result_.emplace(std::move(resolution.status));
           notify_owner();
@@ -511,9 +482,7 @@ private:
       return topology_.uses_fixed_poll_path();
     }
 
-    [[nodiscard]] auto try_read() -> try_status_type {
-      return topology_.try_read_immediate();
-    }
+    [[nodiscard]] auto try_read() -> try_status_type { return topology_.try_read_immediate(); }
 
     [[nodiscard]] auto read_blocking() -> status_type {
       for (;;) {
@@ -538,20 +507,16 @@ private:
       }
     }
 
-    [[nodiscard]] auto begin_round() -> round_spec {
-      return topology_.prepare_round();
-    }
+    [[nodiscard]] auto begin_round() -> round_spec { return topology_.prepare_round(); }
 
     [[nodiscard]] auto lane_read_async(const std::size_t lane_index) {
       return topology_.lane_read_async(lane_index);
     }
 
     [[nodiscard]] auto complete_round_winner(const std::size_t lane_index,
-                                             const std::size_t winner_offset,
-                                             status_type status)
+                                             const std::size_t winner_offset, status_type status)
         -> round_resolution {
-      return topology_.complete_round_winner(lane_index, winner_offset,
-                                             std::move(status));
+      return topology_.complete_round_winner(lane_index, winner_offset, std::move(status));
     }
 
     auto complete_empty_round(const std::size_t lane_count) -> void {
@@ -560,16 +525,13 @@ private:
 
     auto cancel_round() -> void { topology_.cancel_round(); }
 
-    auto close_lane_if_needed(const std::optional<std::size_t> lane_index)
-        -> void {
+    auto close_lane_if_needed(const std::optional<std::size_t> lane_index) -> void {
       topology_.close_lane_if_needed(lane_index);
     }
 
     auto close_all() -> wh::core::result<void> { return topology_.close_all(); }
 
-    [[nodiscard]] auto is_closed() const noexcept -> bool {
-      return topology_.is_closed();
-    }
+    [[nodiscard]] auto is_closed() const noexcept -> bool { return topology_.is_closed(); }
 
     [[nodiscard]] auto is_source_closed() const noexcept -> bool {
       return topology_.is_source_closed();
@@ -579,8 +541,7 @@ private:
       topology_.set_automatic_close(options);
     }
 
-    auto attach(std::string_view source, reader_t reader)
-        -> wh::core::result<void> {
+    auto attach(std::string_view source, reader_t reader) -> wh::core::result<void> {
       return topology_.attach(source, std::move(reader));
     }
 
@@ -588,20 +549,17 @@ private:
       return topology_.disable(source);
     }
 
-    [[nodiscard]] auto
-    register_sync_topology_waiter(topology_sync_waiter *waiter,
-                                  const std::uint64_t expected_epoch) -> bool {
+    [[nodiscard]] auto register_sync_topology_waiter(topology_sync_waiter *waiter,
+                                                     const std::uint64_t expected_epoch) -> bool {
       return topology_.register_sync_topology_waiter(waiter, expected_epoch);
     }
 
-    [[nodiscard]] auto
-    register_async_topology_waiter(topology_async_waiter *waiter,
-                                   const std::uint64_t expected_epoch) -> bool {
+    [[nodiscard]] auto register_async_topology_waiter(topology_async_waiter *waiter,
+                                                      const std::uint64_t expected_epoch) -> bool {
       return topology_.register_async_topology_waiter(waiter, expected_epoch);
     }
 
-    [[nodiscard]] auto
-    remove_async_topology_waiter(topology_async_waiter *waiter) -> bool {
+    [[nodiscard]] auto remove_async_topology_waiter(topology_async_waiter *waiter) -> bool {
       return topology_.remove_async_topology_waiter(waiter);
     }
 
@@ -613,9 +571,7 @@ private:
       return topology_.has_pending_lanes();
     }
 
-    [[nodiscard]] auto lane_count() const noexcept -> std::size_t {
-      return topology_.lane_count();
-    }
+    [[nodiscard]] auto lane_count() const noexcept -> std::size_t { return topology_.lane_count(); }
 
   private:
     blocking_read_op blocking_read_;
@@ -623,11 +579,10 @@ private:
   };
 
   template <typename receiver_t>
-  class read_operation
-      : public std::enable_shared_from_this<read_operation<receiver_t>>,
-        private wh::core::detail::scheduled_drive_loop<
-            read_operation<receiver_t>, wh::core::detail::resume_scheduler_t<
-                                            stdexec::env_of_t<receiver_t>>> {
+  class read_operation : public std::enable_shared_from_this<read_operation<receiver_t>>,
+                         private wh::core::detail::scheduled_drive_loop<
+                             read_operation<receiver_t>,
+                             wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>> {
     using drive_loop_t = wh::core::detail::scheduled_drive_loop<
         read_operation<receiver_t>,
         wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>>;
@@ -637,8 +592,7 @@ private:
     using receiver_env_t = stdexec::env_of_t<receiver_t>;
     using child_sender_t = decltype(std::declval<reader_t &>().read_async());
     using outer_stop_token_t = stdexec::stop_token_of_t<receiver_env_t>;
-    using resume_scheduler_t =
-        wh::core::detail::resume_scheduler_t<receiver_env_t>;
+    using resume_scheduler_t = wh::core::detail::resume_scheduler_t<receiver_env_t>;
 
     struct final_delivery {
       receiver_t receiver;
@@ -679,20 +633,17 @@ private:
         return stop_token_;
       }
 
-      [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept
-          -> resume_scheduler_t {
+      [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> resume_scheduler_t {
         return scheduler_;
       }
 
-      [[nodiscard]] auto
-      query(stdexec::get_delegation_scheduler_t) const noexcept
+      [[nodiscard]] auto query(stdexec::get_delegation_scheduler_t) const noexcept
           -> resume_scheduler_t {
         return scheduler_;
       }
 
       template <typename cpo_t>
-      [[nodiscard]] auto
-      query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
+      [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
           -> resume_scheduler_t {
         return scheduler_;
       }
@@ -715,14 +666,12 @@ private:
                                   });
       }
 
-      template <typename error_t>
-      auto set_error(error_t &&error) noexcept -> void {
+      template <typename error_t> auto set_error(error_t &&error) noexcept -> void {
         auto scope = op->callbacks_.enter(op);
         op->finish_child(slot_id, child_completion{
                                       .position = position,
-                                      .status = status_type::failure(
-                                          detail::map_merge_async_error(
-                                              std::forward<error_t>(error))),
+                                      .status = status_type::failure(detail::map_merge_async_error(
+                                          std::forward<error_t>(error))),
                                       .stopped_signal = false,
                                   });
       }
@@ -740,18 +689,15 @@ private:
         return child_env{
             .base_env_ = op->env_,
             .scheduler_ = op->drive_loop_t::scheduler(),
-            .stop_token_ = stop_source == nullptr
-                               ? stdexec::inplace_stop_token{}
-                               : stop_source->get_token(),
+            .stop_token_ =
+                stop_source == nullptr ? stdexec::inplace_stop_token{} : stop_source->get_token(),
         };
       }
     };
 
-    using child_op_t =
-        stdexec::connect_result_t<child_sender_t, child_receiver>;
+    using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
     using child_set_t = wh::core::detail::child_set<child_op_t>;
-    using mailbox_t =
-        wh::core::detail::child_completion_mailbox<child_completion>;
+    using mailbox_t = wh::core::detail::child_completion_mailbox<child_completion>;
 
     struct topology_waiter final : topology_async_waiter {
       read_operation *op{nullptr};
@@ -761,36 +707,26 @@ private:
       read_operation *self{nullptr};
 
       auto operator()() const noexcept -> void {
+        auto scope = self->callbacks_.enter(self);
         self->parent_stop_requested_.store(true, std::memory_order_release);
-        if (self->stop_source_ != nullptr) {
-          self->stop_source_->request_stop();
-        }
-        if (self->publish_completion(self->cancel_wait())) {
-          self->request_drive();
-          return;
-        }
         self->request_drive();
       }
     };
 
-    using stop_callback_t =
-        stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
+    using stop_callback_t = stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
 
   public:
     using operation_state_concept = stdexec::operation_state_t;
 
-    explicit read_operation(std::shared_ptr<shared_state> state,
-                            receiver_t receiver)
-        : drive_loop_t(
-              wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
-                  stdexec::get_env(receiver))),
+    explicit read_operation(std::shared_ptr<shared_state> state, receiver_t receiver)
+        : drive_loop_t(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
+              stdexec::get_env(receiver))),
           state_(std::move(state)), receiver_(std::move(receiver)),
           env_(stdexec::get_env(receiver_)),
-          lane_capacity_(state_ == nullptr ? 0U : state_->lane_count()),
-          children_(lane_capacity_), completions_(lane_capacity_),
-          stop_source_(std::make_shared<stdexec::inplace_stop_source>()) {
-      static constexpr typename topology_async_waiter::ops_type ops{
-          [](topology_async_waiter *base) noexcept {
+          lane_capacity_(state_ == nullptr ? 0U : state_->lane_count()), children_(lane_capacity_),
+          completions_(lane_capacity_) {
+      static constexpr
+          typename topology_async_waiter::ops_type ops{[](topology_async_waiter *base) noexcept {
             static_cast<topology_waiter *>(base)->op->deliver_topology_ready();
           }};
       topology_waiter_.op = this;
@@ -799,8 +735,8 @@ private:
 
     auto start() noexcept -> void {
       if (!state_) {
-        publish_completion(make_value_delivery(
-            stream_result<chunk_type>::failure(wh::core::errc::not_found)));
+        publish_completion(
+            make_value_delivery(stream_result<chunk_type>::failure(wh::core::errc::not_found)));
         request_drive();
         return;
       }
@@ -834,8 +770,7 @@ private:
       return pending_completion_.has_value();
     }
 
-    [[nodiscard]] auto take_completion() noexcept
-        -> std::optional<final_delivery> {
+    [[nodiscard]] auto take_completion() noexcept -> std::optional<final_delivery> {
       if (!pending_completion_.has_value()) {
         return std::nullopt;
       }
@@ -844,8 +779,7 @@ private:
       return completion;
     }
 
-    [[nodiscard]] auto acquire_owner_lifetime_guard() noexcept
-        -> std::shared_ptr<read_operation> {
+    [[nodiscard]] auto acquire_owner_lifetime_guard() noexcept -> std::shared_ptr<read_operation> {
       auto keepalive = this->weak_from_this().lock();
       if (!keepalive) {
         std::terminate();
@@ -875,8 +809,7 @@ private:
       return delivery;
     }
 
-    [[nodiscard]] auto make_stopped_delivery() noexcept
-        -> std::optional<final_delivery> {
+    [[nodiscard]] auto make_stopped_delivery() noexcept -> std::optional<final_delivery> {
       if (delivered_.exchange(true, std::memory_order_acq_rel)) {
         return std::nullopt;
       }
@@ -886,8 +819,7 @@ private:
       return delivery;
     }
 
-    auto publish_completion(std::optional<final_delivery> delivery) noexcept
-        -> bool {
+    auto publish_completion(std::optional<final_delivery> delivery) noexcept -> bool {
       if (!delivery.has_value()) {
         return false;
       }
@@ -902,6 +834,7 @@ private:
 
     auto on_callback_exit() noexcept -> void {
       if (completion_pending() || completions_.has_ready() ||
+          parent_stop_requested_.load(std::memory_order_acquire) ||
           topology_resume_pending_.load(std::memory_order_acquire)) {
         request_drive();
       }
@@ -913,12 +846,15 @@ private:
           return;
         }
 
-        if (topology_resume_pending_.exchange(false,
-                                              std::memory_order_acq_rel)) {
+        if (topology_resume_pending_.exchange(false, std::memory_order_acq_rel)) {
           topology_waiting_registered_.store(false, std::memory_order_release);
         }
 
         if (round_active_) {
+          if (parent_stop_requested_.load(std::memory_order_acquire) && stop_source_ != nullptr &&
+              !stop_source_->stop_requested()) {
+            stop_source_->request_stop();
+          }
           drain_completions();
           if (finished()) {
             return;
@@ -936,6 +872,11 @@ private:
         }
 
         if (topology_waiting_registered_.load(std::memory_order_acquire)) {
+          if (parent_stop_requested_.load(std::memory_order_acquire)) {
+            if (publish_completion(cancel_wait())) {
+              return;
+            }
+          }
           return;
         }
 
@@ -947,9 +888,8 @@ private:
         }
 
         if (!state_) {
-          if (publish_completion(
-                  make_value_delivery(stream_result<chunk_type>::failure(
-                      wh::core::errc::not_found)))) {
+          if (publish_completion(make_value_delivery(
+                  stream_result<chunk_type>::failure(wh::core::errc::not_found)))) {
             return;
           }
           return;
@@ -957,8 +897,8 @@ private:
 
         auto immediate = state_->try_read();
         if (std::holds_alternative<status_type>(immediate)) {
-          if (publish_completion(make_value_delivery(
-                  std::move(std::get<status_type>(immediate))))) {
+          if (publish_completion(
+                  make_value_delivery(std::move(std::get<status_type>(immediate))))) {
             return;
           }
           return;
@@ -967,8 +907,7 @@ private:
         auto round = state_->begin_round();
         round_topology_epoch_ = round.topology_epoch;
         if (round.immediate_status.has_value()) {
-          if (publish_completion(
-                  make_value_delivery(std::move(*round.immediate_status)))) {
+          if (publish_completion(make_value_delivery(std::move(*round.immediate_status)))) {
             return;
           }
           return;
@@ -1017,10 +956,8 @@ private:
         stop_source_->request_stop();
       }
 
-      for (std::size_t position = 0U; position < lane_indices_.size();
-           ++position) {
-        const auto lane_index =
-            static_cast<std::uint32_t>(lane_indices_[position]);
+      for (std::size_t position = 0U; position < lane_indices_.size(); ++position) {
+        const auto lane_index = static_cast<std::uint32_t>(lane_indices_[position]);
         if (stop_source_->stop_requested()) {
           consume_completion(child_completion{
               .position = position,
@@ -1031,8 +968,7 @@ private:
         }
 
         auto started = children_.start_child(lane_index, [&](auto &slot) {
-          slot.emplace_from(stdexec::connect,
-                            state_->lane_read_async(lane_indices_[position]),
+          slot.emplace_from(stdexec::connect, state_->lane_read_async(lane_indices_[position]),
                             child_receiver{
                                 .op = this,
                                 .slot_id = lane_index,
@@ -1055,8 +991,7 @@ private:
       return std::nullopt;
     }
 
-    auto finish_child(const std::uint32_t slot_id,
-                      child_completion completion) noexcept -> void {
+    auto finish_child(const std::uint32_t slot_id, child_completion completion) noexcept -> void {
       if (finished()) {
         return;
       }
@@ -1069,8 +1004,7 @@ private:
     auto consume_completion(child_completion completion) noexcept -> void {
       if (completion.stopped_signal) {
         tracker_.note_stop();
-      } else if (tracker_.note_status(completion.position,
-                                      std::move(completion.status))) {
+      } else if (tracker_.note_status(completion.position, std::move(completion.status))) {
         if (stop_source_ != nullptr) {
           stop_source_->request_stop();
         }
@@ -1082,22 +1016,19 @@ private:
     }
 
     auto drain_completions() noexcept -> void {
-      completions_.drain(
-          [this](const std::uint32_t slot_id, child_completion completion) {
-            children_.reclaim_child(slot_id);
-            consume_completion(std::move(completion));
-          });
+      completions_.drain([this](const std::uint32_t slot_id, child_completion completion) {
+        children_.reclaim_child(slot_id);
+        consume_completion(std::move(completion));
+      });
     }
 
-    [[nodiscard]] auto finalize_round() noexcept
-        -> std::optional<final_delivery> {
+    [[nodiscard]] auto finalize_round() noexcept -> std::optional<final_delivery> {
       auto outcome = tracker_.take_outcome();
 
-      if (outcome.winner_position.has_value() &&
-          outcome.winner_status.has_value()) {
-        auto resolution = state_->complete_round_winner(
-            lane_indices_[*outcome.winner_position], *outcome.winner_position,
-            std::move(*outcome.winner_status));
+      if (outcome.winner_position.has_value() && outcome.winner_status.has_value()) {
+        auto resolution = state_->complete_round_winner(lane_indices_[*outcome.winner_position],
+                                                        *outcome.winner_position,
+                                                        std::move(*outcome.winner_status));
         state_->close_lane_if_needed(resolution.close_lane);
         return make_value_delivery(std::move(resolution.status));
       }
@@ -1118,8 +1049,7 @@ private:
       completions_.reset(lane_capacity_);
       lane_indices_.clear();
       stop_source_.reset();
-      if (state_->topology_epoch() != round_topology_epoch_ ||
-          state_->has_pending_lanes()) {
+      if (state_->topology_epoch() != round_topology_epoch_ || state_->has_pending_lanes()) {
         if (!wait_for_topology()) {
           return std::nullopt;
         }
@@ -1133,8 +1063,7 @@ private:
       if (!state_) {
         return false;
       }
-      if (!state_->register_async_topology_waiter(&topology_waiter_,
-                                                  round_topology_epoch_)) {
+      if (!state_->register_async_topology_waiter(&topology_waiter_, round_topology_epoch_)) {
         return false;
       }
       topology_waiting_registered_.store(true, std::memory_order_release);
@@ -1142,8 +1071,7 @@ private:
     }
 
     [[nodiscard]] auto cancel_wait() noexcept -> std::optional<final_delivery> {
-      if (state_ &&
-          topology_waiting_registered_.load(std::memory_order_acquire)) {
+      if (state_ && topology_waiting_registered_.load(std::memory_order_acquire)) {
         if (!state_->remove_async_topology_waiter(&topology_waiter_)) {
           return std::nullopt;
         }
@@ -1172,8 +1100,7 @@ private:
     }
 
     auto drive_error(const wh::core::error_code error) noexcept -> void {
-      publish_completion(
-          make_value_delivery(stream_result<chunk_type>::failure(error)));
+      publish_completion(make_value_delivery(stream_result<chunk_type>::failure(error)));
     }
 
     std::shared_ptr<shared_state> state_{};
@@ -1201,36 +1128,33 @@ private:
   class read_sender {
   public:
     using sender_concept = stdexec::sender_t;
-    using completion_signatures = stdexec::completion_signatures<
-        stdexec::set_value_t(stream_result<chunk_type>),
-        stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t(stream_result<chunk_type>),
+                                       stdexec::set_error_t(std::exception_ptr),
+                                       stdexec::set_stopped_t()>;
 
-    explicit read_sender(std::shared_ptr<shared_state> state)
-        : state_(std::move(state)) {}
+    explicit read_sender(std::shared_ptr<shared_state> state) : state_(std::move(state)) {}
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
       requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-    [[nodiscard]] auto
-    connect(receiver_t receiver) && -> wh::core::detail::shared_operation_state<
+    [[nodiscard]] auto connect(receiver_t receiver) && -> wh::core::detail::shared_operation_state<
         read_operation<std::remove_cvref_t<receiver_t>>> {
       using operation_t = read_operation<std::remove_cvref_t<receiver_t>>;
       return wh::core::detail::shared_operation_state<operation_t>{
-          std::make_shared<operation_t>(std::move(state_),
-                                        std::move(receiver))};
+          std::make_shared<operation_t>(std::move(state_), std::move(receiver))};
     }
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
       requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-    [[nodiscard]] auto connect(receiver_t receiver)
-        const & -> wh::core::detail::shared_operation_state<
-            read_operation<std::remove_cvref_t<receiver_t>>> {
+    [[nodiscard]] auto
+    connect(receiver_t receiver) const & -> wh::core::detail::shared_operation_state<
+        read_operation<std::remove_cvref_t<receiver_t>>> {
       using operation_t = read_operation<std::remove_cvref_t<receiver_t>>;
       return wh::core::detail::shared_operation_state<operation_t>{
           std::make_shared<operation_t>(state_, std::move(receiver))};
     }
 
-    [[nodiscard]] auto get_env() const noexcept
-        -> wh::core::detail::async_completion_env {
+    [[nodiscard]] auto get_env() const noexcept -> wh::core::detail::async_completion_env {
       return {};
     }
 
@@ -1250,8 +1174,7 @@ public:
   merge_stream_reader(const merge_stream_reader &) = delete;
   auto operator=(const merge_stream_reader &) -> merge_stream_reader & = delete;
   merge_stream_reader(merge_stream_reader &&) noexcept = default;
-  auto operator=(merge_stream_reader &&) noexcept
-      -> merge_stream_reader & = default;
+  auto operator=(merge_stream_reader &&) noexcept -> merge_stream_reader & = default;
   ~merge_stream_reader() = default;
 
   /// Returns true when fixed-width polling path is used.
@@ -1311,8 +1234,7 @@ public:
   }
 
   /// Attaches one concrete reader to a pre-registered pending lane.
-  auto attach(std::string_view source, reader_t reader)
-      -> wh::core::result<void> {
+  auto attach(std::string_view source, reader_t reader) -> wh::core::result<void> {
     if (!state_) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
@@ -1349,8 +1271,7 @@ make_merge_stream_reader(std::vector<named_stream_reader<reader_t>> &&readers)
 
 /// Builds a live merged stream shell from pending lane source names.
 template <stream_reader reader_t>
-[[nodiscard]] inline auto
-make_merge_stream_reader(std::vector<std::string> &&sources)
+[[nodiscard]] inline auto make_merge_stream_reader(std::vector<std::string> &&sources)
     -> merge_stream_reader<reader_t> {
   std::ranges::sort(sources);
   return merge_stream_reader<reader_t>{std::move(sources)};
@@ -1358,11 +1279,9 @@ make_merge_stream_reader(std::vector<std::string> &&sources)
 
 /// Builds a merged stream from anonymous readers named by index.
 template <stream_reader reader_t>
-[[nodiscard]] inline auto
-make_merge_stream_reader(std::vector<reader_t> &&readers)
+[[nodiscard]] inline auto make_merge_stream_reader(std::vector<reader_t> &&readers)
     -> merge_stream_reader<reader_t> {
-  return make_merge_stream_reader(
-      detail::make_named_stream_readers(std::move(readers)));
+  return make_merge_stream_reader(detail::make_named_stream_readers(std::move(readers)));
 }
 
 } // namespace wh::schema::stream
