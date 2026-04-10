@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a new capability or public-surface improvement
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the API, behavior, or workflow you want
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workaround or competing design
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Why this belongs in the public project surface

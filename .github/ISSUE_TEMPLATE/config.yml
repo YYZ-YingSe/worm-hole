@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support and troubleshooting
+    url: https://github.com/YYZ-YingSe/worm-hole/blob/main/SUPPORT.md
+    about: Read the formal support and troubleshooting entrypoints first.
+  - name: Security policy
+    url: https://github.com/YYZ-YingSe/worm-hole/blob/main/SECURITY.md
+    about: Report security issues privately instead of opening a public issue.

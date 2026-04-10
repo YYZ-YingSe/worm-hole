@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a build, test, runtime, or API behavior problem
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include a minimal reproduction when possible.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Exact steps, commands, or testcase
+      placeholder: |
+        1. Sync submodules
+        2. Run ./build.sh ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS / Ubuntu / Windows
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler and version
+      placeholder: clang++-20 / AppleClang / MSVC
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or branch
+      placeholder: main / feature / exact SHA

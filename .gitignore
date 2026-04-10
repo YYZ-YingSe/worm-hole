@@ -1,5 +1,11 @@
 # docs
-docs/
+docs/*
+!docs/README.md
+!docs/README.zh-CN.md
+!docs/build-ci-surface.md
+!docs/build-ci-surface.zh-CN.md
+!docs/troubleshooting.md
+!docs/troubleshooting.zh-CN.md
 
 # build outputs
 /build/
