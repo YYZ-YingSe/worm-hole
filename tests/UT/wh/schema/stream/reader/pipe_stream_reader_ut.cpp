@@ -5,8 +5,10 @@
 #include <variant>
 
 #include "helper/manual_scheduler.hpp"
+#include "helper/non_nothrow_value.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/test_thread_wait.hpp"
+#include "wh/schema/stream/core/concepts.hpp"
 #include "wh/schema/stream/pipe.hpp"
 #include "wh/schema/stream/reader/pipe_stream_reader.hpp"
 
@@ -17,6 +19,10 @@ using int_chunk_result_t = wh::schema::stream::stream_result<int_chunk_t>;
 using scheduler_t =
     wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
 using env_t = wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+using non_nothrow_value_t = wh::testing::helper::non_nothrow_value;
+
+static_assert(wh::schema::stream::detail::async_stream_reader<
+              wh::schema::stream::pipe_stream_reader<non_nothrow_value_t>>);
 
 auto require_value_chunk(const int_chunk_result_t &status, const int expected)
     -> void {
@@ -31,8 +37,11 @@ auto require_eof_chunk(const int_chunk_result_t &status) -> void {
 
 } // namespace
 
-TEST_CASE("pipe stream reader missing state surfaces not_found across sync and async entry points",
-          "[UT][wh/schema/stream/reader/pipe_stream_reader.hpp][pipe_stream_reader::read_async][condition][branch][boundary]") {
+TEST_CASE("pipe stream reader missing state surfaces not_found across sync and "
+          "async entry points",
+          "[UT][wh/schema/stream/reader/"
+          "pipe_stream_reader.hpp][pipe_stream_reader::read_async][condition]["
+          "branch][boundary]") {
   wh::schema::stream::pipe_stream_reader<int> missing{};
   auto missing_read = missing.read();
   REQUIRE(missing_read.has_error());
@@ -40,8 +49,9 @@ TEST_CASE("pipe stream reader missing state surfaces not_found across sync and a
   auto missing_try = missing.try_read();
   REQUIRE(std::holds_alternative<wh::schema::stream::stream_result<
               wh::schema::stream::stream_chunk<int>>>(missing_try));
-  const auto &missing_try_result = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(missing_try);
+  const auto &missing_try_result = std::get<
+      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      missing_try);
   REQUIRE(missing_try_result.has_error());
   REQUIRE(missing_try_result.error() == wh::core::errc::not_found);
   REQUIRE(missing.close().has_error());
@@ -54,8 +64,11 @@ TEST_CASE("pipe stream reader missing state surfaces not_found across sync and a
   REQUIRE(missing_async.error() == wh::core::errc::not_found);
 }
 
-TEST_CASE("pipe stream reader sync paths cover pending values buffered close and eof",
-          "[UT][wh/schema/stream/reader/pipe_stream_reader.hpp][pipe_stream_reader::try_read_impl][condition][branch][boundary]") {
+TEST_CASE(
+    "pipe stream reader sync paths cover pending values buffered close and eof",
+    "[UT][wh/schema/stream/reader/"
+    "pipe_stream_reader.hpp][pipe_stream_reader::try_read_impl][condition]["
+    "branch][boundary]") {
   auto [writer, reader] = wh::schema::stream::make_pipe_stream<int>(1U);
   auto pending = reader.try_read();
   REQUIRE(std::holds_alternative<wh::schema::stream::stream_signal>(pending));
@@ -63,8 +76,9 @@ TEST_CASE("pipe stream reader sync paths cover pending values buffered close and
           wh::schema::stream::stream_pending);
 
   REQUIRE(writer.try_write(5).has_value());
-  auto first = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(reader.try_read());
+  auto first = std::get<
+      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      reader.try_read());
   require_value_chunk(first, 5);
 
   REQUIRE(writer.try_write(6).has_value());
@@ -75,8 +89,27 @@ TEST_CASE("pipe stream reader sync paths cover pending values buffered close and
   require_eof_chunk(eof);
 }
 
-TEST_CASE("pipe stream reader close path returns eof on subsequent reads and tolerates auto-close toggles",
-          "[UT][wh/schema/stream/reader/pipe_stream_reader.hpp][pipe_stream_reader::close_impl][condition][branch]") {
+TEST_CASE("pipe stream reader read_async stays available for movable values "
+          "without nothrow move",
+          "[UT][wh/schema/stream/reader/"
+          "pipe_stream_reader.hpp][pipe_stream_reader::read_async][condition]["
+          "boundary]") {
+  auto [writer, reader] =
+      wh::schema::stream::make_pipe_stream<non_nothrow_value_t>(1U);
+
+  REQUIRE(writer.try_write(non_nothrow_value_t{7}).has_value());
+  auto next =
+      wh::testing::helper::wait_value_on_test_thread(reader.read_async());
+  REQUIRE(next.has_value());
+  REQUIRE(next.value().value ==
+          std::optional<non_nothrow_value_t>{non_nothrow_value_t{7}});
+}
+
+TEST_CASE("pipe stream reader close path returns eof on subsequent reads and "
+          "tolerates auto-close toggles",
+          "[UT][wh/schema/stream/reader/"
+          "pipe_stream_reader.hpp][pipe_stream_reader::close_impl][condition]["
+          "branch]") {
   auto [writer, reader] = wh::schema::stream::make_pipe_stream<int>(2U);
   reader.set_automatic_close(wh::schema::stream::auto_close_disabled);
   reader.set_automatic_close(wh::schema::stream::auto_close_enabled);
@@ -99,15 +132,18 @@ TEST_CASE("pipe stream reader close path returns eof on subsequent reads and tol
   require_eof_chunk(async_result);
 }
 
-TEST_CASE("pipe stream reader read_async covers immediate value and controlled interleaving wakeups",
-          "[UT][wh/schema/stream/reader/pipe_stream_reader.hpp][pipe_stream_reader::read_async][condition][branch][concurrency]") {
+TEST_CASE("pipe stream reader read_async covers immediate value and controlled "
+          "interleaving wakeups",
+          "[UT][wh/schema/stream/reader/"
+          "pipe_stream_reader.hpp][pipe_stream_reader::read_async][condition]["
+          "branch][concurrency]") {
   using namespace std::chrono_literals;
 
   auto [immediate_writer, immediate_reader] =
       wh::schema::stream::make_pipe_stream<int>(2U);
   REQUIRE(immediate_writer.try_write(9).has_value());
-  auto immediate =
-      wh::testing::helper::wait_value_on_test_thread(immediate_reader.read_async());
+  auto immediate = wh::testing::helper::wait_value_on_test_thread(
+      immediate_reader.read_async());
   require_value_chunk(immediate, 9);
 
   wh::testing::helper::manual_scheduler_state scheduler_state{};

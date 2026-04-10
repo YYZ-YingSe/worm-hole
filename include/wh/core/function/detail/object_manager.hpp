@@ -98,6 +98,15 @@ private:
   }
 
 public:
+  template <typename... args_t>
+  static constexpr bool is_constructible =
+      helper::template is_constructible<args_t...>;
+
+  template <typename... args_t>
+  static constexpr bool is_nothrow_constructible =
+      is_constructible<args_t...> &&
+      ownership_policy::template can_nothrow_construct<args_t...>;
+
   /// Returns readonly access to the managed object.
   [[nodiscard]] auto access() const & noexcept(can_nothrow_access())
       -> const target_t & {

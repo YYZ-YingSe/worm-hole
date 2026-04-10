@@ -59,6 +59,29 @@ map_pipe_queue_status(const wh::core::bounded_queue_status status) noexcept
   return wh::core::errc::unavailable;
 }
 
+template <typename state_t> struct pipe_async_state_snapshot {
+  std::shared_ptr<state_t> state{};
+  bool state_missing{true};
+  bool reader_closed{false};
+};
+
+template <typename state_t>
+[[nodiscard]] inline auto
+select_pipe_async_state(const std::shared_ptr<state_t> &state)
+    -> pipe_async_state_snapshot<state_t> {
+  const bool state_missing = !state;
+  const bool reader_closed =
+      !state_missing && state->reader_closed.load(std::memory_order_acquire);
+
+  return {
+      .state = (state_missing || reader_closed)
+                   ? shared_closed_pipe_state<state_t>()
+                   : state,
+      .state_missing = state_missing,
+      .reader_closed = reader_closed,
+  };
+}
+
 template <typename attempt_t>
 [[nodiscard]] inline auto retry_busy_status(attempt_t &&attempt) noexcept(
     noexcept(std::forward<attempt_t>(attempt)()))

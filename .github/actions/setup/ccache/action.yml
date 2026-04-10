@@ -15,7 +15,7 @@ inputs:
   max_size:
     description: ccache maximum size.
     required: false
-    default: "750M"
+    default: "5G"
 
 runs:
   using: composite

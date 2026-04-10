@@ -5,6 +5,7 @@
 #include <string>
 
 #include "helper/manual_scheduler.hpp"
+#include "helper/non_nothrow_value.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/test_thread_wait.hpp"
 #include "wh/schema/stream/pipe.hpp"
@@ -16,11 +17,24 @@ using write_result_t = wh::core::result<void>;
 using scheduler_t =
     wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
 using env_t = wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+using non_nothrow_value_t = wh::testing::helper::non_nothrow_value;
+
+static_assert(requires(
+    wh::schema::stream::pipe_stream_writer<non_nothrow_value_t> &writer,
+    const non_nothrow_value_t &copy_value, non_nothrow_value_t move_value) {
+  writer.try_write(copy_value);
+  writer.try_write(std::move(move_value));
+  writer.write_async(copy_value);
+  writer.write_async(std::move(move_value));
+});
 
 } // namespace
 
-TEST_CASE("pipe stream writer missing state surfaces not_found across sync and async entry points",
-          "[UT][wh/schema/stream/writer/pipe_stream_writer.hpp][pipe_stream_writer::write_async][condition][branch][boundary]") {
+TEST_CASE("pipe stream writer missing state surfaces not_found across sync and "
+          "async entry points",
+          "[UT][wh/schema/stream/writer/"
+          "pipe_stream_writer.hpp][pipe_stream_writer::write_async][condition]["
+          "branch][boundary]") {
   wh::schema::stream::pipe_stream_writer<int> missing{};
   auto missing_write = missing.try_write(1);
   REQUIRE(missing_write.has_error());
@@ -34,8 +48,11 @@ TEST_CASE("pipe stream writer missing state surfaces not_found across sync and a
   REQUIRE(missing_async.error() == wh::core::errc::not_found);
 }
 
-TEST_CASE("pipe stream writer sync paths cover lvalue rvalue full and closed branches",
-          "[UT][wh/schema/stream/writer/pipe_stream_writer.hpp][pipe_stream_writer::try_write][condition][branch][boundary]") {
+TEST_CASE("pipe stream writer sync paths cover lvalue rvalue full and closed "
+          "branches",
+          "[UT][wh/schema/stream/writer/"
+          "pipe_stream_writer.hpp][pipe_stream_writer::try_write][condition]["
+          "branch][boundary]") {
   auto [writer, reader] = wh::schema::stream::make_pipe_stream<int>(1U);
   const int alpha = 1;
   REQUIRE(writer.try_write(alpha).has_value());
@@ -60,8 +77,11 @@ TEST_CASE("pipe stream writer sync paths cover lvalue rvalue full and closed bra
   REQUIRE(closed.error() == wh::core::errc::channel_closed);
 }
 
-TEST_CASE("pipe stream writer close and async fast paths return stable completion states",
-          "[UT][wh/schema/stream/writer/pipe_stream_writer.hpp][pipe_stream_writer::close][condition][branch]") {
+TEST_CASE(
+    "pipe stream writer close and async fast paths return stable completion "
+    "states",
+    "[UT][wh/schema/stream/writer/"
+    "pipe_stream_writer.hpp][pipe_stream_writer::close][condition][branch]") {
   auto [writer, reader] = wh::schema::stream::make_pipe_stream<std::string>(2U);
   auto async_status = wh::testing::helper::wait_value_on_test_thread(
       writer.write_async(std::string{"delta"}));
@@ -86,8 +106,35 @@ TEST_CASE("pipe stream writer close and async fast paths return stable completio
   REQUIRE(closed_async.error() == wh::core::errc::channel_closed);
 }
 
-TEST_CASE("pipe stream writer write_async covers controlled interleaving with pop and close",
-          "[UT][wh/schema/stream/writer/pipe_stream_writer.hpp][pipe_stream_writer::write_async][branch][concurrency]") {
+TEST_CASE("pipe stream writer accepts copyable and movable values without "
+          "nothrow guarantees",
+          "[UT][wh/schema/stream/writer/"
+          "pipe_stream_writer.hpp][pipe_stream_writer::try_write][condition]["
+          "boundary]") {
+  auto [writer, reader] =
+      wh::schema::stream::make_pipe_stream<non_nothrow_value_t>(2U);
+
+  const non_nothrow_value_t copied{11};
+  REQUIRE(writer.try_write(copied).has_value());
+  auto copied_chunk = reader.read();
+  REQUIRE(copied_chunk.has_value());
+  REQUIRE(copied_chunk.value().value ==
+          std::optional<non_nothrow_value_t>{non_nothrow_value_t{11}});
+
+  auto async_status = wh::testing::helper::wait_value_on_test_thread(
+      writer.write_async(non_nothrow_value_t{12}));
+  REQUIRE(async_status.has_value());
+  auto moved_chunk = reader.read();
+  REQUIRE(moved_chunk.has_value());
+  REQUIRE(moved_chunk.value().value ==
+          std::optional<non_nothrow_value_t>{non_nothrow_value_t{12}});
+}
+
+TEST_CASE("pipe stream writer write_async covers controlled interleaving with "
+          "pop and close",
+          "[UT][wh/schema/stream/writer/"
+          "pipe_stream_writer.hpp][pipe_stream_writer::write_async][branch]["
+          "concurrency]") {
   using namespace std::chrono_literals;
 
   wh::testing::helper::manual_scheduler_state scheduler_state{};

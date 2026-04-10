@@ -39,22 +39,66 @@ struct move_only_functor {
   move_only_functor(const move_only_functor &) = delete;
   auto operator=(const move_only_functor &) -> move_only_functor & = delete;
   move_only_functor(move_only_functor &&) noexcept = default;
-  auto operator=(move_only_functor &&) noexcept -> move_only_functor & = default;
+  auto operator=(move_only_functor &&) noexcept
+      -> move_only_functor & = default;
 
   [[nodiscard]] auto operator()(const int value) const noexcept -> int {
     return value + 3;
   }
 };
 
-class owning_probe : public wh::core::fn::owning_storage<
-                         int(int), wh::core::fn::reference_counting,
-                         wh::core::fn::standard_accept,
-                         wh::core::fn::skip_on_error, sizeof(void *),
-                         std::allocator> {
+class callback_probe
+    : public wh::core::fn::owning_storage<
+          int(int) const, wh::core::fn::deep_copy,
+          wh::core::fn::standard_accept, wh::core::fn::skip_on_error,
+          wh::core::fn_detail::member_pointer_size, std::allocator> {
   using base = wh::core::fn::owning_storage<
-      int(int), wh::core::fn::reference_counting,
-      wh::core::fn::standard_accept, wh::core::fn::skip_on_error,
-      sizeof(void *), std::allocator>;
+      int(int) const, wh::core::fn::deep_copy, wh::core::fn::standard_accept,
+      wh::core::fn::skip_on_error, wh::core::fn_detail::member_pointer_size,
+      std::allocator>;
+
+public:
+  template <typename fun_t>
+  using traits_t = typename base::template traits<fun_t>;
+
+  template <typename fun_t>
+  static constexpr bool invocable_v = base::template is_invocable_v<fun_t>;
+
+  template <typename fun_t, typename... args_t>
+  static constexpr bool can_create_v =
+      base::template can_create_from<fun_t, args_t...>();
+};
+
+class move_only_owning_probe
+    : public wh::core::fn::owning_storage<
+          int(int), wh::core::fn::deep_copy, wh::core::fn::non_copyable_accept,
+          wh::core::fn::skip_on_error, wh::core::fn_detail::member_pointer_size,
+          std::allocator> {
+  using base = wh::core::fn::owning_storage<
+      int(int), wh::core::fn::deep_copy, wh::core::fn::non_copyable_accept,
+      wh::core::fn::skip_on_error, wh::core::fn_detail::member_pointer_size,
+      std::allocator>;
+
+public:
+  template <typename fun_t>
+  using traits_t = typename base::template traits<fun_t>;
+
+  template <typename fun_t>
+  static constexpr bool invocable_v = base::template is_invocable_v<fun_t>;
+
+  template <typename fun_t, typename... args_t>
+  static constexpr bool can_create_v =
+      base::template can_create_from<fun_t, args_t...>();
+};
+
+class owning_probe
+    : public wh::core::fn::owning_storage<
+          int(int), wh::core::fn::reference_counting,
+          wh::core::fn::standard_accept, wh::core::fn::skip_on_error,
+          sizeof(void *), std::allocator> {
+  using base = wh::core::fn::owning_storage<
+      int(int), wh::core::fn::reference_counting, wh::core::fn::standard_accept,
+      wh::core::fn::skip_on_error, sizeof(void *), std::allocator>;
 
 public:
   using typename base::buffer_type;
@@ -78,7 +122,8 @@ public:
     base::set_to_empty(buffer);
   }
 
-  static auto clone(const buffer_type &source, buffer_type &destination) -> void {
+  static auto clone(const buffer_type &source, buffer_type &destination)
+      -> void {
     base::copy(source, destination);
   }
 
@@ -86,7 +131,8 @@ public:
     base::destroy(buffer);
   }
 
-  [[nodiscard]] static auto invoke(buffer_type &buffer, const int value) -> int {
+  [[nodiscard]] static auto invoke(buffer_type &buffer, const int value)
+      -> int {
     return base::access(buffer)(value);
   }
 };
@@ -121,7 +167,8 @@ public:
     base::set_to_empty(buffer);
   }
 
-  static auto clone(const buffer_type &source, buffer_type &destination) -> void {
+  static auto clone(const buffer_type &source, buffer_type &destination)
+      -> void {
     base::copy(source, destination);
   }
 
@@ -129,7 +176,8 @@ public:
     base::destroy(buffer);
   }
 
-  [[nodiscard]] static auto invoke(buffer_type &buffer, const int value) -> int {
+  [[nodiscard]] static auto invoke(buffer_type &buffer, const int value)
+      -> int {
     return base::access(buffer)(value);
   }
 };
@@ -139,16 +187,25 @@ static_assert(!owning_probe::traits_t<large_functor>::using_soo);
 static_assert(!owning_probe::traits_t<small_functor>::storing_reference);
 static_assert(ref_probe::traits_t<mutable_functor &>::using_soo);
 static_assert(ref_probe::traits_t<mutable_functor &>::storing_reference);
-static_assert(
-    owning_probe::traits_t<small_functor>::template is_constructible<
-        small_functor>);
-static_assert(
-    owning_probe::traits_t<small_functor>::template is_nothrow_constructible<
-        small_functor>);
+static_assert(owning_probe::traits_t<small_functor>::template is_constructible<
+              small_functor>);
+static_assert(owning_probe::traits_t<
+              small_functor>::template is_nothrow_constructible<small_functor>);
 static_assert(owning_probe::invocable_v<small_functor>);
 static_assert(!owning_probe::invocable_v<int>);
 static_assert(ref_probe::invocable_v<mutable_functor *>);
 static_assert(!ref_probe::invocable_v<move_only_functor>);
+static_assert(callback_probe::invocable_v<small_functor>);
+static_assert(callback_probe::traits_t<
+              small_functor>::template is_constructible<const small_functor &>);
+static_assert(!callback_probe::invocable_v<move_only_functor>);
+static_assert(!callback_probe::template can_create_v<move_only_functor,
+                                                     move_only_functor>);
+static_assert(move_only_owning_probe::invocable_v<move_only_functor>);
+static_assert(move_only_owning_probe::traits_t<
+              move_only_functor>::template is_constructible<move_only_functor>);
+static_assert(move_only_owning_probe::template can_create_v<move_only_functor,
+                                                            move_only_functor>);
 static_assert(wh::core::fn::is_same_storage_policy_v<
               wh::core::fn::owning_storage, wh::core::fn::owning_storage>);
 static_assert(!wh::core::fn::is_same_storage_policy_v<
@@ -156,8 +213,11 @@ static_assert(!wh::core::fn::is_same_storage_policy_v<
 
 } // namespace
 
-TEST_CASE("storage policy owning and reference layouts construct clone destroy and classify targets",
-          "[UT][wh/core/function/detail/storage_policy.hpp][owning_storage::create][condition][branch][boundary]") {
+TEST_CASE("storage policy owning and reference layouts construct clone destroy "
+          "and classify targets",
+          "[UT][wh/core/function/detail/"
+          "storage_policy.hpp][owning_storage::create][condition][branch]["
+          "boundary]") {
   owning_probe::buffer_type owning{};
   REQUIRE(owning_probe::empty(owning));
   owning_probe::clear(owning);
@@ -182,8 +242,10 @@ TEST_CASE("storage policy owning and reference layouts construct clone destroy a
   owning_probe::destroy_value(cloned);
 }
 
-TEST_CASE("storage policy owning layout covers empty copy branch and heap-backed handlers",
-          "[UT][wh/core/function/detail/storage_policy.hpp][owning_storage::copy][branch][boundary]") {
+TEST_CASE("storage policy owning layout covers empty copy branch and "
+          "heap-backed handlers",
+          "[UT][wh/core/function/detail/"
+          "storage_policy.hpp][owning_storage::copy][branch][boundary]") {
   owning_probe::buffer_type empty_source{};
   owning_probe::buffer_type empty_destination{};
   owning_probe::clone(empty_source, empty_destination);
@@ -204,8 +266,10 @@ TEST_CASE("storage policy owning layout covers empty copy branch and heap-backed
   REQUIRE(owning_probe::empty(heap_clone));
 }
 
-TEST_CASE("storage policy reference layout preserves aliasing across source and clone",
-          "[UT][wh/core/function/detail/storage_policy.hpp][ref_only_storage::create][condition][branch]") {
+TEST_CASE("storage policy reference layout preserves aliasing across source "
+          "and clone",
+          "[UT][wh/core/function/detail/"
+          "storage_policy.hpp][ref_only_storage::create][condition][branch]") {
   mutable_functor functor{.delta = 4};
   ref_probe::buffer_type referenced{};
   REQUIRE(ref_probe::empty(referenced));
@@ -233,7 +297,8 @@ TEST_CASE("storage policy reference layout preserves aliasing across source and 
 }
 
 TEST_CASE("storage policy traits expose invocability and template identity",
-          "[UT][wh/core/function/detail/storage_policy.hpp][is_same_storage_policy_v][branch]") {
+          "[UT][wh/core/function/detail/"
+          "storage_policy.hpp][is_same_storage_policy_v][branch]") {
   REQUIRE(owning_probe::traits_t<small_functor>::using_soo);
   REQUIRE_FALSE(owning_probe::traits_t<large_functor>::using_soo);
   REQUIRE_FALSE(owning_probe::traits_t<small_functor>::storing_reference);
@@ -243,8 +308,9 @@ TEST_CASE("storage policy traits expose invocability and template identity",
   REQUIRE_FALSE(owning_probe::invocable_v<int>);
   REQUIRE(ref_probe::invocable_v<mutable_functor *>);
   REQUIRE_FALSE(ref_probe::invocable_v<move_only_functor>);
-  REQUIRE(wh::core::fn::is_same_storage_policy_v<
-          wh::core::fn::owning_storage, wh::core::fn::owning_storage>);
-  REQUIRE_FALSE(wh::core::fn::is_same_storage_policy_v<
-                wh::core::fn::owning_storage, wh::core::fn::ref_only_storage>);
+  REQUIRE(wh::core::fn::is_same_storage_policy_v<wh::core::fn::owning_storage,
+                                                 wh::core::fn::owning_storage>);
+  REQUIRE_FALSE(
+      wh::core::fn::is_same_storage_policy_v<wh::core::fn::owning_storage,
+                                             wh::core::fn::ref_only_storage>);
 }

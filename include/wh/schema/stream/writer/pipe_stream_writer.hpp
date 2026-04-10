@@ -1,8 +1,8 @@
 // Defines the writer endpoint of the pipe stream family.
 #pragma once
 
+#include <concepts>
 #include <memory>
-#include <type_traits>
 #include <utility>
 
 #include "wh/core/error.hpp"
@@ -29,13 +29,10 @@ public:
       -> pipe_stream_writer & = default;
 
   auto try_write(const value_t &value) -> wh::core::result<void>
-    requires std::is_nothrow_copy_constructible_v<value_t>
+    requires std::copy_constructible<value_t>
   {
-    if (!state_) {
-      return wh::core::result<void>::failure(wh::core::errc::not_found);
-    }
-    if (state_->reader_closed.load(std::memory_order_acquire)) {
-      return wh::core::result<void>::failure(wh::core::errc::channel_closed);
+    if (auto ready = validate_write_state(); ready.has_error()) {
+      return ready;
     }
 
     const auto status = detail::retry_busy_status(
@@ -48,13 +45,10 @@ public:
   }
 
   auto try_write(value_t &&value) -> wh::core::result<void>
-    requires std::is_nothrow_move_constructible_v<value_t>
+    requires std::move_constructible<value_t>
   {
-    if (!state_) {
-      return wh::core::result<void>::failure(wh::core::errc::not_found);
-    }
-    if (state_->reader_closed.load(std::memory_order_acquire)) {
-      return wh::core::result<void>::failure(wh::core::errc::channel_closed);
+    if (auto ready = validate_write_state(); ready.has_error()) {
+      return ready;
     }
 
     const auto status = detail::retry_busy_status(
@@ -67,33 +61,25 @@ public:
   }
 
   [[nodiscard]] auto write_async(const value_t &value) const
-    requires std::is_nothrow_copy_constructible_v<value_t>
+    requires std::copy_constructible<value_t>
   {
-    const bool state_missing = !state_;
-    const bool reader_closed =
-        !state_missing && state_->reader_closed.load(std::memory_order_acquire);
-    auto target_state = (state_missing || reader_closed)
-                            ? detail::shared_closed_pipe_state<state_t>()
-                            : state_;
+    auto async_state = detail::select_pipe_async_state(state_);
 
     return detail::normalize_pipe_write_sender(
-        target_state->queue.async_push(value), std::move(target_state),
-        state_missing, reader_closed);
+        async_state.state->queue.async_push(value),
+        std::move(async_state.state), async_state.state_missing,
+        async_state.reader_closed);
   }
 
   [[nodiscard]] auto write_async(value_t &&value) const
-    requires std::is_nothrow_move_constructible_v<value_t>
+    requires std::move_constructible<value_t>
   {
-    const bool state_missing = !state_;
-    const bool reader_closed =
-        !state_missing && state_->reader_closed.load(std::memory_order_acquire);
-    auto target_state = (state_missing || reader_closed)
-                            ? detail::shared_closed_pipe_state<state_t>()
-                            : state_;
+    auto async_state = detail::select_pipe_async_state(state_);
 
     return detail::normalize_pipe_write_sender(
-        target_state->queue.async_push(std::move(value)),
-        std::move(target_state), state_missing, reader_closed);
+        async_state.state->queue.async_push(std::move(value)),
+        std::move(async_state.state), async_state.state_missing,
+        async_state.reader_closed);
   }
 
   auto close() -> wh::core::result<void> {
@@ -109,6 +95,16 @@ public:
   }
 
 private:
+  [[nodiscard]] auto validate_write_state() const -> wh::core::result<void> {
+    if (!state_) {
+      return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+    if (state_->reader_closed.load(std::memory_order_acquire)) {
+      return wh::core::result<void>::failure(wh::core::errc::channel_closed);
+    }
+    return {};
+  }
+
   std::shared_ptr<state_t> state_{};
 };
 

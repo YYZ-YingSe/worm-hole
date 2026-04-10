@@ -34,7 +34,9 @@ protected:
     if constexpr (sizeof...(args_t) == 1U) {
       if constexpr (is_function_pointer_v<wh::core::remove_cvref_t<fun_t>> ||
                     std::is_member_pointer_v<std::decay_t<fun_t>>) {
-        if ((args == ... == nullptr)) {
+        bool is_null_target = true;
+        ((is_null_target = is_null_target && args == nullptr), ...);
+        if (is_null_target) {
           return;
         }
       }

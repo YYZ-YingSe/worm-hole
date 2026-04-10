@@ -1,9 +1,9 @@
 // Defines the reader endpoint of the pipe stream family.
 #pragma once
 
+#include <concepts>
 #include <memory>
 #include <optional>
-#include <type_traits>
 #include <utility>
 
 #include "wh/core/error.hpp"
@@ -56,19 +56,12 @@ public:
         state_);
   }
 
-  [[nodiscard]] auto read_async() const
-    requires std::is_nothrow_move_constructible_v<value_t>
-  {
-    const bool state_missing = !state_;
-    const bool reader_closed =
-        !state_missing && state_->reader_closed.load(std::memory_order_acquire);
-    auto target_state = (state_missing || reader_closed)
-                            ? detail::shared_closed_pipe_state<state_t>()
-                            : state_;
+  [[nodiscard]] auto read_async() const {
+    auto async_state = detail::select_pipe_async_state(state_);
 
     return detail::normalize_pipe_read_sender<value_t>(
-        target_state->queue.async_pop(), std::move(target_state), state_missing,
-        reader_closed);
+        async_state.state->queue.async_pop(), std::move(async_state.state),
+        async_state.state_missing, async_state.reader_closed);
   }
 
   auto close_impl() -> wh::core::result<void> {
@@ -89,7 +82,7 @@ public:
   }
 
   auto set_automatic_close(const auto_close_options &options) noexcept -> void {
-    automatic_close_ = options.enabled;
+    (void)options;
   }
 
 private:
@@ -125,9 +118,7 @@ private:
     return stream_result<chunk_type>::failure(
         detail::map_pipe_queue_status(popped.error()));
   }
-
   std::shared_ptr<state_t> state_{};
-  bool automatic_close_{true};
 };
 
 } // namespace wh::schema::stream

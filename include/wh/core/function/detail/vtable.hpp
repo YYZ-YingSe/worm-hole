@@ -96,9 +96,17 @@ class vtable_handler;
   public:                                                                      \
     static constexpr bool using_soo = manager_t::using_soo;                    \
     template <typename... args_t>                                              \
-      requires(basic_constraint<args_t...>())                                  \
+    static constexpr bool is_constructible =                                   \
+        basic_constraint<args_t...>() &&                                       \
+        manager_t::template is_constructible<args_t...>;                       \
+    template <typename... args_t>                                              \
+    static constexpr bool is_nothrow_constructible =                           \
+        is_constructible<args_t...> &&                                         \
+        manager_t::template is_nothrow_constructible<args_t...>;               \
+    template <typename... args_t>                                              \
+      requires(is_constructible<args_t...>)                                    \
     explicit vtable_handler(args_t &&...args) noexcept(                        \
-        is_nothrow_direct_constructible_v<manager_t, args_t...>)               \
+        is_nothrow_constructible<args_t...>)                                   \
         : manager_(std::forward<args_t>(args)...) {}                           \
     vtable_handler(const vtable_handler &other) = default;                     \
     vtable_handler(vtable_handler &&other) noexcept = delete;                  \

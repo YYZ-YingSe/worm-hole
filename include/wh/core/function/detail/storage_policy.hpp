@@ -18,12 +18,12 @@ template <typename buffer_t, typename handler_t> struct storage_traits {
   template <typename... args_t>
   static constexpr bool is_constructible =
       buffer_t::template can_construct<handler_t>() &&
-      is_direct_constructible_v<handler_t, args_t...>;
+      handler_t::template is_constructible<args_t...>;
 
   template <typename... args_t>
   static constexpr bool is_nothrow_constructible =
       is_constructible<args_t...> &&
-      is_nothrow_direct_constructible_v<handler_t, args_t...>;
+      handler_t::template is_nothrow_constructible<args_t...>;
 };
 
 /// Storage base that manages callable lifetime.
@@ -277,11 +277,21 @@ protected:
       acceptance::template is_eligible<fun_t>;
 
   template <typename fun_t, typename... args_t>
-    requires(acceptance::template is_eligible<fun_t> &&
-             traits<fun_t>::template is_constructible<args_t...>)
-  static auto create(buffer_type &target,
-                     args_t &&...args) noexcept(
-      traits<fun_t>::template is_nothrow_constructible<args_t...>) -> void {
+  [[nodiscard]] static consteval auto can_create_from() -> bool {
+    return acceptance::template is_eligible<fun_t> &&
+           traits<fun_t>::template is_constructible<args_t...>;
+  }
+
+  template <typename fun_t, typename... args_t>
+  [[nodiscard]] static consteval auto can_nothrow_create_from() -> bool {
+    return can_create_from<fun_t, args_t...>() &&
+           traits<fun_t>::template is_nothrow_constructible<args_t...>;
+  }
+
+  template <typename fun_t, typename... args_t>
+    requires(can_create_from<fun_t, args_t...>())
+  static auto create(buffer_type &target, args_t &&...args) noexcept(
+      can_nothrow_create_from<fun_t, args_t...>()) -> void {
     ::new (target.address()) handler<fun_t>(std::forward<args_t>(args)...);
   }
 
@@ -336,12 +346,25 @@ protected:
   static constexpr bool is_invocable_v =
       acceptance::template is_eligible<fun_t>;
 
+  template <typename fun_t, typename... args_t>
+  [[nodiscard]] static consteval auto can_create_from() -> bool {
+    if constexpr (sizeof...(args_t) != 1U) {
+      return false;
+    } else {
+      return acceptance::template is_eligible<fun_t> &&
+             traits<fun_t>::template is_constructible<
+                 std::remove_reference_t<fun_t> *>;
+    }
+  }
+
+  template <typename fun_t, typename... args_t>
+  [[nodiscard]] static consteval auto can_nothrow_create_from() -> bool {
+    return can_create_from<fun_t, args_t...>();
+  }
+
   template <typename fun_t>
-    requires(acceptance::template is_eligible<fun_t>)
-  static auto create(buffer_type &target, fun_t &&invocable) noexcept -> void
-    requires(traits<fun_t>::template is_constructible<
-             std::remove_reference_t<fun_t> *>)
-  {
+    requires(can_create_from<fun_t, fun_t>())
+  static auto create(buffer_type &target, fun_t &&invocable) noexcept -> void {
     ::new (target.address()) handler<fun_t>(std::addressof(invocable));
   }
 
