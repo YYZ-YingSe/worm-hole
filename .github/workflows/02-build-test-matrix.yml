@@ -11,91 +11,52 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_MAX_TARGETS_PER_SHARD: "200"
+
 concurrency:
   group: build-test-matrix-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  plan-build-test:
+    name: plan build-test matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Plan build-test matrix
+        id: plan
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          matrix_path="${RUNNER_TEMP}/build-test-matrix.json"
+          "$python_bin" scripts/toolchain.py ci emit-test-matrix \
+            --config .github/matrices/build-test.json \
+            --max-targets-per-shard "${CI_MAX_TARGETS_PER_SHARD}" \
+            --output "$matrix_path"
+          echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
+
   build-test:
-    name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }})
+    name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets)
+    needs: plan-build-test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: ubuntu-debug
-            os: ubuntu-latest
-            configure_preset: ci-linux-debug
-            build_preset: ci-linux-debug
-            shard_count: 4
-            shard_index: 0
-          - name: ubuntu-debug
-            os: ubuntu-latest
-            configure_preset: ci-linux-debug
-            build_preset: ci-linux-debug
-            shard_count: 4
-            shard_index: 1
-          - name: ubuntu-debug
-            os: ubuntu-latest
-            configure_preset: ci-linux-debug
-            build_preset: ci-linux-debug
-            shard_count: 4
-            shard_index: 2
-          - name: ubuntu-debug
-            os: ubuntu-latest
-            configure_preset: ci-linux-debug
-            build_preset: ci-linux-debug
-            shard_count: 4
-            shard_index: 3
-          - name: ubuntu-release
-            os: ubuntu-latest
-            configure_preset: ci-linux-release
-            build_preset: ci-linux-release
-            shard_count: 4
-            shard_index: 0
-          - name: ubuntu-release
-            os: ubuntu-latest
-            configure_preset: ci-linux-release
-            build_preset: ci-linux-release
-            shard_count: 4
-            shard_index: 1
-          - name: ubuntu-release
-            os: ubuntu-latest
-            configure_preset: ci-linux-release
-            build_preset: ci-linux-release
-            shard_count: 4
-            shard_index: 2
-          - name: ubuntu-release
-            os: ubuntu-latest
-            configure_preset: ci-linux-release
-            build_preset: ci-linux-release
-            shard_count: 4
-            shard_index: 3
-          - name: macos-release
-            os: macos-latest
-            configure_preset: ci-macos-release
-            build_preset: ci-macos-release
-            shard_count: 2
-            shard_index: 0
-          - name: macos-release
-            os: macos-latest
-            configure_preset: ci-macos-release
-            build_preset: ci-macos-release
-            shard_count: 2
-            shard_index: 1
-          - name: windows-release
-            os: windows-latest
-            configure_preset: ci-windows-release
-            build_preset: ci-windows-release
-            shard_count: 2
-            shard_index: 0
-          - name: windows-release
-            os: windows-latest
-            configure_preset: ci-windows-release
-            build_preset: ci-windows-release
-            shard_count: 2
-            shard_index: 1
+      matrix: ${{ fromJson(needs.plan-build-test.outputs.matrix) }}
 
     steps:
       - name: Checkout

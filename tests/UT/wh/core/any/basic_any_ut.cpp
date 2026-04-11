@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/any/basic_any.hpp"
 
@@ -80,8 +80,40 @@ TEST_CASE("basic_any borrowed views and assign preserve aliasing rules",
 
   REQUIRE(ref.assign(9));
   REQUIRE(value == 9);
+  auto owned_ref = ref.into_owned();
+  REQUIRE(owned_ref.has_value());
+  auto *owned_value = owned_ref.value().data<int>();
+  REQUIRE(owned_value != nullptr);
+  REQUIRE(*owned_value == 9);
+  value = 17;
+  REQUIRE(*owned_value == 9);
   REQUIRE_FALSE(cref.assign(13));
   REQUIRE(const_value == 11);
+}
+
+TEST_CASE("basic_any explicit ownerization distinguishes borrowed copyable and move-only payloads",
+          "[UT][wh/core/any/basic_any.hpp][basic_any::into_owned][boundary]") {
+  std::unique_ptr<int> move_only = std::make_unique<int>(5);
+  auto borrowed_move_only = basic_any_t::ref(move_only);
+  auto cloned_move_only = borrowed_move_only.into_owned();
+  REQUIRE(cloned_move_only.has_error());
+  REQUIRE(cloned_move_only.error() == wh::core::errc::not_supported);
+  REQUIRE(move_only != nullptr);
+  REQUIRE(*move_only == 5);
+
+  basic_any_t owned_move_only{std::in_place_type<std::unique_ptr<int>>};
+  *owned_move_only.data<std::unique_ptr<int>>() = std::make_unique<int>(7);
+  auto copied_owned_move_only = std::as_const(owned_move_only).into_owned();
+  REQUIRE(copied_owned_move_only.has_error());
+  REQUIRE(copied_owned_move_only.error() == wh::core::errc::not_supported);
+  REQUIRE(owned_move_only.has_value<std::unique_ptr<int>>());
+  REQUIRE(**owned_move_only.data<std::unique_ptr<int>>() == 7);
+
+  basic_any_t owned_string{std::string{"owned"}};
+  auto moved_owned = std::move(owned_string).into_owned();
+  REQUIRE(moved_owned.has_value());
+  REQUIRE_FALSE(owned_string.has_value());
+  REQUIRE(*moved_owned.value().data<std::string>() == "owned");
 }
 
 TEST_CASE("basic_any equality and mismatched data lookups are type-safe",

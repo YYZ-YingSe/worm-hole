@@ -19,6 +19,7 @@ from typing import Sequence
 ROOT = Path(__file__).resolve().parent.parent
 THIRD_PARTY_DIR = ROOT / "thirdy_party"
 BUILD_ROOT = ROOT / "build"
+TESTS_DIR = ROOT / "tests"
 DEFAULT_REPORTER = "compact"
 DEFAULT_LOCAL_PRESET = "dev-debug"
 DEFAULT_ANALYSIS_PRESET = "ci-static-analysis"
@@ -43,6 +44,18 @@ class TestEntry:
 class CompileEntry:
     file: Path
     size: int
+
+
+@dataclass(frozen=True)
+class MatrixLane:
+    name: str
+    configure_preset: str
+    build_preset: str
+    min_shards: int
+    suites: tuple[str, ...]
+    include_labels: tuple[str, ...]
+    exclude_labels: tuple[str, ...]
+    os: str | None = None
 
 
 def print_step(tag: str, message: str) -> None:
@@ -75,6 +88,17 @@ def run(
     )
 
 
+def print_process_output(result: subprocess.CompletedProcess[str]) -> None:
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(
+            result.stderr,
+            end="" if result.stderr.endswith("\n") else "\n",
+            file=sys.stderr,
+        )
+
+
 def command_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
@@ -91,6 +115,34 @@ def under(path: Path, base: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def is_project_compile_unit(path: Path, *, include_tests: bool = True) -> bool:
+    if not path.exists():
+        return False
+    if not under(path, ROOT):
+        return False
+    if under(path, THIRD_PARTY_DIR):
+        return False
+    if under(path, BUILD_ROOT):
+        return False
+    if not include_tests and under(path, TESTS_DIR):
+        return False
+    return True
+
+
+def resolve_compile_entry_file(entry: dict[str, object]) -> Path | None:
+    file_value = entry.get("file")
+    if not file_value:
+        return None
+
+    file_path = Path(str(file_value))
+    if not file_path.is_absolute():
+        directory = Path(str(entry.get("directory", ROOT)))
+        file_path = (directory / file_path).resolve()
+    else:
+        file_path = file_path.resolve()
+    return file_path
 
 
 def build_dir_for_preset(preset: str) -> Path:
@@ -342,6 +394,46 @@ def filter_test_entries(
     return filtered
 
 
+def load_matrix_lanes(path: Path) -> list[MatrixLane]:
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, list):
+        fail("matrix", f"matrix config must be a JSON array: {path}", code=2)
+
+    lanes: list[MatrixLane] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            fail("matrix", f"matrix entry #{index} must be a JSON object", code=2)
+
+        name = str(item.get("name") or "")
+        configure_preset = str(item.get("configure_preset") or "")
+        if not name or not configure_preset:
+            fail(
+                "matrix",
+                f"matrix entry #{index} requires name and configure_preset",
+                code=2,
+            )
+
+        build_preset = str(item.get("build_preset") or configure_preset)
+        min_shards = max(1, int(item.get("min_shards") or 1))
+        suites = tuple(str(value) for value in (item.get("suites") or []))
+        include_labels = tuple(str(value) for value in (item.get("include_labels") or []))
+        exclude_labels = tuple(str(value) for value in (item.get("exclude_labels") or []))
+        os_name = item.get("os")
+        lanes.append(
+            MatrixLane(
+                name=name,
+                configure_preset=configure_preset,
+                build_preset=build_preset,
+                min_shards=min_shards,
+                suites=suites,
+                include_labels=include_labels,
+                exclude_labels=exclude_labels,
+                os=str(os_name) if os_name else None,
+            )
+        )
+    return lanes
+
+
 def shard_test_entries(
     entries: Sequence[TestEntry], shard_count: int, shard_index: int
 ) -> list[TestEntry]:
@@ -360,6 +452,26 @@ def shard_test_entries(
         shards[target].append(entry)
         weights[target] += entry.weight
     return sorted(shards[shard_index], key=lambda entry: (entry.target, str(entry.source)))
+
+
+def compute_test_shards(
+    entries: Sequence[TestEntry],
+    *,
+    min_shards: int,
+    max_targets_per_shard: int,
+) -> tuple[int, list[list[TestEntry]]]:
+    if not entries:
+        fail("matrix", "cannot compute shards for an empty entry set", code=2)
+    if max_targets_per_shard <= 0:
+        fail("matrix", "max_targets_per_shard must be positive", code=2)
+
+    shard_count = max(1, min_shards)
+    while True:
+        shards = [shard_test_entries(entries, shard_count, index) for index in range(shard_count)]
+        largest = max((len(shard) for shard in shards), default=0)
+        if largest <= max_targets_per_shard:
+            return shard_count, shards
+        shard_count += 1
 
 
 def manifest_shard(
@@ -436,26 +548,16 @@ def run_test_entries(
     print_step("test-shard", f"PASS {len(entries)} test targets")
 
 
-def filter_compile_commands_to_project_scope(compile_db: Path, target_file: Path) -> None:
+def filter_compile_commands_to_project_scope(
+    compile_db: Path, target_file: Path, *, include_tests: bool = True
+) -> None:
     entries = json.loads(compile_db.read_text())
     filtered: list[dict[str, object]] = []
     for entry in entries:
-        file_value = entry.get("file")
-        if not file_value:
+        file_path = resolve_compile_entry_file(entry)
+        if file_path is None:
             continue
-
-        file_path = Path(str(file_value))
-        if not file_path.is_absolute():
-            directory = Path(str(entry.get("directory", ROOT)))
-            file_path = (directory / file_path).resolve()
-        else:
-            file_path = file_path.resolve()
-
-        if not under(file_path, ROOT):
-            continue
-        if under(file_path, THIRD_PARTY_DIR):
-            continue
-        if under(file_path, BUILD_ROOT):
+        if not is_project_compile_unit(file_path, include_tests=include_tests):
             continue
         filtered.append(entry)
 
@@ -466,28 +568,17 @@ def filter_compile_commands_to_project_scope(compile_db: Path, target_file: Path
     print_step("compile-commands", f"FILTER {len(filtered)}/{len(entries)} -> {target_file}")
 
 
-def load_compile_entries(compile_db: Path) -> list[CompileEntry]:
+def load_compile_entries(
+    compile_db: Path, *, include_tests: bool = True
+) -> list[CompileEntry]:
     raw_entries = json.loads(compile_db.read_text())
     dedup: dict[Path, CompileEntry] = {}
     for entry in raw_entries:
-        file_value = entry.get("file")
-        if not file_value:
+        file_path = resolve_compile_entry_file(entry)
+        if file_path is None:
             continue
 
-        file_path = Path(str(file_value))
-        if not file_path.is_absolute():
-            directory = Path(str(entry.get("directory", ROOT)))
-            file_path = (directory / file_path).resolve()
-        else:
-            file_path = file_path.resolve()
-
-        if not file_path.exists():
-            continue
-        if not under(file_path, ROOT):
-            continue
-        if under(file_path, THIRD_PARTY_DIR):
-            continue
-        if under(file_path, BUILD_ROOT):
+        if not is_project_compile_unit(file_path, include_tests=include_tests):
             continue
 
         dedup[file_path] = CompileEntry(file=file_path, size=max(1, file_path.stat().st_size))
@@ -604,6 +695,70 @@ def run_build_test_mode(
     print_step(tag, "PASS")
 
 
+def ci_emit_test_matrix(args: argparse.Namespace) -> None:
+    config_path = args.config.resolve()
+    if not config_path.exists():
+        fail("matrix", f"missing config: {config_path}", code=2)
+
+    lanes = load_matrix_lanes(config_path)
+    manifest_cache: dict[str, list[TestEntry]] = {}
+    matrix_include: list[dict[str, object]] = []
+
+    for lane in lanes:
+        if lane.configure_preset not in manifest_cache:
+            manifest_path = configure_and_validate_manifest(lane.configure_preset, "matrix")
+            manifest_cache[lane.configure_preset] = load_manifest(manifest_path)
+
+        filtered_entries = filter_test_entries(
+            manifest_cache[lane.configure_preset],
+            suites=lane.suites,
+            include_labels=lane.include_labels,
+            exclude_labels=lane.exclude_labels,
+        )
+        if not filtered_entries:
+            fail(
+                "matrix",
+                f"lane {lane.name} selected no tests for preset {lane.configure_preset}",
+                code=2,
+            )
+
+        shard_count, shards = compute_test_shards(
+            filtered_entries,
+            min_shards=lane.min_shards,
+            max_targets_per_shard=args.max_targets_per_shard,
+        )
+        largest_shard = max(len(shard) for shard in shards)
+        print_step(
+            "matrix",
+            f"{lane.name}: targets={len(filtered_entries)} resolved_shards={shard_count} "
+            f"largest_shard={largest_shard} limit={args.max_targets_per_shard}",
+        )
+
+        for shard_index, shard in enumerate(shards):
+            payload: dict[str, object] = {
+                "name": lane.name,
+                "configure_preset": lane.configure_preset,
+                "build_preset": lane.build_preset,
+                "shard_count": shard_count,
+                "shard_index": shard_index,
+                "target_count": len(shard),
+                "total_weight": sum(entry.weight for entry in shard),
+            }
+            if lane.os:
+                payload["os"] = lane.os
+            matrix_include.append(payload)
+
+    output_payload = {"include": matrix_include}
+    encoded = json.dumps(output_payload, separators=(",", ":"))
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(encoded + "\n", encoding="utf-8")
+        print_step("matrix", f"WROTE {args.output}")
+        return
+
+    print(encoded)
+
+
 def ci_build_test(args: argparse.Namespace) -> None:
     run_build_test_mode(
         "build-test",
@@ -704,7 +859,7 @@ def ci_clang_tidy(args: argparse.Namespace) -> None:
     if not compile_db.exists():
         fail("clang-tidy", f"compile_commands.json missing: {compile_db}")
 
-    entries = load_compile_entries(compile_db)
+    entries = load_compile_entries(compile_db, include_tests=False)
     if not entries:
         fail("clang-tidy", "no first-party translation units found")
     if args.shard_count <= 0 or args.shard_index < 0 or args.shard_index >= args.shard_count:
@@ -761,6 +916,7 @@ def ci_codechecker(args: argparse.Namespace) -> None:
         print_step("codechecker", f"SKIP {os.environ['RUNNER_OS'].lower()} runner")
         return
 
+    analyzers = ("clangsa",)
     codechecker_bin = os.environ.get("WH_CODECHECKER_BIN", "CodeChecker")
     if shutil.which(codechecker_bin) is None and shutil.which("codechecker") is not None:
         codechecker_bin = "codechecker"
@@ -774,13 +930,18 @@ def ci_codechecker(args: argparse.Namespace) -> None:
     filtered_compile_db = build_dir / "compile_commands.codechecker.json"
     report_dir = build_dir / "codechecker-reports"
     report_json = build_dir / "codechecker-reports.json"
-    filter_compile_commands_to_project_scope(compile_db, filtered_compile_db)
+    filter_compile_commands_to_project_scope(
+        compile_db,
+        filtered_compile_db,
+        include_tests=False,
+    )
     if report_dir.exists():
         shutil.rmtree(report_dir)
     if report_json.exists():
         report_json.unlink()
 
     print_step("codechecker", f"preset: {args.configure_preset}")
+    print_step("codechecker", f"analyzers: {', '.join(analyzers)}")
     run(
         [
             codechecker_bin,
@@ -789,18 +950,34 @@ def ci_codechecker(args: argparse.Namespace) -> None:
             "--output",
             str(report_dir),
             "--analyzers",
-            "clangsa",
+            *analyzers,
             "--jobs",
             str(args.jobs),
             "--clean",
         ]
     )
-    run([codechecker_bin, "parse", str(report_dir), "-e", "json", "-o", str(report_json)])
+
+    # CodeChecker may report missing results for analyzers we did not request.
+    # The exported JSON report is the reliable contract for this CI gate.
+    parse_result = run(
+        [codechecker_bin, "parse", str(report_dir), "-e", "json", "-o", str(report_json)],
+        check=False,
+        capture_output=True,
+    )
+    print_process_output(parse_result)
+    if not report_json.exists():
+        fail("codechecker", f"parse did not produce JSON report: {report_json}")
+
     payload = json.loads(report_json.read_text())
     issue_count = len(payload.get("reports", []))
     if issue_count != 0:
         subprocess.run([codechecker_bin, "parse", str(report_dir)], check=False)
         fail("codechecker", f"findings={issue_count}")
+    if parse_result.returncode != 0:
+        print_step(
+            "codechecker",
+            f"parse exited with status {parse_result.returncode}; using exported JSON findings",
+        )
     print_step("codechecker", "PASS")
 
 
@@ -1053,6 +1230,12 @@ def build_parser() -> argparse.ArgumentParser:
     fast_gates_parser.add_argument("--clang-format-scope", default="auto")
     fast_gates_parser.add_argument("--shellcheck-scope", default="auto")
     fast_gates_parser.set_defaults(func=ci_fast_gates)
+
+    emit_matrix_parser = ci_sub.add_parser("emit-test-matrix")
+    emit_matrix_parser.add_argument("--config", type=Path, required=True)
+    emit_matrix_parser.add_argument("--output", type=Path)
+    emit_matrix_parser.add_argument("--max-targets-per-shard", type=int, default=200)
+    emit_matrix_parser.set_defaults(func=ci_emit_test_matrix)
 
     build_test_parser = ci_sub.add_parser("build-test")
     build_test_parser.add_argument("--configure-preset", required=True)

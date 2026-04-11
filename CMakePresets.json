@@ -117,6 +117,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_COMPILER": "clang++",
+        "WH_BUILD_ANALYSIS": "ON",
+        "WH_BUILD_TESTING": "OFF",
         "WH_WARNINGS_AS_ERRORS": "OFF"
       }
     },

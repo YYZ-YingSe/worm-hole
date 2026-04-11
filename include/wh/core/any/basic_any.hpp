@@ -13,6 +13,7 @@
 #include <typeinfo>
 #include <utility>
 
+#include "wh/core/result.hpp"
 #include "wh/internal/type_name.hpp"
 
 namespace wh::core {
@@ -33,30 +34,23 @@ struct has_value_type<value_t> : std::true_type {};
 
 template <typename value_t>
 [[nodiscard]] consteval auto maybe_equality_comparable(int)
-    -> decltype(std::declval<const value_t &>() ==
-                    std::declval<const value_t &>(),
-                bool{}) {
+    -> decltype(std::declval<const value_t &>() == std::declval<const value_t &>(), bool{}) {
   return true;
 }
 
-template <typename>
-[[nodiscard]] consteval auto maybe_equality_comparable(char) -> bool {
+template <typename> [[nodiscard]] consteval auto maybe_equality_comparable(char) -> bool {
   return false;
 }
 
-template <typename value_t>
-[[nodiscard]] consteval auto dispatch_is_equality_comparable() -> bool;
+template <typename value_t> [[nodiscard]] consteval auto dispatch_is_equality_comparable() -> bool;
 
 template <typename value_t, std::size_t... index>
-[[nodiscard]] consteval auto
-unpack_maybe_equality_comparable(std::index_sequence<index...>) -> bool {
-  return (
-      dispatch_is_equality_comparable<std::tuple_element_t<index, value_t>>() &&
-      ...);
+[[nodiscard]] consteval auto unpack_maybe_equality_comparable(std::index_sequence<index...>)
+    -> bool {
+  return (dispatch_is_equality_comparable<std::tuple_element_t<index, value_t>>() && ...);
 }
 
-template <typename value_t>
-[[nodiscard]] consteval auto dispatch_is_equality_comparable() -> bool {
+template <typename value_t> [[nodiscard]] consteval auto dispatch_is_equality_comparable() -> bool {
   if constexpr (std::is_array_v<value_t>) {
     return false;
   } else if constexpr (has_tuple_size_value<value_t>::value) {
@@ -65,8 +59,7 @@ template <typename value_t>
                std::make_index_sequence<std::tuple_size_v<value_t>>{});
   } else if constexpr (has_value_type<value_t>::value) {
     if constexpr (std::same_as<typename value_t::value_type, value_t> ||
-                  dispatch_is_equality_comparable<
-                      typename value_t::value_type>()) {
+                  dispatch_is_equality_comparable<typename value_t::value_type>()) {
       return maybe_equality_comparable<value_t>(0);
     } else {
       return false;
@@ -77,12 +70,10 @@ template <typename value_t>
 }
 
 template <typename value_t>
-inline constexpr bool any_value_equal_enabled_v =
-    dispatch_is_equality_comparable<value_t>();
+inline constexpr bool any_value_equal_enabled_v = dispatch_is_equality_comparable<value_t>();
 
 template <typename value_t>
-[[nodiscard]] inline auto any_value_equal(const value_t &left,
-                                          const value_t &right) noexcept
+[[nodiscard]] inline auto any_value_equal(const value_t &left, const value_t &right) noexcept
     -> bool {
   return left == right;
 }
@@ -93,14 +84,12 @@ template <typename value_t>
 struct any_type_key {
   const void *token{nullptr};
 
-  [[nodiscard]] constexpr auto operator==(const any_type_key &) const noexcept
-      -> bool = default;
+  [[nodiscard]] constexpr auto operator==(const any_type_key &) const noexcept -> bool = default;
 };
 
 /// Hash functor for `any_type_key`.
 struct any_type_key_hash {
-  [[nodiscard]] auto operator()(const any_type_key key) const noexcept
-      -> std::size_t {
+  [[nodiscard]] auto operator()(const any_type_key key) const noexcept -> std::size_t {
     return std::hash<const void *>{}(key.token);
   }
 };
@@ -113,8 +102,7 @@ struct any_type_info {
   std::size_t alignment{};
   const std::type_info &(*type)() noexcept;
 
-  [[nodiscard]] constexpr auto operator==(const any_type_info &) const noexcept
-      -> bool = default;
+  [[nodiscard]] constexpr auto operator==(const any_type_info &) const noexcept -> bool = default;
 };
 
 /// Storage policy of one `basic_any` instance.
@@ -126,6 +114,63 @@ enum class any_policy : std::uint8_t {
   cref,
 };
 
+/// Custom ownerization policy used by `basic_any::into_owned()`.
+///
+/// `into_owned(const T&)` is the non-consuming path.
+/// Implementations must not mutate `value`; failure leaves the source unchanged.
+///
+/// `into_owned(T&&)` is the consuming path.
+/// Implementations should prefer move/transfer semantics when possible.
+/// On failure the source object must remain valid for destruction/assignment,
+/// but its observable state is not required to match the pre-call state.
+template <typename value_t> struct any_owned_traits {};
+
+namespace detail {
+
+template <typename value_t>
+concept has_any_owned_copy = requires(const value_t &value) {
+  { any_owned_traits<value_t>::into_owned(value) } -> std::same_as<wh::core::result<value_t>>;
+};
+
+template <typename value_t>
+concept has_any_owned_move = requires(value_t &value) {
+  {
+    any_owned_traits<value_t>::into_owned(std::move(value))
+  } -> std::same_as<wh::core::result<value_t>>;
+};
+
+template <typename value_t>
+inline constexpr bool has_custom_any_owned_v =
+    has_any_owned_copy<value_t> || has_any_owned_move<value_t>;
+
+template <typename value_t>
+[[nodiscard]] inline auto copy_into_owned_value(const value_t &value) -> wh::core::result<value_t> {
+  if constexpr (has_any_owned_copy<value_t>) {
+    return any_owned_traits<value_t>::into_owned(value);
+  } else if constexpr (std::copy_constructible<value_t>) {
+    return value_t{value};
+  } else {
+    return wh::core::result<value_t>::failure(wh::core::errc::not_supported);
+  }
+}
+
+template <typename value_t>
+[[nodiscard]] inline auto into_owned_value(value_t &value) -> wh::core::result<value_t> {
+  if constexpr (has_any_owned_move<value_t>) {
+    return any_owned_traits<value_t>::into_owned(std::move(value));
+  } else if constexpr (std::move_constructible<value_t>) {
+    return value_t{std::move(value)};
+  } else if constexpr (has_any_owned_copy<value_t>) {
+    return any_owned_traits<value_t>::into_owned(std::as_const(value));
+  } else if constexpr (std::copy_constructible<value_t>) {
+    return value_t{value};
+  } else {
+    return wh::core::result<value_t>::failure(wh::core::errc::not_supported);
+  }
+}
+
+} // namespace detail
+
 template <std::size_t inline_size = 3U * sizeof(void *),
           std::size_t inline_align = alignof(std::max_align_t)>
 class basic_any {
@@ -133,11 +178,9 @@ private:
   template <typename value_t>
   static constexpr bool fits_inline_v =
       (inline_size != 0U) && (alignof(value_t) <= inline_align) &&
-      (sizeof(value_t) <= inline_size) &&
-      std::is_nothrow_move_constructible_v<value_t>;
+      (sizeof(value_t) <= inline_size) && std::is_nothrow_move_constructible_v<value_t>;
 
-  static constexpr std::size_t storage_size =
-      (inline_size == 0U) ? 1U : inline_size;
+  static constexpr std::size_t storage_size = (inline_size == 0U) ? 1U : inline_size;
 
   union storage_t {
     alignas(inline_align) std::byte buffer[storage_size];
@@ -151,6 +194,8 @@ private:
     void (*destroy)(basic_any &) noexcept;
     void (*copy_construct)(const basic_any &, basic_any &);
     void (*move_construct)(basic_any &, basic_any &) noexcept;
+    error_code (*copy_into_owned)(const basic_any &, basic_any &);
+    error_code (*consume_into_owned)(basic_any &, basic_any &);
     bool (*assign_copy)(basic_any &, const void *);
     bool (*assign_move)(basic_any &, void *);
     bool (*equal)(const void *, const void *) noexcept;
@@ -164,9 +209,7 @@ private:
       return any_type_key{&token};
     }
 
-    [[nodiscard]] static auto type() noexcept -> const std::type_info & {
-      return typeid(value_t);
-    }
+    [[nodiscard]] static auto type() noexcept -> const std::type_info & { return typeid(value_t); }
 
     static inline constexpr any_type_info info{
         .key = any_type_key{&token},
@@ -194,12 +237,10 @@ private:
       }
     }
 
-    static auto copy_construct(const basic_any &source, basic_any &target)
-        -> void {
+    static auto copy_construct(const basic_any &source, basic_any &target) -> void {
       if constexpr (std::copy_constructible<value_t>) {
         if constexpr (fits_inline_v<value_t>) {
-          ::new (static_cast<void *>(target.storage_.buffer))
-              value_t{*const_ptr(source)};
+          ::new (static_cast<void *>(target.storage_.buffer)) value_t{*const_ptr(source)};
           target.policy_ = any_policy::inline_owner;
         } else {
           target.storage_.ptr = new value_t{*const_ptr(source)};
@@ -208,12 +249,10 @@ private:
       }
     }
 
-    static auto move_construct(basic_any &source, basic_any &target) noexcept
-        -> void {
+    static auto move_construct(basic_any &source, basic_any &target) noexcept -> void {
       if constexpr (fits_inline_v<value_t>) {
         auto *typed = inline_ptr(source);
-        ::new (static_cast<void *>(target.storage_.buffer))
-            value_t{std::move(*typed)};
+        ::new (static_cast<void *>(target.storage_.buffer)) value_t{std::move(*typed)};
         if constexpr (!std::is_trivially_destructible_v<value_t>) {
           typed->~value_t();
         }
@@ -256,16 +295,42 @@ private:
       }
     }
 
-    [[nodiscard]] static auto mutable_ptr(basic_any &self) noexcept
-        -> value_t * {
+    static auto copy_into_owned(const basic_any &source, basic_any &target) -> error_code {
+      auto cloned = detail::copy_into_owned_value<value_t>(*const_ptr(source));
+      if (cloned.has_error()) {
+        return cloned.error();
+      }
+      target.template initialize<value_t>(std::move(cloned).value());
+      return {};
+    }
+
+    static auto consume_into_owned(basic_any &source, basic_any &target) -> error_code {
+      if (source.is_borrowed()) {
+        return copy_into_owned(source, target);
+      }
+
+      if constexpr (detail::has_custom_any_owned_v<value_t>) {
+        auto cloned = detail::into_owned_value<value_t>(*mutable_ptr(source));
+        if (cloned.has_error()) {
+          return cloned.error();
+        }
+        target.template initialize<value_t>(std::move(cloned).value());
+        source.reset();
+        return {};
+      }
+
+      target.move_from(std::move(source));
+      return {};
+    }
+
+    [[nodiscard]] static auto mutable_ptr(basic_any &self) noexcept -> value_t * {
       if (self.policy_ == any_policy::inline_owner) {
         return inline_ptr(self);
       }
       return heap_ptr(self);
     }
 
-    [[nodiscard]] static auto const_ptr(const basic_any &self) noexcept
-        -> const value_t * {
+    [[nodiscard]] static auto const_ptr(const basic_any &self) noexcept -> const value_t * {
       switch (self.policy_) {
       case any_policy::inline_owner:
         return inline_ptr(self);
@@ -279,15 +344,12 @@ private:
       return nullptr;
     }
 
-    [[nodiscard]] static auto inline_ptr(basic_any &self) noexcept
-        -> value_t * {
+    [[nodiscard]] static auto inline_ptr(basic_any &self) noexcept -> value_t * {
       return std::launder(reinterpret_cast<value_t *>(self.storage_.buffer));
     }
 
-    [[nodiscard]] static auto inline_ptr(const basic_any &self) noexcept
-        -> const value_t * {
-      return std::launder(
-          reinterpret_cast<const value_t *>(self.storage_.buffer));
+    [[nodiscard]] static auto inline_ptr(const basic_any &self) noexcept -> const value_t * {
+      return std::launder(reinterpret_cast<const value_t *>(self.storage_.buffer));
     }
 
     [[nodiscard]] static auto heap_ptr(basic_any &self) noexcept -> value_t * {
@@ -297,9 +359,10 @@ private:
     static inline constexpr vtable_t vtable{
         .info = &model::info,
         .destroy = &model::destroy,
-        .copy_construct =
-            std::copy_constructible<value_t> ? &model::copy_construct : nullptr,
+        .copy_construct = std::copy_constructible<value_t> ? &model::copy_construct : nullptr,
         .move_construct = &model::move_construct,
+        .copy_into_owned = &model::copy_into_owned,
+        .consume_into_owned = &model::consume_into_owned,
         .assign_copy = &model::assign_copy,
         .assign_move = &model::assign_move,
         .equal = &model::equal,
@@ -307,8 +370,7 @@ private:
     };
   };
 
-  template <typename value_t, typename... arg_ts>
-  auto initialize(arg_ts &&...args) -> void {
+  template <typename value_t, typename... arg_ts> auto initialize(arg_ts &&...args) -> void {
     using stored_t = std::remove_cvref_t<value_t>;
     if constexpr (std::is_void_v<value_t>) {
       return;
@@ -323,8 +385,7 @@ private:
         policy_ = any_policy::ref;
       }
     } else if constexpr (fits_inline_v<stored_t>) {
-      ::new (static_cast<void *>(storage_.buffer))
-          stored_t(std::forward<arg_ts>(args)...);
+      ::new (static_cast<void *>(storage_.buffer)) stored_t(std::forward<arg_ts>(args)...);
       vtable_ = &model<stored_t>::vtable;
       policy_ = any_policy::inline_owner;
     } else {
@@ -341,8 +402,7 @@ public:
   }
 
   template <typename value_t>
-  [[nodiscard]] static constexpr auto info_of() noexcept
-      -> const any_type_info & {
+  [[nodiscard]] static constexpr auto info_of() noexcept -> const any_type_info & {
     return model<std::remove_cvref_t<value_t>>::info;
   }
 
@@ -413,8 +473,7 @@ public:
     if (this == &other) {
       return;
     }
-    if (policy_ != any_policy::inline_owner &&
-        other.policy_ != any_policy::inline_owner) {
+    if (policy_ != any_policy::inline_owner && other.policy_ != any_policy::inline_owner) {
       std::swap(storage_.ptr, other.storage_.ptr);
       std::swap(vtable_, other.vtable_);
       std::swap(policy_, other.policy_);
@@ -426,8 +485,7 @@ public:
   }
 
   /// Creates an owned inline/heap value depending on size and move traits.
-  template <typename value_t, typename... arg_ts>
-  auto emplace(arg_ts &&...args) -> decltype(auto) {
+  template <typename value_t, typename... arg_ts> auto emplace(arg_ts &&...args) -> decltype(auto) {
     using stored_t = std::remove_cvref_t<value_t>;
     reset();
     initialize<value_t>(std::forward<arg_ts>(args)...);
@@ -437,8 +495,7 @@ public:
   }
 
   /// Aliases one mutable object without taking ownership.
-  template <typename value_t>
-  [[nodiscard]] static auto ref(value_t &value) noexcept -> basic_any {
+  template <typename value_t> [[nodiscard]] static auto ref(value_t &value) noexcept -> basic_any {
     basic_any current{};
     current.storage_.ptr = std::addressof(value);
     current.vtable_ = &model<std::remove_cvref_t<value_t>>::vtable;
@@ -485,8 +542,7 @@ public:
     if (!compatible_assign(other)) {
       return false;
     }
-    return vtable_->assign_copy != nullptr &&
-           vtable_->assign_copy(*this, other.data());
+    return vtable_->assign_copy != nullptr && vtable_->assign_copy(*this, other.data());
   }
 
   /// Reassigns the contained object using move semantics when possible.
@@ -495,27 +551,21 @@ public:
       return false;
     }
     if (other.policy_ == any_policy::cref) {
-      return vtable_->assign_copy != nullptr &&
-             vtable_->assign_copy(*this, other.data());
+      return vtable_->assign_copy != nullptr && vtable_->assign_copy(*this, other.data());
     }
-    return vtable_->assign_move != nullptr &&
-           vtable_->assign_move(*this, other.data());
+    return vtable_->assign_move != nullptr && vtable_->assign_move(*this, other.data());
   }
 
   /// Reassigns from one typed value when the contained type matches exactly.
-  template <typename value_t>
-  [[nodiscard]] auto assign(value_t &&value) -> bool {
+  template <typename value_t> [[nodiscard]] auto assign(value_t &&value) -> bool {
     using stored_t = std::remove_cvref_t<value_t>;
     if (!has_value<stored_t>() || policy_ == any_policy::cref) {
       return false;
     }
-    if constexpr (std::is_lvalue_reference_v<value_t> ||
-                  !std::is_move_assignable_v<stored_t>) {
-      return vtable_->assign_copy != nullptr &&
-             vtable_->assign_copy(*this, std::addressof(value));
+    if constexpr (std::is_lvalue_reference_v<value_t> || !std::is_move_assignable_v<stored_t>) {
+      return vtable_->assign_copy != nullptr && vtable_->assign_copy(*this, std::addressof(value));
     } else {
-      return vtable_->assign_move != nullptr &&
-             vtable_->assign_move(*this, std::addressof(value));
+      return vtable_->assign_move != nullptr && vtable_->assign_move(*this, std::addressof(value));
     }
   }
 
@@ -528,24 +578,19 @@ public:
     storage_.ptr = nullptr;
   }
 
-  [[nodiscard]] auto has_value() const noexcept -> bool {
-    return policy_ != any_policy::empty;
-  }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return policy_ != any_policy::empty; }
 
   [[nodiscard]] explicit operator bool() const noexcept { return has_value(); }
 
-  template <typename value_t>
-  [[nodiscard]] auto has_value() const noexcept -> bool {
+  template <typename value_t> [[nodiscard]] auto has_value() const noexcept -> bool {
     return vtable_ == &model<std::remove_cvref_t<value_t>>::vtable;
   }
 
-  [[nodiscard]] auto has_value(const any_type_key query) const noexcept
-      -> bool {
+  [[nodiscard]] auto has_value(const any_type_key query) const noexcept -> bool {
     return key() == query;
   }
 
-  [[nodiscard]] auto has_value(const any_type_info &query) const noexcept
-      -> bool {
+  [[nodiscard]] auto has_value(const any_type_info &query) const noexcept -> bool {
     return has_value(query.key);
   }
 
@@ -554,8 +599,7 @@ public:
   }
 
   [[nodiscard]] auto owner() const noexcept -> bool {
-    return policy_ == any_policy::inline_owner ||
-           policy_ == any_policy::heap_owner;
+    return policy_ == any_policy::inline_owner || policy_ == any_policy::heap_owner;
   }
 
   [[nodiscard]] auto borrowed() const noexcept -> bool {
@@ -566,9 +610,7 @@ public:
 
   [[nodiscard]] auto key() const noexcept -> any_type_key { return info().key; }
 
-  [[nodiscard]] auto type() const noexcept -> const std::type_info & {
-    return info().type();
-  }
+  [[nodiscard]] auto type() const noexcept -> const std::type_info & { return info().type(); }
 
   [[nodiscard]] auto info() const noexcept -> const any_type_info & {
     if (vtable_ != nullptr) {
@@ -598,8 +640,7 @@ public:
     return const_cast<void *>(std::as_const(*this).data());
   }
 
-  [[nodiscard]] auto data(const any_type_key query) const noexcept -> const
-      void * {
+  [[nodiscard]] auto data(const any_type_key query) const noexcept -> const void * {
     return has_value(query) ? data() : nullptr;
   }
 
@@ -607,14 +648,11 @@ public:
     return has_value(query) ? data() : nullptr;
   }
 
-  [[nodiscard]] auto data(const any_type_info &query) const noexcept -> const
-      void * {
+  [[nodiscard]] auto data(const any_type_info &query) const noexcept -> const void * {
     return data(query.key);
   }
 
-  [[nodiscard]] auto data(const any_type_info &query) noexcept -> void * {
-    return data(query.key);
-  }
+  [[nodiscard]] auto data(const any_type_info &query) noexcept -> void * { return data(query.key); }
 
   template <typename value_t> [[nodiscard]] auto data() noexcept -> value_t * {
     using stored_t = std::remove_const_t<value_t>;
@@ -624,8 +662,7 @@ public:
     return model<stored_t>::mutable_ptr(*this);
   }
 
-  template <typename value_t>
-  [[nodiscard]] auto data() const noexcept -> const value_t * {
+  template <typename value_t> [[nodiscard]] auto data() const noexcept -> const value_t * {
     using stored_t = std::remove_const_t<value_t>;
     if (vtable_ != &model<stored_t>::vtable) {
       return nullptr;
@@ -633,13 +670,11 @@ public:
     return model<stored_t>::const_ptr(*this);
   }
 
-  template <typename value_t>
-  [[nodiscard]] auto get_if() noexcept -> value_t * {
+  template <typename value_t> [[nodiscard]] auto get_if() noexcept -> value_t * {
     return data<value_t>();
   }
 
-  template <typename value_t>
-  [[nodiscard]] auto get_if() const noexcept -> const value_t * {
+  template <typename value_t> [[nodiscard]] auto get_if() const noexcept -> const value_t * {
     return data<value_t>();
   }
 
@@ -653,9 +688,17 @@ public:
     return vtable_->equal != nullptr && vtable_->equal(data(), other.data());
   }
 
+  /// Materializes an owned payload without consuming the source object.
+  [[nodiscard]] auto into_owned() const & -> wh::core::result<basic_any>;
+
+  /// Consumes the current container and returns an owned payload.
+  /// On success `*this` becomes empty. On failure `*this` remains valid but its
+  /// payload state is unspecified when the underlying ownerization path
+  /// consumed subobjects.
+  [[nodiscard]] auto into_owned() && -> wh::core::result<basic_any>;
+
 private:
-  [[nodiscard]] static auto ref_from_pointer(const void *ptr,
-                                             const vtable_t *vtable) noexcept
+  [[nodiscard]] static auto ref_from_pointer(const void *ptr, const vtable_t *vtable) noexcept
       -> basic_any {
     basic_any current{};
     current.storage_.ptr = ptr;
@@ -664,8 +707,7 @@ private:
     return current;
   }
 
-  [[nodiscard]] static auto cref_from_pointer(const void *ptr,
-                                              const vtable_t *vtable) noexcept
+  [[nodiscard]] static auto cref_from_pointer(const void *ptr, const vtable_t *vtable) noexcept
       -> basic_any {
     basic_any current{};
     current.storage_.ptr = ptr;
@@ -674,8 +716,7 @@ private:
     return current;
   }
 
-  [[nodiscard]] auto compatible_assign(const basic_any &other) const noexcept
-      -> bool {
+  [[nodiscard]] auto compatible_assign(const basic_any &other) const noexcept -> bool {
     return has_value() && other.has_value() && vtable_ == other.vtable_ &&
            policy_ != any_policy::cref;
   }
@@ -690,9 +731,7 @@ private:
         .name = ::wh::internal::stable_type_name<void>(),
         .size = 0U,
         .alignment = 0U,
-        .type = []() noexcept -> const std::type_info & {
-          return typeid(void);
-        },
+        .type = []() noexcept -> const std::type_info & { return typeid(void); },
     };
     return current;
   }
@@ -735,6 +774,63 @@ private:
   const vtable_t *vtable_{nullptr};
   any_policy policy_{any_policy::empty};
 };
+
+template <std::size_t inline_size, std::size_t inline_align>
+auto basic_any<inline_size, inline_align>::into_owned() const & -> wh::core::result<basic_any> {
+  if (!has_value()) {
+    return basic_any{};
+  }
+
+  basic_any cloned{};
+  const auto status = vtable_->copy_into_owned(*this, cloned);
+  if (status.failed()) {
+    return wh::core::result<basic_any>::failure(status);
+  }
+  return cloned;
+}
+
+template <std::size_t inline_size, std::size_t inline_align>
+auto basic_any<inline_size, inline_align>::into_owned() && -> wh::core::result<basic_any> {
+  if (!has_value()) {
+    return basic_any{};
+  }
+
+  basic_any cloned{};
+  const auto status = vtable_->consume_into_owned(*this, cloned);
+  if (status.failed()) {
+    return wh::core::result<basic_any>::failure(status);
+  }
+  return cloned;
+}
+
+template <std::size_t inline_size, std::size_t inline_align>
+struct any_owned_traits<basic_any<inline_size, inline_align>> {
+  [[nodiscard]] static auto into_owned(const basic_any<inline_size, inline_align> &value)
+      -> wh::core::result<basic_any<inline_size, inline_align>> {
+    return value.into_owned();
+  }
+
+  [[nodiscard]] static auto into_owned(basic_any<inline_size, inline_align> &&value)
+      -> wh::core::result<basic_any<inline_size, inline_align>> {
+    return std::move(value).into_owned();
+  }
+};
+
+template <typename value_t>
+[[nodiscard]] inline auto into_owned(const value_t &value)
+    -> wh::core::result<std::remove_cvref_t<value_t>> {
+  using stored_t = std::remove_cvref_t<value_t>;
+  return detail::copy_into_owned_value<stored_t>(value);
+}
+
+template <typename value_t>
+  requires(!std::is_lvalue_reference_v<value_t>)
+[[nodiscard]] inline auto into_owned(value_t &&value)
+    -> wh::core::result<std::remove_cvref_t<value_t>> {
+  using stored_t = std::remove_cvref_t<value_t>;
+  auto &slot = value;
+  return detail::into_owned_value<stored_t>(slot);
+}
 
 template <std::size_t inline_size, std::size_t inline_align>
 auto swap(basic_any<inline_size, inline_align> &lhs,

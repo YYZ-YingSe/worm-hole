@@ -17,7 +17,15 @@ packages=()
 
 case "$profile" in
   build)
-    packages=(ripgrep llvm cmake ninja)
+    if ! brew list --versions llvm >/dev/null 2>&1; then
+      packages+=(llvm)
+    fi
+    if ! command -v cmake >/dev/null 2>&1; then
+      packages+=(cmake)
+    fi
+    if ! command -v ninja >/dev/null 2>&1; then
+      packages+=(ninja)
+    fi
     ;;
   *)
     echo "[install-macos-tools] FAIL unknown profile: $profile"
@@ -25,10 +33,12 @@ case "$profile" in
     ;;
 esac
 
-brew update
-brew install "${packages[@]}"
+if [[ ${#packages[@]} -gt 0 ]]; then
+  brew install "${packages[@]}"
+fi
 
 llvm_bin="$(brew --prefix llvm)/bin"
+export PATH="$llvm_bin:$PATH"
 if [[ -n "${GITHUB_PATH:-}" ]]; then
   printf '%s\n' "$llvm_bin" >> "$GITHUB_PATH"
 fi

@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <exec/any_sender_of.hpp>
@@ -32,10 +33,8 @@ using graph_stream_reader = wh::schema::stream::any_stream_reader<graph_value>;
 /// Type-erased graph stream writer used across compose graph boundaries.
 using graph_stream_writer = wh::schema::stream::any_stream_writer<graph_value>;
 /// Type-erased async result boundary carrying one graph value.
-using graph_value_sender =
-    exec::any_receiver_ref<stdexec::completion_signatures<
-        stdexec::set_value_t(wh::core::result<graph_value>),
-        stdexec::set_stopped_t()>>::any_sender<>;
+using graph_value_sender = exec::any_receiver_ref<stdexec::completion_signatures<
+    stdexec::set_value_t(wh::core::result<graph_value>), stdexec::set_stopped_t()>>::any_sender<>;
 /// Logical contract for node input/output boundaries.
 enum class node_contract : std::uint8_t {
   /// One scalar/object payload.
@@ -60,8 +59,7 @@ enum class node_exec_origin : std::uint8_t {
 };
 
 /// Returns a stable string label for one node contract.
-[[nodiscard]] constexpr auto to_string(const node_contract contract) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto to_string(const node_contract contract) noexcept -> std::string_view {
   switch (contract) {
   case node_contract::value:
     return "value";
@@ -112,9 +110,9 @@ enum class node_kind : std::uint8_t {
 using component_kind = wh::core::component_kind;
 
 /// Named key/value map used by workflow field mapping and keyed payload IO.
-using graph_value_map = std::unordered_map<std::string, graph_value,
-                                           wh::core::transparent_string_hash,
-                                           wh::core::transparent_string_equal>;
+using graph_value_map =
+    std::unordered_map<std::string, graph_value, wh::core::transparent_string_hash,
+                       wh::core::transparent_string_equal>;
 
 /// Authored edge-adapter families accepted by the public graph authoring API.
 enum class edge_adapter_kind : std::uint8_t {
@@ -131,9 +129,8 @@ struct edge_limits {
 };
 
 /// Custom edge adapter contract that produces one stream payload.
-using edge_to_stream_adapter =
-    wh::core::callback_function<wh::core::result<graph_stream_reader>(
-        graph_value &&, const edge_limits &, wh::core::run_context &) const>;
+using edge_to_stream_adapter = wh::core::callback_function<wh::core::result<graph_stream_reader>(
+    graph_value &&, const edge_limits &, wh::core::run_context &) const>;
 /// Custom edge adapter contract that produces one value payload.
 using edge_to_value_adapter = wh::core::callback_function<graph_value_sender(
     graph_stream_reader, const edge_limits &, wh::core::run_context &) const>;
@@ -178,14 +175,12 @@ struct graph_edge {
 /// Value-branch selector callback that returns destination node ids directly.
 using graph_value_branch_selector_ids =
     wh::core::callback_function<wh::core::result<std::vector<std::uint32_t>>(
-        const graph_value &, wh::core::run_context &, const graph_call_scope &)
-                                    const>;
+        const graph_value &, wh::core::run_context &, const graph_call_scope &) const>;
 
 /// Stream-branch selector callback that returns destination node ids directly.
 using graph_stream_branch_selector_ids =
     wh::core::callback_function<wh::core::result<std::vector<std::uint32_t>>(
-        graph_stream_reader, wh::core::run_context &, const graph_call_scope &)
-                                    const>;
+        graph_stream_reader, wh::core::run_context &, const graph_call_scope &) const>;
 
 /// Value-branch declaration from one source node to candidate end-nodes.
 struct graph_value_branch {
@@ -216,3 +211,93 @@ struct graph_diagnostic {
 };
 
 } // namespace wh::compose
+
+namespace wh::compose::detail {
+
+[[nodiscard]] inline auto into_owned_graph_values(const std::vector<graph_value> &values)
+    -> wh::core::result<std::vector<graph_value>> {
+  std::vector<graph_value> owned_values{};
+  owned_values.reserve(values.size());
+  for (const auto &value : values) {
+    auto owned = wh::core::into_owned(value);
+    if (owned.has_error()) {
+      return wh::core::result<std::vector<graph_value>>::failure(owned.error());
+    }
+    owned_values.push_back(std::move(owned).value());
+  }
+  return owned_values;
+}
+
+[[nodiscard]] inline auto into_owned_graph_values(std::vector<graph_value> &&values)
+    -> wh::core::result<std::vector<graph_value>> {
+  std::vector<graph_value> owned_values{};
+  owned_values.reserve(values.size());
+  for (auto &value : values) {
+    auto owned = wh::core::into_owned(std::move(value));
+    if (owned.has_error()) {
+      return wh::core::result<std::vector<graph_value>>::failure(owned.error());
+    }
+    owned_values.push_back(std::move(owned).value());
+  }
+  return owned_values;
+}
+
+[[nodiscard]] inline auto into_owned_graph_value_map(const graph_value_map &values)
+    -> wh::core::result<graph_value_map> {
+  graph_value_map owned_values{};
+  owned_values.reserve(values.size());
+  for (const auto &[key, value] : values) {
+    auto owned = wh::core::into_owned(value);
+    if (owned.has_error()) {
+      return wh::core::result<graph_value_map>::failure(owned.error());
+    }
+    owned_values.insert_or_assign(key, std::move(owned).value());
+  }
+  return owned_values;
+}
+
+[[nodiscard]] inline auto into_owned_graph_value_map(graph_value_map &&values)
+    -> wh::core::result<graph_value_map> {
+  graph_value_map owned_values{};
+  owned_values.reserve(values.size());
+  for (auto iter = values.begin(); iter != values.end();) {
+    auto node = values.extract(iter++);
+    auto owned = wh::core::into_owned(std::move(node.mapped()));
+    if (owned.has_error()) {
+      return wh::core::result<graph_value_map>::failure(owned.error());
+    }
+    node.mapped() = std::move(owned).value();
+    owned_values.insert(std::move(node));
+  }
+  return owned_values;
+}
+
+} // namespace wh::compose::detail
+
+namespace wh::core {
+
+template <> struct any_owned_traits<std::vector<wh::compose::graph_value>> {
+  [[nodiscard]] static auto into_owned(const std::vector<wh::compose::graph_value> &value)
+      -> wh::core::result<std::vector<wh::compose::graph_value>> {
+    return wh::compose::detail::into_owned_graph_values(value);
+  }
+
+  [[nodiscard]] static auto into_owned(std::vector<wh::compose::graph_value> &&value)
+      -> wh::core::result<std::vector<wh::compose::graph_value>> {
+    return wh::compose::detail::into_owned_graph_values(std::move(value));
+  }
+};
+
+template <> struct any_owned_traits<wh::compose::graph_value_map> {
+  [[nodiscard]] static auto into_owned(const wh::compose::graph_value_map &value)
+      -> wh::core::result<wh::compose::graph_value_map> {
+    return wh::compose::detail::into_owned_graph_value_map(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::compose::graph_value_map &&value)
+      -> wh::core::result<wh::compose::graph_value_map> {
+    return wh::compose::detail::into_owned_graph_value_map(std::move(value));
+  }
+};
+
+} // namespace wh::core

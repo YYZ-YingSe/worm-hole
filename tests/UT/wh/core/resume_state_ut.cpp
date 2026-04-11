@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <span>
 #include <string>
@@ -7,18 +5,20 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/core/resume_state.hpp"
 
 namespace {
 
-[[nodiscard]] auto make_address(
-    std::initializer_list<std::string_view> segments) -> wh::core::address {
+[[nodiscard]] auto make_address(std::initializer_list<std::string_view> segments)
+    -> wh::core::address {
   return wh::core::make_address(segments);
 }
 
 [[nodiscard]] auto make_signal(std::string id, wh::core::address location, int value,
-                               std::string layer_payload = {},
-                               bool used = false) -> wh::core::interrupt_signal {
+                               std::string layer_payload = {}, bool used = false)
+    -> wh::core::interrupt_signal {
   return wh::core::interrupt_signal{
       .interrupt_id = std::move(id),
       .location = std::move(location),
@@ -34,21 +34,20 @@ namespace {
 
 TEST_CASE("resume state payload conversion and projection preserve data",
           "[UT][wh/core/resume_state.hpp][to_interrupt_context][branch][boundary]") {
-  const wh::core::interrupt_signal signal = make_signal(
-      "sig-1", make_address({"root", "branch", "leaf"}), 7, "layer", true);
+  const wh::core::interrupt_signal signal =
+      make_signal("sig-1", make_address({"root", "branch", "leaf"}), 7, "layer", true);
 
   auto copied_context = wh::core::to_interrupt_context(signal);
   REQUIRE(copied_context.interrupt_id == "sig-1");
   REQUIRE(copied_context.location == signal.location);
   REQUIRE(*wh::core::any_cast<int>(&copied_context.state) == 7);
-  REQUIRE(*wh::core::any_cast<std::string>(&copied_context.layer_payload) ==
-          "layer");
+  REQUIRE(*wh::core::any_cast<std::string>(&copied_context.layer_payload) == "layer");
   REQUIRE(copied_context.used);
   REQUIRE(copied_context.parent_locations == signal.parent_locations);
   REQUIRE(copied_context.trigger_reason == "manual");
 
-  auto moved_context = wh::core::to_interrupt_context(make_signal(
-      "sig-2", make_address({"root", "other"}), 9, "payload", false));
+  auto moved_context = wh::core::to_interrupt_context(
+      make_signal("sig-2", make_address({"root", "other"}), 9, "payload", false));
   REQUIRE(moved_context.interrupt_id == "sig-2");
   REQUIRE(*wh::core::any_cast<int>(&moved_context.state) == 9);
 
@@ -91,15 +90,13 @@ TEST_CASE("resume state tree rebuild conversion and flatten keep hierarchy",
       make_signal("child-b", make_address({"root", "b"}), 3),
   };
 
-  const auto signal_tree =
-      wh::core::rebuild_interrupt_signal_tree(std::span{signals});
+  const auto signal_tree = wh::core::rebuild_interrupt_signal_tree(std::span{signals});
   REQUIRE(signal_tree.size() == 1U);
   REQUIRE(signal_tree.front().location == make_address({"root"}));
   REQUIRE(signal_tree.front().signals.size() == 1U);
   REQUIRE(signal_tree.front().children.size() == 2U);
 
-  const auto flattened_signals =
-      wh::core::flatten_interrupt_signal_tree(std::span{signal_tree});
+  const auto flattened_signals = wh::core::flatten_interrupt_signal_tree(std::span{signal_tree});
   REQUIRE(flattened_signals.size() == 3U);
 
   const auto context_tree = wh::core::to_interrupt_context_tree(std::span{signal_tree});
@@ -107,8 +104,7 @@ TEST_CASE("resume state tree rebuild conversion and flatten keep hierarchy",
   REQUIRE(context_tree.front().contexts.size() == 1U);
   REQUIRE(context_tree.front().children.size() == 2U);
 
-  const auto flattened_contexts =
-      wh::core::flatten_interrupt_context_tree(std::span{context_tree});
+  const auto flattened_contexts = wh::core::flatten_interrupt_context_tree(std::span{context_tree});
   REQUIRE(flattened_contexts.size() == 3U);
 
   const auto rebuilt_context_tree =
@@ -129,28 +125,24 @@ TEST_CASE("resume state flatten interrupt signals supports copy and move snapsho
       make_signal("b", make_address({"root", "b"}), 22),
   };
 
-  const auto copied_snapshot =
-      wh::core::flatten_interrupt_signals(std::span{copy_source});
-  REQUIRE(copied_snapshot.interrupt_id_to_address.size() == 2U);
-  REQUIRE(copied_snapshot.interrupt_id_to_address.at("a") ==
-          make_address({"root", "a"}));
-  REQUIRE(*wh::core::any_cast<int>(
-              &copied_snapshot.interrupt_id_to_state.at("b")) == 22);
+  const auto copied_snapshot = wh::core::flatten_interrupt_signals(std::span{copy_source});
+  REQUIRE(copied_snapshot.has_value());
+  REQUIRE(copied_snapshot->interrupt_id_to_address.size() == 2U);
+  REQUIRE(copied_snapshot->interrupt_id_to_address.at("a") == make_address({"root", "a"}));
+  REQUIRE(*wh::core::any_cast<int>(&copied_snapshot->interrupt_id_to_state.at("b")) == 22);
 
   auto move_source = copy_source;
-  const auto moved_snapshot =
-      wh::core::flatten_interrupt_signals(std::move(move_source));
-  REQUIRE(moved_snapshot.interrupt_id_to_state.size() == 2U);
-  REQUIRE(*wh::core::any_cast<int>(
-              &moved_snapshot.interrupt_id_to_state.at("a")) == 11);
+  const auto moved_snapshot = wh::core::flatten_interrupt_signals(std::move(move_source));
+  REQUIRE(moved_snapshot.has_value());
+  REQUIRE(moved_snapshot->interrupt_id_to_state.size() == 2U);
+  REQUIRE(*wh::core::any_cast<int>(&moved_snapshot->interrupt_id_to_state.at("a")) == 11);
 }
 
 TEST_CASE("resume state upsert merge and lookup cover replace and self-merge branches",
           "[UT][wh/core/resume_state.hpp][resume_state::upsert][condition][branch][boundary]") {
   wh::core::resume_state state{};
 
-  auto invalid =
-      state.upsert("", make_address({"root", "a"}), wh::core::any{1});
+  auto invalid = state.upsert("", make_address({"root", "a"}), wh::core::any{1});
   REQUIRE(invalid.has_error());
   REQUIRE(invalid.error() == wh::core::errc::invalid_argument);
 
@@ -198,15 +190,16 @@ TEST_CASE("resume state upsert merge and lookup cover replace and self-merge bra
   REQUIRE(moved_delta.empty());
 }
 
-TEST_CASE("resume state subtree queries used flags and erase options cover active bookkeeping",
-          "[UT][wh/core/resume_state.hpp][resume_state::collect_subtree_interrupt_ids][condition][branch][boundary]") {
+TEST_CASE(
+    "resume state subtree queries used flags and erase options cover active bookkeeping",
+    "[UT][wh/core/"
+    "resume_state.hpp][resume_state::collect_subtree_interrupt_ids][condition][branch][boundary]") {
   wh::core::resume_state state{};
   REQUIRE(state.upsert("id-a", make_address({"root", "a"}), 1).has_value());
   REQUIRE(state.upsert("id-b", make_address({"root", "a", "leaf"}), 2).has_value());
   REQUIRE(state.upsert("id-c", make_address({"root", "b"}), 3).has_value());
 
-  const auto collected_before =
-      state.collect_subtree_interrupt_ids(make_address({"root", "a"}));
+  const auto collected_before = state.collect_subtree_interrupt_ids(make_address({"root", "a"}));
   REQUIRE(collected_before == std::vector<std::string>{"id-a", "id-b"});
 
   REQUIRE(state.mark_subtree_used(make_address({"root", "a"})) == 2U);
@@ -216,23 +209,19 @@ TEST_CASE("resume state subtree queries used flags and erase options cover activ
   REQUIRE_FALSE(state.is_resume_target(make_address({"root", "a"})));
   REQUIRE(state.is_resume_target(make_address({"root"})));
 
-  const auto active_only =
-      state.collect_subtree_interrupt_ids(make_address({"root", "a"}));
+  const auto active_only = state.collect_subtree_interrupt_ids(make_address({"root", "a"}));
   REQUIRE(active_only.empty());
 
   const auto include_used = state.collect_subtree_interrupt_ids(
-      make_address({"root", "a"}),
-      wh::core::resume_subtree_query_options{.include_used = true});
+      make_address({"root", "a"}), wh::core::resume_subtree_query_options{.include_used = true});
   REQUIRE(include_used == std::vector<std::string>{"id-a", "id-b"});
 
-  REQUIRE(state.erase_subtree(
-              make_address({"root", "a"}),
-              wh::core::resume_subtree_erase_options{.include_used = false}) == 0U);
+  REQUIRE(state.erase_subtree(make_address({"root", "a"}),
+                              wh::core::resume_subtree_erase_options{.include_used = false}) == 0U);
   REQUIRE(state.contains_interrupt_id("id-a"));
 
-  REQUIRE(state.erase_subtree(
-              make_address({"root", "a"}),
-              wh::core::resume_subtree_erase_options{.include_used = true}) == 2U);
+  REQUIRE(state.erase_subtree(make_address({"root", "a"}),
+                              wh::core::resume_subtree_erase_options{.include_used = true}) == 2U);
   REQUIRE_FALSE(state.contains_interrupt_id("id-a"));
   REQUIRE_FALSE(state.contains_interrupt_id("id-b"));
   REQUIRE(state.contains_interrupt_id("id-c"));
@@ -242,8 +231,7 @@ TEST_CASE("resume state consume peek and mark_used surface error branches",
           "[UT][wh/core/resume_state.hpp][resume_state::consume][condition][branch][boundary]") {
   wh::core::resume_state state{};
   REQUIRE(state.upsert("value", make_address({"root", "value"}), 7).has_value());
-  REQUIRE(state.upsert("text", make_address({"root", "text"}), std::string{"abc"})
-              .has_value());
+  REQUIRE(state.upsert("text", make_address({"root", "text"}), std::string{"abc"}).has_value());
 
   const auto peek_text = state.peek<std::string>("text");
   REQUIRE(peek_text.has_value());

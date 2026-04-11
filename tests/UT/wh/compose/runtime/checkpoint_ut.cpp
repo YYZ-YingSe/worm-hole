@@ -1,10 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <chrono>
 #include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/runtime/checkpoint.hpp"
 
@@ -22,7 +22,8 @@ namespace {
 } // namespace
 
 TEST_CASE("checkpoint reports codecs and store lifecycle cover staged committed and restore paths",
-          "[UT][wh/compose/runtime/checkpoint.hpp][checkpoint_store::save][condition][branch][boundary]") {
+          "[UT][wh/compose/runtime/"
+          "checkpoint.hpp][checkpoint_store::save][condition][branch][boundary]") {
   wh::compose::checkpoint_prune_report empty_report{};
   REQUIRE(empty_report.removed_total() == 0U);
   empty_report.removed_committed_record_ids.push_back(1U);
@@ -35,51 +36,43 @@ TEST_CASE("checkpoint reports codecs and store lifecycle cover staged committed 
   wh::core::run_context context{};
 
   auto to_value = codec.to_value(
-      wh::compose::make_single_value_stream_reader(std::string{"chunk"}).value(),
-      context);
+      wh::compose::make_single_value_stream_reader(std::string{"chunk"}).value(), context);
   REQUIRE(to_value.has_value());
-  auto *chunks =
-      wh::core::any_cast<std::vector<wh::compose::graph_value>>(&to_value.value());
+  auto *chunks = wh::core::any_cast<std::vector<wh::compose::graph_value>>(&to_value.value());
   REQUIRE(chunks != nullptr);
   REQUIRE(chunks->size() == 1U);
   REQUIRE(*wh::core::any_cast<std::string>(&chunks->front()) == "chunk");
 
-  auto existing_reader =
-      wh::compose::make_single_value_stream_reader(std::string{"ready"});
+  auto existing_reader = wh::compose::make_single_value_stream_reader(std::string{"ready"});
   REQUIRE(existing_reader.has_value());
-  auto restored_reader = codec.to_stream(
-      wh::compose::graph_value{std::move(existing_reader).value()}, context);
+  auto restored_reader =
+      codec.to_stream(wh::compose::graph_value{std::move(existing_reader).value()}, context);
   REQUIRE(restored_reader.has_value());
   auto restored_chunks =
       wh::compose::collect_graph_stream_reader(std::move(restored_reader).value());
   REQUIRE(restored_chunks.has_value());
-  REQUIRE(*wh::core::any_cast<std::string>(&restored_chunks.value().front()) ==
-          "ready");
+  REQUIRE(*wh::core::any_cast<std::string>(&restored_chunks.value().front()) == "ready");
 
-  auto from_vector = codec.to_stream(
-      wh::compose::graph_value{std::vector<wh::compose::graph_value>{
-          wh::compose::graph_value{1}, wh::compose::graph_value{2}}},
-      context);
+  auto from_vector = codec.to_stream(wh::compose::graph_value{std::vector<wh::compose::graph_value>{
+                                         wh::compose::graph_value{1}, wh::compose::graph_value{2}}},
+                                     context);
   REQUIRE(from_vector.has_value());
-  auto vector_chunks =
-      wh::compose::collect_graph_stream_reader(std::move(from_vector).value());
+  auto vector_chunks = wh::compose::collect_graph_stream_reader(std::move(from_vector).value());
   REQUIRE(vector_chunks.has_value());
   REQUIRE(vector_chunks.value().size() == 2U);
 
-  auto from_single =
-      codec.to_stream(wh::compose::graph_value{9}, context);
+  auto from_single = codec.to_stream(wh::compose::graph_value{9}, context);
   REQUIRE(from_single.has_value());
-  auto single_chunks =
-      wh::compose::collect_graph_stream_reader(std::move(from_single).value());
+  auto single_chunks = wh::compose::collect_graph_stream_reader(std::move(from_single).value());
   REQUIRE(single_chunks.has_value());
   REQUIRE(*wh::core::any_cast<int>(&single_chunks.value().front()) == 9);
 
   wh::compose::checkpoint_store store{};
   auto committed = store.save(make_checkpoint_state("cp-1"), {
-                                  .checkpoint_id = "cp-1",
-                                  .thread_key = "thread-a",
-                                  .namespace_key = "ns-a",
-                              });
+                                                                 .checkpoint_id = "cp-1",
+                                                                 .thread_key = "thread-a",
+                                                                 .namespace_key = "ns-a",
+                                                             });
   REQUIRE(committed.has_value());
   REQUIRE(committed.value().checkpoint_id == "cp-1");
   REQUIRE(committed.value().record_id == 1U);
@@ -99,10 +92,11 @@ TEST_CASE("checkpoint reports codecs and store lifecycle cover staged committed 
   REQUIRE(history.has_value());
   REQUIRE(history.value().get().size() == 1U);
 
-  auto staged = store.stage_write(make_checkpoint_state("cp-pending"), {
-                                      .checkpoint_id = "cp-pending",
-                                      .branch = "feature",
-                                  });
+  auto staged =
+      store.stage_write(make_checkpoint_state("cp-pending"), {
+                                                                 .checkpoint_id = "cp-pending",
+                                                                 .branch = "feature",
+                                                             });
   REQUIRE(staged.has_value());
   REQUIRE(staged.value().checkpoint_id == "cp-pending");
   auto restore_pending = store.prepare_restore({
@@ -122,9 +116,10 @@ TEST_CASE("checkpoint reports codecs and store lifecycle cover staged committed 
   REQUIRE(branch_loaded.has_value());
   REQUIRE(branch_loaded.value().checkpoint_id == "cp-pending");
 
-  auto aborted = store.stage_write(make_checkpoint_state("cp-abort"), {
-                                       .checkpoint_id = "cp-abort",
-                                   });
+  auto aborted =
+      store.stage_write(make_checkpoint_state("cp-abort"), {
+                                                               .checkpoint_id = "cp-abort",
+                                                           });
   REQUIRE(aborted.has_value());
   auto abort_report = store.abort_staged("cp-abort");
   REQUIRE(abort_report.has_value());
@@ -140,38 +135,49 @@ TEST_CASE("checkpoint reports codecs and store lifecycle cover staged committed 
 }
 
 TEST_CASE("checkpoint store prune enforces ttl record pending and index limits",
-          "[UT][wh/compose/runtime/checkpoint.hpp][checkpoint_store::prune][condition][branch][boundary]") {
+          "[UT][wh/compose/runtime/"
+          "checkpoint.hpp][checkpoint_store::prune][condition][branch][boundary]") {
   wh::compose::checkpoint_store store{};
-  REQUIRE(store.save(make_checkpoint_state("cp-a"), {
-                         .checkpoint_id = "cp-a",
-                         .thread_key = "thread-a",
-                         .namespace_key = "ns-a",
-                     })
+  REQUIRE(store
+              .save(make_checkpoint_state("cp-a"),
+                    {
+                        .checkpoint_id = "cp-a",
+                        .thread_key = "thread-a",
+                        .namespace_key = "ns-a",
+                    })
               .has_value());
-  REQUIRE(store.save(make_checkpoint_state("cp-a"), {
-                         .checkpoint_id = "cp-a",
-                         .thread_key = "thread-a",
-                         .namespace_key = "ns-a",
-                     })
+  REQUIRE(store
+              .save(make_checkpoint_state("cp-a"),
+                    {
+                        .checkpoint_id = "cp-a",
+                        .thread_key = "thread-a",
+                        .namespace_key = "ns-a",
+                    })
               .has_value());
-  REQUIRE(store.save(make_checkpoint_state("cp-b"), {
-                         .checkpoint_id = "cp-b",
-                         .thread_key = "thread-b",
-                         .namespace_key = "ns-b",
-                     })
+  REQUIRE(store
+              .save(make_checkpoint_state("cp-b"),
+                    {
+                        .checkpoint_id = "cp-b",
+                        .thread_key = "thread-b",
+                        .namespace_key = "ns-b",
+                    })
               .has_value());
-  REQUIRE(store.stage_write(make_checkpoint_state("pending-1"), {
-                                .checkpoint_id = "pending-1",
-                                .staged_at = std::chrono::system_clock::now() -
-                                             std::chrono::hours(3),
-                            })
-              .has_value());
-  REQUIRE(store.stage_write(make_checkpoint_state("pending-2"), {
-                                .checkpoint_id = "pending-2",
-                                .staged_at = std::chrono::system_clock::now() -
-                                             std::chrono::hours(2),
-                            })
-              .has_value());
+  REQUIRE(
+      store
+          .stage_write(make_checkpoint_state("pending-1"),
+                       {
+                           .checkpoint_id = "pending-1",
+                           .staged_at = std::chrono::system_clock::now() - std::chrono::hours(3),
+                       })
+          .has_value());
+  REQUIRE(
+      store
+          .stage_write(make_checkpoint_state("pending-2"),
+                       {
+                           .checkpoint_id = "pending-2",
+                           .staged_at = std::chrono::system_clock::now() - std::chrono::hours(2),
+                       })
+          .has_value());
 
   auto report = store.prune(
       wh::compose::checkpoint_retention_policy{
@@ -194,21 +200,20 @@ TEST_CASE("checkpoint store prune enforces ttl record pending and index limits",
       std::chrono::system_clock::now() + std::chrono::hours(4));
   REQUIRE(expired.removed_committed_record_ids.size() >= 2U);
 
-  auto clear_pending = store.prune(
-      wh::compose::checkpoint_retention_policy{
-          .drop_pending_writes = true,
-      });
+  auto clear_pending = store.prune(wh::compose::checkpoint_retention_policy{
+      .drop_pending_writes = true,
+  });
   REQUIRE(clear_pending.removed_pending_record_ids.size() <= 1U);
 }
 
 TEST_CASE("checkpoint store surfaces not-found and replacement branches for direct public apis",
-          "[UT][wh/compose/runtime/checkpoint.hpp][checkpoint_store::load][condition][branch][boundary]") {
+          "[UT][wh/compose/runtime/"
+          "checkpoint.hpp][checkpoint_store::load][condition][branch][boundary]") {
   wh::compose::checkpoint_store empty{};
   REQUIRE(empty.load().has_error());
   REQUIRE(empty.load().error() == wh::core::errc::not_found);
   REQUIRE(empty.load({.force_new_run = true}).has_error());
-  REQUIRE(empty.load({.force_new_run = true}).error() ==
-          wh::core::errc::not_found);
+  REQUIRE(empty.load({.force_new_run = true}).error() == wh::core::errc::not_found);
   REQUIRE(empty.prepare_restore().has_error());
   REQUIRE(empty.history("missing").has_error());
   REQUIRE(empty.latest_thread_checkpoint_id("missing").has_error());
@@ -221,15 +226,17 @@ TEST_CASE("checkpoint store surfaces not-found and replacement branches for dire
   REQUIRE(default_saved.has_value());
   REQUIRE(default_saved->checkpoint_id == "default");
 
-  auto first_pending = store.stage_write(make_checkpoint_state("state-1"), {
-                                             .checkpoint_id = "pending",
-                                             .branch = "main",
-                                         });
+  auto first_pending =
+      store.stage_write(make_checkpoint_state("state-1"), {
+                                                              .checkpoint_id = "pending",
+                                                              .branch = "main",
+                                                          });
   REQUIRE(first_pending.has_value());
-  auto replaced_pending = store.stage_write(make_checkpoint_state("state-2"), {
-                                                .checkpoint_id = "pending",
-                                                .branch = "main",
-                                            });
+  auto replaced_pending =
+      store.stage_write(make_checkpoint_state("state-2"), {
+                                                              .checkpoint_id = "pending",
+                                                              .branch = "main",
+                                                          });
   REQUIRE(replaced_pending.has_value());
   REQUIRE(replaced_pending->replaced_pending_record_id ==
           std::optional<std::uint64_t>{first_pending->record_id});
@@ -245,4 +252,37 @@ TEST_CASE("checkpoint store surfaces not-found and replacement branches for dire
   REQUIRE(no_pending_restore.has_value());
   REQUIRE(no_pending_restore->restore_from_checkpoint);
   REQUIRE(no_pending_restore->checkpoint->checkpoint_id == "state-2");
+}
+
+TEST_CASE("checkpoint store ownerizes borrowed rerun payloads before persistence",
+          "[UT][wh/compose/runtime/checkpoint.hpp][checkpoint_store][ownership][boundary]") {
+  std::string request_text = "original-request";
+
+  wh::compose::checkpoint_state state{};
+  state.checkpoint_id = "cp-owned";
+  state.rerun_inputs.emplace(
+      "tool-node", wh::compose::graph_value{wh::compose::tool_batch{
+                       .calls = std::vector<wh::compose::tool_call>{wh::compose::tool_call{
+                           .call_id = "call-1",
+                           .tool_name = "delegate",
+                           .payload = wh::core::any::ref(request_text),
+                       }}}});
+
+  wh::compose::checkpoint_store store{};
+  REQUIRE(store.save(std::move(state), {.checkpoint_id = "cp-owned"}).has_value());
+
+  request_text = "mutated-after-save";
+
+  auto loaded = store.load({.checkpoint_id = "cp-owned"});
+  REQUIRE(loaded.has_value());
+  auto tool_iter = loaded->rerun_inputs.find("tool-node");
+  REQUIRE(tool_iter != loaded->rerun_inputs.end());
+
+  const auto *batch = wh::core::any_cast<wh::compose::tool_batch>(&tool_iter->second);
+  REQUIRE(batch != nullptr);
+  REQUIRE(batch->calls.size() == 1U);
+
+  const auto *payload = wh::core::any_cast<std::string>(&batch->calls.front().payload);
+  REQUIRE(payload != nullptr);
+  REQUIRE(*payload == "original-request");
 }

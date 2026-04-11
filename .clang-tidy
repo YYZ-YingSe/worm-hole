@@ -5,7 +5,7 @@ Checks: >-
   performance-*,
   portability-*
 WarningsAsErrors: ""
-HeaderFilterRegex: '^(include/wh|tests/UT|tests/helper)/'
+HeaderFilterRegex: '^(.*[/\\])?(include/wh|src)([/\\]|$)'
 FormatStyle: file
 CheckOptions:
   - key: bugprone-easily-swappable-parameters.MinimumLength

@@ -40,8 +40,7 @@ public:
 
   /// Adds one `(path, interrupt_id)` mapping.
   /// If the interrupt id already exists, the old path mapping is replaced.
-  auto insert(const std::string_view key, const std::string_view interrupt_id)
-      -> void {
+  auto insert(const std::string_view key, const std::string_view interrupt_id) -> void {
     const auto existing = index_by_id_.find(interrupt_id);
     if (existing != index_by_id_.end()) {
       index_.erase(existing->second);
@@ -65,16 +64,14 @@ public:
 
   /// Iterates all interrupt ids under a path prefix.
   template <typename callback_t>
-  auto for_each_prefix(const std::string_view prefix,
-                       callback_t &&callback) const -> void {
+  auto for_each_prefix(const std::string_view prefix, callback_t &&callback) const -> void {
     const auto begin = index_.lower_bound(prefix);
     if (begin == index_.end()) {
       return;
     }
 
     const auto upper_key = next_lexicographic_key(prefix);
-    const auto end =
-        upper_key.has_value() ? index_.lower_bound(*upper_key) : index_.end();
+    const auto end = upper_key.has_value() ? index_.lower_bound(*upper_key) : index_.end();
     for (auto iter = begin; iter != end; ++iter) {
       callback(std::string_view{iter->second});
     }
@@ -107,8 +104,7 @@ private:
   using index_iterator = index_map::iterator;
 
   index_map index_{};
-  std::unordered_map<std::string, index_iterator, transparent_string_hash,
-                     transparent_string_equal>
+  std::unordered_map<std::string, index_iterator, transparent_string_hash, transparent_string_equal>
       index_by_id_{};
 };
 
@@ -175,9 +171,13 @@ struct interrupt_context_tree_node {
 };
 
 /// Deep-copies one interrupt payload object for external/exported snapshots.
-[[nodiscard]] inline auto
-clone_interrupt_payload_any(const wh::core::any &payload) -> wh::core::any {
-  return payload;
+[[nodiscard]] inline auto clone_interrupt_payload_any(const wh::core::any &payload)
+    -> wh::core::any {
+  auto owned = wh::core::into_owned(payload);
+  if (owned.has_error()) {
+    return {};
+  }
+  return std::move(owned).value();
 }
 
 /// Converts signal view to context view (copy).
@@ -193,8 +193,7 @@ clone_interrupt_payload_any(const wh::core::any &payload) -> wh::core::any {
 }
 
 /// Converts signal view to context view (move).
-[[nodiscard]] inline auto to_interrupt_context(interrupt_signal &&signal)
-    -> interrupt_context {
+[[nodiscard]] inline auto to_interrupt_context(interrupt_signal &&signal) -> interrupt_context {
   return interrupt_context{std::move(signal.interrupt_id),
                            std::move(signal.location),
                            std::move(signal.state),
@@ -217,8 +216,7 @@ clone_interrupt_payload_any(const wh::core::any &payload) -> wh::core::any {
 }
 
 /// Converts context view to signal view (move).
-[[nodiscard]] inline auto to_interrupt_signal(interrupt_context &&context)
-    -> interrupt_signal {
+[[nodiscard]] inline auto to_interrupt_signal(interrupt_context &&context) -> interrupt_signal {
   return interrupt_signal{std::move(context.interrupt_id),
                           std::move(context.location),
                           std::move(context.state),
@@ -232,12 +230,9 @@ namespace detail {
 
 /// Finds child node by exact address location.
 template <typename node_t>
-auto find_child_by_location(std::vector<node_t> &children,
-                            const address &location) -> node_t * {
-  const auto iter =
-      std::ranges::find_if(children, [&](const node_t &node) -> bool {
-        return node.location == location;
-      });
+auto find_child_by_location(std::vector<node_t> &children, const address &location) -> node_t * {
+  const auto iter = std::ranges::find_if(
+      children, [&](const node_t &node) -> bool { return node.location == location; });
   if (iter == children.end()) {
     return nullptr;
   }
@@ -246,8 +241,7 @@ auto find_child_by_location(std::vector<node_t> &children,
 
 /// Ensures all address segments exist in tree and returns leaf.
 template <typename node_t>
-auto ensure_tree_path(std::vector<node_t> &roots, const address &location)
-    -> node_t * {
+auto ensure_tree_path(std::vector<node_t> &roots, const address &location) -> node_t * {
   auto *level = &roots;
   node_t *current_node = nullptr;
   address current_location{};
@@ -274,9 +268,9 @@ auto ensure_tree_path(std::vector<node_t> &roots, const address &location)
 }
 
 /// Appends segment to target only when allowed by filter.
-inline auto append_filtered_segment(
-    address &target, const std::string_view segment,
-    const std::span<const std::string_view> allowed_segments) -> void {
+inline auto append_filtered_segment(address &target, const std::string_view segment,
+                                    const std::span<const std::string_view> allowed_segments)
+    -> void {
   if (allowed_segments.empty()) {
     target = target.append(segment);
     return;
@@ -290,9 +284,8 @@ inline auto append_filtered_segment(
 } // namespace detail
 
 /// Projects address by keeping only allowed segments.
-[[nodiscard]] inline auto
-project_address(const address &source,
-                const std::span<const std::string_view> allowed_segments)
+[[nodiscard]] inline auto project_address(const address &source,
+                                          const std::span<const std::string_view> allowed_segments)
     -> address {
   if (allowed_segments.empty()) {
     return source;
@@ -306,9 +299,9 @@ project_address(const address &source,
 }
 
 /// Projects interrupt context location by segment filter (copy overload).
-[[nodiscard]] inline auto project_interrupt_context(
-    const interrupt_context &context,
-    const std::span<const std::string_view> allowed_segments)
+[[nodiscard]] inline auto
+project_interrupt_context(const interrupt_context &context,
+                          const std::span<const std::string_view> allowed_segments)
     -> interrupt_context {
   if (allowed_segments.empty()) {
     return context;
@@ -319,9 +312,9 @@ project_address(const address &source,
 }
 
 /// Projects interrupt context location by segment filter (move overload).
-[[nodiscard]] inline auto project_interrupt_context(
-    interrupt_context &&context,
-    const std::span<const std::string_view> allowed_segments)
+[[nodiscard]] inline auto
+project_interrupt_context(interrupt_context &&context,
+                          const std::span<const std::string_view> allowed_segments)
     -> interrupt_context {
   if (allowed_segments.empty()) {
     return context;
@@ -344,8 +337,8 @@ rebuild_interrupt_signal_tree(const std::span<const interrupt_signal> signals)
 }
 
 /// Rebuilds context tree view from flat context list.
-[[nodiscard]] inline auto rebuild_interrupt_context_tree(
-    const std::span<const interrupt_context> contexts)
+[[nodiscard]] inline auto
+rebuild_interrupt_context_tree(const std::span<const interrupt_context> contexts)
     -> std::vector<interrupt_context_tree_node> {
   std::vector<interrupt_context_tree_node> roots{};
   roots.reserve(contexts.size());
@@ -392,8 +385,7 @@ inline auto to_signal_tree_node(const interrupt_context_tree_node &source)
 
 /// Flattens one signal-tree node recursively into output vector.
 inline auto flatten_signal_tree_node(const interrupt_signal_tree_node &node,
-                                     std::vector<interrupt_signal> &output)
-    -> void {
+                                     std::vector<interrupt_signal> &output) -> void {
   output.insert(output.end(), node.signals.begin(), node.signals.end());
   for (const auto &child : node.children) {
     flatten_signal_tree_node(child, output);
@@ -402,8 +394,7 @@ inline auto flatten_signal_tree_node(const interrupt_signal_tree_node &node,
 
 /// Flattens one context-tree node recursively into output vector.
 inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
-                                      std::vector<interrupt_context> &output)
-    -> void {
+                                      std::vector<interrupt_context> &output) -> void {
   output.insert(output.end(), node.contexts.begin(), node.contexts.end());
   for (const auto &child : node.children) {
     flatten_context_tree_node(child, output);
@@ -413,8 +404,8 @@ inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
 } // namespace detail
 
 /// Converts signal-tree roots to context-tree roots.
-[[nodiscard]] inline auto to_interrupt_context_tree(
-    const std::span<const interrupt_signal_tree_node> roots)
+[[nodiscard]] inline auto
+to_interrupt_context_tree(const std::span<const interrupt_signal_tree_node> roots)
     -> std::vector<interrupt_context_tree_node> {
   std::vector<interrupt_context_tree_node> converted{};
   converted.reserve(roots.size());
@@ -425,8 +416,8 @@ inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
 }
 
 /// Converts context-tree roots to signal-tree roots.
-[[nodiscard]] inline auto to_interrupt_signal_tree(
-    const std::span<const interrupt_context_tree_node> roots)
+[[nodiscard]] inline auto
+to_interrupt_signal_tree(const std::span<const interrupt_context_tree_node> roots)
     -> std::vector<interrupt_signal_tree_node> {
   std::vector<interrupt_signal_tree_node> converted{};
   converted.reserve(roots.size());
@@ -437,8 +428,8 @@ inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
 }
 
 /// Flattens signal-tree roots to flat signal list.
-[[nodiscard]] inline auto flatten_interrupt_signal_tree(
-    const std::span<const interrupt_signal_tree_node> roots)
+[[nodiscard]] inline auto
+flatten_interrupt_signal_tree(const std::span<const interrupt_signal_tree_node> roots)
     -> std::vector<interrupt_signal> {
   std::vector<interrupt_signal> flattened{};
   for (const auto &root : roots) {
@@ -448,8 +439,8 @@ inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
 }
 
 /// Flattens context-tree roots to flat context list.
-[[nodiscard]] inline auto flatten_interrupt_context_tree(
-    const std::span<const interrupt_context_tree_node> roots)
+[[nodiscard]] inline auto
+flatten_interrupt_context_tree(const std::span<const interrupt_context_tree_node> roots)
     -> std::vector<interrupt_context> {
   std::vector<interrupt_context> flattened{};
   for (const auto &root : roots) {
@@ -461,11 +452,9 @@ inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
 /// Flattened lookup snapshot built from interrupt signals.
 /// It accelerates resume lookup by `interrupt_id`.
 struct interrupt_snapshot {
-  using address_map =
-      std::unordered_map<std::string, address, detail::transparent_string_hash,
-                         detail::transparent_string_equal>;
-  using state_map = std::unordered_map<std::string, wh::core::any,
-                                       detail::transparent_string_hash,
+  using address_map = std::unordered_map<std::string, address, detail::transparent_string_hash,
+                                         detail::transparent_string_equal>;
+  using state_map = std::unordered_map<std::string, wh::core::any, detail::transparent_string_hash,
                                        detail::transparent_string_equal>;
 
   /// Maps interrupt id to its capture location in the workflow address space.
@@ -475,35 +464,40 @@ struct interrupt_snapshot {
 };
 
 /// Builds interrupt snapshot from flat signal list (copy path).
-[[nodiscard]] inline auto
-flatten_interrupt_signals(const std::span<const interrupt_signal> signals)
-    -> interrupt_snapshot {
+[[nodiscard]] inline auto flatten_interrupt_signals(const std::span<const interrupt_signal> signals)
+    -> wh::core::result<interrupt_snapshot> {
   interrupt_snapshot snapshot{};
   snapshot.interrupt_id_to_address.reserve(signals.size());
   snapshot.interrupt_id_to_state.reserve(signals.size());
 
   for (const auto &signal : signals) {
-    snapshot.interrupt_id_to_address.insert_or_assign(signal.interrupt_id,
-                                                      signal.location);
+    auto owned_state = wh::core::into_owned(signal.state);
+    if (owned_state.has_error()) {
+      return wh::core::result<interrupt_snapshot>::failure(owned_state.error());
+    }
+    snapshot.interrupt_id_to_address.insert_or_assign(signal.interrupt_id, signal.location);
     snapshot.interrupt_id_to_state.insert_or_assign(signal.interrupt_id,
-                                                    signal.state);
+                                                    std::move(owned_state).value());
   }
   return snapshot;
 }
 
 /// Builds interrupt snapshot from flat signal list (move path).
-[[nodiscard]] inline auto
-flatten_interrupt_signals(std::vector<interrupt_signal> &&signals)
-    -> interrupt_snapshot {
+[[nodiscard]] inline auto flatten_interrupt_signals(std::vector<interrupt_signal> &&signals)
+    -> wh::core::result<interrupt_snapshot> {
   interrupt_snapshot snapshot{};
   snapshot.interrupt_id_to_address.reserve(signals.size());
   snapshot.interrupt_id_to_state.reserve(signals.size());
 
   for (auto &signal : signals) {
-    snapshot.interrupt_id_to_address.insert_or_assign(
-        signal.interrupt_id, std::move(signal.location));
+    auto owned_state = wh::core::into_owned(std::move(signal.state));
+    if (owned_state.has_error()) {
+      return wh::core::result<interrupt_snapshot>::failure(owned_state.error());
+    }
+    snapshot.interrupt_id_to_address.insert_or_assign(signal.interrupt_id,
+                                                      std::move(signal.location));
     snapshot.interrupt_id_to_state.insert_or_assign(signal.interrupt_id,
-                                                    std::move(signal.state));
+                                                    std::move(owned_state).value());
   }
   return snapshot;
 }
@@ -522,6 +516,8 @@ struct resume_subtree_erase_options {
 
 /// Mutable state store for pending resume points and their payloads.
 class resume_state {
+  template <typename value_t> friend struct any_owned_traits;
+
 public:
   /// One resumable entry keyed by `interrupt_id`.
   struct resume_entry {
@@ -540,13 +536,11 @@ public:
              std::constructible_from<address, location_t &&> &&
              (!std::same_as<remove_cvref_t<value_t>, wh::core::any>)
   /// Inserts or replaces one resume entry with typed payload.
-  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location,
-              value_t &&data) -> result<void> {
+  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location, value_t &&data)
+      -> result<void> {
     using stored_t = remove_cvref_t<value_t>;
-    return upsert(std::forward<interrupt_id_t>(interrupt_id),
-                  std::forward<location_t>(location),
-                  wh::core::any{std::in_place_type<stored_t>,
-                                std::forward<value_t>(data)});
+    return upsert(std::forward<interrupt_id_t>(interrupt_id), std::forward<location_t>(location),
+                  wh::core::any{std::in_place_type<stored_t>, std::forward<value_t>(data)});
   }
 
   template <typename interrupt_id_t, typename location_t, typename any_t>
@@ -554,14 +548,19 @@ public:
              std::constructible_from<address, location_t &&> &&
              std::same_as<remove_cvref_t<any_t>, wh::core::any>
   /// Inserts or replaces one resume entry using pre-built `wh::core::any`.
-  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location,
-              any_t &&data) -> result<void> {
+  auto upsert(interrupt_id_t &&interrupt_id, location_t &&location, any_t &&data) -> result<void> {
     std::string stored_interrupt_id{std::forward<interrupt_id_t>(interrupt_id)};
     address stored_location{std::forward<location_t>(location)};
     wh::core::any stored_data{std::forward<any_t>(data)};
     if (stored_interrupt_id.empty()) {
       return result<void>::failure(errc::invalid_argument);
     }
+
+    auto owned_data = wh::core::into_owned(std::move(stored_data));
+    if (owned_data.has_error()) {
+      return result<void>::failure(owned_data.error());
+    }
+    stored_data = std::move(owned_data).value();
 
     const auto iter = entries_.find(stored_interrupt_id);
     if (iter != entries_.end()) {
@@ -576,8 +575,7 @@ public:
     auto updated =
         entries_
             .insert_or_assign(std::move(stored_interrupt_id),
-                              resume_entry{std::move(stored_location),
-                                           std::move(stored_data),
+                              resume_entry{std::move(stored_location), std::move(stored_data),
                                            std::move(materialized_path), false})
             .first;
     add_active_location(updated->second.location);
@@ -590,27 +588,11 @@ public:
     if (this == &other) {
       return {};
     }
-    entries_.reserve(entries_.size() + other.entries_.size());
-    for (const auto &[interrupt_id, entry] : other.entries_) {
-      const auto current = entries_.find(interrupt_id);
-      if (current != entries_.end()) {
-        if (!current->second.used) {
-          remove_active_location(current->second.location);
-        }
-        unindex_location(interrupt_id);
-      }
-
-      auto updated = entries_.insert_or_assign(interrupt_id, entry).first;
-      if (updated->second.materialized_path.empty()) {
-        updated->second.materialized_path =
-            materialize_location_key(updated->second.location);
-      }
-      index_location(interrupt_id, updated->second.materialized_path);
-      if (!updated->second.used) {
-        add_active_location(updated->second.location);
-      }
+    auto prepared = wh::core::into_owned(other);
+    if (prepared.has_error()) {
+      return result<void>::failure(prepared.error());
     }
-    return {};
+    return merge(std::move(prepared).value());
   }
 
   /// Merges another resume-state snapshot (move path).
@@ -618,39 +600,39 @@ public:
     if (this == &other) {
       return {};
     }
-    entries_.reserve(entries_.size() + other.entries_.size());
-    for (auto &[interrupt_id, entry] : other.entries_) {
-      const auto current = entries_.find(interrupt_id);
+    auto prepared = wh::core::into_owned(std::move(other));
+    if (prepared.has_error()) {
+      return result<void>::failure(prepared.error());
+    }
+
+    auto owned = std::move(prepared).value();
+    entries_.reserve(entries_.size() + owned.entries_.size());
+    for (auto iter = owned.entries_.begin(); iter != owned.entries_.end();) {
+      auto node = owned.entries_.extract(iter++);
+      const auto current = entries_.find(node.key());
       if (current != entries_.end()) {
         if (!current->second.used) {
           remove_active_location(current->second.location);
         }
-        unindex_location(interrupt_id);
+        unindex_location(node.key());
+        entries_.erase(current);
       }
 
-      auto updated =
-          entries_.insert_or_assign(interrupt_id, std::move(entry)).first;
-      if (updated->second.materialized_path.empty()) {
-        updated->second.materialized_path =
-            materialize_location_key(updated->second.location);
+      if (node.mapped().materialized_path.empty()) {
+        node.mapped().materialized_path = materialize_location_key(node.mapped().location);
       }
-      index_location(updated->first, updated->second.materialized_path);
-      if (!updated->second.used) {
-        add_active_location(updated->second.location);
+      auto inserted = entries_.insert(std::move(node));
+      index_location(inserted.position->first, inserted.position->second.materialized_path);
+      if (!inserted.position->second.used) {
+        add_active_location(inserted.position->second.location);
       }
     }
 
-    other.entries_.clear();
-    other.path_index_.clear();
-    other.active_prefix_counts_.clear();
-    other.active_exact_counts_.clear();
-    other.active_entry_count_ = 0U;
     return {};
   }
 
   /// Returns whether interrupt id exists.
-  [[nodiscard]] auto
-  contains_interrupt_id(const std::string_view interrupt_id) const noexcept
+  [[nodiscard]] auto contains_interrupt_id(const std::string_view interrupt_id) const noexcept
       -> bool {
     return entries_.contains(interrupt_id);
   }
@@ -675,8 +657,7 @@ public:
       -> result<std::reference_wrapper<const address>> {
     const auto iter = entries_.find(interrupt_id);
     if (iter == entries_.end()) {
-      return result<std::reference_wrapper<const address>>::failure(
-          errc::not_found);
+      return result<std::reference_wrapper<const address>>::failure(errc::not_found);
     }
     return std::cref(iter->second.location);
   }
@@ -685,13 +666,10 @@ public:
   [[nodiscard]] auto empty() const noexcept -> bool { return entries_.empty(); }
 
   /// Returns number of entries.
-  [[nodiscard]] auto size() const noexcept -> std::size_t {
-    return entries_.size();
-  }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return entries_.size(); }
 
   /// Returns whether location is a valid resume target prefix.
-  [[nodiscard]] auto is_resume_target(const address &location) const noexcept
-      -> bool {
+  [[nodiscard]] auto is_resume_target(const address &location) const noexcept -> bool {
     if (active_entry_count_ == 0U) {
       return false;
     }
@@ -703,27 +681,24 @@ public:
   }
 
   /// Returns whether location exactly matches an active resume point.
-  [[nodiscard]] auto
-  is_exact_resume_target(const address &location) const noexcept -> bool {
+  [[nodiscard]] auto is_exact_resume_target(const address &location) const noexcept -> bool {
     const auto iter = active_exact_counts_.find(location.to_string());
     return iter != active_exact_counts_.end() && iter->second > 0U;
   }
 
   /// Returns next child segment names under the current resume location.
-  [[nodiscard]] auto next_resume_points(const address &location) const
-      -> std::vector<std::string> {
+  [[nodiscard]] auto next_resume_points(const address &location) const -> std::vector<std::string> {
     const auto parent_depth = location.size();
     std::vector<std::string> child_points{};
     child_points.reserve(entries_.size());
-    auto child_point_view =
-        entries_ | std::views::values |
-        std::views::filter([&](const resume_entry &entry) {
-          return !entry.used && entry.location.starts_with(location) &&
-                 entry.location.size() > parent_depth;
-        }) |
-        std::views::transform([&](const resume_entry &entry) -> std::string {
-          return std::string{entry.location.segments()[parent_depth]};
-        });
+    auto child_point_view = entries_ | std::views::values |
+                            std::views::filter([&](const resume_entry &entry) {
+                              return !entry.used && entry.location.starts_with(location) &&
+                                     entry.location.size() > parent_depth;
+                            }) |
+                            std::views::transform([&](const resume_entry &entry) -> std::string {
+                              return std::string{entry.location.segments()[parent_depth]};
+                            });
     std::ranges::copy(child_point_view, std::back_inserter(child_points));
     std::ranges::sort(child_points);
     const auto duplicate_begin = std::ranges::unique(child_points).begin();
@@ -733,24 +708,22 @@ public:
   }
 
   /// Collects interrupt ids under a location subtree.
-  [[nodiscard]] auto
-  collect_subtree_interrupt_ids(const address &location,
-                                const resume_subtree_query_options options =
-                                    resume_subtree_query_options{}) const
+  [[nodiscard]] auto collect_subtree_interrupt_ids(
+      const address &location,
+      const resume_subtree_query_options options = resume_subtree_query_options{}) const
       -> std::vector<std::string> {
     std::vector<std::string> interrupt_ids{};
     const auto prefix = materialize_location_key(location);
-    path_index_.for_each_prefix(
-        prefix, [&](const std::string_view interrupt_id) {
-          const auto entry_iter = entries_.find(interrupt_id);
-          if (entry_iter == entries_.end()) {
-            return;
-          }
-          if (!options.include_used && entry_iter->second.used) {
-            return;
-          }
-          interrupt_ids.emplace_back(interrupt_id);
-        });
+    path_index_.for_each_prefix(prefix, [&](const std::string_view interrupt_id) {
+      const auto entry_iter = entries_.find(interrupt_id);
+      if (entry_iter == entries_.end()) {
+        return;
+      }
+      if (!options.include_used && entry_iter->second.used) {
+        return;
+      }
+      interrupt_ids.emplace_back(interrupt_id);
+    });
     std::ranges::sort(interrupt_ids);
     return interrupt_ids;
   }
@@ -759,30 +732,28 @@ public:
   auto mark_subtree_used(const address &location) -> std::size_t {
     std::size_t marked_count = 0U;
     const auto prefix = materialize_location_key(location);
-    path_index_.for_each_prefix(
-        prefix, [&](const std::string_view interrupt_id) {
-          const auto entry_iter = entries_.find(interrupt_id);
-          if (entry_iter == entries_.end() || entry_iter->second.used) {
-            return;
-          }
-          remove_active_location(entry_iter->second.location);
-          entry_iter->second.used = true;
-          ++marked_count;
-        });
+    path_index_.for_each_prefix(prefix, [&](const std::string_view interrupt_id) {
+      const auto entry_iter = entries_.find(interrupt_id);
+      if (entry_iter == entries_.end() || entry_iter->second.used) {
+        return;
+      }
+      remove_active_location(entry_iter->second.location);
+      entry_iter->second.used = true;
+      ++marked_count;
+    });
     return marked_count;
   }
 
   /// Erases all entries under subtree.
   auto erase_subtree(const address &location,
-                     const resume_subtree_erase_options options =
-                         resume_subtree_erase_options{}) -> std::size_t {
+                     const resume_subtree_erase_options options = resume_subtree_erase_options{})
+      -> std::size_t {
     std::size_t removed_count = 0U;
     std::vector<std::string> matched_interrupt_ids{};
     const auto prefix = materialize_location_key(location);
-    path_index_.for_each_prefix(
-        prefix, [&](const std::string_view interrupt_id) {
-          matched_interrupt_ids.emplace_back(interrupt_id);
-        });
+    path_index_.for_each_prefix(prefix, [&](const std::string_view interrupt_id) {
+      matched_interrupt_ids.emplace_back(interrupt_id);
+    });
 
     for (const auto &interrupt_id : matched_interrupt_ids) {
       const auto entry_iter = entries_.find(interrupt_id);
@@ -804,8 +775,7 @@ public:
 
   /// Consumes typed payload by interrupt id and marks entry as used.
   template <typename value_t>
-  [[nodiscard]] auto consume(const std::string_view interrupt_id)
-      -> result<value_t> {
+  [[nodiscard]] auto consume(const std::string_view interrupt_id) -> result<value_t> {
     const auto iter = entries_.find(interrupt_id);
     if (iter == entries_.end()) {
       return result<value_t>::failure(errc::not_found);
@@ -831,20 +801,17 @@ public:
       -> result<std::reference_wrapper<const value_t>> {
     const auto iter = entries_.find(interrupt_id);
     if (iter == entries_.end()) {
-      return result<std::reference_wrapper<const value_t>>::failure(
-          errc::not_found);
+      return result<std::reference_wrapper<const value_t>>::failure(errc::not_found);
     }
     const auto *typed = wh::core::any_cast<value_t>(&iter->second.data);
     if (typed == nullptr) {
-      return result<std::reference_wrapper<const value_t>>::failure(
-          errc::type_mismatch);
+      return result<std::reference_wrapper<const value_t>>::failure(errc::type_mismatch);
     }
     return std::cref(*typed);
   }
 
   /// Marks one entry as used.
-  [[nodiscard]] auto mark_used(const std::string_view interrupt_id)
-      -> result<void> {
+  [[nodiscard]] auto mark_used(const std::string_view interrupt_id) -> result<void> {
     const auto iter = entries_.find(interrupt_id);
     if (iter == entries_.end()) {
       return result<void>::failure(errc::not_found);
@@ -859,8 +826,7 @@ public:
   }
 
   /// Returns whether one entry has been consumed/used.
-  [[nodiscard]] auto is_used(const std::string_view interrupt_id) const noexcept
-      -> bool {
+  [[nodiscard]] auto is_used(const std::string_view interrupt_id) const noexcept -> bool {
     const auto iter = entries_.find(interrupt_id);
     if (iter == entries_.end()) {
       return false;
@@ -870,16 +836,13 @@ public:
 
 private:
   using location_count_map =
-      std::unordered_map<std::string, std::size_t,
-                         detail::transparent_string_hash,
+      std::unordered_map<std::string, std::size_t, detail::transparent_string_hash,
                          detail::transparent_string_equal>;
-  using entry_map = std::unordered_map<std::string, resume_entry,
-                                       detail::transparent_string_hash,
+  using entry_map = std::unordered_map<std::string, resume_entry, detail::transparent_string_hash,
                                        detail::transparent_string_equal>;
 
   /// Decrements map counter for one location key.
-  auto decrement_location_count(location_count_map &counts,
-                                const std::string_view key) -> void {
+  auto decrement_location_count(location_count_map &counts, const std::string_view key) -> void {
     const auto iter = counts.find(key);
     if (iter == counts.end()) {
       return;
@@ -926,8 +889,7 @@ private:
   }
 
   /// Materializes normalized path key used by prefix index.
-  [[nodiscard]] static auto materialize_location_key(const address &location)
-      -> std::string {
+  [[nodiscard]] static auto materialize_location_key(const address &location) -> std::string {
     const auto segments = location.segments();
     std::size_t total_size = 2U;
     for (const auto &segment : segments) {
@@ -945,8 +907,8 @@ private:
   }
 
   /// Indexes location key for subtree lookup.
-  auto index_location(const std::string_view interrupt_id,
-                      const std::string_view materialized_path) -> void {
+  auto index_location(const std::string_view interrupt_id, const std::string_view materialized_path)
+      -> void {
     path_index_.insert(materialized_path, interrupt_id);
   }
 
@@ -960,6 +922,96 @@ private:
   location_count_map active_prefix_counts_{};
   location_count_map active_exact_counts_{};
   std::size_t active_entry_count_{0U};
+};
+
+template <> struct any_owned_traits<interrupt_snapshot> {
+  [[nodiscard]] static auto into_owned(const interrupt_snapshot &value)
+      -> result<interrupt_snapshot> {
+    interrupt_snapshot owned{};
+    owned.interrupt_id_to_address = value.interrupt_id_to_address;
+    owned.interrupt_id_to_state.reserve(value.interrupt_id_to_state.size());
+    for (const auto &[interrupt_id, state] : value.interrupt_id_to_state) {
+      auto owned_state = wh::core::into_owned(state);
+      if (owned_state.has_error()) {
+        return result<interrupt_snapshot>::failure(owned_state.error());
+      }
+      owned.interrupt_id_to_state.insert_or_assign(interrupt_id, std::move(owned_state).value());
+    }
+    return owned;
+  }
+
+  [[nodiscard]] static auto into_owned(interrupt_snapshot &&value) -> result<interrupt_snapshot> {
+    interrupt_snapshot owned{};
+    owned.interrupt_id_to_address = std::move(value.interrupt_id_to_address);
+    owned.interrupt_id_to_state.reserve(value.interrupt_id_to_state.size());
+    for (auto iter = value.interrupt_id_to_state.begin();
+         iter != value.interrupt_id_to_state.end();) {
+      auto node = value.interrupt_id_to_state.extract(iter++);
+      auto owned_state = wh::core::into_owned(std::move(node.mapped()));
+      if (owned_state.has_error()) {
+        return result<interrupt_snapshot>::failure(owned_state.error());
+      }
+      node.mapped() = std::move(owned_state).value();
+      owned.interrupt_id_to_state.insert(std::move(node));
+    }
+    value = interrupt_snapshot{};
+    return owned;
+  }
+};
+
+template <> struct any_owned_traits<resume_state> {
+  [[nodiscard]] static auto into_owned(const resume_state &value) -> result<resume_state> {
+    resume_state owned{};
+    owned.entries_.reserve(value.entries_.size());
+    for (const auto &[interrupt_id, entry] : value.entries_) {
+      auto owned_data = wh::core::into_owned(entry.data);
+      if (owned_data.has_error()) {
+        return result<resume_state>::failure(owned_data.error());
+      }
+
+      auto materialized_path = entry.materialized_path.empty()
+                                   ? resume_state::materialize_location_key(entry.location)
+                                   : entry.materialized_path;
+      auto inserted = owned.entries_
+                          .insert_or_assign(interrupt_id,
+                                            resume_state::resume_entry{
+                                                entry.location, std::move(owned_data).value(),
+                                                std::move(materialized_path), entry.used})
+                          .first;
+      owned.index_location(inserted->first, inserted->second.materialized_path);
+      if (!inserted->second.used) {
+        owned.add_active_location(inserted->second.location);
+      }
+    }
+    return owned;
+  }
+
+  [[nodiscard]] static auto into_owned(resume_state &&value) -> result<resume_state> {
+    resume_state owned{};
+    owned.entries_.reserve(value.entries_.size());
+    for (auto iter = value.entries_.begin(); iter != value.entries_.end();) {
+      auto node = value.entries_.extract(iter++);
+      auto &entry = node.mapped();
+      auto owned_data = wh::core::into_owned(std::move(entry.data));
+      if (owned_data.has_error()) {
+        return result<resume_state>::failure(owned_data.error());
+      }
+
+      auto materialized_path = entry.materialized_path.empty()
+                                   ? resume_state::materialize_location_key(entry.location)
+                                   : std::move(entry.materialized_path);
+      entry.data = std::move(owned_data).value();
+      entry.materialized_path = std::move(materialized_path);
+
+      auto inserted = owned.entries_.insert(std::move(node));
+      owned.index_location(inserted.position->first, inserted.position->second.materialized_path);
+      if (!inserted.position->second.used) {
+        owned.add_active_location(inserted.position->second.location);
+      }
+    }
+    value = resume_state{};
+    return owned;
+  }
 };
 
 } // namespace wh::core

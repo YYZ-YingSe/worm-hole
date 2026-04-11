@@ -14,6 +14,10 @@ wh_setup_third_party()
 wh_setup_core_target()
 wh_setup_root_artifact_targets()
 
+if(WH_BUILD_ANALYSIS)
+  add_subdirectory(analysis)
+endif()
+
 if(BUILD_TESTING AND WH_BUILD_TESTING)
   enable_testing()
   add_subdirectory(tests)

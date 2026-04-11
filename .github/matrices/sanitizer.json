@@ -1,0 +1,18 @@
+[
+  {
+    "name": "asan-ubsan",
+    "configure_preset": "ci-asan-ubsan",
+    "build_preset": "ci-asan-ubsan",
+    "min_shards": 2,
+    "include_labels": ["sanitizer.safe"],
+    "exclude_labels": ["ci.nightly"]
+  },
+  {
+    "name": "tsan",
+    "configure_preset": "ci-tsan",
+    "build_preset": "ci-tsan",
+    "min_shards": 1,
+    "include_labels": ["sanitizer.safe"],
+    "exclude_labels": ["ci.nightly"]
+  }
+]

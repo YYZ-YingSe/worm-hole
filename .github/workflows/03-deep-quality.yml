@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_MAX_TARGETS_PER_SHARD: "200"
+
 concurrency:
   group: deep-quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -90,29 +93,44 @@ jobs:
           python_bin="$(command -v python3 || command -v python)"
           "$python_bin" scripts/toolchain.py ci codechecker --configure-preset ci-static-analysis
 
+  plan-sanitizer:
+    name: plan sanitizer matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Plan sanitizer matrix
+        id: plan
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          matrix_path="${RUNNER_TEMP}/sanitizer-matrix.json"
+          "$python_bin" scripts/toolchain.py ci emit-test-matrix \
+            --config .github/matrices/sanitizer.json \
+            --max-targets-per-shard "${CI_MAX_TARGETS_PER_SHARD}" \
+            --output "$matrix_path"
+          echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
+
   sanitizer:
-    name: sanitizer (${{ matrix.name }}, ${{ matrix.shard_index }})
+    name: sanitizer (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets)
+    needs: plan-sanitizer
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: asan-ubsan
-            configure_preset: ci-asan-ubsan
-            build_preset: ci-asan-ubsan
-            shard_count: 2
-            shard_index: 0
-          - name: asan-ubsan
-            configure_preset: ci-asan-ubsan
-            build_preset: ci-asan-ubsan
-            shard_count: 2
-            shard_index: 1
-          - name: tsan
-            configure_preset: ci-tsan
-            build_preset: ci-tsan
-            shard_count: 1
-            shard_index: 0
+      matrix: ${{ fromJson(needs.plan-sanitizer.outputs.matrix) }}
 
     steps:
       - name: Checkout
