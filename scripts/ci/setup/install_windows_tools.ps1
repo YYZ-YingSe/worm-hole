@@ -319,7 +319,7 @@ function Ensure-CommandRequirement {
     $provider = [string]$packageSpec.Provider
     foreach ($packageId in $packageSpec.Ids) {
       try {
-        Write-Host "[install-windows-tools] TRY $CommandName via $provider:$packageId"
+        Write-Host "[install-windows-tools] TRY $CommandName via ${provider}:${packageId}"
         Install-PackageViaProvider -Provider $provider -PackageId $packageId
         $resolved = Resolve-CommandRequirement -CommandName $CommandName
         if ($null -ne $resolved) {
