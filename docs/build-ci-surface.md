@@ -55,15 +55,25 @@ Tracked workflows:
 - `05-nightly-stress.yml`
   - nightly `ci.nightly` heavy-test shards
 
+Build/test and sanitizer shards are now planned from the test manifest and a
+build-action budget, rather than hard-coded target counts. Coverage uses the
+dedicated `ci-coverage` preset and the `coverage-monolith` test executable
+layout.
+
 Representative CI commands:
 
 ```bash
 python3 scripts/toolchain.py ci fast-gates
-python3 scripts/toolchain.py ci build-test --configure-preset ci-linux-debug --shard-count 4 --shard-index 0 --include-label ci.pr --exclude-label ci.nightly
+python3 scripts/toolchain.py ci emit-test-matrix --config .github/matrices/build-test.json --max-build-actions-per-shard 200 --output /tmp/build-test-matrix.json
+python3 scripts/toolchain.py ci build-test --configure-preset ci-linux-debug --build-preset ci-linux-debug --shard-count <resolved-shard-count> --shard-index <resolved-shard-index> --include-label ci.pr --exclude-label ci.nightly
 python3 scripts/toolchain.py ci clang-tidy --configure-preset ci-static-analysis --shard-count 4 --shard-index 0
-python3 scripts/toolchain.py ci sanitizer --configure-preset ci-asan-ubsan --shard-count 2 --shard-index 0
+python3 scripts/toolchain.py ci emit-test-matrix --config .github/matrices/sanitizer.json --max-build-actions-per-shard 200 --output /tmp/sanitizer-matrix.json
+python3 scripts/toolchain.py ci sanitizer --configure-preset ci-asan-ubsan --build-preset ci-asan-ubsan --shard-count <resolved-shard-count> --shard-index <resolved-shard-index>
 python3 scripts/toolchain.py ci coverage --configure-preset ci-coverage --coverage-min-lines 0.70
 ```
+
+`<resolved-shard-count>` and `<resolved-shard-index>` come from the planner
+output and are intentionally not fixed constants.
 
 ## Internal Implementation Layers
 

@@ -1,11 +1,11 @@
 include_guard(GLOBAL)
 
-function(wh_require_cmake_source_dir path label hint)
-  if(EXISTS "${path}/CMakeLists.txt")
+function(wh_require_source_path path label hint)
+  if(EXISTS "${path}")
     return()
   endif()
 
   message(FATAL_ERROR
-          "${label} source is required at ${path}\n"
+          "${label} is required at ${path}\n"
           "Hint: ${hint}")
 endfunction()

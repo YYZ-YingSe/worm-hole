@@ -11,6 +11,21 @@ option(WH_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
 option(WH_REQUIRE_GIT_LOCKED_THIRDY_PARTY
        "Require git-locked thirdy_party deps" ON)
 
+set(WH_TEST_EXECUTABLE_LAYOUT
+    "source"
+    CACHE STRING
+    "Test executable layout. Supported values: source, coverage-monolith")
+set_property(CACHE WH_TEST_EXECUTABLE_LAYOUT PROPERTY STRINGS
+             source coverage-monolith)
+
+set(_wh_supported_test_layouts source coverage-monolith)
+if(NOT WH_TEST_EXECUTABLE_LAYOUT IN_LIST _wh_supported_test_layouts)
+  message(
+    FATAL_ERROR
+      "WH_TEST_EXECUTABLE_LAYOUT must be one of: ${_wh_supported_test_layouts}; got '${WH_TEST_EXECUTABLE_LAYOUT}'"
+  )
+endif()
+
 set(WH_THIRDY_PARTY_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/thirdy_party"
     CACHE PATH

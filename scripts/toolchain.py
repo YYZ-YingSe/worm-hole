@@ -58,6 +58,25 @@ class MatrixLane:
     os: str | None = None
 
 
+@dataclass(frozen=True)
+class TestBuildCostModel:
+    fixed_compile_actions: int
+    fixed_link_actions: int
+    per_target_compile_actions: int = 1
+    per_target_link_actions: int = 1
+
+    @property
+    def fixed_actions(self) -> int:
+        return self.fixed_compile_actions + self.fixed_link_actions
+
+    def estimate_actions_for_targets(self, target_count: int) -> int:
+        return (
+            self.fixed_actions
+            + target_count * self.per_target_compile_actions
+            + target_count * self.per_target_link_actions
+        )
+
+
 def print_step(tag: str, message: str) -> None:
     print(f"[{tag}] {message}", flush=True)
 
@@ -117,12 +136,17 @@ def under(path: Path, base: Path) -> bool:
         return False
 
 
-def is_project_compile_unit(path: Path, *, include_tests: bool = True) -> bool:
+def is_project_path_in_scope(
+    path: Path,
+    *,
+    include_tests: bool = True,
+    include_third_party: bool = False,
+) -> bool:
     if not path.exists():
         return False
     if not under(path, ROOT):
         return False
-    if under(path, THIRD_PARTY_DIR):
+    if not include_third_party and under(path, THIRD_PARTY_DIR):
         return False
     if under(path, BUILD_ROOT):
         return False
@@ -220,6 +244,47 @@ def build_preset(
         args.append("--target")
         args.extend(targets)
     run(args)
+
+
+def max_build_targets_per_batch() -> int:
+    raw = os.environ.get("CI_MAX_BUILD_TARGETS_PER_BATCH")
+    if raw is None:
+        return 200
+    try:
+        value = int(raw)
+    except ValueError:
+        fail("toolchain", f"invalid CI_MAX_BUILD_TARGETS_PER_BATCH: {raw}", code=2)
+    if value <= 0:
+        fail("toolchain", "CI_MAX_BUILD_TARGETS_PER_BATCH must be positive", code=2)
+    return value
+
+
+def build_targets_in_batches(
+    preset: str,
+    tag: str,
+    *,
+    targets: Sequence[str],
+    jobs: str | None = None,
+    max_targets_per_batch: int | None = None,
+) -> None:
+    target_list = list(targets)
+    if not target_list:
+        build_preset(preset, tag, jobs=jobs)
+        return
+
+    batch_limit = max_targets_per_batch or max_build_targets_per_batch()
+    if len(target_list) <= batch_limit:
+        build_preset(preset, tag, targets=target_list, jobs=jobs)
+        return
+
+    batch_count = (len(target_list) + batch_limit - 1) // batch_limit
+    for batch_index, start in enumerate(range(0, len(target_list), batch_limit), start=1):
+        batch_targets = target_list[start : start + batch_limit]
+        print_step(
+            tag,
+            f"build batch {batch_index}/{batch_count} targets={len(batch_targets)}",
+        )
+        build_preset(preset, tag, targets=batch_targets, jobs=jobs)
 
 
 def build_artifact_target(kind: str) -> str:
@@ -458,18 +523,29 @@ def compute_test_shards(
     entries: Sequence[TestEntry],
     *,
     min_shards: int,
-    max_targets_per_shard: int,
+    max_build_actions_per_shard: int,
+    cost_model: TestBuildCostModel,
 ) -> tuple[int, list[list[TestEntry]]]:
     if not entries:
         fail("matrix", "cannot compute shards for an empty entry set", code=2)
-    if max_targets_per_shard <= 0:
-        fail("matrix", "max_targets_per_shard must be positive", code=2)
+    if max_build_actions_per_shard <= 0:
+        fail("matrix", "max_build_actions_per_shard must be positive", code=2)
+    if cost_model.fixed_actions >= max_build_actions_per_shard:
+        fail(
+            "matrix",
+            "fixed build actions already exceed the shard budget: "
+            f"{cost_model.fixed_actions} >= {max_build_actions_per_shard}",
+            code=2,
+        )
 
     shard_count = max(1, min_shards)
     while True:
         shards = [shard_test_entries(entries, shard_count, index) for index in range(shard_count)]
-        largest = max((len(shard) for shard in shards), default=0)
-        if largest <= max_targets_per_shard:
+        largest_actions = max(
+            (cost_model.estimate_actions_for_targets(len(shard)) for shard in shards),
+            default=0,
+        )
+        if largest_actions <= max_build_actions_per_shard:
             return shard_count, shards
         shard_count += 1
 
@@ -557,7 +633,7 @@ def filter_compile_commands_to_project_scope(
         file_path = resolve_compile_entry_file(entry)
         if file_path is None:
             continue
-        if not is_project_compile_unit(file_path, include_tests=include_tests):
+        if not is_project_path_in_scope(file_path, include_tests=include_tests):
             continue
         filtered.append(entry)
 
@@ -569,7 +645,7 @@ def filter_compile_commands_to_project_scope(
 
 
 def load_compile_entries(
-    compile_db: Path, *, include_tests: bool = True
+    compile_db: Path, *, include_tests: bool = True, include_third_party: bool = False
 ) -> list[CompileEntry]:
     raw_entries = json.loads(compile_db.read_text())
     dedup: dict[Path, CompileEntry] = {}
@@ -578,11 +654,161 @@ def load_compile_entries(
         if file_path is None:
             continue
 
-        if not is_project_compile_unit(file_path, include_tests=include_tests):
+        if not is_project_path_in_scope(
+            file_path,
+            include_tests=include_tests,
+            include_third_party=include_third_party,
+        ):
             continue
 
         dedup[file_path] = CompileEntry(file=file_path, size=max(1, file_path.stat().st_size))
     return list(dedup.values())
+
+
+def count_link_actions(build_ninja: Path) -> int:
+    if not build_ninja.exists():
+        fail("matrix", f"build graph missing: {build_ninja}", code=2)
+
+    linker_rules = (
+        "CXX_EXECUTABLE_LINKER",
+        "CXX_STATIC_LIBRARY_LINKER",
+        "CXX_SHARED_LIBRARY_LINKER",
+        "CXX_MODULE_LIBRARY_LINKER",
+    )
+    count = 0
+    with build_ninja.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.startswith("build "):
+                continue
+            if any(f": {rule}" in line for rule in linker_rules):
+                count += 1
+    return count
+
+
+def build_cost_model_for_manifest(
+    preset: str, manifest_entries: Sequence[TestEntry]
+) -> TestBuildCostModel:
+    build_dir = build_dir_for_preset(preset)
+    compile_db = build_dir / "compile_commands.json"
+    all_compile_entries = load_compile_entries(
+        compile_db,
+        include_tests=True,
+        include_third_party=True,
+    )
+    if not all_compile_entries:
+        fail("matrix", f"no compile entries found for preset {preset}", code=2)
+
+    compile_paths = {entry.file.resolve() for entry in all_compile_entries}
+    manifest_sources = {entry.source.resolve() for entry in manifest_entries}
+    missing_sources = sorted(path for path in manifest_sources if path not in compile_paths)
+    if missing_sources:
+        missing_preview = ", ".join(str(path.relative_to(ROOT)) for path in missing_sources[:3])
+        fail(
+            "matrix",
+            "build-action planning requires source-layout tests; "
+            f"manifest sources missing from compile database for preset {preset}: {missing_preview}",
+            code=2,
+        )
+
+    compile_total = len(all_compile_entries)
+    manifest_target_count = len(manifest_entries)
+    manifest_compile_count = len(manifest_sources)
+    fixed_compile_actions = compile_total - manifest_compile_count
+    fixed_link_actions = count_link_actions(build_dir / "build.ninja") - manifest_target_count
+    if fixed_compile_actions < 0 or fixed_link_actions < 0:
+        fail(
+            "matrix",
+            f"invalid build-action model for preset {preset}: "
+            f"fixed_compile={fixed_compile_actions}, fixed_link={fixed_link_actions}",
+            code=2,
+        )
+
+    return TestBuildCostModel(
+        fixed_compile_actions=fixed_compile_actions,
+        fixed_link_actions=fixed_link_actions,
+    )
+
+
+def recompute_coverage_totals(
+    files: Sequence[dict[str, object]],
+) -> dict[str, dict[str, int | float]]:
+    totals: dict[str, dict[str, int | float]] = {}
+    metric_names = ("branches", "functions", "instantiations", "lines", "mcdc", "regions")
+    for metric_name in metric_names:
+        count = 0
+        covered = 0
+        notcovered = 0
+        has_notcovered = False
+        for file_payload in files:
+            summary = file_payload.get("summary")
+            if not isinstance(summary, dict):
+                continue
+            metric = summary.get(metric_name)
+            if not isinstance(metric, dict):
+                continue
+            count += int(metric.get("count", 0))
+            covered += int(metric.get("covered", 0))
+            if "notcovered" in metric:
+                notcovered += int(metric.get("notcovered", 0))
+                has_notcovered = True
+
+        metric_totals: dict[str, int | float] = {
+            "count": count,
+            "covered": covered,
+            "percent": (float(covered) * 100.0 / float(count)) if count else 0.0,
+        }
+        if has_notcovered:
+            metric_totals["notcovered"] = notcovered
+        totals[metric_name] = metric_totals
+    return totals
+
+
+def filter_coverage_report_to_project_scope(
+    report_json: Path, *, include_tests: bool = True
+) -> dict[str, object]:
+    payload = json.loads(report_json.read_text())
+    data = payload.get("data")
+    if not isinstance(data, list):
+        fail("coverage", f"coverage export did not contain data array: {report_json}")
+
+    filtered_data: list[dict[str, object]] = []
+    total_files_before = 0
+    total_files_after = 0
+
+    for datum in data:
+        if not isinstance(datum, dict):
+            continue
+
+        raw_files = datum.get("files")
+        if not isinstance(raw_files, list):
+            raw_files = []
+        total_files_before += len(raw_files)
+
+        filtered_files: list[dict[str, object]] = []
+        for file_payload in raw_files:
+            if not isinstance(file_payload, dict):
+                continue
+            filename = file_payload.get("filename")
+            if not filename:
+                continue
+            file_path = Path(str(filename)).resolve()
+            if not is_project_path_in_scope(file_path, include_tests=include_tests):
+                continue
+            filtered_files.append(file_payload)
+
+        total_files_after += len(filtered_files)
+        filtered_datum = dict(datum)
+        filtered_datum["files"] = filtered_files
+        filtered_datum["totals"] = recompute_coverage_totals(filtered_files)
+        filtered_data.append(filtered_datum)
+
+    if total_files_after == 0:
+        fail("coverage", "coverage export contained no in-scope project files")
+
+    payload["data"] = filtered_data
+    report_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print_step("coverage", f"FILTER files {total_files_after}/{total_files_before}")
+    return payload
 
 
 def shard_compile_entries(
@@ -684,7 +910,7 @@ def run_build_test_mode(
         tag,
         f"preset={configure_preset_name} shard={shard_index}/{shard_count} targets={len(targets)}",
     )
-    build_preset(build_preset_name, tag, targets=targets)
+    build_targets_in_batches(build_preset_name, tag, targets=targets)
     print_compiler_cache_stats()
     run_test_entries(
         shard,
@@ -702,12 +928,17 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
 
     lanes = load_matrix_lanes(config_path)
     manifest_cache: dict[str, list[TestEntry]] = {}
+    cost_model_cache: dict[str, TestBuildCostModel] = {}
     matrix_include: list[dict[str, object]] = []
 
     for lane in lanes:
         if lane.configure_preset not in manifest_cache:
             manifest_path = configure_and_validate_manifest(lane.configure_preset, "matrix")
             manifest_cache[lane.configure_preset] = load_manifest(manifest_path)
+            cost_model_cache[lane.configure_preset] = build_cost_model_for_manifest(
+                lane.configure_preset,
+                manifest_cache[lane.configure_preset],
+            )
 
         filtered_entries = filter_test_entries(
             manifest_cache[lane.configure_preset],
@@ -725,16 +956,25 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
         shard_count, shards = compute_test_shards(
             filtered_entries,
             min_shards=lane.min_shards,
-            max_targets_per_shard=args.max_targets_per_shard,
+            max_build_actions_per_shard=args.max_build_actions_per_shard,
+            cost_model=cost_model_cache[lane.configure_preset],
         )
         largest_shard = max(len(shard) for shard in shards)
+        largest_actions = max(
+            cost_model_cache[lane.configure_preset].estimate_actions_for_targets(len(shard))
+            for shard in shards
+        )
         print_step(
             "matrix",
             f"{lane.name}: targets={len(filtered_entries)} resolved_shards={shard_count} "
-            f"largest_shard={largest_shard} limit={args.max_targets_per_shard}",
+            f"largest_shard={largest_shard} estimated_actions={largest_actions} "
+            f"limit={args.max_build_actions_per_shard}",
         )
 
         for shard_index, shard in enumerate(shards):
+            estimated_build_actions = cost_model_cache[
+                lane.configure_preset
+            ].estimate_actions_for_targets(len(shard))
             payload: dict[str, object] = {
                 "name": lane.name,
                 "configure_preset": lane.configure_preset,
@@ -743,6 +983,7 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
                 "shard_index": shard_index,
                 "target_count": len(shard),
                 "total_weight": sum(entry.weight for entry in shard),
+                "estimated_build_actions": estimated_build_actions,
             }
             if lane.os:
                 payload["os"] = lane.os
@@ -1015,7 +1256,11 @@ def ci_coverage(args: argparse.Namespace) -> None:
         fail("coverage", "coverage run selected no tests")
 
     targets = [entry.target for entry in shard]
-    build_preset(args.build_preset or args.configure_preset, "coverage", targets=targets)
+    build_targets_in_batches(
+        args.build_preset or args.configure_preset,
+        "coverage",
+        targets=targets,
+    )
     print_compiler_cache_stats()
 
     profile_dir = build_dir / "profiles"
@@ -1051,22 +1296,40 @@ def ci_coverage(args: argparse.Namespace) -> None:
         ]
     )
 
-    with report_json.open("w", encoding="utf-8") as handle:
-        subprocess.run(
-            [
-                llvm_cov_bin,
-                "export",
-                "--instr-profile",
-                str(profdata_file),
-                *binaries,
-            ],
-            cwd=str(ROOT),
-            check=True,
-            text=True,
-            stdout=handle,
+    export_result = run(
+        [
+            llvm_cov_bin,
+            "export",
+            "--summary-only",
+            "--instr-profile",
+            str(profdata_file),
+            *binaries,
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if export_result.stdout:
+        report_json.write_text(export_result.stdout, encoding="utf-8")
+    else:
+        report_json.write_text("", encoding="utf-8")
+    if export_result.stderr:
+        sys.stderr.write(export_result.stderr)
+    if export_result.returncode != 0:
+        fail("coverage", f"llvm-cov export failed with status {export_result.returncode}")
+    if "mismatched data" in export_result.stderr:
+        fail(
+            "coverage",
+            "llvm-cov reported mismatched data across coverage binaries; "
+            "aggregate line coverage is unreliable",
         )
 
-    payload = json.loads(report_json.read_text())
+    # llvm-cov may still surface generated/build-tree paths in summary exports.
+    # Re-scope the exported JSON with the same first-party path rules used by
+    # the rest of the CI toolchain before evaluating the gate.
+    payload = filter_coverage_report_to_project_scope(
+        report_json,
+        include_tests=True,
+    )
     data = payload.get("data") or []
     totals = data[0].get("totals", {}) if data else {}
     lines = totals.get("lines", {}) if isinstance(totals, dict) else {}
@@ -1234,7 +1497,11 @@ def build_parser() -> argparse.ArgumentParser:
     emit_matrix_parser = ci_sub.add_parser("emit-test-matrix")
     emit_matrix_parser.add_argument("--config", type=Path, required=True)
     emit_matrix_parser.add_argument("--output", type=Path)
-    emit_matrix_parser.add_argument("--max-targets-per-shard", type=int, default=200)
+    emit_matrix_parser.add_argument(
+        "--max-build-actions-per-shard",
+        type=int,
+        default=int(os.environ.get("CI_MAX_BUILD_ACTIONS_PER_SHARD", "200")),
+    )
     emit_matrix_parser.set_defaults(func=ci_emit_test_matrix)
 
     build_test_parser = ci_sub.add_parser("build-test")

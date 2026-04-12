@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  CI_MAX_TARGETS_PER_SHARD: "200"
+  CI_MAX_BUILD_ACTIONS_PER_SHARD: "200"
 
 concurrency:
   group: build-test-matrix-${{ github.workflow }}-${{ github.ref }}
@@ -45,12 +45,12 @@ jobs:
           matrix_path="${RUNNER_TEMP}/build-test-matrix.json"
           "$python_bin" scripts/toolchain.py ci emit-test-matrix \
             --config .github/matrices/build-test.json \
-            --max-targets-per-shard "${CI_MAX_TARGETS_PER_SHARD}" \
+            --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
             --output "$matrix_path"
           echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
 
   build-test:
-    name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets)
+    name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets, ~${{ matrix.estimated_build_actions }} actions)
     needs: plan-build-test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45

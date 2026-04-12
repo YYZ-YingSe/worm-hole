@@ -229,15 +229,40 @@ function(wh_register_catch_test_target)
   file(SIZE "${ARG_SOURCE_FILE}" source_size)
 
   string(REGEX REPLACE "::.*$" "" suite_name "${ARG_TEST_PREFIX}")
+
+  wh_register_catch_manifest_entry(
+    TARGET_NAME "${ARG_TARGET_NAME}"
+    SUITE_NAME "${suite_name}"
+    SOURCE_PATH "${relative_source}"
+    SOURCE_SIZE "${source_size}"
+    WEIGHT "${ARG_WEIGHT}"
+    TIMEOUT_SECONDS "${ARG_TIMEOUT_SECONDS}"
+    LABELS ${ARG_LABELS})
+endfunction()
+
+function(wh_register_catch_manifest_entry)
+  set(options)
+  set(one_value_args TARGET_NAME SUITE_NAME SOURCE_PATH SOURCE_SIZE WEIGHT TIMEOUT_SECONDS)
+  set(multi_value_args LABELS)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}"
+                        "${multi_value_args}" ${ARGN})
+
+  foreach(required_arg TARGET_NAME SUITE_NAME SOURCE_PATH SOURCE_SIZE WEIGHT TIMEOUT_SECONDS)
+    if(NOT ARG_${required_arg})
+      message(FATAL_ERROR
+              "wh_register_catch_manifest_entry missing ${required_arg}")
+    endif()
+  endforeach()
+
   string(REPLACE ";" "," labels_csv "${ARG_LABELS}")
 
-  wh_escape_manifest_field(escaped_suite "${suite_name}")
+  wh_escape_manifest_field(escaped_suite "${ARG_SUITE_NAME}")
   wh_escape_manifest_field(escaped_target "${ARG_TARGET_NAME}")
-  wh_escape_manifest_field(escaped_source "${relative_source}")
+  wh_escape_manifest_field(escaped_source "${ARG_SOURCE_PATH}")
   wh_escape_manifest_field(escaped_labels "${labels_csv}")
 
   set(row
-      "${escaped_suite}\t${escaped_target}\t$<TARGET_FILE:${ARG_TARGET_NAME}>\t${escaped_source}\t${source_size}\t${ARG_WEIGHT}\t${ARG_TIMEOUT_SECONDS}\t${escaped_labels}\n")
+      "${escaped_suite}\t${escaped_target}\t$<TARGET_FILE:${ARG_TARGET_NAME}>\t${escaped_source}\t${ARG_SOURCE_SIZE}\t${ARG_WEIGHT}\t${ARG_TIMEOUT_SECONDS}\t${escaped_labels}\n")
   set_property(GLOBAL APPEND_STRING PROPERTY WH_CATCH_TEST_MANIFEST_ROWS
                "${row}")
 endfunction()
@@ -308,4 +333,58 @@ function(wh_add_catch_test_source out_var)
     LABELS ${resolved_labels})
 
   set("${out_var}" "${target_name}" PARENT_SCOPE)
+endfunction()
+
+function(wh_add_catch_test_bundle out_var)
+  set(options)
+  set(one_value_args TARGET_NAME TEST_PREFIX SUITE_NAME MANIFEST_SOURCE
+                     WEIGHT TIMEOUT_SECONDS)
+  set(multi_value_args SOURCES LINK_LIBRARIES INCLUDE_DIRECTORIES LABELS)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}"
+                        "${multi_value_args}" ${ARGN})
+
+  foreach(required_arg TARGET_NAME TEST_PREFIX SUITE_NAME MANIFEST_SOURCE
+                       WEIGHT TIMEOUT_SECONDS)
+    if(NOT ARG_${required_arg})
+      message(FATAL_ERROR "wh_add_catch_test_bundle missing ${required_arg}")
+    endif()
+  endforeach()
+
+  if(NOT ARG_SOURCES)
+    message(FATAL_ERROR "wh_add_catch_test_bundle requires at least one source")
+  endif()
+
+  add_executable("${ARG_TARGET_NAME}" ${ARG_SOURCES})
+  if(ARG_LINK_LIBRARIES)
+    target_link_libraries("${ARG_TARGET_NAME}" PRIVATE ${ARG_LINK_LIBRARIES})
+  endif()
+  if(ARG_INCLUDE_DIRECTORIES)
+    target_include_directories("${ARG_TARGET_NAME}" PRIVATE
+                               ${ARG_INCLUDE_DIRECTORIES})
+  endif()
+
+  catch_discover_tests(
+    "${ARG_TARGET_NAME}"
+    TEST_PREFIX "${ARG_TEST_PREFIX}"
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES
+      LABELS "${ARG_LABELS}"
+      TIMEOUT "${ARG_TIMEOUT_SECONDS}")
+
+  set(total_source_size 0)
+  foreach(source_file IN LISTS ARG_SOURCES)
+    file(SIZE "${source_file}" source_size)
+    math(EXPR total_source_size "${total_source_size} + ${source_size}")
+  endforeach()
+
+  wh_register_catch_manifest_entry(
+    TARGET_NAME "${ARG_TARGET_NAME}"
+    SUITE_NAME "${ARG_SUITE_NAME}"
+    SOURCE_PATH "${ARG_MANIFEST_SOURCE}"
+    SOURCE_SIZE "${total_source_size}"
+    WEIGHT "${ARG_WEIGHT}"
+    TIMEOUT_SECONDS "${ARG_TIMEOUT_SECONDS}"
+    LABELS ${ARG_LABELS})
+
+  set("${out_var}" "${ARG_TARGET_NAME}" PARENT_SCOPE)
 endfunction()

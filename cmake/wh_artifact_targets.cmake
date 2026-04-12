@@ -16,6 +16,7 @@ set(WH_TARGET_UT_SUPPORT "wh_ut_support")
 set(WH_TARGET_FT_SUPPORT "wh_ft_support")
 set(WH_TARGET_EXAMPLE_SUPPORT "wh_example_support")
 set(WH_TARGET_BENCHMARK_SUPPORT "wh_benchmark_support")
+set(WH_TARGET_CATCH2_AMALGAMATED "wh_catch2_amalgamated")
 
 function(wh_ensure_custom_target target_name)
   if(TARGET "${target_name}")
@@ -33,6 +34,35 @@ endfunction()
 function(wh_setup_test_suite_targets)
   wh_ensure_custom_target("${WH_TARGET_UT_TESTS}")
   wh_ensure_custom_target("${WH_TARGET_FT_TESTS}")
+endfunction()
+
+function(wh_ensure_catch2_amalgamated_target)
+  if(TARGET "${WH_TARGET_CATCH2_AMALGAMATED}")
+    return()
+  endif()
+
+  set(catch2_amalgamated_cpp "${WH_CATCH2_DIR}/extras/catch_amalgamated.cpp")
+  set(catch2_user_config_in "${WH_CATCH2_DIR}/src/catch2/catch_user_config.hpp.in")
+  set(catch2_generated_dir "${PROJECT_BINARY_DIR}/generated-includes/catch2")
+  set(catch2_user_config_out "${catch2_generated_dir}/catch_user_config.hpp")
+  if(NOT EXISTS "${catch2_amalgamated_cpp}")
+    message(FATAL_ERROR
+            "Catch2 amalgamated source is required at ${catch2_amalgamated_cpp}")
+  endif()
+  if(NOT EXISTS "${catch2_user_config_in}")
+    message(FATAL_ERROR
+            "Catch2 user config template is required at ${catch2_user_config_in}")
+  endif()
+
+  file(MAKE_DIRECTORY "${catch2_generated_dir}")
+  set(CATCH_CONFIG_NO_COUNTER ON)
+  configure_file("${catch2_user_config_in}" "${catch2_user_config_out}")
+
+  add_library("${WH_TARGET_CATCH2_AMALGAMATED}" STATIC
+              "${catch2_amalgamated_cpp}")
+  target_include_directories("${WH_TARGET_CATCH2_AMALGAMATED}"
+                             PUBLIC "${WH_CATCH2_DIR}/src"
+                                    "${PROJECT_BINARY_DIR}/generated-includes")
 endfunction()
 
 function(wh_register_project_artifact group target_name)
@@ -59,12 +89,12 @@ function(wh_register_project_artifact group target_name)
 endfunction()
 
 function(wh_setup_test_support_targets)
+  wh_ensure_catch2_amalgamated_target()
+
   wh_define_support_target(
     "${WH_TARGET_TEST_SUPPORT}"
-    LINK_LIBRARIES wh::core Catch2::Catch2WithMain
+    LINK_LIBRARIES wh::core "${WH_TARGET_CATCH2_AMALGAMATED}"
     INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/tests")
-  target_compile_definitions("${WH_TARGET_TEST_SUPPORT}"
-                             INTERFACE CATCH_CONFIG_NO_COUNTER)
 
   wh_define_support_target(
     "${WH_TARGET_UT_SUPPORT}"

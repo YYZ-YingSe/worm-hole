@@ -53,15 +53,24 @@ GitHub Actions 现在直接调用 `scripts/toolchain.py ci ...`。
 - `05-nightly-stress.yml`
   - `ci.nightly` 重型测试的 nightly 分片
 
+现在 build/test 和 sanitizer 的分片不是写死的目标数，而是基于测试
+manifest 和构建动作预算动态规划。coverage 则固定走专用的
+`ci-coverage` preset 和 `coverage-monolith` 测试可执行文件布局。
+
 代表性 CI 命令：
 
 ```bash
 python3 scripts/toolchain.py ci fast-gates
-python3 scripts/toolchain.py ci build-test --configure-preset ci-linux-debug --shard-count 4 --shard-index 0 --include-label ci.pr --exclude-label ci.nightly
+python3 scripts/toolchain.py ci emit-test-matrix --config .github/matrices/build-test.json --max-build-actions-per-shard 200 --output /tmp/build-test-matrix.json
+python3 scripts/toolchain.py ci build-test --configure-preset ci-linux-debug --build-preset ci-linux-debug --shard-count <resolved-shard-count> --shard-index <resolved-shard-index> --include-label ci.pr --exclude-label ci.nightly
 python3 scripts/toolchain.py ci clang-tidy --configure-preset ci-static-analysis --shard-count 4 --shard-index 0
-python3 scripts/toolchain.py ci sanitizer --configure-preset ci-asan-ubsan --shard-count 2 --shard-index 0
+python3 scripts/toolchain.py ci emit-test-matrix --config .github/matrices/sanitizer.json --max-build-actions-per-shard 200 --output /tmp/sanitizer-matrix.json
+python3 scripts/toolchain.py ci sanitizer --configure-preset ci-asan-ubsan --build-preset ci-asan-ubsan --shard-count <resolved-shard-count> --shard-index <resolved-shard-index>
 python3 scripts/toolchain.py ci coverage --configure-preset ci-coverage --coverage-min-lines 0.70
 ```
+
+这里的 `<resolved-shard-count>` 和 `<resolved-shard-index>` 都来自矩阵规划
+结果，不再是固定常量。
 
 ## 内部实现层
 

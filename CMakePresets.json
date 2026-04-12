@@ -158,6 +158,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping -O0 -g",
+        "WH_TEST_EXECUTABLE_LAYOUT": "coverage-monolith",
         "WH_WARNINGS_AS_ERRORS": "OFF"
       }
     }
