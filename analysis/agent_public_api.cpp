@@ -1,0 +1,17 @@
+#include "wh/agent/agent.hpp"
+#include "wh/agent/bind.hpp"
+#include "wh/agent/chat.hpp"
+#include "wh/agent/instruction.hpp"
+#include "wh/agent/options.hpp"
+#include "wh/agent/plan_execute.hpp"
+#include "wh/agent/react.hpp"
+#include "wh/agent/reflexion.hpp"
+#include "wh/agent/research.hpp"
+#include "wh/agent/reviewer_executor.hpp"
+#include "wh/agent/revision.hpp"
+#include "wh/agent/self_refine.hpp"
+#include "wh/agent/supervisor.hpp"
+#include "wh/agent/swarm.hpp"
+#include "wh/agent/toolset.hpp"
+
+auto main() -> int { return 0; }

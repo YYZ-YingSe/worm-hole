@@ -1,0 +1,30 @@
+name: prepare-ci-job
+description: Prepare a CI job by installing the selected tool profile and optional tool-specific environments.
+
+inputs:
+  install_profile:
+    description: Tool installation profile.
+    required: true
+  setup_clang_format:
+    description: Whether to pin clang-format in a venv.
+    required: false
+    default: "false"
+  setup_codechecker:
+    description: Whether to install CodeChecker in a venv.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup/install-tools
+      with:
+        profile: ${{ inputs.install_profile }}
+
+    - if: inputs.setup_clang_format == 'true'
+      shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/setup/setup_clang_format_venv.sh"
+
+    - if: inputs.setup_codechecker == 'true'
+      shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/setup/setup_codechecker_venv.sh"

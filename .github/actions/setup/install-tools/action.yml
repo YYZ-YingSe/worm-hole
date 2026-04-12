@@ -1,0 +1,22 @@
+name: install-required-tools
+description: Install the toolchain required for the selected CI profile.
+
+inputs:
+  profile:
+    description: Tool profile to install, for example fast-gates or build.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - if: runner.os == 'Linux'
+      shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/setup/install_linux_tools.sh" "${{ inputs.profile }}"
+
+    - if: runner.os == 'macOS'
+      shell: bash
+      run: bash "${{ github.workspace }}/scripts/ci/setup/install_macos_tools.sh" "${{ inputs.profile }}"
+
+    - if: runner.os == 'Windows'
+      shell: pwsh
+      run: '& "${{ github.workspace }}/scripts/ci/setup/install_windows_tools.ps1" -Profile "${{ inputs.profile }}"'

@@ -10,94 +10,149 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_MAX_BUILD_ACTIONS_PER_SHARD: "200"
+
 concurrency:
   group: deep-quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  static-analysis:
+  clang-tidy:
+    name: clang-tidy (${{ matrix.shard_index }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard_count: 4
+            shard_index: 0
+          - shard_count: 4
+            shard_index: 1
+          - shard_count: 4
+            shard_index: 2
+          - shard_count: 4
+            shard_index: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: analysis
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
+      - name: Select clang toolchain
+        shell: bash
+        run: bash "${{ github.workspace }}/scripts/ci/setup/select_clang_tidy_toolchain.sh"
+
+      - name: Run clang-tidy shard ${{ matrix.shard_index }}
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci clang-tidy \
+            --configure-preset ci-static-analysis \
+            --shard-count "${{ matrix.shard_count }}" \
+            --shard-index "${{ matrix.shard_index }}"
+
+  codechecker:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install required tools
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: analysis
+          setup_codechecker: "true"
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
+      - name: Select clang toolchain
+        shell: bash
+        run: bash "${{ github.workspace }}/scripts/ci/setup/select_clang_tidy_toolchain.sh"
+
+      - name: Run CodeChecker
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ripgrep \
-            clang \
-            clang-tidy \
-            clang-tools \
-            cppcheck \
-            cmake \
-            ninja-build
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci codechecker --configure-preset ci-static-analysis
 
-      - name: Guard branch policy
-        run: bash scripts/ci/guard_branch_policy.sh
-
-      - name: Run clang-tidy
-        env:
-          WH_CI_STRICT: '1'
-          CC: clang
-          CXX: clang++
-        run: bash scripts/ci/run_clang_tidy_entry.sh
-
-      - name: Run cppcheck
-        env:
-          WH_CI_STRICT: '1'
-        run: bash scripts/ci/run_cppcheck.sh
-
-      - name: Run scan-build
-        env:
-          WH_CI_STRICT: '1'
-        run: bash scripts/ci/run_clang_scan_build.sh
-
-  sanitizer-smoke:
+  plan-sanitizer:
+    name: plan sanitizer matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/deep-quality-sanitizer
-      CCACHE_COMPRESS: "true"
-      CCACHE_MAXSIZE: "750M"
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: "true"
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install required tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ripgrep \
-            clang \
-            cmake \
-            ninja-build \
-            ccache
-
-      - name: Restore ccache
-        uses: actions/cache@v4
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-deep-quality-sanitizer-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_sanitizer_smoke.sh') }}
-          restore-keys: |
-            ccache-deep-quality-sanitizer-${{ runner.os }}-
+          install_profile: build
 
-      - name: Guard branch policy
-        run: bash scripts/ci/guard_branch_policy.sh
+      - name: Plan sanitizer matrix
+        id: plan
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          matrix_path="${RUNNER_TEMP}/sanitizer-matrix.json"
+          "$python_bin" scripts/toolchain.py ci emit-test-matrix \
+            --config .github/matrices/sanitizer.json \
+            --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
+            --output "$matrix_path"
+          echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
 
-      - name: Run sanitizer smoke
-        env:
-          WH_CI_STRICT: '1'
-          CC: clang
-          CXX: clang++
-        run: bash scripts/ci/run_sanitizer_smoke.sh
+  sanitizer:
+    name: sanitizer (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets, ~${{ matrix.estimated_build_actions }} actions)
+    needs: plan-sanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan-sanitizer.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
+      - name: Run sanitizer shard ${{ matrix.shard_index }}
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci sanitizer \
+            --configure-preset "${{ matrix.configure_preset }}" \
+            --build-preset "${{ matrix.build_preset }}" \
+            --shard-count "${{ matrix.shard_count }}" \
+            --shard-index "${{ matrix.shard_index }}"

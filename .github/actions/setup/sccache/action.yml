@@ -1,0 +1,22 @@
+name: setup-sccache
+description: Enable sccache and export compiler-cache environment variables for subsequent steps.
+
+inputs:
+  max_size:
+    description: sccache cache size.
+    required: false
+    default: "5G"
+
+runs:
+  using: composite
+  steps:
+    - uses: mozilla-actions/sccache-action@v0.0.9
+
+    - shell: bash
+      run: |
+        printf '%s=%s\n' "SCCACHE_GHA_ENABLED" "true" >> "$GITHUB_ENV"
+        printf '%s=%s\n' "SCCACHE_CACHE_SIZE" "${{ inputs.max_size }}" >> "$GITHUB_ENV"
+        cache_bin="${SCCACHE_PATH:-$(command -v sccache || true)}"
+        if [[ -n "$cache_bin" ]]; then
+          printf '%s=%s\n' "WH_COMPILER_CACHE_BIN" "$cache_bin" >> "$GITHUB_ENV"
+        fi

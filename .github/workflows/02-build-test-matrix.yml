@@ -11,81 +11,76 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_MAX_BUILD_ACTIONS_PER_SHARD: "200"
+
 concurrency:
   group: build-test-matrix-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-test:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/build-test-${{ matrix.os }}-${{ matrix.build_type }}
-      CCACHE_COMPRESS: "true"
-      CCACHE_MAXSIZE: "750M"
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: "true"
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        build_type: [Debug, Release]
+  plan-build-test:
+    name: plan build-test matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install required tools (ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ripgrep \
-            clang \
-            cmake \
-            ninja-build \
-            ccache
-
-      - name: Install required tools (macos)
-        if: runner.os == 'macOS'
-        run: |
-          brew update
-          brew install ripgrep llvm cmake ninja ccache
-          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
-
-      - name: Install required tools (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install -y ripgrep llvm ninja
-          choco install -y ccache
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "ccache install unavailable on this runner, continuing without ccache"
-            $global:LASTEXITCODE = 0
-          }
-          "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Restore ccache
-        uses: actions/cache@v4
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_cmake_build_and_test.sh') }}
-          restore-keys: |
-            ccache-build-test-${{ runner.os }}-${{ matrix.build_type }}-
-            ccache-build-test-${{ runner.os }}-
+          install_profile: build
 
-      - name: Guard branch policy
-        run: bash scripts/ci/guard_branch_policy.sh
-
-      - name: Configure build env
+      - name: Plan build-test matrix
+        id: plan
+        shell: bash
         run: |
-          echo "WH_CI_STRICT=1" >> "$GITHUB_ENV"
-          echo "WH_CI_BUILD_TYPE=${{ matrix.build_type }}" >> "$GITHUB_ENV"
-          echo "CC=clang" >> "$GITHUB_ENV"
-          echo "CXX=clang++" >> "$GITHUB_ENV"
+          python_bin="$(command -v python3 || command -v python)"
+          matrix_path="${RUNNER_TEMP}/build-test-matrix.json"
+          "$python_bin" scripts/toolchain.py ci emit-test-matrix \
+            --config .github/matrices/build-test.json \
+            --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
+            --output "$matrix_path"
+          echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
+
+  build-test:
+    name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets, ~${{ matrix.estimated_build_actions }} actions)
+    needs: plan-build-test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan-build-test.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
       - name: Build and test
-        run: bash scripts/ci/run_cmake_build_and_test.sh
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci build-test \
+            --configure-preset "${{ matrix.configure_preset }}" \
+            --build-preset "${{ matrix.build_preset }}" \
+            --shard-count "${{ matrix.shard_count }}" \
+            --shard-index "${{ matrix.shard_index }}" \
+            --include-label ci.pr \
+            --exclude-label ci.nightly

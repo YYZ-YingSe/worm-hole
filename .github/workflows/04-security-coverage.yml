@@ -6,7 +6,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '30 3 * * *'
+    - cron: "30 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,98 +25,85 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
           languages: cpp
           build-mode: manual
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Build for CodeQL extraction
+        shell: bash
         run: |
-          cmake -S . -B build/codeql \
-            -DWH_BUILD_TESTING=OFF \
-            -DWH_WARNINGS_AS_ERRORS=OFF \
-            -DWH_REQUIRE_GIT_LOCKED_THIRDY_PARTY=ON \
-            -DWH_THIRDY_PARTY_DIR="$GITHUB_WORKSPACE/thirdy_party"
-          cmake --build build/codeql --parallel
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci codeql-build --configure-preset ci-codeql
 
       - name: Analyze
-        uses: github/codeql-action/analyze@v4
-        continue-on-error: true
+        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
 
   sca:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: false
           fetch-depth: 0
 
       - name: Run dependency review (PR only)
         if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
 
       - name: Run Trivy FS SCA
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln
+          scanners: vuln,misconfig,license
           vuln-type: library
           format: table
           ignore-unfixed: true
           severity: HIGH,CRITICAL
-          exit-code: '1'
+          exit-code: "1"
           skip-dirs: thirdy_party,build
 
   coverage:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache/coverage
-      CCACHE_COMPRESS: "true"
-      CCACHE_MAXSIZE: "750M"
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: "true"
+    timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install required tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ripgrep \
-            clang \
-            cmake \
-            ninja-build \
-            gcovr \
-            ccache
-
-      - name: Restore ccache
-        uses: actions/cache@v4
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-coverage-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'thirdy_party/LOCK.txt', 'scripts/ci/run_coverage_gate.sh') }}
-          restore-keys: |
-            ccache-coverage-${{ runner.os }}-
+          install_profile: coverage
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
 
       - name: Run coverage gate
-        env:
-          WH_CI_STRICT: '1'
-          WH_COVERAGE_MIN_LINES: '0.70'
-          CC: clang
-          CXX: clang++
-        run: bash scripts/ci/run_coverage_gate.sh
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci coverage \
+            --configure-preset ci-coverage \
+            --coverage-min-lines 0.70

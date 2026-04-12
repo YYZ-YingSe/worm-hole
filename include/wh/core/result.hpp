@@ -1,3 +1,5 @@
+// Defines the core result type with value/error transport, monadic helpers,
+// and lightweight error-code integration.
 #pragma once
 
 #include <concepts>
@@ -16,15 +18,22 @@ template <typename value_t, typename error_t> class result;
 
 namespace detail {
 
-template <typename type_t>
-using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<type_t>>;
+template <typename type_t> using remove_cvref_t = std::remove_cvref_t<type_t>;
+
+template <typename callable_t, typename... args_t>
+concept callable_with = std::invocable<callable_t, args_t...>;
+
+template <typename callable_t, typename... args_t>
+using callable_result_t = std::invoke_result_t<callable_t, args_t...>;
 
 template <typename value_t, typename error_t>
 using result_storage_t = std::variant<value_t, error_t>;
 
+/// Checks safe value-convertibility used by result converting constructors.
 template <typename from_t, typename to_t>
 struct is_value_convertible_to : std::is_convertible<from_t, to_t> {};
 
+/// Special-case convertibility check for lvalue-reference targets.
 template <typename from_t, typename to_t>
 struct is_value_convertible_to<from_t, to_t &>
     : std::bool_constant<
@@ -33,6 +42,7 @@ struct is_value_convertible_to<from_t, to_t &>
 
 template <typename maybe_result_t> struct is_result : std::false_type {};
 
+/// Marks `result<...>` specialization as result-like.
 template <typename value_t, typename error_t>
 struct is_result<result<value_t, error_t>> : std::true_type {};
 
@@ -40,10 +50,38 @@ template <typename maybe_result_t>
 concept result_like = is_result<remove_cvref_t<maybe_result_t>>::value;
 
 template <typename... args_t>
+inline constexpr bool is_single_result_like_pack_v =
+    (sizeof...(args_t) == 1U) && (result_like<args_t> && ...);
+
+template <bool enabled, typename target_t, typename... args_t>
+struct is_constructible_guarded : std::false_type {};
+
+template <typename target_t, typename... args_t>
+struct is_constructible_guarded<true, target_t, args_t...>
+    : std::is_constructible<target_t, args_t...> {};
+
+template <typename target_t, typename... args_t>
+inline constexpr bool is_constructible_guarded_v =
+    is_constructible_guarded<!is_single_result_like_pack_v<args_t...>, target_t,
+                             args_t &&...>::value;
+
+template <bool enabled, typename from_t, typename to_t>
+struct is_convertible_guarded : std::false_type {};
+
+template <typename from_t, typename to_t>
+struct is_convertible_guarded<true, from_t, to_t>
+    : std::is_convertible<from_t, to_t> {};
+
+template <bool enabled, typename from_t, typename to_t>
+inline constexpr bool is_convertible_guarded_v =
+    is_convertible_guarded<enabled, from_t, to_t>::value;
+
+template <typename... args_t>
 inline constexpr bool is_single_errc_pack_v =
     (sizeof...(args_t) == 1U) &&
     (std::same_as<remove_cvref_t<args_t>, errc> && ...);
 
+/// Detects binding a reference result value to a temporary argument.
 template <typename value_t, typename arg_t>
 struct reference_to_temporary
     : std::bool_constant<
@@ -62,19 +100,23 @@ inline constexpr in_place_value_t in_place_value{};
 using in_place_error_t = std::in_place_index_t<1>;
 inline constexpr in_place_error_t in_place_error{};
 
+/// Tagged success payload used by explicit result constructors.
 template <typename value_t> struct success_type {
   using value_type = value_t;
 
   value_t payload;
 
+  /// Returns mutable success payload.
   [[nodiscard]] constexpr auto value() & noexcept -> value_t & {
     return payload;
   }
 
+  /// Returns const success payload.
   [[nodiscard]] constexpr auto value() const & noexcept -> const value_t & {
     return payload;
   }
 
+  /// Returns movable success payload.
   [[nodiscard]] constexpr auto value() && noexcept -> value_t && {
     return std::move(payload);
   }
@@ -84,28 +126,34 @@ template <> struct success_type<void> {
   using value_type = void;
 };
 
+/// Tagged failure payload used by explicit result constructors.
 template <typename error_t> struct failure_type {
   using error_type = error_t;
 
   error_t payload;
 
+  /// Returns mutable error payload.
   [[nodiscard]] constexpr auto error() & noexcept -> error_t & {
     return payload;
   }
 
+  /// Returns const error payload.
   [[nodiscard]] constexpr auto error() const & noexcept -> const error_t & {
     return payload;
   }
 
+  /// Returns movable error payload.
   [[nodiscard]] constexpr auto error() && noexcept -> error_t && {
     return std::move(payload);
   }
 };
 
+/// Helper to build void success tag.
 [[nodiscard]] constexpr auto success() noexcept -> success_type<void> {
   return success_type<void>{};
 }
 
+/// Helper to build typed success tag.
 template <typename value_t>
 [[nodiscard]] constexpr auto success(value_t &&value)
     -> success_type<detail::remove_cvref_t<value_t>> {
@@ -113,6 +161,7 @@ template <typename value_t>
       std::forward<value_t>(value)};
 }
 
+/// Helper to build typed failure tag.
 template <typename error_t>
 [[nodiscard]] constexpr auto failure(error_t &&error)
     -> failure_type<detail::remove_cvref_t<error_t>> {
@@ -120,6 +169,7 @@ template <typename error_t>
       std::forward<error_t>(error)};
 }
 
+/// Result value carrying either `value_t` or `error_t`.
 template <typename value_t, typename error_t = error_code> class result {
 public:
   using value_type = value_t;
@@ -138,17 +188,20 @@ public:
       : storage_(std::in_place_index<0>) {}
 
   template <typename value_u = value_t>
-    requires std::convertible_to<value_u, value_t> &&
+    requires detail::is_convertible_guarded_v<
+                 !std::same_as<detail::remove_cvref_t<value_u>, result>,
+                 value_u, value_t> &&
              (!std::constructible_from<error_t, value_u &&>) &&
              (!detail::is_single_errc_pack_v<value_u> ||
-              !std::is_arithmetic_v<value_t>) &&
-             (!std::same_as<detail::remove_cvref_t<value_u>, result>)
+              !std::is_arithmetic_v<value_t>)
   constexpr result(value_u &&value) noexcept(
       std::is_nothrow_constructible_v<value_t, value_u &&>)
       : storage_(std::in_place_index<0>, std::forward<value_u>(value)) {}
 
   template <typename error_u = error_t>
-    requires std::convertible_to<error_u, error_t> &&
+    requires detail::is_convertible_guarded_v<
+                 !std::same_as<detail::remove_cvref_t<error_u>, result>,
+                 error_u, error_t> &&
              (!std::constructible_from<value_t, error_u &&>) &&
              (!std::same_as<detail::remove_cvref_t<error_u>, result>)
   constexpr result(error_u &&error) noexcept(
@@ -156,18 +209,18 @@ public:
       : storage_(std::in_place_index<1>, std::forward<error_u>(error)) {}
 
   template <typename... args_t>
-    requires std::constructible_from<value_t, args_t &&...> &&
+    requires detail::is_constructible_guarded_v<value_t, args_t...> &&
              (!((std::convertible_to<args_t, value_t> && ...) &&
                 (sizeof...(args_t) == 1U))) &&
-             (!std::constructible_from<error_t, args_t && ...>) &&
+             (!detail::is_constructible_guarded_v<error_t, args_t...>) &&
              (sizeof...(args_t) >= 1U)
   constexpr explicit result(args_t &&...args) noexcept(
       std::is_nothrow_constructible_v<value_t, args_t &&...>)
       : storage_(std::in_place_index<0>, std::forward<args_t>(args)...) {}
 
   template <typename... args_t>
-    requires(!std::constructible_from<value_t, args_t && ...>) &&
-            std::constructible_from<error_t, args_t &&...> &&
+    requires(!detail::is_constructible_guarded_v<value_t, args_t...>) &&
+            detail::is_constructible_guarded_v<error_t, args_t...> &&
             (sizeof...(args_t) >= 1U)
   constexpr explicit result(args_t &&...args) noexcept(
       std::is_nothrow_constructible_v<error_t, args_t &&...>)
@@ -207,12 +260,14 @@ public:
 
   template <typename value_u = value_t>
     requires std::constructible_from<value_t, value_u &&>
+  /// Creates success result from value.
   [[nodiscard]] static constexpr auto success(value_u &&value) -> result {
     return result(in_place_value, std::forward<value_u>(value));
   }
 
   template <typename error_u = error_t>
     requires std::constructible_from<error_t, error_u &&>
+  /// Creates failure result from error.
   [[nodiscard]] static constexpr auto failure(error_u &&error) -> result {
     return result(in_place_error, std::forward<error_u>(error));
   }
@@ -231,10 +286,12 @@ public:
   constexpr explicit result(failure_type<error_u> err)
       : storage_(std::in_place_index<1>, std::forward<error_u>(err.payload)) {}
 
+  /// Returns true when this object holds a value.
   [[nodiscard]] constexpr auto has_value() const noexcept -> bool {
     return storage_.index() == 0U;
   }
 
+  /// Returns true when this object holds an error.
   [[nodiscard]] constexpr auto has_error() const noexcept -> bool {
     return storage_.index() == 1U;
   }
@@ -243,16 +300,19 @@ public:
     return has_value();
   }
 
+  /// Returns mutable value reference; requires `has_value()`.
   [[nodiscard]] constexpr auto value() & -> value_t & {
     wh_precondition(has_value());
     return std::get<0>(storage_);
   }
 
+  /// Returns const value reference; requires `has_value()`.
   [[nodiscard]] constexpr auto value() const & -> const value_t & {
     wh_precondition(has_value());
     return std::get<0>(storage_);
   }
 
+  /// Returns movable value; requires `has_value()`.
   [[nodiscard]] constexpr auto
   value() && -> std::conditional_t<std::move_constructible<value_t>, value_t,
                                    value_t &&> {
@@ -264,11 +324,13 @@ public:
     }
   }
 
+  /// Disabled const-rvalue accessor for move-constructible values.
   template <typename value_u = value_t>
   [[nodiscard]] constexpr auto value() const && -> value_t
     requires std::move_constructible<value_u>
   = delete;
 
+  /// Returns const-rvalue reference for non-move-constructible values.
   template <typename value_u = value_t>
   [[nodiscard]] constexpr auto value() const && -> const value_t &&requires(
       !std::move_constructible<value_u>) {
@@ -318,12 +380,14 @@ public:
         return std::move(**this);
       }
 
+  /// Returns error value or default-constructed error when success.
   [[nodiscard]] constexpr auto error() const & noexcept(
       std::is_nothrow_default_constructible_v<error_t> &&
       std::is_nothrow_copy_constructible_v<error_t>) -> error_t {
     return has_error() ? std::get<1>(storage_) : error_t{};
   }
 
+  /// Returns movable error or default-constructed error when success.
   [[nodiscard]] constexpr auto
   error() && noexcept(std::is_nothrow_default_constructible_v<error_t> &&
                       std::is_nothrow_move_constructible_v<error_t>)
@@ -331,28 +395,34 @@ public:
     return has_error() ? std::move(std::get<1>(storage_)) : error_t{};
   }
 
+  /// Returns mutable value without checking state.
   [[nodiscard]] constexpr auto assume_value() & noexcept -> value_t & {
     return std::get<0>(storage_);
   }
 
+  /// Returns const value without checking state.
   [[nodiscard]] constexpr auto assume_value() const & noexcept
       -> const value_t & {
     return std::get<0>(storage_);
   }
 
+  /// Returns movable value without checking state.
   [[nodiscard]] constexpr auto assume_value() && noexcept -> value_t && {
     return std::move(std::get<0>(storage_));
   }
 
+  /// Returns mutable error without checking state.
   [[nodiscard]] constexpr auto assume_error() & noexcept -> error_t & {
     return std::get<1>(storage_);
   }
 
+  /// Returns const error without checking state.
   [[nodiscard]] constexpr auto assume_error() const & noexcept
       -> const error_t & {
     return std::get<1>(storage_);
   }
 
+  /// Returns movable error without checking state.
   [[nodiscard]] constexpr auto assume_error() && noexcept -> error_t && {
     return std::move(std::get<1>(storage_));
   }
@@ -385,6 +455,7 @@ public:
     return !(lhs == rhs);
   }
 
+  /// Returns value or fallback copy when in error state.
   template <typename fallback_t>
     requires std::convertible_to<fallback_t, value_t>
   [[nodiscard]] constexpr auto
@@ -395,6 +466,7 @@ public:
     return static_cast<value_t>(std::forward<fallback_t>(fallback));
   }
 
+  /// Returns movable value or fallback when in error state.
   template <typename fallback_t>
     requires std::convertible_to<fallback_t, value_t>
   [[nodiscard]] constexpr auto value_or(fallback_t &&fallback) && -> value_t {
@@ -525,20 +597,24 @@ public:
   constexpr result(result<value_u &, error_u> &&other)
       : storage_(move_convert_storage(std::move(other))) {}
 
+  /// Creates success result from lvalue reference.
   [[nodiscard]] static constexpr auto success(value_t &value) -> result {
     return result(in_place_value, value);
   }
 
+  /// Creates failure result.
   template <typename error_u = error_t>
     requires std::constructible_from<error_t, error_u &&>
   [[nodiscard]] static constexpr auto failure(error_u &&error) -> result {
     return result(in_place_error, std::forward<error_u>(error));
   }
 
+  /// Returns true when this object holds a value reference.
   [[nodiscard]] constexpr auto has_value() const noexcept -> bool {
     return storage_.index() == 0U;
   }
 
+  /// Returns true when this object holds an error.
   [[nodiscard]] constexpr auto has_error() const noexcept -> bool {
     return storage_.index() == 1U;
   }
@@ -547,6 +623,7 @@ public:
     return has_value();
   }
 
+  /// Returns referenced value; requires `has_value()`.
   [[nodiscard]] constexpr auto value() const -> value_t & {
     wh_precondition(has_value());
     return *std::get<0>(storage_);
@@ -565,6 +642,7 @@ public:
     return *operator->();
   }
 
+  /// Returns error value or default-constructed error when success.
   [[nodiscard]] constexpr auto
   error() const & noexcept(std::is_nothrow_default_constructible_v<error_t> &&
                            std::is_nothrow_copy_constructible_v<error_t>)
@@ -572,6 +650,7 @@ public:
     return has_error() ? std::get<1>(storage_) : error_t{};
   }
 
+  /// Returns movable error or default-constructed error when success.
   [[nodiscard]] constexpr auto
   error() && noexcept(std::is_nothrow_default_constructible_v<error_t> &&
                       std::is_nothrow_move_constructible_v<error_t>)
@@ -579,14 +658,17 @@ public:
     return has_error() ? std::move(std::get<1>(storage_)) : error_t{};
   }
 
+  /// Returns referenced value without checking state.
   [[nodiscard]] constexpr auto assume_value() const noexcept -> value_t & {
     return *std::get<0>(storage_);
   }
 
+  /// Returns mutable error without checking state.
   [[nodiscard]] constexpr auto assume_error() & noexcept -> error_t & {
     return std::get<1>(storage_);
   }
 
+  /// Returns const error without checking state.
   [[nodiscard]] constexpr auto assume_error() const & noexcept
       -> const error_t & {
     return std::get<1>(storage_);
@@ -621,6 +703,7 @@ public:
     return !(lhs == rhs);
   }
 
+  /// Returns referenced value or fallback reference.
   [[nodiscard]] constexpr auto value_or(value_t &fallback) const -> value_t & {
     if (has_value()) {
       return value();
@@ -741,10 +824,12 @@ public:
     }
   }
 
+  /// Creates success result.
   [[nodiscard]] static constexpr auto success() -> result {
     return result(in_place_value);
   }
 
+  /// Creates failure result.
   template <typename error_u = error_t>
     requires std::constructible_from<error_t, error_u &&>
   [[nodiscard]] static constexpr auto failure(error_u &&error) -> result {
@@ -759,10 +844,12 @@ public:
   constexpr explicit result(failure_type<error_u> err)
       : storage_(std::in_place_index<1>, std::forward<error_u>(err.payload)) {}
 
+  /// Returns true when state is success.
   [[nodiscard]] constexpr auto has_value() const noexcept -> bool {
     return storage_.index() == 0U;
   }
 
+  /// Returns true when state is error.
   [[nodiscard]] constexpr auto has_error() const noexcept -> bool {
     return storage_.index() == 1U;
   }
@@ -783,6 +870,7 @@ public:
 
   constexpr void operator*() const noexcept { wh_precondition(has_value()); }
 
+  /// Returns error value or default-constructed error when success.
   [[nodiscard]] constexpr auto
   error() const & noexcept(std::is_nothrow_default_constructible_v<error_t> &&
                            std::is_nothrow_copy_constructible_v<error_t>)
@@ -790,6 +878,7 @@ public:
     return has_error() ? std::get<1>(storage_) : error_t{};
   }
 
+  /// Returns movable error or default-constructed error when success.
   [[nodiscard]] constexpr auto
   error() && noexcept(std::is_nothrow_default_constructible_v<error_t> &&
                       std::is_nothrow_move_constructible_v<error_t>)
@@ -797,10 +886,12 @@ public:
     return has_error() ? std::move(std::get<1>(storage_)) : error_t{};
   }
 
+  /// Returns mutable error without checking state.
   [[nodiscard]] constexpr auto assume_error() & noexcept -> error_t & {
     return std::get<1>(storage_);
   }
 
+  /// Returns const error without checking state.
   [[nodiscard]] constexpr auto assume_error() const & noexcept
       -> const error_t & {
     return std::get<1>(storage_);
@@ -850,7 +941,7 @@ auto operator<<(std::basic_ostream<char_t, traits_t> &stream,
 
 template <typename value_t, typename error_t, typename fallback_t>
   requires detail::is_value_convertible_to<fallback_t, value_t>::value &&
-           (!std::invocable<fallback_t>)
+           (!detail::callable_with<fallback_t>)
 [[nodiscard]] constexpr auto operator|(const result<value_t, error_t> &item,
                                        fallback_t &&fallback) -> value_t {
   if (item.has_value()) {
@@ -862,7 +953,7 @@ template <typename value_t, typename error_t, typename fallback_t>
 
 template <typename value_t, typename error_t, typename fallback_t>
   requires detail::is_value_convertible_to<fallback_t, value_t>::value &&
-           (!std::invocable<fallback_t>)
+           (!detail::callable_with<fallback_t>)
 [[nodiscard]] constexpr auto operator|(result<value_t, error_t> &&item,
                                        fallback_t &&fallback) -> value_t {
   if (item.has_value()) {
@@ -873,8 +964,8 @@ template <typename value_t, typename error_t, typename fallback_t>
 }
 
 template <typename value_t, typename error_t, typename factory_t,
-          typename produced_t = std::invoke_result_t<factory_t>>
-  requires std::invocable<factory_t> &&
+          typename produced_t = detail::callable_result_t<factory_t>>
+  requires detail::callable_with<factory_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            detail::is_value_convertible_to<produced_t, value_t>::value
 [[nodiscard]] constexpr auto operator|(const result<value_t, error_t> &item,
@@ -887,8 +978,8 @@ template <typename value_t, typename error_t, typename factory_t,
 }
 
 template <typename value_t, typename error_t, typename factory_t,
-          typename produced_t = std::invoke_result_t<factory_t>>
-  requires std::invocable<factory_t> &&
+          typename produced_t = detail::callable_result_t<factory_t>>
+  requires detail::callable_with<factory_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            detail::is_value_convertible_to<produced_t, value_t>::value
 [[nodiscard]] constexpr auto operator|(result<value_t, error_t> &&item,
@@ -902,8 +993,9 @@ template <typename value_t, typename error_t, typename factory_t,
 
 template <typename value_t, typename error_t, typename factory_t,
           typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<factory_t>>>
-  requires std::invocable<factory_t> && detail::result_like<produced_t> &&
+              detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            detail::is_value_convertible_to<
                value_t, typename produced_t::value_type>::value
 [[nodiscard]] constexpr auto operator|(const result<value_t, error_t> &item,
@@ -917,8 +1009,9 @@ template <typename value_t, typename error_t, typename factory_t,
 
 template <typename value_t, typename error_t, typename factory_t,
           typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<factory_t>>>
-  requires std::invocable<factory_t> && detail::result_like<produced_t> &&
+              detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            detail::is_value_convertible_to<
                value_t, typename produced_t::value_type>::value
 [[nodiscard]] constexpr auto operator|(result<value_t, error_t> &&item,
@@ -932,8 +1025,9 @@ template <typename value_t, typename error_t, typename factory_t,
 
 template <typename error_t, typename factory_t,
           typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<factory_t>>>
-  requires std::invocable<factory_t> && detail::result_like<produced_t> &&
+              detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            std::same_as<typename produced_t::value_type, void>
 [[nodiscard]] constexpr auto operator|(const result<void, error_t> &item,
                                        factory_t &&factory) -> produced_t {
@@ -946,8 +1040,9 @@ template <typename error_t, typename factory_t,
 
 template <typename error_t, typename factory_t,
           typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<factory_t>>>
-  requires std::invocable<factory_t> && detail::result_like<produced_t> &&
+              detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            std::same_as<typename produced_t::value_type, void>
 [[nodiscard]] constexpr auto operator|(result<void, error_t> &&item,
                                        factory_t &&factory) -> produced_t {
@@ -960,7 +1055,7 @@ template <typename error_t, typename factory_t,
 
 template <typename value_t, typename error_t, typename fallback_t>
   requires detail::is_value_convertible_to<fallback_t, value_t>::value &&
-           (!std::invocable<fallback_t>)
+           (!detail::callable_with<fallback_t>)
 constexpr auto operator|=(result<value_t, error_t> &item, fallback_t &&fallback)
     -> result<value_t, error_t> & {
   if (!item) {
@@ -971,8 +1066,8 @@ constexpr auto operator|=(result<value_t, error_t> &item, fallback_t &&fallback)
 }
 
 template <typename value_t, typename error_t, typename factory_t,
-          typename produced_t = std::invoke_result_t<factory_t>>
-  requires std::invocable<factory_t> &&
+          typename produced_t = detail::callable_result_t<factory_t>>
+  requires detail::callable_with<factory_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            detail::is_value_convertible_to<produced_t, value_t>::value
 constexpr auto operator|=(result<value_t, error_t> &item, factory_t &&factory)
@@ -986,8 +1081,9 @@ constexpr auto operator|=(result<value_t, error_t> &item, factory_t &&factory)
 
 template <typename value_t, typename error_t, typename factory_t,
           typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<factory_t>>>
-  requires std::invocable<factory_t> && detail::result_like<produced_t> &&
+              detail::remove_cvref_t<detail::callable_result_t<factory_t>>>
+  requires detail::callable_with<factory_t> &&
+           detail::result_like<produced_t> &&
            detail::is_value_convertible_to<typename produced_t::value_type,
                                            value_t>::value &&
            std::convertible_to<typename produced_t::error_type, error_t>
@@ -1000,10 +1096,10 @@ constexpr auto operator|=(result<value_t, error_t> &item, factory_t &&factory)
   return item;
 }
 
-template <
-    typename value_t, typename error_t, typename callable_t,
-    typename produced_t = std::invoke_result_t<callable_t, const value_t &>>
-  requires std::invocable<callable_t, const value_t &> &&
+template <typename value_t, typename error_t, typename callable_t,
+          typename produced_t =
+              detail::callable_result_t<callable_t, const value_t &>>
+  requires detail::callable_with<callable_t, const value_t &> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            (!std::is_void_v<produced_t>)
 [[nodiscard]] constexpr auto operator&(const result<value_t, error_t> &item,
@@ -1017,8 +1113,8 @@ template <
 }
 
 template <typename value_t, typename error_t, typename callable_t,
-          typename produced_t = std::invoke_result_t<callable_t, value_t>>
-  requires std::invocable<callable_t, value_t> &&
+          typename produced_t = detail::callable_result_t<callable_t, value_t>>
+  requires detail::callable_with<callable_t, value_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            (!std::is_void_v<produced_t>)
 [[nodiscard]] constexpr auto operator&(result<value_t, error_t> &&item,
@@ -1031,10 +1127,10 @@ template <typename value_t, typename error_t, typename callable_t,
   return std::invoke(std::forward<callable_t>(callable), *std::move(item));
 }
 
-template <
-    typename value_t, typename error_t, typename callable_t,
-    typename produced_t = std::invoke_result_t<callable_t, const value_t &>>
-  requires std::invocable<callable_t, const value_t &> &&
+template <typename value_t, typename error_t, typename callable_t,
+          typename produced_t =
+              detail::callable_result_t<callable_t, const value_t &>>
+  requires detail::callable_with<callable_t, const value_t &> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            std::is_void_v<produced_t>
 [[nodiscard]] constexpr auto operator&(const result<value_t, error_t> &item,
@@ -1049,8 +1145,8 @@ template <
 }
 
 template <typename value_t, typename error_t, typename callable_t,
-          typename produced_t = std::invoke_result_t<callable_t, value_t>>
-  requires std::invocable<callable_t, value_t> &&
+          typename produced_t = detail::callable_result_t<callable_t, value_t>>
+  requires detail::callable_with<callable_t, value_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            std::is_void_v<produced_t>
 [[nodiscard]] constexpr auto operator&(result<value_t, error_t> &&item,
@@ -1066,8 +1162,8 @@ template <typename value_t, typename error_t, typename callable_t,
 
 template <typename value_t, typename error_t, typename callable_t,
           typename produced_t = detail::remove_cvref_t<
-              std::invoke_result_t<callable_t, const value_t &>>>
-  requires std::invocable<callable_t, const value_t &> &&
+              detail::callable_result_t<callable_t, const value_t &>>>
+  requires detail::callable_with<callable_t, const value_t &> &&
            detail::result_like<produced_t> &&
            std::convertible_to<error_t, typename produced_t::error_type>
 [[nodiscard]] constexpr auto operator&(const result<value_t, error_t> &item,
@@ -1080,9 +1176,9 @@ template <typename value_t, typename error_t, typename callable_t,
 }
 
 template <typename value_t, typename error_t, typename callable_t,
-          typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<callable_t, value_t>>>
-  requires std::invocable<callable_t, value_t> &&
+          typename produced_t = detail::remove_cvref_t<
+              detail::callable_result_t<callable_t, value_t>>>
+  requires detail::callable_with<callable_t, value_t> &&
            detail::result_like<produced_t> &&
            std::convertible_to<error_t, typename produced_t::error_type>
 [[nodiscard]] constexpr auto operator&(result<value_t, error_t> &&item,
@@ -1095,8 +1191,8 @@ template <typename value_t, typename error_t, typename callable_t,
 }
 
 template <typename error_t, typename callable_t,
-          typename produced_t = std::invoke_result_t<callable_t>>
-  requires std::invocable<callable_t> &&
+          typename produced_t = detail::callable_result_t<callable_t>>
+  requires detail::callable_with<callable_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            (!std::is_void_v<produced_t>)
 [[nodiscard]] constexpr auto operator&(const result<void, error_t> &item,
@@ -1110,8 +1206,8 @@ template <typename error_t, typename callable_t,
 }
 
 template <typename error_t, typename callable_t,
-          typename produced_t = std::invoke_result_t<callable_t>>
-  requires std::invocable<callable_t> &&
+          typename produced_t = detail::callable_result_t<callable_t>>
+  requires detail::callable_with<callable_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            std::is_void_v<produced_t>
 [[nodiscard]] constexpr auto operator&(const result<void, error_t> &item,
@@ -1127,8 +1223,9 @@ template <typename error_t, typename callable_t,
 
 template <typename error_t, typename callable_t,
           typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<callable_t>>>
-  requires std::invocable<callable_t> && detail::result_like<produced_t> &&
+              detail::remove_cvref_t<detail::callable_result_t<callable_t>>>
+  requires detail::callable_with<callable_t> &&
+           detail::result_like<produced_t> &&
            std::convertible_to<error_t, typename produced_t::error_type>
 [[nodiscard]] constexpr auto operator&(const result<void, error_t> &item,
                                        callable_t &&callable) -> produced_t {
@@ -1140,8 +1237,8 @@ template <typename error_t, typename callable_t,
 }
 
 template <typename value_t, typename error_t, typename callable_t,
-          typename produced_t = std::invoke_result_t<callable_t, value_t>>
-  requires std::invocable<callable_t, value_t> &&
+          typename produced_t = detail::callable_result_t<callable_t, value_t>>
+  requires detail::callable_with<callable_t, value_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>) &&
            detail::is_value_convertible_to<produced_t, value_t>::value
 constexpr auto operator&=(result<value_t, error_t> &item, callable_t &&callable)
@@ -1154,8 +1251,8 @@ constexpr auto operator&=(result<value_t, error_t> &item, callable_t &&callable)
 }
 
 template <typename error_t, typename callable_t,
-          typename produced_t = std::invoke_result_t<callable_t>>
-  requires std::invocable<callable_t> &&
+          typename produced_t = detail::callable_result_t<callable_t>>
+  requires detail::callable_with<callable_t> &&
            (!detail::result_like<detail::remove_cvref_t<produced_t>>)
 constexpr auto operator&=(result<void, error_t> &item, callable_t &&callable)
     -> result<void, error_t> & {
@@ -1167,9 +1264,9 @@ constexpr auto operator&=(result<void, error_t> &item, callable_t &&callable)
 }
 
 template <typename value_t, typename error_t, typename callable_t,
-          typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<callable_t, value_t>>>
-  requires std::invocable<callable_t, value_t> &&
+          typename produced_t = detail::remove_cvref_t<
+              detail::callable_result_t<callable_t, value_t>>>
+  requires detail::callable_with<callable_t, value_t> &&
            detail::result_like<produced_t> &&
            detail::is_value_convertible_to<typename produced_t::value_type,
                                            value_t>::value &&
@@ -1185,8 +1282,9 @@ constexpr auto operator&=(result<value_t, error_t> &item, callable_t &&callable)
 
 template <typename error_t, typename callable_t,
           typename produced_t =
-              detail::remove_cvref_t<std::invoke_result_t<callable_t>>>
-  requires std::invocable<callable_t> && detail::result_like<produced_t> &&
+              detail::remove_cvref_t<detail::callable_result_t<callable_t>>>
+  requires detail::callable_with<callable_t> &&
+           detail::result_like<produced_t> &&
            std::same_as<typename produced_t::value_type, void> &&
            std::convertible_to<typename produced_t::error_type, error_t>
 constexpr auto operator&=(result<void, error_t> &item, callable_t &&callable)

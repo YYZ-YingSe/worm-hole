@@ -1,8 +1,14 @@
 # docs
-docs/
+docs/*
+!docs/README.md
+!docs/README.zh-CN.md
+!docs/build-ci-surface.md
+!docs/build-ci-surface.zh-CN.md
+!docs/troubleshooting.md
+!docs/troubleshooting.zh-CN.md
 
 # build outputs
-build/
+/build/
 .cache/
 cmake-build-*/
 out/
@@ -18,10 +24,26 @@ install_manifest.txt
 compile_commands.json
 
 # test artifacts
-Testing/
+/Testing/
 *.gcno
 *.gcda
 *.gcov
+*.profraw
+*.profdata
+.coverage
+coverage.xml
+
+# Python caches / local tooling
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
 
 # object / library / binary
 *.o
@@ -37,6 +59,8 @@ Testing/
 .DS_Store
 .vscode/
 .idea/
+.clangd/
+.direnv/
 *.swp
 *.swo
 

@@ -1,0 +1,38 @@
+[
+  {
+    "name": "ubuntu-debug",
+    "os": "ubuntu-latest",
+    "configure_preset": "ci-linux-debug",
+    "build_preset": "ci-linux-debug",
+    "min_shards": 4,
+    "include_labels": ["ci.pr"],
+    "exclude_labels": ["ci.nightly"]
+  },
+  {
+    "name": "ubuntu-release",
+    "os": "ubuntu-latest",
+    "configure_preset": "ci-linux-release",
+    "build_preset": "ci-linux-release",
+    "min_shards": 4,
+    "include_labels": ["ci.pr"],
+    "exclude_labels": ["ci.nightly"]
+  },
+  {
+    "name": "macos-release",
+    "os": "macos-latest",
+    "configure_preset": "ci-macos-release",
+    "build_preset": "ci-macos-release",
+    "min_shards": 2,
+    "include_labels": ["ci.pr"],
+    "exclude_labels": ["ci.nightly"]
+  },
+  {
+    "name": "windows-release",
+    "os": "windows-latest",
+    "configure_preset": "ci-windows-release",
+    "build_preset": "ci-windows-release",
+    "min_shards": 2,
+    "include_labels": ["ci.pr"],
+    "exclude_labels": ["ci.nightly"]
+  }
+]
