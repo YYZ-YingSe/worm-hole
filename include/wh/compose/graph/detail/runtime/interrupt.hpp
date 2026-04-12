@@ -80,7 +80,11 @@ inline auto apply_runtime_resume_controls(
   if (!config.resume_contexts.empty()) {
     root_contexts_ptr = &config.resume_contexts;
   } else if (context.interrupt_info.has_value()) {
-    synthesized_root_contexts.push_back(*context.interrupt_info);
+    auto owned_interrupt = wh::core::into_owned(*context.interrupt_info);
+    if (owned_interrupt.has_error()) {
+      return wh::core::result<void>::failure(owned_interrupt.error());
+    }
+    synthesized_root_contexts.push_back(std::move(owned_interrupt).value());
     root_contexts_ptr = &synthesized_root_contexts;
   }
   const auto subgraph_span = std::span<const wh::core::interrupt_signal>{
@@ -94,9 +98,12 @@ inline auto apply_runtime_resume_controls(
           : std::span<const wh::core::interrupt_context>{};
   auto owned_contexts =
       merge_interrupt_sources(root_contexts_span, subgraph_span);
-  if (owned_contexts.empty() && context.interrupt_info.has_value()) {
+  if (owned_contexts.has_error()) {
+    return wh::core::result<void>::failure(owned_contexts.error());
+  }
+  if (owned_contexts->empty() && context.interrupt_info.has_value()) {
     owned_contexts = fallback_to_single_interrupt_when_empty(
-        std::move(owned_contexts), context.interrupt_info->location,
+        std::move(owned_contexts).value(), context.interrupt_info->location,
         context.interrupt_info->state);
   }
 
@@ -110,11 +117,11 @@ inline auto apply_runtime_resume_controls(
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
     auto match = std::ranges::find_if(
-        owned_contexts, [&](const wh::core::interrupt_context &item) {
+        owned_contexts.value(), [&](const wh::core::interrupt_context &item) {
           return item.interrupt_id ==
                  config.resume_decision->interrupt_context_id;
         });
-    if (match == owned_contexts.end()) {
+    if (match == owned_contexts->end()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
     auto applied = apply_resume_decision(context.resume_info.value(), *match,
@@ -130,8 +137,8 @@ inline auto apply_runtime_resume_controls(
     }
     auto status = apply_resume_batch(
         context.resume_info.value(),
-        std::span<const wh::core::interrupt_context>{owned_contexts.data(),
-                                                     owned_contexts.size()},
+        std::span<const wh::core::interrupt_context>{owned_contexts->data(),
+                                                     owned_contexts->size()},
         std::span<const resume_batch_item>{config.batch_resume_items.data(),
                                            config.batch_resume_items.size()});
     if (status.has_error()) {
@@ -139,15 +146,21 @@ inline auto apply_runtime_resume_controls(
     }
   }
   const bool should_reinterrupt = config.reinterrupt_unmatched;
-  if (should_reinterrupt && !owned_contexts.empty() &&
+  if (should_reinterrupt && !owned_contexts->empty() &&
       context.resume_info.has_value()) {
     const auto unmatched =
         collect_reinterrupts(context.resume_info.value(),
                              std::span<const wh::core::interrupt_context>{
-                                 owned_contexts.data(), owned_contexts.size()});
-    if (!unmatched.empty()) {
-      context.interrupt_info =
-          wh::compose::to_interrupt_context(unmatched.front());
+                                 owned_contexts->data(), owned_contexts->size()});
+    if (unmatched.has_error()) {
+      return wh::core::result<void>::failure(unmatched.error());
+    }
+    if (!unmatched->empty()) {
+      auto interrupt_context = wh::compose::to_interrupt_context(unmatched->front());
+      if (interrupt_context.has_error()) {
+        return wh::core::result<void>::failure(interrupt_context.error());
+      }
+      context.interrupt_info = std::move(interrupt_context).value();
     }
   }
   return {};

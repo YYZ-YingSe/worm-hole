@@ -1,9 +1,12 @@
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph/detail/runtime/value_input_ops.hpp"
 
 TEST_CASE("value input ops append materialize and build keyed fan-in maps",
-          "[UT][wh/compose/graph/detail/runtime/value_input_ops.hpp][build_value_input_map][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "value_input_ops.hpp][build_value_input_map][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   value_batch direct{};
@@ -36,14 +39,25 @@ TEST_CASE("value input ops append materialize and build keyed fan-in maps",
   REQUIRE(materialized_int != nullptr);
   REQUIRE(*materialized_int == 3);
 
+  std::string borrowed_source = "seed";
+  wh::compose::graph_value borrowed_value{wh::core::any::ref(borrowed_source)};
+  value_input borrowed{};
+  borrowed.borrowed = &borrowed_value;
+  auto borrowed_materialized = materialize_value_input(borrowed);
+  REQUIRE(borrowed_materialized.has_value());
+  auto *borrowed_text = wh::core::any_cast<std::string>(&borrowed_materialized.value());
+  REQUIRE(borrowed_text != nullptr);
+  REQUIRE(*borrowed_text == "seed");
+  borrowed_source = "mutated";
+  REQUIRE(*borrowed_text == "seed");
+
   value_input missing{};
   auto missing_status = materialize_value_input(missing);
   REQUIRE(missing_status.has_error());
   REQUIRE(missing_status.error() == wh::core::errc::not_found);
 
   value_input invalid{};
-  auto invalid_reader =
-      wh::compose::make_single_value_stream_reader(wh::compose::graph_value{8});
+  auto invalid_reader = wh::compose::make_single_value_stream_reader(wh::compose::graph_value{8});
   REQUIRE(invalid_reader.has_value());
   invalid.owned = wh::compose::graph_value{std::move(invalid_reader).value()};
   auto invalid_status = materialize_value_input(invalid);
@@ -61,8 +75,7 @@ TEST_CASE("value input ops append materialize and build keyed fan-in maps",
   entries.push_back(std::move(right));
 
   auto map = build_value_input_map(entries, [](const value_input &entry) {
-    return entry.edge_id == 10U ? std::string_view{"left"}
-                                : std::string_view{"right"};
+    return entry.edge_id == 10U ? std::string_view{"left"} : std::string_view{"right"};
   });
   REQUIRE(map.has_value());
   REQUIRE(map->size() == 2U);
@@ -71,7 +84,8 @@ TEST_CASE("value input ops append materialize and build keyed fan-in maps",
 }
 
 TEST_CASE("value input ops reject invalid batch forms and keep the last duplicate keyed value",
-          "[UT][wh/compose/graph/detail/runtime/value_input_ops.hpp][append_value_input][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "value_input_ops.hpp][append_value_input][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   value_batch invalid{};
@@ -91,9 +105,8 @@ TEST_CASE("value input ops reject invalid batch forms and keep the last duplicat
   second.owned = wh::compose::graph_value{20};
   entries.push_back(std::move(second));
 
-  auto map = build_value_input_map(entries, [](const value_input &) {
-    return std::string_view{"same"};
-  });
+  auto map =
+      build_value_input_map(entries, [](const value_input &) { return std::string_view{"same"}; });
   REQUIRE(map.has_value());
   REQUIRE(map->size() == 1U);
   REQUIRE(*wh::core::any_cast<int>(&map->at("same")) == 20);

@@ -235,59 +235,24 @@ struct agent_tool_access {
   return normalize_child_metadata(runtime, scope, event_metadata{});
 }
 
-// Best-effort bridge-state capture: unsupported payloads degrade to empty.
-[[nodiscard]] inline auto capture_bridge_state_any_or_empty(const wh::core::any &payload)
-    -> wh::core::any {
-  auto owned = wh::core::into_owned(payload);
-  if (owned.has_error()) {
-    return {};
-  }
-  return std::move(owned).value();
+[[nodiscard]] inline auto into_owned_bridge_state(const wh::core::any &payload)
+    -> wh::core::result<wh::core::any> {
+  return wh::core::into_owned(payload);
 }
 
-// Best-effort bridge-state capture: unsupported payloads degrade to empty.
-[[nodiscard]] inline auto capture_bridge_state_any_or_empty(wh::core::any &&payload)
-    -> wh::core::any {
-  auto owned = wh::core::into_owned(std::move(payload));
-  if (owned.has_error()) {
-    return {};
-  }
-  return std::move(owned).value();
+[[nodiscard]] inline auto into_owned_bridge_state(wh::core::any &&payload)
+    -> wh::core::result<wh::core::any> {
+  return wh::core::into_owned(std::move(payload));
 }
 
-// Best-effort bridge-state capture: unsupported attributes are dropped.
-[[nodiscard]] inline auto capture_bridge_metadata(const event_metadata &metadata)
-    -> event_metadata {
-  event_metadata owned{};
-  owned.run_path = metadata.run_path;
-  owned.agent_name = metadata.agent_name;
-  owned.tool_name = metadata.tool_name;
-  owned.attributes.reserve(metadata.attributes.size());
-  for (const auto &[key, value] : metadata.attributes) {
-    auto owned_value = wh::core::into_owned(value);
-    if (owned_value.has_error()) {
-      continue;
-    }
-    owned.attributes.emplace(key, std::move(owned_value).value());
-  }
-  return owned;
+[[nodiscard]] inline auto into_owned_bridge_metadata(const event_metadata &metadata)
+    -> wh::core::result<event_metadata> {
+  return wh::core::into_owned(metadata);
 }
 
-// Best-effort bridge-state capture: unsupported attributes are dropped.
-[[nodiscard]] inline auto capture_bridge_metadata(event_metadata &&metadata) -> event_metadata {
-  event_metadata owned{};
-  owned.run_path = std::move(metadata.run_path);
-  owned.agent_name = std::move(metadata.agent_name);
-  owned.tool_name = std::move(metadata.tool_name);
-  owned.attributes.reserve(metadata.attributes.size());
-  for (auto &[key, value] : metadata.attributes) {
-    auto owned_value = wh::core::into_owned(std::move(value));
-    if (owned_value.has_error()) {
-      continue;
-    }
-    owned.attributes.emplace(std::move(key), std::move(owned_value).value());
-  }
-  return owned;
+[[nodiscard]] inline auto into_owned_bridge_metadata(event_metadata &&metadata)
+    -> wh::core::result<event_metadata> {
+  return wh::core::into_owned(std::move(metadata));
 }
 
 [[nodiscard]] inline auto make_agent_tool_event(agent_tool_event_record record) -> agent_event {
@@ -379,11 +344,14 @@ into_owned_agent_tool_child_interrupt(agent_tool_child_interrupt &&interrupt)
 
 [[nodiscard]] inline auto into_owned_agent_tool_event_record(const agent_tool_event_record &record)
     -> wh::core::result<agent_tool_event_record> {
-  auto metadata = capture_bridge_metadata(record.metadata);
+  auto metadata = into_owned_bridge_metadata(record.metadata);
+  if (metadata.has_error()) {
+    return wh::core::result<agent_tool_event_record>::failure(metadata.error());
+  }
   if (const auto *message = std::get_if<wh::schema::message>(&record.payload); message != nullptr) {
     return agent_tool_event_record{
         .payload = *message,
-        .metadata = std::move(metadata),
+        .metadata = std::move(metadata).value(),
     };
   }
   if (const auto *custom = std::get_if<agent_tool_custom_event_record>(&record.payload);
@@ -398,7 +366,7 @@ into_owned_agent_tool_child_interrupt(agent_tool_child_interrupt &&interrupt)
                 .name = custom->name,
                 .payload = std::move(payload).value(),
             },
-        .metadata = std::move(metadata),
+        .metadata = std::move(metadata).value(),
     };
   }
 
@@ -414,17 +382,20 @@ into_owned_agent_tool_child_interrupt(agent_tool_child_interrupt &&interrupt)
               .message = error->message,
               .detail = std::move(detail).value(),
           },
-      .metadata = std::move(metadata),
+      .metadata = std::move(metadata).value(),
   };
 }
 
 [[nodiscard]] inline auto into_owned_agent_tool_event_record(agent_tool_event_record &&record)
     -> wh::core::result<agent_tool_event_record> {
-  auto metadata = capture_bridge_metadata(std::move(record.metadata));
+  auto metadata = into_owned_bridge_metadata(std::move(record.metadata));
+  if (metadata.has_error()) {
+    return wh::core::result<agent_tool_event_record>::failure(metadata.error());
+  }
   if (auto *message = std::get_if<wh::schema::message>(&record.payload); message != nullptr) {
     return agent_tool_event_record{
         .payload = std::move(*message),
-        .metadata = std::move(metadata),
+        .metadata = std::move(metadata).value(),
     };
   }
   if (auto *custom = std::get_if<agent_tool_custom_event_record>(&record.payload);
@@ -439,7 +410,7 @@ into_owned_agent_tool_child_interrupt(agent_tool_child_interrupt &&interrupt)
                 .name = std::move(custom->name),
                 .payload = std::move(payload).value(),
             },
-        .metadata = std::move(metadata),
+        .metadata = std::move(metadata).value(),
     };
   }
 
@@ -455,7 +426,7 @@ into_owned_agent_tool_child_interrupt(agent_tool_child_interrupt &&interrupt)
               .message = std::move(error->message),
               .detail = std::move(detail).value(),
           },
-      .metadata = std::move(metadata),
+      .metadata = std::move(metadata).value(),
   };
 }
 
@@ -465,7 +436,7 @@ into_owned_agent_tool_checkpoint_state(const agent_tool_checkpoint_state &checkp
   agent_tool_checkpoint_state owned{};
   owned.events.reserve(checkpoint.events.size());
   for (const auto &record : checkpoint.events) {
-    auto owned_record = into_owned_agent_tool_event_record(record);
+    auto owned_record = wh::core::into_owned(record);
     if (owned_record.has_error()) {
       return wh::core::result<agent_tool_checkpoint_state>::failure(owned_record.error());
     }
@@ -482,7 +453,7 @@ into_owned_agent_tool_checkpoint_state(agent_tool_checkpoint_state &&checkpoint)
   agent_tool_checkpoint_state owned{};
   owned.events.reserve(checkpoint.events.size());
   for (auto &record : checkpoint.events) {
-    auto owned_record = into_owned_agent_tool_event_record(std::move(record));
+    auto owned_record = wh::core::into_owned(std::move(record));
     if (owned_record.has_error()) {
       return wh::core::result<agent_tool_checkpoint_state>::failure(owned_record.error());
     }
@@ -496,14 +467,14 @@ into_owned_agent_tool_checkpoint_state(agent_tool_checkpoint_state &&checkpoint)
 [[nodiscard]] inline auto
 into_owned_agent_tool_interrupt_state(const agent_tool_interrupt_state &state)
     -> wh::core::result<agent_tool_interrupt_state> {
-  auto checkpoint = into_owned_agent_tool_checkpoint_state(state.checkpoint);
+  auto checkpoint = wh::core::into_owned(state.checkpoint);
   if (checkpoint.has_error()) {
     return wh::core::result<agent_tool_interrupt_state>::failure(checkpoint.error());
   }
 
   std::optional<agent_tool_child_interrupt> child_interrupt{};
   if (state.child_interrupt.has_value()) {
-    auto owned_child = into_owned_agent_tool_child_interrupt(*state.child_interrupt);
+    auto owned_child = wh::core::into_owned(*state.child_interrupt);
     if (owned_child.has_error()) {
       return wh::core::result<agent_tool_interrupt_state>::failure(owned_child.error());
     }
@@ -518,14 +489,14 @@ into_owned_agent_tool_interrupt_state(const agent_tool_interrupt_state &state)
 
 [[nodiscard]] inline auto into_owned_agent_tool_interrupt_state(agent_tool_interrupt_state &&state)
     -> wh::core::result<agent_tool_interrupt_state> {
-  auto checkpoint = into_owned_agent_tool_checkpoint_state(std::move(state.checkpoint));
+  auto checkpoint = wh::core::into_owned(std::move(state.checkpoint));
   if (checkpoint.has_error()) {
     return wh::core::result<agent_tool_interrupt_state>::failure(checkpoint.error());
   }
 
   std::optional<agent_tool_child_interrupt> child_interrupt{};
   if (state.child_interrupt.has_value()) {
-    auto owned_child = into_owned_agent_tool_child_interrupt(std::move(*state.child_interrupt));
+    auto owned_child = wh::core::into_owned(std::move(*state.child_interrupt));
     if (owned_child.has_error()) {
       return wh::core::result<agent_tool_interrupt_state>::failure(owned_child.error());
     }
@@ -538,27 +509,82 @@ into_owned_agent_tool_interrupt_state(const agent_tool_interrupt_state &state)
   };
 }
 
+[[nodiscard]] inline auto make_owned_agent_tool_checkpoint_state(
+    const agent_tool_output_summary &output) -> wh::core::result<agent_tool_checkpoint_state> {
+  agent_tool_checkpoint_state checkpoint{};
+  checkpoint.events.reserve(output.checkpoint_events.size());
+  for (const auto &record : output.checkpoint_events) {
+    auto owned_record = wh::core::into_owned(record);
+    if (owned_record.has_error()) {
+      return wh::core::result<agent_tool_checkpoint_state>::failure(owned_record.error());
+    }
+    checkpoint.events.push_back(std::move(owned_record).value());
+  }
+  checkpoint.output_chunks = output.text_chunks;
+  checkpoint.final_message = output.final_message;
+  return checkpoint;
+}
+
+[[nodiscard]] inline auto make_owned_agent_tool_checkpoint_state(agent_tool_output_summary &&output)
+    -> wh::core::result<agent_tool_checkpoint_state> {
+  return agent_tool_checkpoint_state{
+      .events = std::move(output.checkpoint_events),
+      .output_chunks = std::move(output.text_chunks),
+      .final_message = std::move(output.final_message),
+  };
+}
+
 [[nodiscard]] inline auto make_child_interrupt_record(const wh::core::interrupt_context &context)
-    -> agent_tool_child_interrupt {
+    -> wh::core::result<agent_tool_child_interrupt> {
+  auto state = into_owned_bridge_state(context.state);
+  if (state.has_error()) {
+    return wh::core::result<agent_tool_child_interrupt>::failure(state.error());
+  }
+  auto layer_payload = into_owned_bridge_state(context.layer_payload);
+  if (layer_payload.has_error()) {
+    return wh::core::result<agent_tool_child_interrupt>::failure(layer_payload.error());
+  }
   return agent_tool_child_interrupt{
       .interrupt_id = context.interrupt_id,
       .location = context.location,
-      .state = capture_bridge_state_any_or_empty(context.state),
-      .layer_payload = capture_bridge_state_any_or_empty(context.layer_payload),
+      .state = std::move(state).value(),
+      .layer_payload = std::move(layer_payload).value(),
       .parent_locations = context.parent_locations,
       .trigger_reason = context.trigger_reason,
   };
 }
 
 [[nodiscard]] inline auto to_interrupt_context(const agent_tool_child_interrupt &interrupt)
-    -> wh::core::interrupt_context {
+    -> wh::core::result<wh::core::interrupt_context> {
+  auto owned_interrupt = wh::core::into_owned(interrupt);
+  if (owned_interrupt.has_error()) {
+    return wh::core::result<wh::core::interrupt_context>::failure(owned_interrupt.error());
+  }
+  auto materialized = std::move(owned_interrupt).value();
   return wh::core::interrupt_context{
-      .interrupt_id = interrupt.interrupt_id,
-      .location = interrupt.location,
-      .state = wh::core::clone_interrupt_payload_any(interrupt.state),
-      .layer_payload = wh::core::clone_interrupt_payload_any(interrupt.layer_payload),
-      .parent_locations = interrupt.parent_locations,
-      .trigger_reason = interrupt.trigger_reason,
+      .interrupt_id = std::move(materialized.interrupt_id),
+      .location = std::move(materialized.location),
+      .state = std::move(materialized.state),
+      .layer_payload = std::move(materialized.layer_payload),
+      .parent_locations = std::move(materialized.parent_locations),
+      .trigger_reason = std::move(materialized.trigger_reason),
+  };
+}
+
+[[nodiscard]] inline auto to_interrupt_context(agent_tool_child_interrupt &&interrupt)
+    -> wh::core::result<wh::core::interrupt_context> {
+  auto owned_interrupt = wh::core::into_owned(std::move(interrupt));
+  if (owned_interrupt.has_error()) {
+    return wh::core::result<wh::core::interrupt_context>::failure(owned_interrupt.error());
+  }
+  auto materialized = std::move(owned_interrupt).value();
+  return wh::core::interrupt_context{
+      .interrupt_id = std::move(materialized.interrupt_id),
+      .location = std::move(materialized.location),
+      .state = std::move(materialized.state),
+      .layer_payload = std::move(materialized.layer_payload),
+      .parent_locations = std::move(materialized.parent_locations),
+      .trigger_reason = std::move(materialized.trigger_reason),
   };
 }
 
@@ -601,6 +627,11 @@ into_owned_agent_tool_interrupt_state(const agent_tool_interrupt_state &state)
     return wh::core::result<std::optional<agent_tool_resume_projection>>::failure(
         wh::core::errc::type_mismatch);
   }
+  auto owned_state = wh::core::into_owned(*stored);
+  if (owned_state.has_error()) {
+    return wh::core::result<std::optional<agent_tool_resume_projection>>::failure(
+        owned_state.error());
+  }
 
   auto patch = wh::compose::consume_resume_data<wh::compose::resume_patch>(*context.resume_info,
                                                                            *outer_interrupt_id);
@@ -611,7 +642,7 @@ into_owned_agent_tool_interrupt_state(const agent_tool_interrupt_state &state)
   return std::optional<agent_tool_resume_projection>{agent_tool_resume_projection{
       .outer_interrupt_id = std::move(*outer_interrupt_id),
       .patch = std::move(patch).value(),
-      .state = *stored,
+      .state = std::move(owned_state).value(),
   }};
 }
 
@@ -623,23 +654,21 @@ inline auto apply_resume_projection(wh::adk::run_request &request,
   }
 
   auto child_interrupt = to_interrupt_context(*projection.state.child_interrupt);
-  request.options.compose_controls.resume.contexts.push_back(child_interrupt);
+  if (child_interrupt.has_error()) {
+    return wh::core::result<void>::failure(child_interrupt.error());
+  }
+  auto edited_payload = wh::core::into_owned(projection.patch.data);
+  if (edited_payload.has_error()) {
+    return wh::core::result<void>::failure(edited_payload.error());
+  }
+  request.options.compose_controls.resume.contexts.push_back(std::move(child_interrupt).value());
   request.options.compose_controls.resume.decision = wh::compose::interrupt_resume_decision{
-      .interrupt_context_id = child_interrupt.interrupt_id,
+      .interrupt_context_id = request.options.compose_controls.resume.contexts.back().interrupt_id,
       .decision = projection.patch.decision,
-      .edited_payload = projection.patch.data,
+      .edited_payload = std::move(edited_payload).value(),
       .audit = projection.patch.audit,
   };
   return {};
-}
-
-[[nodiscard]] inline auto resolve_child_interrupt(const agent_tool_output_summary &output,
-                                                  const wh::core::run_context &context)
-    -> std::optional<agent_tool_child_interrupt> {
-  if (context.interrupt_info.has_value() && !context.interrupt_info->interrupt_id.empty()) {
-    return make_child_interrupt_record(*context.interrupt_info);
-  }
-  return output.child_interrupt;
 }
 
 [[nodiscard]] inline auto resolve_outer_interrupt_id(
@@ -678,38 +707,61 @@ project_child_runtime(wh::core::run_context &parent, const agent_tool_scope_snap
                       const std::optional<wh::core::interrupt_context> &saved_outer_interrupt,
                       const agent_tool_runtime &runtime,
                       const std::optional<agent_tool_resume_projection> &projection,
-                      const agent_tool_output_summary &output) -> void {
+                      const agent_tool_output_summary &output) -> wh::core::result<void> {
   if (!output.interrupted) {
     if (parent.interrupt_info.has_value() && parent.interrupt_info->location == scope.location) {
       parent.interrupt_info.reset();
     }
-    return;
+    return {};
   }
 
-  auto child_interrupt = resolve_child_interrupt(output, parent);
+  std::optional<agent_tool_child_interrupt> child_interrupt{};
+  if (parent.interrupt_info.has_value() && !parent.interrupt_info->interrupt_id.empty()) {
+    auto captured = make_child_interrupt_record(*parent.interrupt_info);
+    if (captured.has_error()) {
+      return wh::core::result<void>::failure(captured.error());
+    }
+    child_interrupt = std::move(captured).value();
+  } else if (output.child_interrupt.has_value()) {
+    auto owned_child = wh::core::into_owned(*output.child_interrupt);
+    if (owned_child.has_error()) {
+      return wh::core::result<void>::failure(owned_child.error());
+    }
+    child_interrupt = std::move(owned_child).value();
+  }
+  auto checkpoint = make_owned_agent_tool_checkpoint_state(output);
+  if (checkpoint.has_error()) {
+    return wh::core::result<void>::failure(checkpoint.error());
+  }
   auto outer_interrupt_id = resolve_outer_interrupt_id(runtime, scope, parent, projection,
                                                        saved_outer_interrupt, child_interrupt);
+  auto checkpoint_child_interrupt = std::move(child_interrupt);
+  wh::core::any layer_payload{};
+  auto trigger_reason = checkpoint_child_interrupt.has_value()
+                            ? checkpoint_child_interrupt->trigger_reason
+                            : std::string{agent_tool_interrupt_reason};
+  if (checkpoint_child_interrupt.has_value()) {
+    auto copied_layer_payload =
+        into_owned_bridge_state(checkpoint_child_interrupt->layer_payload);
+    if (copied_layer_payload.has_error()) {
+      return wh::core::result<void>::failure(copied_layer_payload.error());
+    }
+    layer_payload = std::move(copied_layer_payload).value();
+  }
 
   parent.interrupt_info = wh::core::interrupt_context{
       .interrupt_id = std::move(outer_interrupt_id),
       .location = scope.location,
       .state = wh::core::any(agent_tool_interrupt_state{
-          .checkpoint = make_agent_tool_checkpoint_state(agent_tool_output_summary{
-              .checkpoint_events = output.checkpoint_events,
-              .text_chunks = output.text_chunks,
-              .final_message = output.final_message,
-              .child_interrupt = output.child_interrupt,
-              .interrupted = output.interrupted,
-          }),
-          .child_interrupt = child_interrupt,
+          .checkpoint = std::move(checkpoint).value(),
+          .child_interrupt = std::move(checkpoint_child_interrupt),
       }),
-      .trigger_reason = child_interrupt.has_value() ? child_interrupt->trigger_reason
-                                                    : std::string{agent_tool_interrupt_reason},
+      .trigger_reason = std::move(trigger_reason),
   };
-  if (child_interrupt.has_value()) {
-    parent.interrupt_info->layer_payload =
-        wh::core::clone_interrupt_payload_any(child_interrupt->layer_payload);
+  if (layer_payload.has_value()) {
+    parent.interrupt_info->layer_payload = std::move(layer_payload);
   }
+  return {};
 }
 
 [[nodiscard]] inline auto parse_request_text(const std::string_view input_json)
@@ -790,9 +842,14 @@ prepare_agent_tool_run_setup(const agent_tool_runtime &runtime, const wh::compos
 
   const auto cleared_outer_interrupt =
       context.interrupt_info.has_value() && context.interrupt_info->location == scope.location;
-  auto saved_outer_interrupt = cleared_outer_interrupt
-                                   ? context.interrupt_info
-                                   : std::optional<wh::core::interrupt_context>{};
+  std::optional<wh::core::interrupt_context> saved_outer_interrupt{};
+  if (cleared_outer_interrupt) {
+    auto owned_interrupt = wh::core::into_owned(*context.interrupt_info);
+    if (owned_interrupt.has_error()) {
+      return wh::core::result<agent_tool_run_setup>::failure(owned_interrupt.error());
+    }
+    saved_outer_interrupt = std::move(owned_interrupt).value();
+  }
   if (cleared_outer_interrupt) {
     context.interrupt_info.reset();
   }
@@ -806,11 +863,11 @@ prepare_agent_tool_run_setup(const agent_tool_runtime &runtime, const wh::compos
 }
 
 inline auto restore_outer_interrupt(wh::core::run_context &context,
-                                    const agent_tool_run_setup &setup) -> void {
+                                    agent_tool_run_setup &&setup) -> void {
   if (!setup.cleared_outer_interrupt || context.interrupt_info.has_value()) {
     return;
   }
-  context.interrupt_info = setup.saved_outer_interrupt;
+  context.interrupt_info = std::move(setup.saved_outer_interrupt);
 }
 
 [[nodiscard]] inline auto materialize_agent_tool_output(const agent_tool_runtime &runtime,
@@ -852,13 +909,21 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
               return {};
             }
 
-            auto checkpoint_metadata = capture_bridge_metadata(normalized_metadata);
+            auto checkpoint_metadata = into_owned_bridge_metadata(normalized_metadata);
+            if (checkpoint_metadata.has_error()) {
+              return wh::core::result<void>::failure(checkpoint_metadata.error());
+            }
+            auto emitted_metadata = into_owned_bridge_metadata(normalized_metadata);
+            if (emitted_metadata.has_error()) {
+              return wh::core::result<void>::failure(emitted_metadata.error());
+            }
             output.checkpoint_events.push_back(agent_tool_event_record{
                 .payload = entry,
-                .metadata = std::move(checkpoint_metadata),
+                .metadata = std::move(checkpoint_metadata).value(),
             });
             emitted_boundary_event = true;
-            return bridge.emit(make_message_event(std::move(entry), normalized_metadata));
+            return bridge.emit(
+                make_message_event(std::move(entry), std::move(emitted_metadata).value()));
           });
       if (consumed.has_error()) {
         return consumed;
@@ -874,7 +939,11 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
             .location = normalized_metadata.run_path,
         };
         emitted_boundary_event = true;
-        auto emitted = bridge.emit(make_control_event(*action, std::move(normalized_metadata)));
+        auto owned_metadata = into_owned_bridge_metadata(std::move(normalized_metadata));
+        if (owned_metadata.has_error()) {
+          return wh::core::result<void>::failure(owned_metadata.error());
+        }
+        auto emitted = bridge.emit(make_control_event(*action, std::move(owned_metadata).value()));
         if (emitted.has_error()) {
           return emitted;
         }
@@ -884,20 +953,35 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
 
     if (const auto *error = std::get_if<error_event>(&event.payload); error != nullptr) {
       output.final_error = error->code;
-      auto checkpoint_detail = capture_bridge_state_any_or_empty(error->detail);
-      auto checkpoint_metadata = capture_bridge_metadata(normalized_metadata);
+      auto checkpoint_detail = into_owned_bridge_state(error->detail);
+      if (checkpoint_detail.has_error()) {
+        return wh::core::result<void>::failure(checkpoint_detail.error());
+      }
+      auto checkpoint_metadata = into_owned_bridge_metadata(normalized_metadata);
+      if (checkpoint_metadata.has_error()) {
+        return wh::core::result<void>::failure(checkpoint_metadata.error());
+      }
+      auto emitted_detail = into_owned_bridge_state(error->detail);
+      if (emitted_detail.has_error()) {
+        return wh::core::result<void>::failure(emitted_detail.error());
+      }
+      auto emitted_metadata = into_owned_bridge_metadata(normalized_metadata);
+      if (emitted_metadata.has_error()) {
+        return wh::core::result<void>::failure(emitted_metadata.error());
+      }
       output.checkpoint_events.push_back(agent_tool_event_record{
           .payload =
               agent_tool_error_event_record{
                   .code = error->code,
                   .message = error->message,
-                  .detail = std::move(checkpoint_detail),
+                  .detail = std::move(checkpoint_detail).value(),
               },
-          .metadata = std::move(checkpoint_metadata),
+          .metadata = std::move(checkpoint_metadata).value(),
       });
       emitted_boundary_event = true;
-      auto emitted = bridge.emit(make_error_event(error->code, error->message, error->detail,
-                                                  std::move(normalized_metadata)));
+      auto emitted = bridge.emit(make_error_event(error->code, error->message,
+                                                  std::move(emitted_detail).value(),
+                                                  std::move(emitted_metadata).value()));
       if (emitted.has_error()) {
         return emitted;
       }
@@ -906,19 +990,34 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
 
     if (runtime.forward_internal_events) {
       if (const auto *custom = std::get_if<custom_event>(&event.payload); custom != nullptr) {
-        auto checkpoint_payload = capture_bridge_state_any_or_empty(custom->payload);
-        auto checkpoint_metadata = capture_bridge_metadata(normalized_metadata);
+        auto checkpoint_payload = into_owned_bridge_state(custom->payload);
+        if (checkpoint_payload.has_error()) {
+          return wh::core::result<void>::failure(checkpoint_payload.error());
+        }
+        auto checkpoint_metadata = into_owned_bridge_metadata(normalized_metadata);
+        if (checkpoint_metadata.has_error()) {
+          return wh::core::result<void>::failure(checkpoint_metadata.error());
+        }
+        auto emitted_payload = into_owned_bridge_state(custom->payload);
+        if (emitted_payload.has_error()) {
+          return wh::core::result<void>::failure(emitted_payload.error());
+        }
+        auto emitted_metadata = into_owned_bridge_metadata(normalized_metadata);
+        if (emitted_metadata.has_error()) {
+          return wh::core::result<void>::failure(emitted_metadata.error());
+        }
         output.checkpoint_events.push_back(agent_tool_event_record{
             .payload =
                 agent_tool_custom_event_record{
                     .name = custom->name,
-                    .payload = std::move(checkpoint_payload),
+                    .payload = std::move(checkpoint_payload).value(),
                 },
-            .metadata = std::move(checkpoint_metadata),
+            .metadata = std::move(checkpoint_metadata).value(),
         });
         emitted_boundary_event = true;
-        auto emitted = bridge.emit(
-            make_custom_event(custom->name, custom->payload, std::move(normalized_metadata)));
+        auto emitted =
+            bridge.emit(make_custom_event(custom->name, std::move(emitted_payload).value(),
+                                          std::move(emitted_metadata).value()));
         if (emitted.has_error()) {
           return emitted;
         }
@@ -935,14 +1034,22 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
   }
 
   if (!runtime.forward_internal_events && output.final_message.has_value()) {
-    auto checkpoint_metadata = capture_bridge_metadata(default_tool_metadata(runtime, scope));
+    auto default_metadata = default_tool_metadata(runtime, scope);
+    auto checkpoint_metadata = into_owned_bridge_metadata(default_metadata);
+    if (checkpoint_metadata.has_error()) {
+      return wh::core::result<void>::failure(checkpoint_metadata.error());
+    }
+    auto emitted_metadata = into_owned_bridge_metadata(std::move(default_metadata));
+    if (emitted_metadata.has_error()) {
+      return wh::core::result<void>::failure(emitted_metadata.error());
+    }
     output.checkpoint_events.push_back(agent_tool_event_record{
         .payload = *output.final_message,
-        .metadata = std::move(checkpoint_metadata),
+        .metadata = std::move(checkpoint_metadata).value(),
     });
     emitted_boundary_event = true;
     auto emitted = bridge.emit(
-        make_message_event(*output.final_message, default_tool_metadata(runtime, scope)));
+        make_message_event(*output.final_message, std::move(emitted_metadata).value()));
     if (emitted.has_error()) {
       return emitted;
     }
@@ -978,7 +1085,7 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
 
   auto run_result = runtime.runner(setup.value().request, scope.run);
   if (run_result.has_error()) {
-    restore_outer_interrupt(scope.run, setup.value());
+    restore_outer_interrupt(scope.run, std::move(setup).value());
     output.final_error = run_result.error();
     auto emitted = bridge.emit(make_error_event(run_result.error(),
                                                 std::string{agent_tool_bridge_failed_message}, {},
@@ -999,12 +1106,17 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
   auto materialized = materialize_agent_tool_output(runtime, std::move(run_result).value(),
                                                     scope_snapshot, bridge, output);
   if (materialized.has_error()) {
-    restore_outer_interrupt(scope.run, setup.value());
+    restore_outer_interrupt(scope.run, std::move(setup).value());
     return wh::core::result<agent_tool_result>::failure(materialized.error());
   }
 
-  project_child_runtime(scope.run, scope_snapshot, setup.value().saved_outer_interrupt, runtime,
-                        setup.value().projection, output);
+  auto projected = project_child_runtime(scope.run, scope_snapshot,
+                                         setup.value().saved_outer_interrupt, runtime,
+                                         setup.value().projection, output);
+  if (projected.has_error()) {
+    restore_outer_interrupt(scope.run, std::move(setup).value());
+    return wh::core::result<agent_tool_result>::failure(projected.error());
+  }
 
   std::string joined_text{};
   for (const auto &chunk : output.text_chunks) {
@@ -1449,7 +1561,7 @@ private:
 
   [[nodiscard]] auto capture_child_interrupt(const control_action &action,
                                              const event_metadata &metadata) const
-      -> agent_tool_child_interrupt {
+      -> wh::core::result<agent_tool_child_interrupt> {
     if (context_ != nullptr && context_->interrupt_info.has_value() &&
         !context_->interrupt_info->interrupt_id.empty()) {
       return make_child_interrupt_record(*context_->interrupt_info);
@@ -1465,9 +1577,16 @@ private:
   [[nodiscard]] auto finish_interrupt(const control_action &action, const event_metadata &metadata)
       -> result_type {
     output_.interrupted = true;
-    output_.child_interrupt = capture_child_interrupt(action, metadata);
-    project_child_runtime(*context_, scope_, saved_outer_interrupt_, runtime_, projection_,
-                          output_);
+    auto child_interrupt = capture_child_interrupt(action, metadata);
+    if (child_interrupt.has_error()) {
+      return finish_error(child_interrupt.error());
+    }
+    output_.child_interrupt = std::move(child_interrupt).value();
+    auto projected = project_child_runtime(*context_, scope_, saved_outer_interrupt_, runtime_,
+                                          projection_, output_);
+    if (projected.has_error()) {
+      return finish_error(projected.error());
+    }
     closed_ = true;
     [[maybe_unused]] const auto closed = close_sources();
     finalized_ = true;
@@ -1630,7 +1749,7 @@ private:
 
   auto run_result = runtime.runner(setup.value().request, scope.run);
   if (run_result.has_error()) {
-    restore_outer_interrupt(scope.run, setup.value());
+    restore_outer_interrupt(scope.run, std::move(setup).value());
     return wh::core::result<wh::compose::graph_stream_reader>::failure(run_result.error());
   }
 
@@ -1737,6 +1856,42 @@ inline auto agent_tool::compose_entry() const -> wh::core::result<wh::compose::t
 } // namespace wh::adk
 
 namespace wh::core {
+
+template <> struct any_owned_traits<wh::adk::detail::agent_tool_child_interrupt> {
+  [[nodiscard]] static auto into_owned(const wh::adk::detail::agent_tool_child_interrupt &value)
+      -> wh::core::result<wh::adk::detail::agent_tool_child_interrupt> {
+    return wh::adk::detail::into_owned_agent_tool_child_interrupt(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::detail::agent_tool_child_interrupt &&value)
+      -> wh::core::result<wh::adk::detail::agent_tool_child_interrupt> {
+    return wh::adk::detail::into_owned_agent_tool_child_interrupt(std::move(value));
+  }
+};
+
+template <> struct any_owned_traits<wh::adk::detail::agent_tool_event_record> {
+  [[nodiscard]] static auto into_owned(const wh::adk::detail::agent_tool_event_record &value)
+      -> wh::core::result<wh::adk::detail::agent_tool_event_record> {
+    return wh::adk::detail::into_owned_agent_tool_event_record(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::detail::agent_tool_event_record &&value)
+      -> wh::core::result<wh::adk::detail::agent_tool_event_record> {
+    return wh::adk::detail::into_owned_agent_tool_event_record(std::move(value));
+  }
+};
+
+template <> struct any_owned_traits<wh::adk::detail::agent_tool_checkpoint_state> {
+  [[nodiscard]] static auto into_owned(const wh::adk::detail::agent_tool_checkpoint_state &value)
+      -> wh::core::result<wh::adk::detail::agent_tool_checkpoint_state> {
+    return wh::adk::detail::into_owned_agent_tool_checkpoint_state(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::detail::agent_tool_checkpoint_state &&value)
+      -> wh::core::result<wh::adk::detail::agent_tool_checkpoint_state> {
+    return wh::adk::detail::into_owned_agent_tool_checkpoint_state(std::move(value));
+  }
+};
 
 template <> struct any_owned_traits<wh::adk::detail::agent_tool_interrupt_state> {
   [[nodiscard]] static auto into_owned(const wh::adk::detail::agent_tool_interrupt_state &value)

@@ -170,26 +170,106 @@ struct interrupt_context_tree_node {
   std::vector<interrupt_context_tree_node> children{};
 };
 
-/// Deep-copies one interrupt payload object for external/exported snapshots.
-[[nodiscard]] inline auto clone_interrupt_payload_any(const wh::core::any &payload)
-    -> wh::core::any {
-  auto owned = wh::core::into_owned(payload);
-  if (owned.has_error()) {
-    return {};
+template <> struct any_owned_traits<interrupt_signal> {
+  [[nodiscard]] static auto into_owned(const interrupt_signal &value)
+      -> result<interrupt_signal> {
+    auto state = wh::core::into_owned(value.state);
+    if (state.has_error()) {
+      return result<interrupt_signal>::failure(state.error());
+    }
+    auto layer_payload = wh::core::into_owned(value.layer_payload);
+    if (layer_payload.has_error()) {
+      return result<interrupt_signal>::failure(layer_payload.error());
+    }
+    return interrupt_signal{
+        .interrupt_id = value.interrupt_id,
+        .location = value.location,
+        .state = std::move(state).value(),
+        .layer_payload = std::move(layer_payload).value(),
+        .used = value.used,
+        .parent_locations = value.parent_locations,
+        .trigger_reason = value.trigger_reason,
+    };
   }
-  return std::move(owned).value();
-}
+
+  [[nodiscard]] static auto into_owned(interrupt_signal &&value)
+      -> result<interrupt_signal> {
+    auto state = wh::core::into_owned(std::move(value.state));
+    if (state.has_error()) {
+      return result<interrupt_signal>::failure(state.error());
+    }
+    auto layer_payload = wh::core::into_owned(std::move(value.layer_payload));
+    if (layer_payload.has_error()) {
+      return result<interrupt_signal>::failure(layer_payload.error());
+    }
+    return interrupt_signal{
+        .interrupt_id = std::move(value.interrupt_id),
+        .location = std::move(value.location),
+        .state = std::move(state).value(),
+        .layer_payload = std::move(layer_payload).value(),
+        .used = value.used,
+        .parent_locations = std::move(value.parent_locations),
+        .trigger_reason = std::move(value.trigger_reason),
+    };
+  }
+};
+
+template <> struct any_owned_traits<interrupt_context> {
+  [[nodiscard]] static auto into_owned(const interrupt_context &value)
+      -> result<interrupt_context> {
+    auto state = wh::core::into_owned(value.state);
+    if (state.has_error()) {
+      return result<interrupt_context>::failure(state.error());
+    }
+    auto layer_payload = wh::core::into_owned(value.layer_payload);
+    if (layer_payload.has_error()) {
+      return result<interrupt_context>::failure(layer_payload.error());
+    }
+    return interrupt_context{
+        .interrupt_id = value.interrupt_id,
+        .location = value.location,
+        .state = std::move(state).value(),
+        .layer_payload = std::move(layer_payload).value(),
+        .used = value.used,
+        .parent_locations = value.parent_locations,
+        .trigger_reason = value.trigger_reason,
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(interrupt_context &&value)
+      -> result<interrupt_context> {
+    auto state = wh::core::into_owned(std::move(value.state));
+    if (state.has_error()) {
+      return result<interrupt_context>::failure(state.error());
+    }
+    auto layer_payload = wh::core::into_owned(std::move(value.layer_payload));
+    if (layer_payload.has_error()) {
+      return result<interrupt_context>::failure(layer_payload.error());
+    }
+    return interrupt_context{
+        .interrupt_id = std::move(value.interrupt_id),
+        .location = std::move(value.location),
+        .state = std::move(state).value(),
+        .layer_payload = std::move(layer_payload).value(),
+        .used = value.used,
+        .parent_locations = std::move(value.parent_locations),
+        .trigger_reason = std::move(value.trigger_reason),
+    };
+  }
+};
 
 /// Converts signal view to context view (copy).
 [[nodiscard]] inline auto to_interrupt_context(const interrupt_signal &signal)
-    -> interrupt_context {
-  return interrupt_context{signal.interrupt_id,
-                           signal.location,
-                           clone_interrupt_payload_any(signal.state),
-                           clone_interrupt_payload_any(signal.layer_payload),
-                           signal.used,
-                           signal.parent_locations,
-                           signal.trigger_reason};
+    -> result<interrupt_context> {
+  return wh::core::into_owned(interrupt_context{
+      signal.interrupt_id,
+      signal.location,
+      signal.state,
+      signal.layer_payload,
+      signal.used,
+      signal.parent_locations,
+      signal.trigger_reason,
+  });
 }
 
 /// Converts signal view to context view (move).
@@ -205,14 +285,16 @@ struct interrupt_context_tree_node {
 
 /// Converts context view to signal view (copy).
 [[nodiscard]] inline auto to_interrupt_signal(const interrupt_context &context)
-    -> interrupt_signal {
-  return interrupt_signal{context.interrupt_id,
-                          context.location,
-                          clone_interrupt_payload_any(context.state),
-                          clone_interrupt_payload_any(context.layer_payload),
-                          context.used,
-                          context.parent_locations,
-                          context.trigger_reason};
+    -> result<interrupt_signal> {
+  return wh::core::into_owned(interrupt_signal{
+      context.interrupt_id,
+      context.location,
+      context.state,
+      context.layer_payload,
+      context.used,
+      context.parent_locations,
+      context.trigger_reason,
+  });
 }
 
 /// Converts context view to signal view (move).
@@ -302,13 +384,17 @@ inline auto append_filtered_segment(address &target, const std::string_view segm
 [[nodiscard]] inline auto
 project_interrupt_context(const interrupt_context &context,
                           const std::span<const std::string_view> allowed_segments)
-    -> interrupt_context {
+    -> result<interrupt_context> {
   if (allowed_segments.empty()) {
-    return context;
+    return wh::core::into_owned(context);
   }
-  interrupt_context projected{context};
-  projected.location = project_address(context.location, allowed_segments);
-  return projected;
+  auto projected = wh::core::into_owned(context);
+  if (projected.has_error()) {
+    return result<interrupt_context>::failure(projected.error());
+  }
+  auto materialized = std::move(projected).value();
+  materialized.location = project_address(context.location, allowed_segments);
+  return materialized;
 }
 
 /// Projects interrupt context location by segment filter (move overload).
@@ -326,12 +412,16 @@ project_interrupt_context(interrupt_context &&context,
 /// Rebuilds signal tree view from flat signal list.
 [[nodiscard]] inline auto
 rebuild_interrupt_signal_tree(const std::span<const interrupt_signal> signals)
-    -> std::vector<interrupt_signal_tree_node> {
+    -> result<std::vector<interrupt_signal_tree_node>> {
   std::vector<interrupt_signal_tree_node> roots{};
   roots.reserve(signals.size());
   for (const auto &signal : signals) {
+    auto owned_signal = wh::core::into_owned(signal);
+    if (owned_signal.has_error()) {
+      return result<std::vector<interrupt_signal_tree_node>>::failure(owned_signal.error());
+    }
     auto *leaf = detail::ensure_tree_path(roots, signal.location);
-    leaf->signals.push_back(signal);
+    leaf->signals.push_back(std::move(owned_signal).value());
   }
   return roots;
 }
@@ -339,12 +429,16 @@ rebuild_interrupt_signal_tree(const std::span<const interrupt_signal> signals)
 /// Rebuilds context tree view from flat context list.
 [[nodiscard]] inline auto
 rebuild_interrupt_context_tree(const std::span<const interrupt_context> contexts)
-    -> std::vector<interrupt_context_tree_node> {
+    -> result<std::vector<interrupt_context_tree_node>> {
   std::vector<interrupt_context_tree_node> roots{};
   roots.reserve(contexts.size());
   for (const auto &context : contexts) {
+    auto owned_context = wh::core::into_owned(context);
+    if (owned_context.has_error()) {
+      return result<std::vector<interrupt_context_tree_node>>::failure(owned_context.error());
+    }
     auto *leaf = detail::ensure_tree_path(roots, context.location);
-    leaf->contexts.push_back(context);
+    leaf->contexts.push_back(std::move(owned_context).value());
   }
   return roots;
 }
@@ -353,52 +447,88 @@ namespace detail {
 
 /// Converts signal-tree node to context-tree node recursively.
 inline auto to_context_tree_node(const interrupt_signal_tree_node &source)
-    -> interrupt_context_tree_node {
+    -> result<interrupt_context_tree_node> {
   interrupt_context_tree_node node{};
   node.location = source.location;
   node.contexts.reserve(source.signals.size());
   for (const auto &signal : source.signals) {
-    node.contexts.push_back(to_interrupt_context(signal));
+    auto context = to_interrupt_context(signal);
+    if (context.has_error()) {
+      return result<interrupt_context_tree_node>::failure(context.error());
+    }
+    node.contexts.push_back(std::move(context).value());
   }
   node.children.reserve(source.children.size());
   for (const auto &child : source.children) {
-    node.children.push_back(to_context_tree_node(child));
+    auto converted_child = to_context_tree_node(child);
+    if (converted_child.has_error()) {
+      return result<interrupt_context_tree_node>::failure(converted_child.error());
+    }
+    node.children.push_back(std::move(converted_child).value());
   }
   return node;
 }
 
 /// Converts context-tree node to signal-tree node recursively.
 inline auto to_signal_tree_node(const interrupt_context_tree_node &source)
-    -> interrupt_signal_tree_node {
+    -> result<interrupt_signal_tree_node> {
   interrupt_signal_tree_node node{};
   node.location = source.location;
   node.signals.reserve(source.contexts.size());
   for (const auto &context : source.contexts) {
-    node.signals.push_back(to_interrupt_signal(context));
+    auto signal = to_interrupt_signal(context);
+    if (signal.has_error()) {
+      return result<interrupt_signal_tree_node>::failure(signal.error());
+    }
+    node.signals.push_back(std::move(signal).value());
   }
   node.children.reserve(source.children.size());
   for (const auto &child : source.children) {
-    node.children.push_back(to_signal_tree_node(child));
+    auto converted_child = to_signal_tree_node(child);
+    if (converted_child.has_error()) {
+      return result<interrupt_signal_tree_node>::failure(converted_child.error());
+    }
+    node.children.push_back(std::move(converted_child).value());
   }
   return node;
 }
 
 /// Flattens one signal-tree node recursively into output vector.
 inline auto flatten_signal_tree_node(const interrupt_signal_tree_node &node,
-                                     std::vector<interrupt_signal> &output) -> void {
-  output.insert(output.end(), node.signals.begin(), node.signals.end());
-  for (const auto &child : node.children) {
-    flatten_signal_tree_node(child, output);
+                                     std::vector<interrupt_signal> &output) -> result<void> {
+  for (const auto &signal : node.signals) {
+    auto owned_signal = wh::core::into_owned(signal);
+    if (owned_signal.has_error()) {
+      return result<void>::failure(owned_signal.error());
+    }
+    output.push_back(std::move(owned_signal).value());
   }
+  for (const auto &child : node.children) {
+    auto flattened_child = flatten_signal_tree_node(child, output);
+    if (flattened_child.has_error()) {
+      return flattened_child;
+    }
+  }
+  return {};
 }
 
 /// Flattens one context-tree node recursively into output vector.
 inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
-                                      std::vector<interrupt_context> &output) -> void {
-  output.insert(output.end(), node.contexts.begin(), node.contexts.end());
-  for (const auto &child : node.children) {
-    flatten_context_tree_node(child, output);
+                                      std::vector<interrupt_context> &output) -> result<void> {
+  for (const auto &context : node.contexts) {
+    auto owned_context = wh::core::into_owned(context);
+    if (owned_context.has_error()) {
+      return result<void>::failure(owned_context.error());
+    }
+    output.push_back(std::move(owned_context).value());
   }
+  for (const auto &child : node.children) {
+    auto flattened_child = flatten_context_tree_node(child, output);
+    if (flattened_child.has_error()) {
+      return flattened_child;
+    }
+  }
+  return {};
 }
 
 } // namespace detail
@@ -406,11 +536,15 @@ inline auto flatten_context_tree_node(const interrupt_context_tree_node &node,
 /// Converts signal-tree roots to context-tree roots.
 [[nodiscard]] inline auto
 to_interrupt_context_tree(const std::span<const interrupt_signal_tree_node> roots)
-    -> std::vector<interrupt_context_tree_node> {
+    -> result<std::vector<interrupt_context_tree_node>> {
   std::vector<interrupt_context_tree_node> converted{};
   converted.reserve(roots.size());
   for (const auto &root : roots) {
-    converted.push_back(detail::to_context_tree_node(root));
+    auto converted_root = detail::to_context_tree_node(root);
+    if (converted_root.has_error()) {
+      return result<std::vector<interrupt_context_tree_node>>::failure(converted_root.error());
+    }
+    converted.push_back(std::move(converted_root).value());
   }
   return converted;
 }
@@ -418,11 +552,15 @@ to_interrupt_context_tree(const std::span<const interrupt_signal_tree_node> root
 /// Converts context-tree roots to signal-tree roots.
 [[nodiscard]] inline auto
 to_interrupt_signal_tree(const std::span<const interrupt_context_tree_node> roots)
-    -> std::vector<interrupt_signal_tree_node> {
+    -> result<std::vector<interrupt_signal_tree_node>> {
   std::vector<interrupt_signal_tree_node> converted{};
   converted.reserve(roots.size());
   for (const auto &root : roots) {
-    converted.push_back(detail::to_signal_tree_node(root));
+    auto converted_root = detail::to_signal_tree_node(root);
+    if (converted_root.has_error()) {
+      return result<std::vector<interrupt_signal_tree_node>>::failure(converted_root.error());
+    }
+    converted.push_back(std::move(converted_root).value());
   }
   return converted;
 }
@@ -430,10 +568,13 @@ to_interrupt_signal_tree(const std::span<const interrupt_context_tree_node> root
 /// Flattens signal-tree roots to flat signal list.
 [[nodiscard]] inline auto
 flatten_interrupt_signal_tree(const std::span<const interrupt_signal_tree_node> roots)
-    -> std::vector<interrupt_signal> {
+    -> result<std::vector<interrupt_signal>> {
   std::vector<interrupt_signal> flattened{};
   for (const auto &root : roots) {
-    detail::flatten_signal_tree_node(root, flattened);
+    auto flattened_root = detail::flatten_signal_tree_node(root, flattened);
+    if (flattened_root.has_error()) {
+      return result<std::vector<interrupt_signal>>::failure(flattened_root.error());
+    }
   }
   return flattened;
 }
@@ -441,10 +582,13 @@ flatten_interrupt_signal_tree(const std::span<const interrupt_signal_tree_node> 
 /// Flattens context-tree roots to flat context list.
 [[nodiscard]] inline auto
 flatten_interrupt_context_tree(const std::span<const interrupt_context_tree_node> roots)
-    -> std::vector<interrupt_context> {
+    -> result<std::vector<interrupt_context>> {
   std::vector<interrupt_context> flattened{};
   for (const auto &root : roots) {
-    detail::flatten_context_tree_node(root, flattened);
+    auto flattened_root = detail::flatten_context_tree_node(root, flattened);
+    if (flattened_root.has_error()) {
+      return result<std::vector<interrupt_context>>::failure(flattened_root.error());
+    }
   }
   return flattened;
 }

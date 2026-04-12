@@ -560,7 +560,16 @@ maybe_persist(wh::core::run_context &context, const graph_state_table &state_tab
   checkpoint.checkpoint_id = std::string{graph_name};
   checkpoint.restore_shape = current_restore_shape;
   checkpoint.node_states = state_table.states();
-  checkpoint.resume_snapshot = context.resume_info.value_or(wh::core::resume_state{});
+  auto owned_resume_snapshot =
+      context.resume_info.has_value()
+          ? wh::core::into_owned(*context.resume_info)
+          : wh::core::result<wh::core::resume_state>{wh::core::resume_state{}};
+  if (owned_resume_snapshot.has_error()) {
+    set_error_detail(outputs, owned_resume_snapshot.error(), graph_name,
+                     "persist_resume_snapshot");
+    return wh::core::result<void>::failure(owned_resume_snapshot.error());
+  }
+  checkpoint.resume_snapshot = std::move(owned_resume_snapshot).value();
   auto cloned_rerun_inputs = save_rerun_inputs(rerun_state, node_keys, nodes_by_id);
   if (cloned_rerun_inputs.has_error()) {
     set_error_detail(outputs, cloned_rerun_inputs.error(), graph_name, "persist_rerun_clone");
@@ -568,9 +577,15 @@ maybe_persist(wh::core::run_context &context, const graph_state_table &state_tab
   }
   checkpoint.rerun_inputs = std::move(cloned_rerun_inputs).value();
   if (context.interrupt_info.has_value()) {
+    auto reinterrupt_signal = wh::compose::to_reinterrupt_signal(*context.interrupt_info);
+    if (reinterrupt_signal.has_error()) {
+      set_error_detail(outputs, reinterrupt_signal.error(), graph_name,
+                       "persist_interrupt_signal");
+      return wh::core::result<void>::failure(reinterrupt_signal.error());
+    }
     auto interrupt_snapshot =
         wh::core::flatten_interrupt_signals(std::vector<wh::core::interrupt_signal>{
-            wh::compose::to_reinterrupt_signal(*context.interrupt_info)});
+            std::move(reinterrupt_signal).value()});
     if (interrupt_snapshot.has_error()) {
       set_error_detail(outputs, interrupt_snapshot.error(), graph_name,
                        "persist_interrupt_snapshot");

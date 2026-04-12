@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <memory>
 #include <vector>
 
 #include "wh/adk/interrupt.hpp"
@@ -68,9 +69,22 @@ TEST_CASE("adk interrupt current_interrupt_info covers missing exact descendant 
       .trigger_reason = "none",
   };
   auto none = wh::adk::make_interrupt_info(none_context);
-  REQUIRE(none.target_kind == wh::adk::interrupt_target_kind::none);
-  REQUIRE(none.used);
-  REQUIRE(none.trigger_reason == "none");
+  REQUIRE(none.has_value());
+  REQUIRE(none->target_kind == wh::adk::interrupt_target_kind::none);
+  REQUIRE(none->used);
+  REQUIRE(none->trigger_reason == "none");
+}
+
+TEST_CASE("adk interrupt info fails instead of silently dropping move-only payloads",
+          "[UT][wh/adk/interrupt.hpp][make_interrupt_info][boundary]") {
+  wh::core::interrupt_context context{
+      .interrupt_id = "move-only",
+      .location = wh::core::address{"agent", "worker"},
+      .state = wh::core::any{std::make_unique<int>(7)},
+  };
+
+  auto info = wh::adk::make_interrupt_info(context);
+  REQUIRE(info.has_error());
 }
 
 TEST_CASE("adk interrupt apply_interrupt_patch lowers approve edit and reject decisions",

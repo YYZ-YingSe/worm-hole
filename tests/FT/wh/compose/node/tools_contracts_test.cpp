@@ -264,8 +264,12 @@ TEST_CASE("compose tools node isolates per-call run_context mutations",
                         [](const wh::compose::tool_call &call,
                            wh::tool::call_scope scope)
                             -> wh::core::result<wh::compose::graph_value> {
-                          wh::core::set_session_value(scope.run, "tool-scratch",
-                                                      call.arguments);
+                          auto stored = wh::core::set_session_value(
+                              scope.run, "tool-scratch", call.arguments);
+                          if (stored.has_error()) {
+                            return wh::core::result<wh::compose::graph_value>::failure(
+                                stored.error());
+                          }
                           return wh::core::any(std::string{"writer:"} +
                                                call.arguments);
                         }});
@@ -623,7 +627,11 @@ TEST_CASE("compose tools stream middleware keeps per-call state on merged output
             auto visit =
                 wh::core::session_value_ref<int>(scope.run, "tool-stream-count");
             auto count = visit.has_value() ? visit.value().get() : 0;
-            wh::core::set_session_value(scope.run, "tool-stream-count", count + 1);
+            auto stored =
+                wh::core::set_session_value(scope.run, "tool-stream-count", count + 1);
+            if (stored.has_error()) {
+              return wh::core::result<void>::failure(stored.error());
+            }
 
             auto text = read_graph_value<std::string>(std::move(output));
             if (text.has_error()) {

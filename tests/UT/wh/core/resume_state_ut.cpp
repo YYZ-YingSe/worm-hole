@@ -1,4 +1,5 @@
 #include <array>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -37,7 +38,9 @@ TEST_CASE("resume state payload conversion and projection preserve data",
   const wh::core::interrupt_signal signal =
       make_signal("sig-1", make_address({"root", "branch", "leaf"}), 7, "layer", true);
 
-  auto copied_context = wh::core::to_interrupt_context(signal);
+  auto copied_context_result = wh::core::to_interrupt_context(signal);
+  REQUIRE(copied_context_result.has_value());
+  auto copied_context = std::move(copied_context_result).value();
   REQUIRE(copied_context.interrupt_id == "sig-1");
   REQUIRE(copied_context.location == signal.location);
   REQUIRE(*wh::core::any_cast<int>(&copied_context.state) == 7);
@@ -52,15 +55,17 @@ TEST_CASE("resume state payload conversion and projection preserve data",
   REQUIRE(*wh::core::any_cast<int>(&moved_context.state) == 9);
 
   auto copied_signal = wh::core::to_interrupt_signal(copied_context);
-  REQUIRE(copied_signal.interrupt_id == copied_context.interrupt_id);
-  REQUIRE(*wh::core::any_cast<int>(&copied_signal.state) == 7);
+  REQUIRE(copied_signal.has_value());
+  REQUIRE(copied_signal->interrupt_id == copied_context.interrupt_id);
+  REQUIRE(*wh::core::any_cast<int>(&copied_signal->state) == 7);
 
   auto moved_signal = wh::core::to_interrupt_signal(std::move(moved_context));
   REQUIRE(moved_signal.interrupt_id == "sig-2");
   REQUIRE(*wh::core::any_cast<int>(&moved_signal.state) == 9);
 
-  auto cloned = wh::core::clone_interrupt_payload_any(signal.state);
-  REQUIRE(*wh::core::any_cast<int>(&cloned) == 7);
+  auto owned_state = wh::core::into_owned(signal.state);
+  REQUIRE(owned_state.has_value());
+  REQUIRE(*wh::core::any_cast<int>(&owned_state.value()) == 7);
 
   const std::array<std::string_view, 2U> filter{"root", "leaf"};
   auto projected = wh::core::project_address(signal.location, filter);
@@ -69,8 +74,9 @@ TEST_CASE("resume state payload conversion and projection preserve data",
           signal.location.to_string());
 
   auto projected_copy = wh::core::project_interrupt_context(copied_context, filter);
-  REQUIRE(projected_copy.location == make_address({"root", "leaf"}));
-  REQUIRE(projected_copy.interrupt_id == copied_context.interrupt_id);
+  REQUIRE(projected_copy.has_value());
+  REQUIRE(projected_copy->location == make_address({"root", "leaf"}));
+  REQUIRE(projected_copy->interrupt_id == copied_context.interrupt_id);
 
   auto projected_move = wh::core::project_interrupt_context(
       wh::core::interrupt_context{
@@ -91,31 +97,39 @@ TEST_CASE("resume state tree rebuild conversion and flatten keep hierarchy",
   };
 
   const auto signal_tree = wh::core::rebuild_interrupt_signal_tree(std::span{signals});
-  REQUIRE(signal_tree.size() == 1U);
-  REQUIRE(signal_tree.front().location == make_address({"root"}));
-  REQUIRE(signal_tree.front().signals.size() == 1U);
-  REQUIRE(signal_tree.front().children.size() == 2U);
+  REQUIRE(signal_tree.has_value());
+  REQUIRE(signal_tree->size() == 1U);
+  REQUIRE(signal_tree->front().location == make_address({"root"}));
+  REQUIRE(signal_tree->front().signals.size() == 1U);
+  REQUIRE(signal_tree->front().children.size() == 2U);
 
-  const auto flattened_signals = wh::core::flatten_interrupt_signal_tree(std::span{signal_tree});
-  REQUIRE(flattened_signals.size() == 3U);
+  const auto flattened_signals =
+      wh::core::flatten_interrupt_signal_tree(std::span{signal_tree.value()});
+  REQUIRE(flattened_signals.has_value());
+  REQUIRE(flattened_signals->size() == 3U);
 
-  const auto context_tree = wh::core::to_interrupt_context_tree(std::span{signal_tree});
-  REQUIRE(context_tree.size() == 1U);
-  REQUIRE(context_tree.front().contexts.size() == 1U);
-  REQUIRE(context_tree.front().children.size() == 2U);
+  const auto context_tree = wh::core::to_interrupt_context_tree(std::span{signal_tree.value()});
+  REQUIRE(context_tree.has_value());
+  REQUIRE(context_tree->size() == 1U);
+  REQUIRE(context_tree->front().contexts.size() == 1U);
+  REQUIRE(context_tree->front().children.size() == 2U);
 
-  const auto flattened_contexts = wh::core::flatten_interrupt_context_tree(std::span{context_tree});
-  REQUIRE(flattened_contexts.size() == 3U);
+  const auto flattened_contexts =
+      wh::core::flatten_interrupt_context_tree(std::span{context_tree.value()});
+  REQUIRE(flattened_contexts.has_value());
+  REQUIRE(flattened_contexts->size() == 3U);
 
   const auto rebuilt_context_tree =
-      wh::core::rebuild_interrupt_context_tree(std::span{flattened_contexts});
-  REQUIRE(rebuilt_context_tree.size() == 1U);
-  REQUIRE(rebuilt_context_tree.front().children.size() == 2U);
+      wh::core::rebuild_interrupt_context_tree(std::span{flattened_contexts.value()});
+  REQUIRE(rebuilt_context_tree.has_value());
+  REQUIRE(rebuilt_context_tree->size() == 1U);
+  REQUIRE(rebuilt_context_tree->front().children.size() == 2U);
 
   const auto rebuilt_signal_tree =
-      wh::core::to_interrupt_signal_tree(std::span{rebuilt_context_tree});
-  REQUIRE(rebuilt_signal_tree.size() == 1U);
-  REQUIRE(rebuilt_signal_tree.front().children.size() == 2U);
+      wh::core::to_interrupt_signal_tree(std::span{rebuilt_context_tree.value()});
+  REQUIRE(rebuilt_signal_tree.has_value());
+  REQUIRE(rebuilt_signal_tree->size() == 1U);
+  REQUIRE(rebuilt_signal_tree->front().children.size() == 2U);
 }
 
 TEST_CASE("resume state flatten interrupt signals supports copy and move snapshots",
@@ -136,6 +150,30 @@ TEST_CASE("resume state flatten interrupt signals supports copy and move snapsho
   REQUIRE(moved_snapshot.has_value());
   REQUIRE(moved_snapshot->interrupt_id_to_state.size() == 2U);
   REQUIRE(*wh::core::any_cast<int>(&moved_snapshot->interrupt_id_to_state.at("a")) == 11);
+}
+
+TEST_CASE("resume state tree copy helpers fail for non-ownable payloads",
+          "[UT][wh/core/resume_state.hpp][flatten_interrupt_signal_tree][boundary]") {
+  std::vector<wh::core::interrupt_signal> signals{};
+  signals.push_back(wh::core::interrupt_signal{
+      .interrupt_id = "move-only",
+      .location = make_address({"root", "leaf"}),
+      .state = wh::core::any{std::make_unique<int>(3)},
+  });
+
+  auto rebuilt = wh::core::rebuild_interrupt_signal_tree(std::span{signals});
+  REQUIRE(rebuilt.has_error());
+
+  wh::core::interrupt_signal_tree_node root{};
+  root.location = make_address({"root"});
+  root.signals.push_back(wh::core::interrupt_signal{
+      .interrupt_id = "move-only-flat",
+      .location = make_address({"root"}),
+      .state = wh::core::any{std::make_unique<int>(5)},
+  });
+
+  auto flattened = wh::core::flatten_interrupt_signal_tree(std::span{&root, 1});
+  REQUIRE(flattened.has_error());
 }
 
 TEST_CASE("resume state upsert merge and lookup cover replace and self-merge branches",

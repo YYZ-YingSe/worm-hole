@@ -184,14 +184,19 @@ classify_resume_target_match(const wh::core::resume_state &state,
   resume_patch payload{};
   payload.decision = decision.decision;
   payload.audit = decision.audit;
+  wh::core::result<wh::core::any> owned_data{};
   if (decision.decision == interrupt_decision_kind::edit) {
     if (!decision.edited_payload.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    payload.data = decision.edited_payload;
+    owned_data = wh::core::into_owned(decision.edited_payload);
   } else {
-    payload.data = context.state;
+    owned_data = wh::core::into_owned(context.state);
   }
+  if (owned_data.has_error()) {
+    return wh::core::result<void>::failure(owned_data.error());
+  }
+  payload.data = std::move(owned_data).value();
   return state.upsert(decision.interrupt_context_id, context.location,
                       std::move(payload));
 }
@@ -218,7 +223,11 @@ apply_resume_batch(wh::core::resume_state &state,
     }
     resume_patch payload{};
     payload.decision = interrupt_decision_kind::edit;
-    payload.data = item.data;
+    auto owned_data = wh::core::into_owned(item.data);
+    if (owned_data.has_error()) {
+      return wh::core::result<void>::failure(owned_data.error());
+    }
+    payload.data = std::move(owned_data).value();
     payload.audit = audit;
     auto upserted =
         state.upsert(item.interrupt_context_id, context_iter->second->location,
@@ -235,16 +244,104 @@ apply_resume_batch(wh::core::resume_state &state,
 [[nodiscard]] inline auto collect_reinterrupts(
     const wh::core::resume_state &state,
     const std::span<const wh::core::interrupt_context> contexts)
-    -> std::vector<wh::core::interrupt_signal> {
+    -> wh::core::result<std::vector<wh::core::interrupt_signal>> {
   std::vector<wh::core::interrupt_signal> reinterrupts{};
   reinterrupts.reserve(contexts.size());
   for (const auto &context : contexts) {
     if (!state.contains_interrupt_id(context.interrupt_id) ||
         state.is_used(context.interrupt_id)) {
-      reinterrupts.push_back(to_reinterrupt_signal(context));
+      auto signal = to_reinterrupt_signal(context);
+      if (signal.has_error()) {
+        return wh::core::result<std::vector<wh::core::interrupt_signal>>::failure(
+            signal.error());
+      }
+      reinterrupts.push_back(std::move(signal).value());
     }
   }
   return reinterrupts;
 }
 
 } // namespace wh::compose
+
+namespace wh::compose::detail {
+
+[[nodiscard]] inline auto into_owned_resume_patch(const wh::compose::resume_patch &value)
+    -> wh::core::result<wh::compose::resume_patch> {
+  auto data = wh::core::into_owned(value.data);
+  if (data.has_error()) {
+    return wh::core::result<wh::compose::resume_patch>::failure(data.error());
+  }
+  return wh::compose::resume_patch{
+      .decision = value.decision,
+      .data = std::move(data).value(),
+      .audit = value.audit,
+  };
+}
+
+[[nodiscard]] inline auto into_owned_resume_patch(wh::compose::resume_patch &&value)
+    -> wh::core::result<wh::compose::resume_patch> {
+  auto data = wh::core::into_owned(std::move(value.data));
+  if (data.has_error()) {
+    return wh::core::result<wh::compose::resume_patch>::failure(data.error());
+  }
+  return wh::compose::resume_patch{
+      .decision = value.decision,
+      .data = std::move(data).value(),
+      .audit = std::move(value.audit),
+  };
+}
+
+[[nodiscard]] inline auto into_owned_resume_batch_item(
+    const wh::compose::resume_batch_item &value)
+    -> wh::core::result<wh::compose::resume_batch_item> {
+  auto data = wh::core::into_owned(value.data);
+  if (data.has_error()) {
+    return wh::core::result<wh::compose::resume_batch_item>::failure(data.error());
+  }
+  return wh::compose::resume_batch_item{
+      .interrupt_context_id = value.interrupt_context_id,
+      .data = std::move(data).value(),
+  };
+}
+
+[[nodiscard]] inline auto into_owned_resume_batch_item(wh::compose::resume_batch_item &&value)
+    -> wh::core::result<wh::compose::resume_batch_item> {
+  auto data = wh::core::into_owned(std::move(value.data));
+  if (data.has_error()) {
+    return wh::core::result<wh::compose::resume_batch_item>::failure(data.error());
+  }
+  return wh::compose::resume_batch_item{
+      .interrupt_context_id = std::move(value.interrupt_context_id),
+      .data = std::move(data).value(),
+  };
+}
+
+} // namespace wh::compose::detail
+
+namespace wh::core {
+
+template <> struct any_owned_traits<wh::compose::resume_patch> {
+  [[nodiscard]] static auto into_owned(const wh::compose::resume_patch &value)
+      -> wh::core::result<wh::compose::resume_patch> {
+    return wh::compose::detail::into_owned_resume_patch(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::compose::resume_patch &&value)
+      -> wh::core::result<wh::compose::resume_patch> {
+    return wh::compose::detail::into_owned_resume_patch(std::move(value));
+  }
+};
+
+template <> struct any_owned_traits<wh::compose::resume_batch_item> {
+  [[nodiscard]] static auto into_owned(const wh::compose::resume_batch_item &value)
+      -> wh::core::result<wh::compose::resume_batch_item> {
+    return wh::compose::detail::into_owned_resume_batch_item(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::compose::resume_batch_item &&value)
+      -> wh::core::result<wh::compose::resume_batch_item> {
+    return wh::compose::detail::into_owned_resume_batch_item(std::move(value));
+  }
+};
+
+} // namespace wh::core

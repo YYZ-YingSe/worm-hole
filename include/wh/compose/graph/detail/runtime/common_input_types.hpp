@@ -17,12 +17,7 @@ namespace wh::compose::detail::input_runtime {
 
 enum class input_edge_status : std::uint8_t { waiting, active, disabled };
 
-enum class runtime_node_state : std::uint8_t {
-  pending,
-  running,
-  executed,
-  skipped
-};
+enum class runtime_node_state : std::uint8_t { pending, running, executed, skipped };
 
 struct input_lane {
   std::uint32_t edge_id{0U};
@@ -52,31 +47,24 @@ struct resolved_input {
     return resolved_input{.owned_value = std::move(value)};
   }
 
-  [[nodiscard]] static auto borrow_reader(graph_stream_reader &reader)
-      -> resolved_input {
+  [[nodiscard]] static auto borrow_reader(graph_stream_reader &reader) -> resolved_input {
     return resolved_input{.borrowed_reader = std::addressof(reader)};
   }
 
-  [[nodiscard]] static auto own_reader(graph_stream_reader reader)
-      -> resolved_input {
+  [[nodiscard]] static auto own_reader(graph_stream_reader reader) -> resolved_input {
     return resolved_input{.owned_reader = std::move(reader)};
   }
 
   [[nodiscard]] auto materialize() && -> wh::core::result<graph_value> {
     if (owned_value.has_value()) {
-      auto boundary =
-          wh::compose::detail::validate_value_boundary_payload(*owned_value);
-      if (boundary.has_error()) {
-        return wh::core::result<graph_value>::failure(boundary.error());
-      }
-      return std::move(*owned_value);
+      return wh::compose::detail::materialize_value_payload(std::move(*owned_value));
     }
     if (owned_reader.has_value()) {
       return graph_value{std::move(*owned_reader)};
     }
     if (borrowed_reader != nullptr) {
       if (auto *merged = borrowed_reader->template target_if<
-              wh::schema::stream::merge_stream_reader<graph_stream_reader>>();
+                         wh::schema::stream::merge_stream_reader<graph_stream_reader>>();
           merged != nullptr) {
         return graph_value{graph_stream_reader{merged->share()}};
       }
@@ -85,15 +73,7 @@ struct resolved_input {
     if (borrowed_value == nullptr) {
       return {};
     }
-    auto boundary =
-        wh::compose::detail::validate_value_boundary_payload(*borrowed_value);
-    if (boundary.has_error()) {
-      return wh::core::result<graph_value>::failure(boundary.error());
-    }
-    if (borrowed_value->copyable()) {
-      return graph_value{*borrowed_value};
-    }
-    return borrowed_value->as_ref();
+    return wh::compose::detail::materialize_value_payload(*borrowed_value);
   }
 };
 
@@ -108,8 +88,8 @@ struct value_input {
   auto operator=(const value_input &) -> value_input & = delete;
 
   value_input(value_input &&other) noexcept
-      : source_id(other.source_id), edge_id(other.edge_id),
-        borrowed(other.borrowed), owned(std::move(other.owned)) {
+      : source_id(other.source_id), edge_id(other.edge_id), borrowed(other.borrowed),
+        owned(std::move(other.owned)) {
     if (owned.has_value()) {
       borrowed = std::addressof(*owned);
     }
@@ -173,8 +153,7 @@ struct runtime_io_storage {
   wh::compose::detail::dynamic_bitset merged_reader_valid{};
   std::vector<reader_lane_state> merged_reader_lane_states{};
 
-  auto reset(const std::size_t node_count, const std::size_t edge_count)
-      -> void {
+  auto reset(const std::size_t node_count, const std::size_t edge_count) -> void {
     if (node_values.size() < node_count) {
       node_values.resize(node_count);
     }
@@ -191,8 +170,7 @@ struct runtime_io_storage {
     }
     edge_reader_valid.reset(edge_count, false);
     merged_reader_lane_states.resize(edge_count, reader_lane_state::unseen);
-    std::fill_n(merged_reader_lane_states.begin(), edge_count,
-                reader_lane_state::unseen);
+    std::fill_n(merged_reader_lane_states.begin(), edge_count, reader_lane_state::unseen);
     reader_copy_ready.reset(node_count, false);
     if (merged_readers.size() < node_count) {
       merged_readers.resize(node_count);
@@ -200,14 +178,12 @@ struct runtime_io_storage {
     merged_reader_valid.reset(node_count, false);
   }
 
-  auto mark_value_output(const std::uint32_t node_id, graph_value value)
-      -> void {
+  auto mark_value_output(const std::uint32_t node_id, graph_value value) -> void {
     node_values[node_id] = std::move(value);
     output_valid.set(node_id);
   }
 
-  auto mark_reader_output(const std::uint32_t node_id,
-                          graph_stream_reader reader) -> void {
+  auto mark_reader_output(const std::uint32_t node_id, graph_stream_reader reader) -> void {
     node_readers[node_id] = std::move(reader);
     output_valid.set(node_id);
   }

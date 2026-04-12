@@ -116,8 +116,9 @@ TEST_CASE("tools call helpers erase ready failure replay and direct dispatch pat
   context.interrupt_info.emplace();
   context.interrupt_info->interrupt_id = "interrupt";
   auto cloned = wh::compose::detail::clone_call_context(context);
-  REQUIRE(cloned.interrupt_info.has_value());
-  REQUIRE(cloned.interrupt_info->interrupt_id == "interrupt");
+  REQUIRE(cloned.has_value());
+  REQUIRE(cloned->interrupt_info.has_value());
+  REQUIRE(cloned->interrupt_info->interrupt_id == "interrupt");
 
   wh::compose::tools_options options{};
   std::vector<std::string> before_trace{};

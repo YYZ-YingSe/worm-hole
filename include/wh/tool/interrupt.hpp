@@ -31,16 +31,45 @@ struct aggregated_interrupts {
 
 /// Converts tool interrupt to core interrupt signal.
 [[nodiscard]] inline auto to_interrupt_signal(const tool_interrupt &interrupt)
+    -> wh::core::result<wh::core::interrupt_signal> {
+  auto owned_interrupt = wh::core::into_owned(interrupt);
+  if (owned_interrupt.has_error()) {
+    return wh::core::result<wh::core::interrupt_signal>::failure(
+        owned_interrupt.error());
+  }
+  auto materialized = std::move(owned_interrupt).value();
+  return wh::core::interrupt_signal{std::move(materialized.interrupt_id),
+                                    std::move(materialized.location),
+                                    std::move(materialized.payload),
+                                    wh::core::any{}, false};
+}
+
+/// Converts movable tool interrupt to core interrupt signal.
+[[nodiscard]] inline auto to_interrupt_signal(tool_interrupt &&interrupt)
     -> wh::core::interrupt_signal {
-  return wh::core::interrupt_signal{interrupt.interrupt_id, interrupt.location,
-                                    interrupt.payload, wh::core::any{}, false};
+  return wh::core::interrupt_signal{std::move(interrupt.interrupt_id),
+                                    std::move(interrupt.location),
+                                    std::move(interrupt.payload),
+                                    wh::core::any{}, false};
 }
 
 /// Converts core interrupt signal back to tool interrupt.
 [[nodiscard]] inline auto
 from_interrupt_signal(const wh::core::interrupt_signal &signal)
+    -> wh::core::result<tool_interrupt> {
+  auto payload = wh::core::into_owned(signal.state);
+  if (payload.has_error()) {
+    return wh::core::result<tool_interrupt>::failure(payload.error());
+  }
+  return tool_interrupt{signal.interrupt_id, signal.location,
+                        std::move(payload).value()};
+}
+
+/// Converts movable core interrupt signal back to tool interrupt.
+[[nodiscard]] inline auto from_interrupt_signal(wh::core::interrupt_signal &&signal)
     -> tool_interrupt {
-  return tool_interrupt{signal.interrupt_id, signal.location, signal.state};
+  return tool_interrupt{std::move(signal.interrupt_id), std::move(signal.location),
+                        std::move(signal.state)};
 }
 
 /// Checks whether interrupt location matches current resume target.
@@ -90,10 +119,81 @@ infer_root_cause(const std::span<const wh::core::error_code> causes)
   aggregated_interrupts aggregated{};
   aggregated.interrupts.reserve(interrupts.size());
   for (const auto &interrupt : interrupts) {
-    aggregated.interrupts.push_back(interrupt);
+    auto owned_interrupt = wh::core::into_owned(interrupt);
+    if (owned_interrupt.has_error()) {
+      return wh::core::result<aggregated_interrupts>::failure(
+          owned_interrupt.error());
+    }
+    aggregated.interrupts.push_back(std::move(owned_interrupt).value());
   }
   aggregated.root_cause = root_cause;
   return aggregated;
 }
 
 } // namespace wh::tool
+
+namespace wh::core {
+
+template <> struct any_owned_traits<wh::tool::aggregated_interrupts> {
+  [[nodiscard]] static auto into_owned(const wh::tool::aggregated_interrupts &value)
+      -> wh::core::result<wh::tool::aggregated_interrupts> {
+    wh::tool::aggregated_interrupts owned{};
+    owned.interrupts.reserve(value.interrupts.size());
+    for (const auto &interrupt : value.interrupts) {
+      auto owned_interrupt = wh::core::into_owned(interrupt);
+      if (owned_interrupt.has_error()) {
+        return wh::core::result<wh::tool::aggregated_interrupts>::failure(
+            owned_interrupt.error());
+      }
+      owned.interrupts.push_back(std::move(owned_interrupt).value());
+    }
+    owned.root_cause = value.root_cause;
+    return owned;
+  }
+
+  [[nodiscard]] static auto into_owned(wh::tool::aggregated_interrupts &&value)
+      -> wh::core::result<wh::tool::aggregated_interrupts> {
+    wh::tool::aggregated_interrupts owned{};
+    owned.interrupts.reserve(value.interrupts.size());
+    for (auto &interrupt : value.interrupts) {
+      auto owned_interrupt = wh::core::into_owned(std::move(interrupt));
+      if (owned_interrupt.has_error()) {
+        return wh::core::result<wh::tool::aggregated_interrupts>::failure(
+            owned_interrupt.error());
+      }
+      owned.interrupts.push_back(std::move(owned_interrupt).value());
+    }
+    owned.root_cause = value.root_cause;
+    return owned;
+  }
+};
+
+template <> struct any_owned_traits<wh::tool::tool_interrupt> {
+  [[nodiscard]] static auto into_owned(const wh::tool::tool_interrupt &value)
+      -> wh::core::result<wh::tool::tool_interrupt> {
+    auto payload = wh::core::into_owned(value.payload);
+    if (payload.has_error()) {
+      return wh::core::result<wh::tool::tool_interrupt>::failure(payload.error());
+    }
+    return wh::tool::tool_interrupt{
+        .interrupt_id = value.interrupt_id,
+        .location = value.location,
+        .payload = std::move(payload).value(),
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::tool::tool_interrupt &&value)
+      -> wh::core::result<wh::tool::tool_interrupt> {
+    auto payload = wh::core::into_owned(std::move(value.payload));
+    if (payload.has_error()) {
+      return wh::core::result<wh::tool::tool_interrupt>::failure(payload.error());
+    }
+    return wh::tool::tool_interrupt{
+        .interrupt_id = std::move(value.interrupt_id),
+        .location = std::move(value.location),
+        .payload = std::move(payload).value(),
+    };
+  }
+};
+
+} // namespace wh::core

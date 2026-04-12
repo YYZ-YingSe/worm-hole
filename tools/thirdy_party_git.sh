@@ -69,7 +69,7 @@ write_lock() {
     while read -r _sha path; do
       [[ -n "$path" ]] || continue
       local_sha="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
-      tree_sha="$(git -C "$path" rev-parse HEAD^{tree} 2>/dev/null || true)"
+      tree_sha="$(git -C "$path" rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
       local_url="$(git -C "$path" config --get remote.origin.url 2>/dev/null || true)"
       echo "$path|$local_url|$local_sha|$tree_sha"
     done < <(git submodule status | awk '{print $1" "$2}')

@@ -159,6 +159,9 @@ using graph_component_option_map =
                        wh::core::transparent_string_equal>;
 
 /// One run-scoped call options bundle frozen at invoke start.
+/// Most fields are value-like invoke controls. `tools` is the exception: it may
+/// carry borrowed host-owned handles that must outlive the invoke and are not
+/// intended for persistence/checkpoint materialization.
 struct graph_call_options {
   /// Invoke-scoped distributed trace input.
   std::optional<graph_trace_context> trace{};
@@ -189,6 +192,8 @@ struct graph_call_options {
   /// Node-path scoped debug callbacks for local observability.
   std::vector<graph_node_path_debug_callback> node_path_debug_observers{};
   /// Typed invoke-time controls for tools-node dispatch.
+  /// This bundle is intentionally invoke-borrowed and may reference host-owned
+  /// registry/rerun state rather than owning a persistent copy.
   std::optional<tools_call_options> tools{};
 };
 
@@ -758,3 +763,135 @@ extract_graph_component_option(const graph_component_option_map &resolved,
 /// entries.
 
 } // namespace wh::compose
+
+namespace wh::compose::detail {
+
+[[nodiscard]] inline auto
+into_owned_graph_component_override(const wh::compose::graph_component_override &value)
+    -> wh::core::result<wh::compose::graph_component_override> {
+  auto values = wh::core::into_owned(value.values);
+  if (values.has_error()) {
+    return wh::core::result<wh::compose::graph_component_override>::failure(values.error());
+  }
+  return wh::compose::graph_component_override{
+      .path = value.path,
+      .values = std::move(values).value(),
+  };
+}
+
+[[nodiscard]] inline auto
+into_owned_graph_component_override(wh::compose::graph_component_override &&value)
+    -> wh::core::result<wh::compose::graph_component_override> {
+  auto values = wh::core::into_owned(std::move(value.values));
+  if (values.has_error()) {
+    return wh::core::result<wh::compose::graph_component_override>::failure(values.error());
+  }
+  return wh::compose::graph_component_override{
+      .path = std::move(value.path),
+      .values = std::move(values).value(),
+  };
+}
+
+[[nodiscard]] inline auto into_owned_graph_call_options(const wh::compose::graph_call_options &value)
+    -> wh::core::result<wh::compose::graph_call_options> {
+  auto component_defaults = wh::core::into_owned(value.component_defaults);
+  if (component_defaults.has_error()) {
+    return wh::core::result<wh::compose::graph_call_options>::failure(
+        component_defaults.error());
+  }
+  std::vector<wh::compose::graph_component_override> component_overrides{};
+  component_overrides.reserve(value.component_overrides.size());
+  for (const auto &override : value.component_overrides) {
+    auto owned_override = into_owned_graph_component_override(override);
+    if (owned_override.has_error()) {
+      return wh::core::result<wh::compose::graph_call_options>::failure(
+          owned_override.error());
+    }
+    component_overrides.push_back(std::move(owned_override).value());
+  }
+
+  return wh::compose::graph_call_options{
+      .trace = value.trace,
+      .node_observations = value.node_observations,
+      .component_defaults = std::move(component_defaults).value(),
+      .component_overrides = std::move(component_overrides),
+      .designated_top_level_nodes = value.designated_top_level_nodes,
+      .designated_node_paths = value.designated_node_paths,
+      .stream_subscriptions = value.stream_subscriptions,
+      .record_transition_log = value.record_transition_log,
+      .isolate_debug_stream = value.isolate_debug_stream,
+      .pregel_max_steps = value.pregel_max_steps,
+      .interrupt_timeout = value.interrupt_timeout,
+      .external_interrupt_policy = value.external_interrupt_policy,
+      .graph_debug_observer = value.graph_debug_observer,
+      .node_path_debug_observers = value.node_path_debug_observers,
+      .tools = value.tools,
+  };
+}
+
+[[nodiscard]] inline auto into_owned_graph_call_options(wh::compose::graph_call_options &&value)
+    -> wh::core::result<wh::compose::graph_call_options> {
+  auto component_defaults = wh::core::into_owned(std::move(value.component_defaults));
+  if (component_defaults.has_error()) {
+    return wh::core::result<wh::compose::graph_call_options>::failure(
+        component_defaults.error());
+  }
+  std::vector<wh::compose::graph_component_override> component_overrides{};
+  component_overrides.reserve(value.component_overrides.size());
+  for (auto &override : value.component_overrides) {
+    auto owned_override = into_owned_graph_component_override(std::move(override));
+    if (owned_override.has_error()) {
+      return wh::core::result<wh::compose::graph_call_options>::failure(
+          owned_override.error());
+    }
+    component_overrides.push_back(std::move(owned_override).value());
+  }
+
+  return wh::compose::graph_call_options{
+      .trace = std::move(value.trace),
+      .node_observations = std::move(value.node_observations),
+      .component_defaults = std::move(component_defaults).value(),
+      .component_overrides = std::move(component_overrides),
+      .designated_top_level_nodes = std::move(value.designated_top_level_nodes),
+      .designated_node_paths = std::move(value.designated_node_paths),
+      .stream_subscriptions = std::move(value.stream_subscriptions),
+      .record_transition_log = value.record_transition_log,
+      .isolate_debug_stream = value.isolate_debug_stream,
+      .pregel_max_steps = value.pregel_max_steps,
+      .interrupt_timeout = value.interrupt_timeout,
+      .external_interrupt_policy = std::move(value.external_interrupt_policy),
+      .graph_debug_observer = std::move(value.graph_debug_observer),
+      .node_path_debug_observers = std::move(value.node_path_debug_observers),
+      .tools = std::move(value.tools),
+  };
+}
+
+} // namespace wh::compose::detail
+
+namespace wh::core {
+
+template <> struct any_owned_traits<wh::compose::graph_component_override> {
+  [[nodiscard]] static auto into_owned(const wh::compose::graph_component_override &value)
+      -> wh::core::result<wh::compose::graph_component_override> {
+    return wh::compose::detail::into_owned_graph_component_override(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::compose::graph_component_override &&value)
+      -> wh::core::result<wh::compose::graph_component_override> {
+    return wh::compose::detail::into_owned_graph_component_override(std::move(value));
+  }
+};
+
+template <> struct any_owned_traits<wh::compose::graph_call_options> {
+  [[nodiscard]] static auto into_owned(const wh::compose::graph_call_options &value)
+      -> wh::core::result<wh::compose::graph_call_options> {
+    return wh::compose::detail::into_owned_graph_call_options(value);
+  }
+
+  [[nodiscard]] static auto into_owned(wh::compose::graph_call_options &&value)
+      -> wh::core::result<wh::compose::graph_call_options> {
+    return wh::compose::detail::into_owned_graph_call_options(std::move(value));
+  }
+};
+
+} // namespace wh::core

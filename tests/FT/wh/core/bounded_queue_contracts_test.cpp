@@ -31,15 +31,19 @@ TEST_CASE("bounded queue public facade preserves rendezvous handoff and close ac
   std::binary_semaphore consumer_ready{0};
   std::binary_semaphore consumer_done{0};
   std::optional<int> consumed{};
+  bool first_pop_succeeded{false};
+  bool eof_pop_empty{false};
 
   std::jthread consumer([&] {
     consumer_ready.release();
     auto first = queue.pop();
-    REQUIRE(first.has_value());
-    consumed = *first;
+    first_pop_succeeded = first.has_value();
+    if (first.has_value()) {
+      consumed = *first;
+    }
 
     auto eof = queue.pop();
-    REQUIRE_FALSE(eof.has_value());
+    eof_pop_empty = !eof.has_value();
     consumer_done.release();
   });
 
@@ -47,6 +51,8 @@ TEST_CASE("bounded queue public facade preserves rendezvous handoff and close ac
   REQUIRE(queue.push(7));
   queue.close();
   REQUIRE(consumer_done.try_acquire_for(1s));
+  REQUIRE(first_pop_succeeded);
+  REQUIRE(eof_pop_empty);
   REQUIRE(consumed == std::optional<int>{7});
 }
 

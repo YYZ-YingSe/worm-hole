@@ -436,19 +436,49 @@ TEST_CASE("graph stream async merge pending read resumes when lane attaches",
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
   wh::compose::graph_stream_reader::chunk_result_type value{};
   auto sender = stdexec::starts_on(scheduler.scheduler(), merged.read_async());
+  std::optional<wh::core::result<void>> attach_status{};
+  std::optional<wh::core::result<void>> write_status{};
+  std::optional<wh::core::result<void>> close_status{};
 
   std::jthread producer([&] {
-    std::this_thread::sleep_for(std::chrono::milliseconds{10});
-    auto [writer, reader] = wh::compose::make_graph_stream(2U);
-    REQUIRE(merged.attach("late", std::move(reader)).has_value());
-    REQUIRE(writer.try_write(wh::core::any(31)).has_value());
-    REQUIRE(writer.close().has_value());
+    try {
+      std::this_thread::sleep_for(std::chrono::milliseconds{10});
+      auto [writer, reader] = wh::compose::make_graph_stream(2U);
+      attach_status.emplace(merged.attach("late", std::move(reader)));
+      if (!attach_status->has_value()) {
+        return;
+      }
+      write_status.emplace(writer.try_write(wh::core::any(31)));
+      if (!write_status->has_value()) {
+        return;
+      }
+      close_status.emplace(writer.close());
+    } catch (...) {
+      if (!attach_status.has_value()) {
+        attach_status.emplace(
+            wh::core::result<void>::failure(wh::core::errc::internal_error));
+      }
+      if (!write_status.has_value()) {
+        write_status.emplace(
+            wh::core::result<void>::failure(wh::core::errc::internal_error));
+      }
+      if (!close_status.has_value()) {
+        close_status.emplace(
+            wh::core::result<void>::failure(wh::core::errc::internal_error));
+      }
+    }
   });
 
   REQUIRE(wh::testing::helper::wait_for_value(
       sender, value, std::chrono::milliseconds{500}, scheduler.env()));
   producer.join();
 
+  REQUIRE(attach_status.has_value());
+  REQUIRE(attach_status->has_value());
+  REQUIRE(write_status.has_value());
+  REQUIRE(write_status->has_value());
+  REQUIRE(close_status.has_value());
+  REQUIRE(close_status->has_value());
   REQUIRE(value.has_value());
   REQUIRE_FALSE(value.value().eof);
   REQUIRE(value.value().value.has_value());

@@ -44,9 +44,10 @@ TEST_CASE("compose runtime interrupt helpers merge deduplicated sources",
   };
 
   const auto merged = wh::compose::merge_interrupt_sources(contexts, signals);
-  REQUIRE(merged.size() == 2U);
-  REQUIRE(merged[0].interrupt_id == "a");
-  REQUIRE(merged[1].interrupt_id == "b");
+  REQUIRE(merged.has_value());
+  REQUIRE(merged->size() == 2U);
+  REQUIRE((*merged)[0].interrupt_id == "a");
+  REQUIRE((*merged)[1].interrupt_id == "b");
 }
 
 TEST_CASE(
@@ -59,18 +60,22 @@ TEST_CASE(
   REQUIRE(auto_signal.location.to_string() == "graph/leaf");
   REQUIRE(*wh::core::any_cast<int>(&auto_signal.state) == 9);
 
-  auto copied_context = wh::compose::to_interrupt_context(auto_signal);
+  auto copied_context_result = wh::compose::to_interrupt_context(auto_signal);
+  REQUIRE(copied_context_result.has_value());
+  auto copied_context = std::move(copied_context_result).value();
   REQUIRE(copied_context.interrupt_id == auto_signal.interrupt_id);
 
   const std::array<std::string_view, 1U> filter{"leaf"};
   auto projected = wh::compose::project_interrupt_context(copied_context, std::span{filter});
-  REQUIRE(projected.location.to_string() == "leaf");
+  REQUIRE(projected.has_value());
+  REQUIRE(projected->location.to_string() == "leaf");
 
   auto copied_signal = wh::compose::to_reinterrupt_signal(copied_context);
-  REQUIRE(copied_signal.interrupt_id == auto_signal.interrupt_id);
-  REQUIRE(*wh::core::any_cast<int>(&copied_signal.state) == 9);
+  REQUIRE(copied_signal.has_value());
+  REQUIRE(copied_signal->interrupt_id == auto_signal.interrupt_id);
+  REQUIRE(*wh::core::any_cast<int>(&copied_signal->state) == 9);
 
-  auto moved_signal = wh::compose::to_reinterrupt_signal(std::move(projected));
+  auto moved_signal = wh::compose::to_reinterrupt_signal(std::move(projected).value());
   REQUIRE(moved_signal.location.to_string() == "leaf");
 
   const std::vector<wh::core::interrupt_signal> signals{
@@ -82,13 +87,19 @@ TEST_CASE(
   REQUIRE(snapshot->interrupt_id_to_address.size() == 2U);
 
   const auto signal_tree = wh::compose::rebuild_interrupt_signal_tree(std::span{signals});
-  REQUIRE(signal_tree.size() == 1U);
-  const auto context_tree = wh::compose::to_interrupt_context_tree(std::span{signal_tree});
-  REQUIRE(context_tree.size() == 1U);
-  const auto rebuilt_signal_tree = wh::compose::to_interrupt_signal_tree(std::span{context_tree});
-  REQUIRE(rebuilt_signal_tree.size() == 1U);
-  const auto flattened = wh::compose::flatten_interrupt_signal_tree(std::span{rebuilt_signal_tree});
-  REQUIRE(flattened.size() == 2U);
+  REQUIRE(signal_tree.has_value());
+  REQUIRE(signal_tree->size() == 1U);
+  const auto context_tree = wh::compose::to_interrupt_context_tree(std::span{signal_tree.value()});
+  REQUIRE(context_tree.has_value());
+  REQUIRE(context_tree->size() == 1U);
+  const auto rebuilt_signal_tree =
+      wh::compose::to_interrupt_signal_tree(std::span{context_tree.value()});
+  REQUIRE(rebuilt_signal_tree.has_value());
+  REQUIRE(rebuilt_signal_tree->size() == 1U);
+  const auto flattened =
+      wh::compose::flatten_interrupt_signal_tree(std::span{rebuilt_signal_tree.value()});
+  REQUIRE(flattened.has_value());
+  REQUIRE(flattened->size() == 2U);
 
   std::vector<wh::core::interrupt_context> contexts{
       wh::core::interrupt_context{
@@ -103,7 +114,8 @@ TEST_CASE(
       wh::compose::make_interrupt_signal("other", wh::core::make_address({"other"}), 4),
   };
   const auto merged = wh::compose::merge_interrupt_sources(contexts, duplicates);
-  REQUIRE(merged.size() == 2U);
-  REQUIRE(merged[0].interrupt_id == copied_context.interrupt_id);
-  REQUIRE(merged[1].interrupt_id == "other");
+  REQUIRE(merged.has_value());
+  REQUIRE(merged->size() == 2U);
+  REQUIRE((*merged)[0].interrupt_id == copied_context.interrupt_id);
+  REQUIRE((*merged)[1].interrupt_id == "other");
 }

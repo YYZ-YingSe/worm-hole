@@ -110,7 +110,7 @@ TEST_CASE("tools state helpers cover batch extraction id shaping overrides and c
   state.parent_context = &parent;
   REQUIRE(&state.base_context() == &parent);
 
-  wh::core::set_session_value(parent, "shared", 3);
+  REQUIRE(wh::core::set_session_value(parent, "shared", 3).has_value());
   REQUIRE(wh::core::session_value_ref<int>(state.base_context(), "shared")
               .value()
               .get() == 3);
@@ -138,7 +138,7 @@ TEST_CASE("tools state helpers cover batch extraction id shaping overrides and c
   merged_source.resume_info.emplace();
   merged_source.interrupt_info.emplace();
   merged_source.interrupt_info->interrupt_id = "interrupt";
-  wh::compose::detail::merge_call_context(merged_target, merged_source);
+  REQUIRE(wh::compose::detail::merge_call_context(merged_target, merged_source).has_value());
   REQUIRE(merged_target.resume_info.has_value());
   REQUIRE(merged_target.interrupt_info.has_value());
   REQUIRE(merged_target.interrupt_info->interrupt_id == "interrupt");

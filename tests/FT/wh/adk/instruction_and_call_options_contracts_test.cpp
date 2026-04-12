@@ -22,22 +22,23 @@ TEST_CASE("adk instruction append replace and priority order are stable",
 TEST_CASE("adk call options overlay scope filtering and impl specific mapping are stable",
           "[core][adk][condition]") {
   wh::adk::call_options defaults{};
-  wh::adk::set_global_option(defaults, "temperature", 0.1);
+  REQUIRE(wh::adk::set_global_option(defaults, "temperature", 0.1).has_value());
   defaults.budget.max_concurrency = 2U;
 
   wh::adk::call_options flow{};
-  wh::adk::set_agent_option(flow, "planner", "mode", std::string{"plan"});
-  wh::adk::set_impl_option(flow, "openai", "model", std::string{"gpt-5"});
+  REQUIRE(wh::adk::set_agent_option(flow, "planner", "mode", std::string{"plan"}).has_value());
+  REQUIRE(wh::adk::set_impl_option(flow, "openai", "model", std::string{"gpt-5"}).has_value());
 
   wh::adk::call_options adk{};
-  wh::adk::set_global_option(adk, "temperature", 0.2);
-  wh::adk::set_checkpoint_field(adk, "resume-id", std::string{"resume-1"});
+  REQUIRE(wh::adk::set_global_option(adk, "temperature", 0.2).has_value());
+  REQUIRE(wh::adk::set_checkpoint_field(adk, "resume-id", std::string{"resume-1"}).has_value());
   adk.transfer_trim.trim_assistant_transfer_message = true;
   adk.budget.max_concurrency = 4U;
 
   wh::adk::call_options call_override{};
-  wh::adk::set_tool_option(call_override, "search", "timeout",
-                           std::chrono::milliseconds{250});
+  REQUIRE(wh::adk::set_tool_option(call_override, "search", "timeout",
+                                   std::chrono::milliseconds{250})
+              .has_value());
   call_override.transfer_trim.trim_tool_transfer_pair = true;
   call_override.budget.max_iterations = 8U;
 

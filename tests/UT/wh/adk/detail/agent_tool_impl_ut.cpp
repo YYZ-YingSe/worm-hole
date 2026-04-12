@@ -73,13 +73,14 @@ TEST_CASE(
     "agent tool impl detail captures bridge state reifies events and preserves interrupt snapshots",
     "[UT][wh/adk/detail/agent_tool_impl.hpp][make_agent_tool_event][condition][branch][boundary]") {
   wh::core::any move_only_payload{std::make_unique<int>(3)};
-  auto move_only_owned = wh::adk::detail::capture_bridge_state_any_or_empty(move_only_payload);
-  REQUIRE_FALSE(move_only_owned.has_value());
+  auto move_only_owned = wh::adk::detail::into_owned_bridge_state(move_only_payload);
+  REQUIRE(move_only_owned.has_error());
 
   std::string borrowed_text = "borrowed";
   auto borrowed_owned =
-      wh::adk::detail::capture_bridge_state_any_or_empty(wh::core::any::ref(borrowed_text));
-  auto *owned_text = wh::core::any_cast<std::string>(&borrowed_owned);
+      wh::adk::detail::into_owned_bridge_state(wh::core::any::ref(borrowed_text));
+  REQUIRE(borrowed_owned.has_value());
+  auto *owned_text = wh::core::any_cast<std::string>(&borrowed_owned.value());
   REQUIRE(owned_text != nullptr);
   REQUIRE(*owned_text == "borrowed");
   borrowed_text = "mutated";
@@ -88,18 +89,19 @@ TEST_CASE(
   wh::adk::event_metadata copied_metadata{};
   copied_metadata.attributes.emplace("copyable", wh::core::any{7});
   copied_metadata.attributes.emplace("move-only", wh::core::any{std::make_unique<int>(9)});
-  auto copied_owned_metadata = wh::adk::detail::capture_bridge_metadata(copied_metadata);
-  REQUIRE(copied_owned_metadata.attributes.contains("copyable"));
-  REQUIRE_FALSE(copied_owned_metadata.attributes.contains("move-only"));
+  auto copied_owned_metadata = wh::adk::detail::into_owned_bridge_metadata(copied_metadata);
+  REQUIRE(copied_owned_metadata.has_error());
 
   wh::adk::event_metadata moved_metadata{};
   moved_metadata.attributes.emplace("copyable", wh::core::any{7});
   moved_metadata.attributes.emplace("move-only", wh::core::any{std::make_unique<int>(9)});
-  auto moved_owned_metadata = wh::adk::detail::capture_bridge_metadata(std::move(moved_metadata));
-  REQUIRE(moved_owned_metadata.attributes.contains("copyable"));
-  REQUIRE(moved_owned_metadata.attributes.contains("move-only"));
+  auto moved_owned_metadata =
+      wh::adk::detail::into_owned_bridge_metadata(std::move(moved_metadata));
+  REQUIRE(moved_owned_metadata.has_value());
+  REQUIRE(moved_owned_metadata->attributes.contains("copyable"));
+  REQUIRE(moved_owned_metadata->attributes.contains("move-only"));
   auto *move_only_attribute =
-      wh::core::any_cast<std::unique_ptr<int>>(&moved_owned_metadata.attributes.at("move-only"));
+      wh::core::any_cast<std::unique_ptr<int>>(&moved_owned_metadata->attributes.at("move-only"));
   REQUIRE(move_only_attribute != nullptr);
   REQUIRE(**move_only_attribute == 9);
 
@@ -151,15 +153,17 @@ TEST_CASE(
   interrupt.parent_locations = {wh::core::address{{"graph", "root"}}};
   interrupt.trigger_reason = "child interrupted";
   auto child = wh::adk::detail::make_child_interrupt_record(interrupt);
-  REQUIRE(child.interrupt_id == "child");
-  auto restored = wh::adk::detail::to_interrupt_context(child);
-  REQUIRE(restored.interrupt_id == "child");
-  REQUIRE(restored.location.to_string("/") == "agent/worker");
+  REQUIRE(child.has_value());
+  REQUIRE(child->interrupt_id == "child");
+  auto restored = wh::adk::detail::to_interrupt_context(*child);
+  REQUIRE(restored.has_value());
+  REQUIRE(restored->interrupt_id == "child");
+  REQUIRE(restored->location.to_string("/") == "agent/worker");
 
   auto owned_interrupt =
       wh::core::into_owned(wh::core::any{wh::adk::detail::agent_tool_interrupt_state{
           .checkpoint = checkpoint,
-          .child_interrupt = child,
+          .child_interrupt = *child,
       }});
   REQUIRE(owned_interrupt.has_value());
 }

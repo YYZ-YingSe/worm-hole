@@ -1,4 +1,7 @@
+#include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <cstddef>
+#include <span>
 
 #include "wh/net/types/memory_pool_types.hpp"
 

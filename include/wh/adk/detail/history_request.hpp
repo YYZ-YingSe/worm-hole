@@ -120,9 +120,45 @@ read_history_request_payload_view(const wh::core::any &payload)
   history_request_payload normalized{};
   normalized.history_request = *view.value().history_request;
   if (view.value().state_payload != nullptr) {
-    normalized.state_payload = *view.value().state_payload;
+    auto owned = wh::core::into_owned(*view.value().state_payload);
+    if (owned.has_error()) {
+      return wh::core::result<history_request_payload>::failure(owned.error());
+    }
+    normalized.state_payload = std::move(owned).value();
   }
   return normalized;
 }
 
 } // namespace wh::adk::detail
+
+namespace wh::core {
+
+template <> struct any_owned_traits<wh::adk::detail::history_request_payload> {
+  [[nodiscard]] static auto into_owned(const wh::adk::detail::history_request_payload &value)
+      -> wh::core::result<wh::adk::detail::history_request_payload> {
+    auto state_payload = wh::core::into_owned(value.state_payload);
+    if (state_payload.has_error()) {
+      return wh::core::result<wh::adk::detail::history_request_payload>::failure(
+          state_payload.error());
+    }
+    return wh::adk::detail::history_request_payload{
+        .history_request = value.history_request,
+        .state_payload = std::move(state_payload).value(),
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::detail::history_request_payload &&value)
+      -> wh::core::result<wh::adk::detail::history_request_payload> {
+    auto state_payload = wh::core::into_owned(std::move(value.state_payload));
+    if (state_payload.has_error()) {
+      return wh::core::result<wh::adk::detail::history_request_payload>::failure(
+          state_payload.error());
+    }
+    return wh::adk::detail::history_request_payload{
+        .history_request = std::move(value.history_request),
+        .state_payload = std::move(state_payload).value(),
+    };
+  }
+};
+
+} // namespace wh::core

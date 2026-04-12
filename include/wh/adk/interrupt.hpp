@@ -151,12 +151,21 @@ namespace detail {
 /// Builds one ADK interrupt projection from the underlying core interrupt context.
 [[nodiscard]] inline auto make_interrupt_info(
     const wh::core::interrupt_context &context,
-    const wh::core::resume_state *resume_state = nullptr) -> interrupt_info {
+    const wh::core::resume_state *resume_state = nullptr)
+    -> wh::core::result<interrupt_info> {
+  auto state = wh::core::into_owned(context.state);
+  if (state.has_error()) {
+    return wh::core::result<interrupt_info>::failure(state.error());
+  }
+  auto payload = wh::core::into_owned(context.layer_payload);
+  if (payload.has_error()) {
+    return wh::core::result<interrupt_info>::failure(payload.error());
+  }
   return interrupt_info{
       .interrupt_id = context.interrupt_id,
       .run_path = project_interrupt_run_path(context.location),
-      .state = wh::core::clone_interrupt_payload_any(context.state),
-      .payload = wh::core::clone_interrupt_payload_any(context.layer_payload),
+      .state = std::move(state).value(),
+      .payload = std::move(payload).value(),
       .target_kind =
           resume_state == nullptr
               ? interrupt_target_kind::none
@@ -222,3 +231,79 @@ namespace detail {
 }
 
 } // namespace wh::adk
+
+namespace wh::core {
+
+template <> struct any_owned_traits<wh::adk::interrupt_info> {
+  [[nodiscard]] static auto into_owned(const wh::adk::interrupt_info &value)
+      -> wh::core::result<wh::adk::interrupt_info> {
+    auto state = wh::core::into_owned(value.state);
+    if (state.has_error()) {
+      return wh::core::result<wh::adk::interrupt_info>::failure(state.error());
+    }
+    auto payload = wh::core::into_owned(value.payload);
+    if (payload.has_error()) {
+      return wh::core::result<wh::adk::interrupt_info>::failure(payload.error());
+    }
+    return wh::adk::interrupt_info{
+        .interrupt_id = value.interrupt_id,
+        .run_path = value.run_path,
+        .state = std::move(state).value(),
+        .payload = std::move(payload).value(),
+        .target_kind = value.target_kind,
+        .used = value.used,
+        .trigger_reason = value.trigger_reason,
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::interrupt_info &&value)
+      -> wh::core::result<wh::adk::interrupt_info> {
+    auto state = wh::core::into_owned(std::move(value.state));
+    if (state.has_error()) {
+      return wh::core::result<wh::adk::interrupt_info>::failure(state.error());
+    }
+    auto payload = wh::core::into_owned(std::move(value.payload));
+    if (payload.has_error()) {
+      return wh::core::result<wh::adk::interrupt_info>::failure(payload.error());
+    }
+    return wh::adk::interrupt_info{
+        .interrupt_id = std::move(value.interrupt_id),
+        .run_path = std::move(value.run_path),
+        .state = std::move(state).value(),
+        .payload = std::move(payload).value(),
+        .target_kind = value.target_kind,
+        .used = value.used,
+        .trigger_reason = std::move(value.trigger_reason),
+    };
+  }
+};
+
+template <> struct any_owned_traits<wh::adk::interrupt_patch> {
+  [[nodiscard]] static auto into_owned(const wh::adk::interrupt_patch &value)
+      -> wh::core::result<wh::adk::interrupt_patch> {
+    auto payload = wh::core::into_owned(value.payload);
+    if (payload.has_error()) {
+      return wh::core::result<wh::adk::interrupt_patch>::failure(payload.error());
+    }
+    return wh::adk::interrupt_patch{
+        .resolution = value.resolution,
+        .payload = std::move(payload).value(),
+        .audit = value.audit,
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::interrupt_patch &&value)
+      -> wh::core::result<wh::adk::interrupt_patch> {
+    auto payload = wh::core::into_owned(std::move(value.payload));
+    if (payload.has_error()) {
+      return wh::core::result<wh::adk::interrupt_patch>::failure(payload.error());
+    }
+    return wh::adk::interrupt_patch{
+        .resolution = value.resolution,
+        .payload = std::move(payload).value(),
+        .audit = std::move(value.audit),
+    };
+  }
+};
+
+} // namespace wh::core

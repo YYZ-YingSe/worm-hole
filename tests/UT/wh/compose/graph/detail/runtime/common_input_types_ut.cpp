@@ -1,9 +1,12 @@
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph/detail/runtime/common_input_types.hpp"
 
 TEST_CASE("common input runtime types materialize values keep move ownership and track io storage",
-          "[UT][wh/compose/graph/detail/runtime/common_input_types.hpp][resolved_input::materialize][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "common_input_types.hpp][resolved_input::materialize][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   wh::compose::graph_value direct_value{7};
@@ -14,6 +17,17 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
   REQUIRE(borrowed_int != nullptr);
   REQUIRE(*borrowed_int == 7);
 
+  std::string borrowed_text_source = "seed";
+  wh::compose::graph_value borrowed_text{wh::core::any::ref(borrowed_text_source)};
+  auto borrowed_text_input = resolved_input::borrow_value(borrowed_text);
+  auto borrowed_text_value = std::move(borrowed_text_input).materialize();
+  REQUIRE(borrowed_text_value.has_value());
+  auto *owned_text = wh::core::any_cast<std::string>(&borrowed_text_value.value());
+  REQUIRE(owned_text != nullptr);
+  REQUIRE(*owned_text == "seed");
+  borrowed_text_source = "mutated";
+  REQUIRE(*owned_text == "seed");
+
   auto owned = resolved_input::own_value(wh::compose::graph_value{9});
   auto owned_value = std::move(owned).materialize();
   REQUIRE(owned_value.has_value());
@@ -21,14 +35,12 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
   REQUIRE(owned_int != nullptr);
   REQUIRE(*owned_int == 9);
 
-  auto owned_reader =
-      wh::compose::make_single_value_stream_reader(wh::compose::graph_value{3});
+  auto owned_reader = wh::compose::make_single_value_stream_reader(wh::compose::graph_value{3});
   REQUIRE(owned_reader.has_value());
   auto reader_input = resolved_input::own_reader(std::move(owned_reader).value());
   auto reader_value = std::move(reader_input).materialize();
   REQUIRE(reader_value.has_value());
-  REQUIRE(wh::core::any_cast<wh::compose::graph_stream_reader>(&reader_value.value()) !=
-          nullptr);
+  REQUIRE(wh::core::any_cast<wh::compose::graph_stream_reader>(&reader_value.value()) != nullptr);
 
   auto empty = resolved_input{};
   auto empty_value = std::move(empty).materialize();
@@ -68,15 +80,15 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
   REQUIRE(stored_value != nullptr);
   REQUIRE(*stored_value == 5);
 
-  auto output_reader =
-      wh::compose::make_single_value_stream_reader(wh::compose::graph_value{21});
+  auto output_reader = wh::compose::make_single_value_stream_reader(wh::compose::graph_value{21});
   REQUIRE(output_reader.has_value());
   storage.mark_reader_output(1U, std::move(output_reader).value());
   REQUIRE(storage.output_valid.test(1U));
 }
 
 TEST_CASE("common input runtime helper structs reset flags and preserve default sentinel states",
-          "[UT][wh/compose/graph/detail/runtime/common_input_types.hpp][runtime_io_storage::reset][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "common_input_types.hpp][runtime_io_storage::reset][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   input_lane lane{};

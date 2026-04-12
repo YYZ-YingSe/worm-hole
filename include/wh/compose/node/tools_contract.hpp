@@ -138,12 +138,14 @@ struct tools_rerun {
 };
 
 /// Typed invoke-time overrides consumed by tools node.
+/// This type is intentionally borrowed-oriented: registry/rerun remain
+/// host-owned handles shared with the running invoke instead of owned values.
 struct tools_call_options {
-  /// Optional override registry used for this invoke only.
+  /// Optional host-owned override registry borrowed for this invoke only.
   std::optional<std::reference_wrapper<const tool_registry>> registry{};
   /// Optional sequential override.
   std::optional<bool> sequential{};
-  /// Optional caller-owned rerun state shared with this invoke.
+  /// Optional caller-owned rerun state shared by reference with this invoke.
   tools_rerun *rerun{nullptr};
 };
 

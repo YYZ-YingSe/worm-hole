@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <memory>
 
 #include "wh/tool/interrupt.hpp"
 
@@ -13,15 +14,17 @@ TEST_CASE("tool interrupt converts to core signals and injects resume payloads",
   };
 
   const auto signal = wh::tool::to_interrupt_signal(interrupt);
-  REQUIRE(signal.interrupt_id == "int-1");
-  REQUIRE(signal.location == interrupt.location);
-  REQUIRE(wh::core::any_cast<int>(&signal.state) != nullptr);
-  REQUIRE(*wh::core::any_cast<int>(&signal.state) == 7);
+  REQUIRE(signal.has_value());
+  REQUIRE(signal->interrupt_id == "int-1");
+  REQUIRE(signal->location == interrupt.location);
+  REQUIRE(wh::core::any_cast<int>(&signal->state) != nullptr);
+  REQUIRE(*wh::core::any_cast<int>(&signal->state) == 7);
 
-  const auto roundtrip = wh::tool::from_interrupt_signal(signal);
-  REQUIRE(roundtrip.interrupt_id == "int-1");
-  REQUIRE(roundtrip.location == interrupt.location);
-  REQUIRE(*wh::core::any_cast<int>(&roundtrip.payload) == 7);
+  const auto roundtrip = wh::tool::from_interrupt_signal(*signal);
+  REQUIRE(roundtrip.has_value());
+  REQUIRE(roundtrip->interrupt_id == "int-1");
+  REQUIRE(roundtrip->location == interrupt.location);
+  REQUIRE(*wh::core::any_cast<int>(&roundtrip->payload) == 7);
 
   wh::core::resume_state state{};
   auto injected = wh::tool::inject_resume_data(interrupt, state);
@@ -86,4 +89,41 @@ TEST_CASE("tool interrupt helpers return no root cause for empty or all-ok sets"
   auto aggregated = wh::tool::aggregate_interrupts(interrupts);
   REQUIRE(aggregated.has_value());
   REQUIRE_FALSE(aggregated.value().root_cause.has_value());
+}
+
+TEST_CASE("tool interrupt aggregation fails instead of silently dropping move-only payloads",
+          "[UT][wh/tool/interrupt.hpp][aggregate_interrupts][boundary]") {
+  const std::array interrupts{
+      wh::tool::tool_interrupt{
+          .interrupt_id = "tool-a",
+          .location = wh::core::make_address({"tool", "a"}),
+          .payload = wh::core::any{std::make_unique<int>(3)},
+      },
+  };
+
+  auto aggregated = wh::tool::aggregate_interrupts(interrupts);
+  REQUIRE(aggregated.has_error());
+}
+
+TEST_CASE("tool interrupt copy conversions fail for non-ownable payloads",
+          "[UT][wh/tool/interrupt.hpp][to_interrupt_signal][boundary]") {
+  wh::tool::tool_interrupt interrupt{
+      .interrupt_id = "tool-copy",
+      .location = wh::core::make_address({"tool", "copy"}),
+      .payload = wh::core::any{std::make_unique<int>(7)},
+  };
+
+  auto copied_signal = wh::tool::to_interrupt_signal(interrupt);
+  REQUIRE(copied_signal.has_error());
+
+  auto moved_signal = wh::tool::to_interrupt_signal(std::move(interrupt));
+  REQUIRE(wh::core::any_cast<std::unique_ptr<int>>(&moved_signal.state) != nullptr);
+
+  wh::core::interrupt_signal signal{
+      .interrupt_id = "signal-copy",
+      .location = wh::core::make_address({"tool", "copy"}),
+      .state = wh::core::any{std::make_unique<int>(9)},
+  };
+  auto copied_interrupt = wh::tool::from_interrupt_signal(signal);
+  REQUIRE(copied_interrupt.has_error());
 }

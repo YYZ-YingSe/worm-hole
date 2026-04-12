@@ -621,11 +621,16 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
   auto scope = make_call_scope(context, call.tool_name, call.call_id);
 
   std::atomic<bool> produced{false};
+  std::atomic<bool> write_succeeded{false};
+  std::atomic<bool> close_succeeded{false};
   std::thread producer{[&]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    REQUIRE(message_writer.try_write(make_assistant_message("late chunk"))
-                .has_value());
-    REQUIRE(message_writer.close().has_value());
+    write_succeeded.store(
+        message_writer.try_write(make_assistant_message("late chunk"))
+            .has_value(),
+        std::memory_order_release);
+    close_succeeded.store(message_writer.close().has_value(),
+                          std::memory_order_release);
     produced.store(true, std::memory_order_release);
   }};
 
@@ -654,6 +659,8 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
   }
 
   producer.join();
+  REQUIRE(write_succeeded.load(std::memory_order_acquire));
+  REQUIRE(close_succeeded.load(std::memory_order_acquire));
 
   auto resumed = reader.read();
   REQUIRE(resumed.has_value());

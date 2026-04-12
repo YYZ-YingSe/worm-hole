@@ -48,21 +48,30 @@ struct run_context {
   std::optional<resume_state> resume_info{};
 };
 
+[[nodiscard]] auto clone_run_context(const run_context &context)
+    -> result<run_context>;
+
 /// Stores a typed session value under `key`.
 template <typename key_t, typename value_t>
   requires std::constructible_from<std::string, key_t &&>
 auto set_session_value(run_context &context, key_t &&key, value_t &&value)
-    -> void {
+    -> result<void> {
   std::string stored_key{std::forward<key_t>(key)};
   using stored_t = remove_cvref_t<value_t>;
+  wh::core::any stored_value{};
   if constexpr (std::same_as<stored_t, wh::core::any>) {
-    context.session_values.insert_or_assign(std::move(stored_key),
-                                            std::forward<value_t>(value));
+    stored_value = std::forward<value_t>(value);
   } else {
-    context.session_values.insert_or_assign(
-        std::move(stored_key), wh::core::any{std::in_place_type<stored_t>,
-                                             std::forward<value_t>(value)});
+    stored_value = wh::core::any{std::in_place_type<stored_t>,
+                                 std::forward<value_t>(value)};
   }
+  auto owned = wh::core::into_owned(std::move(stored_value));
+  if (owned.has_error()) {
+    return result<void>::failure(owned.error());
+  }
+  context.session_values.insert_or_assign(std::move(stored_key),
+                                          std::move(owned).value());
+  return {};
 }
 
 /// Gets an immutable typed reference from session storage.
@@ -158,8 +167,11 @@ template <typename config_t, typename callbacks_t>
 register_local_callbacks(const wh::core::run_context &context,
                          config_t &&config, callbacks_t &&callbacks)
     -> wh::core::result<wh::core::run_context> {
-  wh::core::run_context copied = context;
-  return register_local_callbacks(std::move(copied),
+  auto copied = clone_run_context(context);
+  if (copied.has_error()) {
+    return wh::core::result<wh::core::run_context>::failure(copied.error());
+  }
+  return register_local_callbacks(std::move(copied).value(),
                                   std::forward<config_t>(config),
                                   std::forward<callbacks_t>(callbacks));
 }
@@ -267,6 +279,80 @@ auto run_with_fatal_event(wh::core::run_context &context, callable_t &&callable,
 
   inject_callback_event(context, fatal_stage, executed.error(),
                         wh::core::callback_run_info{});
+}
+
+template <> struct any_owned_traits<run_context> {
+  [[nodiscard]] static auto into_owned(const run_context &value)
+      -> result<run_context> {
+    auto session_values = wh::core::into_owned_any_map(value.session_values);
+    if (session_values.has_error()) {
+      return result<run_context>::failure(session_values.error());
+    }
+
+    std::optional<interrupt_context> interrupt_info{};
+    if (value.interrupt_info.has_value()) {
+      auto owned_interrupt = wh::core::into_owned(*value.interrupt_info);
+      if (owned_interrupt.has_error()) {
+        return result<run_context>::failure(owned_interrupt.error());
+      }
+      interrupt_info = std::move(owned_interrupt).value();
+    }
+
+    std::optional<resume_state> resume_info{};
+    if (value.resume_info.has_value()) {
+      auto owned_resume = wh::core::into_owned(*value.resume_info);
+      if (owned_resume.has_error()) {
+        return result<run_context>::failure(owned_resume.error());
+      }
+      resume_info = std::move(owned_resume).value();
+    }
+
+    return run_context{
+        .session_values = std::move(session_values).value(),
+        .callbacks = value.callbacks,
+        .interrupt_info = std::move(interrupt_info),
+        .resume_info = std::move(resume_info),
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(run_context &&value)
+      -> result<run_context> {
+    auto session_values =
+        wh::core::into_owned_any_map(std::move(value.session_values));
+    if (session_values.has_error()) {
+      return result<run_context>::failure(session_values.error());
+    }
+
+    std::optional<interrupt_context> interrupt_info{};
+    if (value.interrupt_info.has_value()) {
+      auto owned_interrupt = wh::core::into_owned(std::move(*value.interrupt_info));
+      if (owned_interrupt.has_error()) {
+        return result<run_context>::failure(owned_interrupt.error());
+      }
+      interrupt_info = std::move(owned_interrupt).value();
+    }
+
+    std::optional<resume_state> resume_info{};
+    if (value.resume_info.has_value()) {
+      auto owned_resume = wh::core::into_owned(std::move(*value.resume_info));
+      if (owned_resume.has_error()) {
+        return result<run_context>::failure(owned_resume.error());
+      }
+      resume_info = std::move(owned_resume).value();
+    }
+
+    return run_context{
+        .session_values = std::move(session_values).value(),
+        .callbacks = std::move(value.callbacks),
+        .interrupt_info = std::move(interrupt_info),
+        .resume_info = std::move(resume_info),
+    };
+  }
+};
+
+[[nodiscard]] inline auto clone_run_context(const run_context &context)
+    -> result<run_context> {
+  return wh::core::into_owned(context);
 }
 
 } // namespace wh::core

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cassert>
+#include <concepts>
 #include <type_traits>
 #include <utility>
 
@@ -26,6 +27,46 @@ template <typename value_t, typename... arg_ts>
 template <typename value_t>
 [[nodiscard]] inline auto forward_as_any(value_t &&value) noexcept -> any {
   return any{std::in_place_type<value_t &&>, std::forward<value_t>(value)};
+}
+
+template <typename map_t>
+concept any_mapped_map =
+    requires {
+      typename std::remove_cvref_t<map_t>::mapped_type;
+    } && std::same_as<typename std::remove_cvref_t<map_t>::mapped_type, any>;
+
+template <any_mapped_map map_t>
+[[nodiscard]] inline auto into_owned_any_map(const map_t &values)
+    -> wh::core::result<std::remove_cvref_t<map_t>> {
+  using owned_map_t = std::remove_cvref_t<map_t>;
+  owned_map_t owned{};
+  owned.reserve(values.size());
+  for (const auto &[key, value] : values) {
+    auto prepared = wh::core::into_owned(value);
+    if (prepared.has_error()) {
+      return wh::core::result<owned_map_t>::failure(prepared.error());
+    }
+    owned.insert_or_assign(key, std::move(prepared).value());
+  }
+  return owned;
+}
+
+template <any_mapped_map map_t>
+[[nodiscard]] inline auto into_owned_any_map(map_t &&values)
+    -> wh::core::result<std::remove_cvref_t<map_t>> {
+  using owned_map_t = std::remove_cvref_t<map_t>;
+  owned_map_t owned{};
+  owned.reserve(values.size());
+  for (auto iter = values.begin(); iter != values.end();) {
+    auto node = values.extract(iter++);
+    auto prepared = wh::core::into_owned(std::move(node.mapped()));
+    if (prepared.has_error()) {
+      return wh::core::result<owned_map_t>::failure(prepared.error());
+    }
+    node.mapped() = std::move(prepared).value();
+    owned.insert(std::move(node));
+  }
+  return owned;
 }
 
 template <typename value_t>

@@ -311,7 +311,11 @@ TEST_CASE("compose graph runtime-aware nodes only fork run_context when local ca
                      wh::core::run_context &context,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    wh::core::set_session_value(context, "node-mutated", 7);
+                    auto stored =
+                        wh::core::set_session_value(context, "node-mutated", 7);
+                    if (stored.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(stored.error());
+                    }
                     return std::move(input);
                   })
               .has_value());

@@ -122,12 +122,12 @@ TEST_CASE("agent options apply_agent_options overlays structured output onto exi
 TEST_CASE("agent options resolve layered ADK call options in defaults-agent-adk-override order",
           "[UT][wh/agent/options.hpp][resolve_agent_call_options][condition][branch][boundary]") {
   wh::adk::call_options defaults{};
-  wh::adk::set_global_option(defaults, "temperature", 0.1);
+  REQUIRE(wh::adk::set_global_option(defaults, "temperature", 0.1).has_value());
 
   wh::agent::agent_options options{};
-  wh::adk::set_global_option(options.agent_controls, "temperature", 0.2);
-  wh::adk::set_global_option(options.adk_controls, "temperature", 0.3);
-  wh::adk::set_global_option(options.call_override, "temperature", 0.4);
+  REQUIRE(wh::adk::set_global_option(options.agent_controls, "temperature", 0.2).has_value());
+  REQUIRE(wh::adk::set_global_option(options.adk_controls, "temperature", 0.3).has_value());
+  REQUIRE(wh::adk::set_global_option(options.call_override, "temperature", 0.4).has_value());
 
   const auto resolved = wh::agent::resolve_agent_call_options(&defaults, options);
 

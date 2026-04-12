@@ -211,3 +211,37 @@ validate_registered_payload(const wh::core::any &payload,
 }
 
 } // namespace wh::adk
+
+namespace wh::core {
+
+template <> struct any_owned_traits<wh::adk::event_metadata> {
+  [[nodiscard]] static auto into_owned(const wh::adk::event_metadata &value)
+      -> wh::core::result<wh::adk::event_metadata> {
+    auto attributes = wh::core::into_owned_any_map(value.attributes);
+    if (attributes.has_error()) {
+      return wh::core::result<wh::adk::event_metadata>::failure(attributes.error());
+    }
+    return wh::adk::event_metadata{
+        .run_path = value.run_path,
+        .agent_name = value.agent_name,
+        .tool_name = value.tool_name,
+        .attributes = std::move(attributes).value(),
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::event_metadata &&value)
+      -> wh::core::result<wh::adk::event_metadata> {
+    auto attributes = wh::core::into_owned_any_map(std::move(value.attributes));
+    if (attributes.has_error()) {
+      return wh::core::result<wh::adk::event_metadata>::failure(attributes.error());
+    }
+    return wh::adk::event_metadata{
+        .run_path = std::move(value.run_path),
+        .agent_name = std::move(value.agent_name),
+        .tool_name = std::move(value.tool_name),
+        .attributes = std::move(attributes).value(),
+    };
+  }
+};
+
+} // namespace wh::core

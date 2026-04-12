@@ -52,13 +52,15 @@ TEST_CASE("compose runtime resume helpers apply decisions batches and reinterrup
 
   auto reinterrupts = wh::compose::collect_reinterrupts(
       batch_state, std::span{&context, 1});
-  REQUIRE(reinterrupts.empty());
+  REQUIRE(reinterrupts.has_value());
+  REQUIRE(reinterrupts->empty());
 
   wh::core::resume_state empty_state{};
   auto unmatched =
       wh::compose::collect_reinterrupts(empty_state, std::span{&context, 1});
-  REQUIRE(unmatched.size() == 1U);
-  REQUIRE(unmatched.front().interrupt_id == "ctx");
+  REQUIRE(unmatched.has_value());
+  REQUIRE(unmatched->size() == 1U);
+  REQUIRE(unmatched->front().interrupt_id == "ctx");
 }
 
 TEST_CASE("compose runtime resume helpers merge consume subtree operations and decision failures",

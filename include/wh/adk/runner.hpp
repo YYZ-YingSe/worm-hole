@@ -94,10 +94,12 @@ find_final_message(const std::vector<agent_event> &events)
 
 /// Per-run controls lowered by the runner before delegating to one execution
 /// implementation.
+/// `compose_controls` is value-like invoke data. `compose_services` is an
+/// invoke-borrowed host handle that must outlive the delegated run.
 struct run_options {
   /// Compose typed controls visible to this run only.
   wh::compose::graph_invoke_controls compose_controls{};
-  /// Compose typed runtime services visible to this run only.
+  /// Compose typed runtime services borrowed for this run only.
   const wh::compose::graph_runtime_services *compose_services{nullptr};
 };
 
@@ -175,6 +177,11 @@ template <typename impl_t>
 concept runner_impl =
     async_runner_handler_const<impl_t> || async_runner_handler_move<impl_t>;
 
+template <typename impl_t>
+[[nodiscard]] inline auto
+dispatch_run(const impl_t &impl, wh::compose::graph_invoke_request request,
+             wh::core::run_context &context);
+
 [[nodiscard]] inline auto has_checkpoint_service(
     const wh::compose::graph_runtime_services *services) noexcept -> bool {
   return services != nullptr && (services->checkpoint.store != nullptr ||
@@ -188,6 +195,28 @@ concept runner_impl =
   lowered.controls = request.options.compose_controls;
   lowered.services = request.options.compose_services;
   return lowered;
+}
+
+template <typename impl_t>
+using runner_failure_sender_t =
+    decltype(wh::core::detail::failure_result_sender<agent_run_result>(
+        wh::core::errc::internal_error));
+
+template <typename impl_t>
+using runner_dispatch_sender_t =
+    decltype(dispatch_run(std::declval<const impl_t &>(),
+                          std::declval<wh::compose::graph_invoke_request>(),
+                          std::declval<wh::core::run_context &>()));
+
+template <typename impl_t>
+using runner_sender_t = wh::core::detail::variant_sender<
+    runner_failure_sender_t<impl_t>, runner_dispatch_sender_t<impl_t>>;
+
+template <typename impl_t>
+[[nodiscard]] inline auto make_runner_failure_sender(const wh::core::error_code error)
+    -> runner_sender_t<impl_t> {
+  return runner_sender_t<impl_t>{
+      wh::core::detail::failure_result_sender<agent_run_result>(error)};
 }
 
 [[nodiscard]] inline auto lower_run_request(run_request &&request)
@@ -250,6 +279,10 @@ inline auto append_resume_targets(const wh::core::run_context &context,
     if (target.interrupt_id.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
+    auto payload = wh::core::into_owned(target.payload);
+    if (payload.has_error()) {
+      return wh::core::result<void>::failure(payload.error());
+    }
     auto location = resolve_resume_location(context, target);
     if (location.has_error()) {
       return wh::core::result<void>::failure(location.error());
@@ -260,7 +293,46 @@ inline auto append_resume_targets(const wh::core::run_context &context,
     });
     controls.resume.batch_items.push_back(wh::compose::resume_batch_item{
         .interrupt_context_id = target.interrupt_id,
-        .data = target.payload,
+        .data = std::move(payload).value(),
+    });
+  }
+  return {};
+}
+
+inline auto append_resume_targets(const wh::core::run_context &context,
+                                  std::vector<resume_target> &&targets,
+                                  const bool reinterrupt_unmatched,
+                                  wh::compose::graph_invoke_controls &controls)
+    -> wh::core::result<void> {
+  controls.resume.reinterrupt_unmatched = reinterrupt_unmatched;
+  if (targets.empty()) {
+    return {};
+  }
+
+  controls.resume.batch_items.reserve(controls.resume.batch_items.size() +
+                                      targets.size());
+  controls.resume.contexts.reserve(controls.resume.contexts.size() +
+                                   targets.size());
+  for (auto &target : targets) {
+    if (target.interrupt_id.empty()) {
+      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+    }
+    auto payload = wh::core::into_owned(std::move(target.payload));
+    if (payload.has_error()) {
+      return wh::core::result<void>::failure(payload.error());
+    }
+    auto location = resolve_resume_location(context, target);
+    if (location.has_error()) {
+      return wh::core::result<void>::failure(location.error());
+    }
+    auto interrupt_id = std::move(target.interrupt_id);
+    controls.resume.contexts.push_back(wh::core::interrupt_context{
+        .interrupt_id = interrupt_id,
+        .location = std::move(location).value(),
+    });
+    controls.resume.batch_items.push_back(wh::compose::resume_batch_item{
+        .interrupt_context_id = std::move(interrupt_id),
+        .data = std::move(payload).value(),
     });
   }
   return {};
@@ -280,38 +352,57 @@ dispatch_run(const impl_t &impl, wh::compose::graph_invoke_request request,
   }
 }
 
-template <typename impl_t>
+template <typename impl_t, typename request_t>
+  requires std::same_as<std::remove_cvref_t<request_t>, wh::adk::run_request>
 [[nodiscard]] inline auto
-lower_resume_and_dispatch(const impl_t &impl, resume_request request,
+lower_run_and_dispatch(const impl_t &impl, request_t &&request,
+                       wh::core::run_context &context) {
+  auto owned_request = wh::core::into_owned(std::forward<request_t>(request));
+  if (owned_request.has_error()) {
+    return make_runner_failure_sender<impl_t>(owned_request.error());
+  }
+  return runner_sender_t<impl_t>{
+      dispatch_run(impl, lower_run_request(std::move(owned_request).value()), context)};
+}
+
+template <typename impl_t, typename request_t>
+  requires std::same_as<std::remove_cvref_t<request_t>, wh::adk::query_request>
+[[nodiscard]] inline auto
+lower_query_and_dispatch(const impl_t &impl, request_t &&request,
+                         wh::core::run_context &context) {
+  auto owned_request = wh::core::into_owned(std::forward<request_t>(request));
+  if (owned_request.has_error()) {
+    return make_runner_failure_sender<impl_t>(owned_request.error());
+  }
+  return lower_run_and_dispatch(impl, make_run_request(std::move(owned_request).value()),
+                                context);
+}
+
+template <typename impl_t, typename request_t>
+  requires std::same_as<std::remove_cvref_t<request_t>, wh::adk::resume_request>
+[[nodiscard]] inline auto
+lower_resume_and_dispatch(const impl_t &impl, request_t &&request,
                           wh::core::run_context &context) {
-  using failure_sender_t =
-      decltype(wh::core::detail::failure_result_sender<agent_run_result>(
-          wh::core::errc::internal_error));
-  using dispatch_sender_t =
-      decltype(dispatch_run(std::declval<const impl_t &>(),
-                            std::declval<wh::compose::graph_invoke_request>(),
-                            std::declval<wh::core::run_context &>()));
-  using resume_sender_t =
-      wh::core::detail::variant_sender<failure_sender_t, dispatch_sender_t>;
+  auto owned_request = wh::core::into_owned(std::forward<request_t>(request));
+  if (owned_request.has_error()) {
+    return make_runner_failure_sender<impl_t>(owned_request.error());
+  }
+  auto materialized_request = std::move(owned_request).value();
 
-  if (request.require_checkpoint &&
-      !has_checkpoint_service(request.run.options.compose_services)) {
-    return resume_sender_t{
-        wh::core::detail::failure_result_sender<agent_run_result>(
-            wh::core::errc::not_found)};
+  if (materialized_request.require_checkpoint &&
+      !has_checkpoint_service(materialized_request.run.options.compose_services)) {
+    return make_runner_failure_sender<impl_t>(wh::core::errc::not_found);
   }
 
-  auto lowered = lower_run_request(std::move(request.run));
+  auto lowered = lower_run_request(std::move(materialized_request.run));
   auto appended =
-      append_resume_targets(context, request.targets,
-                            request.reinterrupt_unmatched, lowered.controls);
+      append_resume_targets(context, std::move(materialized_request.targets),
+                            materialized_request.reinterrupt_unmatched, lowered.controls);
   if (appended.has_error()) {
-    return resume_sender_t{
-        wh::core::detail::failure_result_sender<agent_run_result>(
-            appended.error())};
+    return make_runner_failure_sender<impl_t>(appended.error());
   }
 
-  return resume_sender_t{dispatch_run(impl, std::move(lowered), context)};
+  return runner_sender_t<impl_t>{dispatch_run(impl, std::move(lowered), context)};
 }
 
 } // namespace detail
@@ -343,9 +434,8 @@ public:
   /// Starts one run by lowering ADK input to one compose invoke request.
   [[nodiscard]] auto run(request_t &&request,
                          wh::core::run_context &context) const {
-    return detail::dispatch_run(
-        impl_, detail::lower_run_request(std::forward<request_t>(request)),
-        context);
+    return detail::lower_run_and_dispatch(
+        impl_, std::forward<request_t>(request), context);
   }
 
   template <typename request_t>
@@ -353,7 +443,8 @@ public:
   /// Starts one query by wrapping the query text into a single user message.
   [[nodiscard]] auto query(request_t &&request,
                            wh::core::run_context &context) const {
-    return run(make_run_request(std::forward<request_t>(request)), context);
+    return detail::lower_query_and_dispatch(
+        impl_, std::forward<request_t>(request), context);
   }
 
   template <typename request_t>
@@ -363,7 +454,7 @@ public:
   [[nodiscard]] auto resume(request_t &&request,
                             wh::core::run_context &context) const {
     return detail::lower_resume_and_dispatch(
-        impl_, resume_request{std::forward<request_t>(request)}, context);
+        impl_, std::forward<request_t>(request), context);
   }
 
 private:
@@ -372,3 +463,165 @@ private:
 };
 
 } // namespace wh::adk
+
+namespace wh::core {
+
+template <> struct any_owned_traits<wh::adk::resume_target> {
+  [[nodiscard]] static auto into_owned(const wh::adk::resume_target &value)
+      -> wh::core::result<wh::adk::resume_target> {
+    auto payload = wh::core::into_owned(value.payload);
+    if (payload.has_error()) {
+      return wh::core::result<wh::adk::resume_target>::failure(payload.error());
+    }
+    return wh::adk::resume_target{
+        .interrupt_id = value.interrupt_id,
+        .location = value.location,
+        .payload = std::move(payload).value(),
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::resume_target &&value)
+      -> wh::core::result<wh::adk::resume_target> {
+    auto payload = wh::core::into_owned(std::move(value.payload));
+    if (payload.has_error()) {
+      return wh::core::result<wh::adk::resume_target>::failure(payload.error());
+    }
+    return wh::adk::resume_target{
+        .interrupt_id = std::move(value.interrupt_id),
+        .location = std::move(value.location),
+        .payload = std::move(payload).value(),
+    };
+  }
+};
+
+template <> struct any_owned_traits<wh::adk::run_options> {
+  [[nodiscard]] static auto into_owned(const wh::adk::run_options &value)
+      -> wh::core::result<wh::adk::run_options> {
+    auto compose_controls = wh::core::into_owned(value.compose_controls);
+    if (compose_controls.has_error()) {
+      return wh::core::result<wh::adk::run_options>::failure(
+          compose_controls.error());
+    }
+    return wh::adk::run_options{
+        .compose_controls = std::move(compose_controls).value(),
+        .compose_services = value.compose_services,
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::run_options &&value)
+      -> wh::core::result<wh::adk::run_options> {
+    auto compose_controls = wh::core::into_owned(std::move(value.compose_controls));
+    if (compose_controls.has_error()) {
+      return wh::core::result<wh::adk::run_options>::failure(
+          compose_controls.error());
+    }
+    return wh::adk::run_options{
+        .compose_controls = std::move(compose_controls).value(),
+        .compose_services = value.compose_services,
+    };
+  }
+};
+
+template <> struct any_owned_traits<wh::adk::run_request> {
+  [[nodiscard]] static auto into_owned(const wh::adk::run_request &value)
+      -> wh::core::result<wh::adk::run_request> {
+    auto options = wh::core::into_owned(value.options);
+    if (options.has_error()) {
+      return wh::core::result<wh::adk::run_request>::failure(options.error());
+    }
+    return wh::adk::run_request{
+        .messages = value.messages,
+        .options = std::move(options).value(),
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::run_request &&value)
+      -> wh::core::result<wh::adk::run_request> {
+    auto options = wh::core::into_owned(std::move(value.options));
+    if (options.has_error()) {
+      return wh::core::result<wh::adk::run_request>::failure(options.error());
+    }
+    return wh::adk::run_request{
+        .messages = std::move(value.messages),
+        .options = std::move(options).value(),
+    };
+  }
+};
+
+template <> struct any_owned_traits<wh::adk::query_request> {
+  [[nodiscard]] static auto into_owned(const wh::adk::query_request &value)
+      -> wh::core::result<wh::adk::query_request> {
+    auto options = wh::core::into_owned(value.options);
+    if (options.has_error()) {
+      return wh::core::result<wh::adk::query_request>::failure(options.error());
+    }
+    return wh::adk::query_request{
+        .text = value.text,
+        .options = std::move(options).value(),
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::query_request &&value)
+      -> wh::core::result<wh::adk::query_request> {
+    auto options = wh::core::into_owned(std::move(value.options));
+    if (options.has_error()) {
+      return wh::core::result<wh::adk::query_request>::failure(options.error());
+    }
+    return wh::adk::query_request{
+        .text = std::move(value.text),
+        .options = std::move(options).value(),
+    };
+  }
+};
+
+template <> struct any_owned_traits<wh::adk::resume_request> {
+  [[nodiscard]] static auto into_owned(const wh::adk::resume_request &value)
+      -> wh::core::result<wh::adk::resume_request> {
+    auto run = wh::core::into_owned(value.run);
+    if (run.has_error()) {
+      return wh::core::result<wh::adk::resume_request>::failure(run.error());
+    }
+    std::vector<wh::adk::resume_target> targets{};
+    targets.reserve(value.targets.size());
+    for (const auto &target : value.targets) {
+      auto owned_target = wh::core::into_owned(target);
+      if (owned_target.has_error()) {
+        return wh::core::result<wh::adk::resume_request>::failure(
+            owned_target.error());
+      }
+      targets.push_back(std::move(owned_target).value());
+    }
+    return wh::adk::resume_request{
+        .run = std::move(run).value(),
+        .targets = std::move(targets),
+        .require_checkpoint = value.require_checkpoint,
+        .reinterrupt_unmatched = value.reinterrupt_unmatched,
+    };
+  }
+
+  [[nodiscard]] static auto into_owned(wh::adk::resume_request &&value)
+      -> wh::core::result<wh::adk::resume_request> {
+    auto run = wh::core::into_owned(std::move(value.run));
+    if (run.has_error()) {
+      return wh::core::result<wh::adk::resume_request>::failure(run.error());
+    }
+    std::vector<wh::adk::resume_target> targets{};
+    targets.reserve(value.targets.size());
+    for (auto &target : value.targets) {
+      auto owned_target = wh::core::into_owned(std::move(target));
+      if (owned_target.has_error()) {
+        return wh::core::result<wh::adk::resume_request>::failure(
+            owned_target.error());
+      }
+      targets.push_back(std::move(owned_target).value());
+    }
+    return wh::adk::resume_request{
+        .run = std::move(run).value(),
+        .targets = std::move(targets),
+        .require_checkpoint = value.require_checkpoint,
+        .reinterrupt_unmatched = value.reinterrupt_unmatched,
+    };
+  }
+};
+
+} // namespace wh::core

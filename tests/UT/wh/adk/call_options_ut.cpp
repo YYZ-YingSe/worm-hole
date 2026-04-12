@@ -16,8 +16,8 @@ static_assert(std::same_as<wh::adk::option_string_equal,
 TEST_CASE("adk call options set_option and option_value_copy cover hit miss and type mismatch",
           "[UT][wh/adk/call_options.hpp][option_value_copy][condition][branch][boundary]") {
   wh::adk::option_bag bag{};
-  wh::adk::set_option(bag, "answer", 42);
-  wh::adk::set_option(bag, "raw", wh::core::any{std::string{"ok"}});
+  REQUIRE(wh::adk::set_option(bag, "answer", 42).has_value());
+  REQUIRE(wh::adk::set_option(bag, "raw", wh::core::any{std::string{"ok"}}).has_value());
 
   REQUIRE(wh::adk::option_value_copy<int>(bag, "answer").value() == 42);
   REQUIRE(wh::adk::option_value_copy<std::string>(bag, "raw").value() == "ok");
@@ -32,7 +32,7 @@ TEST_CASE("adk call options named scope helpers upsert find and merge determinis
   std::vector<wh::adk::named_option_bag> scopes{};
 
   auto &planner = wh::adk::detail::upsert_scope(scopes, "planner");
-  wh::adk::set_option(planner.values, "mode", std::string{"plan"});
+  REQUIRE(wh::adk::set_option(planner.values, "mode", std::string{"plan"}).has_value());
   auto &same_planner = wh::adk::detail::upsert_scope(scopes, "planner");
 
   REQUIRE(&same_planner == &planner);
@@ -42,12 +42,12 @@ TEST_CASE("adk call options named scope helpers upsert find and merge determinis
   std::vector<wh::adk::named_option_bag> next_scopes{};
   wh::adk::detail::upsert_scope(next_scopes, "planner");
   wh::adk::detail::upsert_scope(next_scopes, "worker");
-  wh::adk::set_option(
+  REQUIRE(wh::adk::set_option(
       wh::adk::detail::find_named_scope(next_scopes, "planner")->values, "mode",
-      std::string{"override"});
-  wh::adk::set_option(
+      std::string{"override"}).has_value());
+  REQUIRE(wh::adk::set_option(
       wh::adk::detail::find_named_scope(next_scopes, "worker")->values, "stage",
-      std::string{"execute"});
+      std::string{"execute"}).has_value());
 
   wh::adk::detail::merge_named_scopes(scopes, next_scopes);
 
@@ -88,9 +88,9 @@ TEST_CASE("adk call options overlay helpers update only provided budget trim and
   std::unordered_map<std::string, wh::adk::option_bag, wh::adk::option_string_hash,
                      wh::adk::option_string_equal>
       next{};
-  wh::adk::set_option(target["openai"], "model", std::string{"gpt-4"});
-  wh::adk::set_option(next["openai"], "model", std::string{"gpt-5"});
-  wh::adk::set_option(next["anthropic"], "model", std::string{"claude"});
+  REQUIRE(wh::adk::set_option(target["openai"], "model", std::string{"gpt-4"}).has_value());
+  REQUIRE(wh::adk::set_option(next["openai"], "model", std::string{"gpt-5"}).has_value());
+  REQUIRE(wh::adk::set_option(next["anthropic"], "model", std::string{"claude"}).has_value());
   wh::adk::detail::merge_impl_specific(target, next);
   REQUIRE(wh::adk::option_value_copy<std::string>(target["openai"], "model").value() ==
           "gpt-5");
@@ -101,22 +101,23 @@ TEST_CASE("adk call options overlay helpers update only provided budget trim and
 TEST_CASE("adk call options resolve_call_options overlays defaults workflow adk and call override",
           "[UT][wh/adk/call_options.hpp][resolve_call_options][condition][branch][boundary]") {
   wh::adk::call_options defaults{};
-  wh::adk::set_global_option(defaults, "temperature", 0.1);
+  REQUIRE(wh::adk::set_global_option(defaults, "temperature", 0.1).has_value());
   defaults.budget.max_concurrency = 2U;
 
   wh::adk::call_options workflow{};
-  wh::adk::set_agent_option(workflow, "planner", "mode", std::string{"plan"});
-  wh::adk::set_impl_option(workflow, "openai", "model", std::string{"gpt-5"});
+  REQUIRE(wh::adk::set_agent_option(workflow, "planner", "mode", std::string{"plan"}).has_value());
+  REQUIRE(wh::adk::set_impl_option(workflow, "openai", "model", std::string{"gpt-5"}).has_value());
 
   wh::adk::call_options adk{};
-  wh::adk::set_global_option(adk, "temperature", 0.2);
-  wh::adk::set_checkpoint_field(adk, "resume-id", std::string{"resume-1"});
+  REQUIRE(wh::adk::set_global_option(adk, "temperature", 0.2).has_value());
+  REQUIRE(wh::adk::set_checkpoint_field(adk, "resume-id", std::string{"resume-1"}).has_value());
   adk.transfer_trim.trim_assistant_transfer_message = true;
   adk.budget.max_concurrency = 4U;
 
   wh::adk::call_options call_override{};
-  wh::adk::set_tool_option(call_override, "search", "timeout",
-                           std::chrono::milliseconds{250});
+  REQUIRE(wh::adk::set_tool_option(call_override, "search", "timeout",
+                                   std::chrono::milliseconds{250})
+              .has_value());
   call_override.transfer_trim.trim_tool_transfer_pair = true;
   call_override.budget.max_iterations = 8U;
 
@@ -134,12 +135,13 @@ TEST_CASE("adk call options resolve_call_options overlays defaults workflow adk 
 TEST_CASE("adk call options materialize agent and tool scopes with correct visibility",
           "[UT][wh/adk/call_options.hpp][materialize_tool_scope][condition][branch][boundary]") {
   wh::adk::call_options merged{};
-  wh::adk::set_global_option(merged, "temperature", 0.2);
-  wh::adk::set_agent_option(merged, "planner", "mode", std::string{"plan"});
-  wh::adk::set_tool_option(merged, "search", "timeout",
-                           std::chrono::milliseconds{250});
-  wh::adk::set_checkpoint_field(merged, "resume-id", std::string{"resume-1"});
-  wh::adk::set_impl_option(merged, "openai", "model", std::string{"gpt-5"});
+  REQUIRE(wh::adk::set_global_option(merged, "temperature", 0.2).has_value());
+  REQUIRE(wh::adk::set_agent_option(merged, "planner", "mode", std::string{"plan"}).has_value());
+  REQUIRE(wh::adk::set_tool_option(merged, "search", "timeout",
+                                   std::chrono::milliseconds{250})
+              .has_value());
+  REQUIRE(wh::adk::set_checkpoint_field(merged, "resume-id", std::string{"resume-1"}).has_value());
+  REQUIRE(wh::adk::set_impl_option(merged, "openai", "model", std::string{"gpt-5"}).has_value());
   merged.transfer_trim.trim_assistant_transfer_message = true;
   merged.transfer_trim.trim_tool_transfer_pair = true;
   merged.budget.max_concurrency = 4U;

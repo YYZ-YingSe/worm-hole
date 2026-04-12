@@ -9,8 +9,8 @@ TEST_CASE("run_context session helpers cover set lookup mutation and consume",
           "[UT][wh/core/run_context.hpp][set_session_value][branch][boundary]") {
   wh::core::run_context context{};
 
-  wh::core::set_session_value(context, "count", 7);
-  wh::core::set_session_value(context, "name", std::string{"alpha"});
+  REQUIRE(wh::core::set_session_value(context, "count", 7).has_value());
+  REQUIRE(wh::core::set_session_value(context, "name", std::string{"alpha"}).has_value());
 
   const auto count_const =
       wh::core::session_value_ref<int>(std::as_const(context), "count");

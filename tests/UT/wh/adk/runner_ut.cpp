@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -335,4 +336,84 @@ TEST_CASE("adk runner rejects missing checkpoint services when required and pres
   REQUIRE(run_status.has_value());
   REQUIRE(sender_runner.implementation().observed_context ==
           std::addressof(context));
+}
+
+TEST_CASE("adk runner ownerizes lvalue requests and rejects non-ownable request payloads explicitly",
+          "[UT][wh/adk/runner.hpp][runner::resume][boundary]") {
+  wh::core::run_context context{};
+
+  lowered_runner_impl run_impl{};
+  wh::adk::runner<lowered_runner_impl> run_runner{run_impl};
+  wh::adk::run_request lvalue_run{};
+  lvalue_run.messages.push_back(make_user_message("run"));
+  lvalue_run.options.compose_controls.call.component_defaults.insert_or_assign(
+      "move-only", wh::core::any{std::make_unique<int>(7)});
+
+  auto lvalue_run_status = wh::testing::helper::wait_value_on_test_thread(
+      run_runner.run(lvalue_run, context));
+  REQUIRE(lvalue_run_status.has_error());
+  REQUIRE_FALSE(run_runner.implementation().captured.has_value());
+
+  wh::adk::run_request rvalue_run{};
+  rvalue_run.messages.push_back(make_user_message("run"));
+  rvalue_run.options.compose_controls.call.component_defaults.insert_or_assign(
+      "move-only", wh::core::any{std::make_unique<int>(9)});
+  auto rvalue_run_status = wh::testing::helper::wait_value_on_test_thread(
+      run_runner.run(std::move(rvalue_run), context));
+  REQUIRE(rvalue_run_status.has_value());
+  REQUIRE(run_runner.implementation().captured.has_value());
+
+  lowered_runner_impl query_impl{};
+  wh::adk::runner<lowered_runner_impl> query_runner{query_impl};
+  wh::adk::query_request lvalue_query{};
+  lvalue_query.text = "query";
+  lvalue_query.options.compose_controls.call.component_defaults.insert_or_assign(
+      "move-only", wh::core::any{std::make_unique<int>(11)});
+  auto lvalue_query_status = wh::testing::helper::wait_value_on_test_thread(
+      query_runner.query(lvalue_query, context));
+  REQUIRE(lvalue_query_status.has_error());
+  REQUIRE_FALSE(query_runner.implementation().captured.has_value());
+
+  wh::adk::query_request rvalue_query{};
+  rvalue_query.text = "query";
+  rvalue_query.options.compose_controls.call.component_defaults.insert_or_assign(
+      "move-only", wh::core::any{std::make_unique<int>(13)});
+  auto rvalue_query_status = wh::testing::helper::wait_value_on_test_thread(
+      query_runner.query(std::move(rvalue_query), context));
+  REQUIRE(rvalue_query_status.has_value());
+  REQUIRE(query_runner.implementation().captured.has_value());
+  REQUIRE(query_runner.implementation().captured->messages.size() == 1U);
+
+  lowered_runner_impl resume_impl{};
+  wh::adk::runner<lowered_runner_impl> resume_runner{resume_impl};
+  wh::compose::checkpoint_store store{};
+  wh::compose::graph_runtime_services services{};
+  services.checkpoint.store = &store;
+
+  wh::adk::resume_request lvalue_resume{};
+  lvalue_resume.run.messages.push_back(make_user_message("resume"));
+  lvalue_resume.run.options.compose_services = &services;
+  lvalue_resume.targets.push_back(wh::adk::resume_target{
+      .interrupt_id = "resume-move-only",
+      .location = wh::core::address{{"graph", "a"}},
+      .payload = wh::core::any{std::make_unique<int>(3)},
+  });
+  auto lvalue_resume_status = wh::testing::helper::wait_value_on_test_thread(
+      resume_runner.resume(lvalue_resume, context));
+  REQUIRE(lvalue_resume_status.has_error());
+  REQUIRE_FALSE(resume_runner.implementation().captured.has_value());
+
+  wh::adk::resume_request rvalue_resume{};
+  rvalue_resume.run.messages.push_back(make_user_message("resume"));
+  rvalue_resume.run.options.compose_services = &services;
+  rvalue_resume.targets.push_back(wh::adk::resume_target{
+      .interrupt_id = "resume-move-only",
+      .location = wh::core::address{{"graph", "a"}},
+      .payload = wh::core::any{std::make_unique<int>(5)},
+  });
+  auto rvalue_resume_status = wh::testing::helper::wait_value_on_test_thread(
+      resume_runner.resume(std::move(rvalue_resume), context));
+  REQUIRE(rvalue_resume_status.has_value());
+  REQUIRE(resume_runner.implementation().captured.has_value());
+  REQUIRE(resume_runner.implementation().captured->resume_batch_count == 1U);
 }

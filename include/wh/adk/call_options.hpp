@@ -109,16 +109,23 @@ struct resolved_call_options {
 /// Stores one typed option into an option bag.
 template <typename key_t, typename value_t>
   requires std::constructible_from<std::string, key_t &&>
-inline auto set_option(option_bag &bag, key_t &&key, value_t &&value) -> void {
+inline auto set_option(option_bag &bag, key_t &&key, value_t &&value)
+    -> wh::core::result<void> {
   std::string stored_key{std::forward<key_t>(key)};
   using stored_t = wh::core::remove_cvref_t<value_t>;
+  wh::core::any stored_value{};
   if constexpr (std::same_as<stored_t, wh::core::any>) {
-    bag.insert_or_assign(std::move(stored_key), std::forward<value_t>(value));
+    stored_value = std::forward<value_t>(value);
   } else {
-    bag.insert_or_assign(std::move(stored_key),
-                         wh::core::any{std::in_place_type<stored_t>,
-                                       std::forward<value_t>(value)});
+    stored_value = wh::core::any{std::in_place_type<stored_t>,
+                                 std::forward<value_t>(value)};
   }
+  auto owned = wh::core::into_owned(std::move(stored_value));
+  if (owned.has_error()) {
+    return wh::core::result<void>::failure(owned.error());
+  }
+  bag.insert_or_assign(std::move(stored_key), std::move(owned).value());
+  return {};
 }
 
 /// Reads one typed option by copy from an option bag.
@@ -140,17 +147,17 @@ template <typename value_t>
 /// Stores one global option.
 template <typename key_t, typename value_t>
 inline auto set_global_option(call_options &options, key_t &&key,
-                              value_t &&value) -> void {
-  set_option(options.global, std::forward<key_t>(key),
-             std::forward<value_t>(value));
+                              value_t &&value) -> wh::core::result<void> {
+  return set_option(options.global, std::forward<key_t>(key),
+                    std::forward<value_t>(value));
 }
 
 /// Stores one checkpoint-visible field.
 template <typename key_t, typename value_t>
 inline auto set_checkpoint_field(call_options &options, key_t &&key,
-                                 value_t &&value) -> void {
-  set_option(options.checkpoint_fields, std::forward<key_t>(key),
-             std::forward<value_t>(value));
+                                 value_t &&value) -> wh::core::result<void> {
+  return set_option(options.checkpoint_fields, std::forward<key_t>(key),
+                    std::forward<value_t>(value));
 }
 
 namespace detail {
@@ -260,29 +267,29 @@ inline auto materialize_resolved_trim(const transfer_trim_options &trim)
 template <typename key_t, typename value_t>
 inline auto set_agent_option(call_options &options,
                              const std::string_view agent_name, key_t &&key,
-                             value_t &&value) -> void {
+                             value_t &&value) -> wh::core::result<void> {
   auto &scope = detail::upsert_scope(options.agent_scopes, agent_name);
-  set_option(scope.values, std::forward<key_t>(key),
-             std::forward<value_t>(value));
+  return set_option(scope.values, std::forward<key_t>(key),
+                    std::forward<value_t>(value));
 }
 
 /// Stores one tool-targeted option.
 template <typename key_t, typename value_t>
 inline auto set_tool_option(call_options &options,
                             const std::string_view tool_name, key_t &&key,
-                            value_t &&value) -> void {
+                            value_t &&value) -> wh::core::result<void> {
   auto &scope = detail::upsert_scope(options.tool_scopes, tool_name);
-  set_option(scope.values, std::forward<key_t>(key),
-             std::forward<value_t>(value));
+  return set_option(scope.values, std::forward<key_t>(key),
+                    std::forward<value_t>(value));
 }
 
 /// Stores one implementation-specific option.
 template <typename key_t, typename value_t>
 inline auto set_impl_option(call_options &options,
                             const std::string_view impl_name, key_t &&key,
-                            value_t &&value) -> void {
-  set_option(options.impl_specific[std::string{impl_name}],
-             std::forward<key_t>(key), std::forward<value_t>(value));
+                            value_t &&value) -> wh::core::result<void> {
+  return set_option(options.impl_specific[std::string{impl_name}],
+                    std::forward<key_t>(key), std::forward<value_t>(value));
 }
 
 /// Overlays four option layers in the fixed order:
