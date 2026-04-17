@@ -8,7 +8,8 @@
 
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
-#include "wh/compose/node/detail/tools/stream.hpp"
+#include "wh/compose/node/detail/tools/output.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 
 namespace {
 
@@ -18,10 +19,34 @@ namespace {
   return *typed;
 }
 
+[[nodiscard]] auto materialize_stream_output(
+    wh::compose::tools_options options,
+    std::vector<wh::compose::detail::stream_completion> completions)
+    -> wh::core::result<wh::compose::graph_stream_reader> {
+  wh::compose::detail::tools_state state{};
+  state.options = &options;
+  state.afters = wh::compose::detail::make_tool_after_chain(options);
+
+  auto output =
+      wh::compose::detail::build_stream_output(state, std::move(completions));
+  if (output.has_error()) {
+    return wh::core::result<wh::compose::graph_stream_reader>::failure(
+        output.error());
+  }
+
+  auto *reader =
+      wh::core::any_cast<wh::compose::graph_stream_reader>(&output.value());
+  if (reader == nullptr) {
+    return wh::core::result<wh::compose::graph_stream_reader>::failure(
+        wh::core::errc::type_mismatch);
+  }
+  return std::move(*reader);
+}
+
 } // namespace
 
-TEST_CASE("tools stream reader maps merged lanes through bindings supports stop and proxies close state",
-          "[UT][wh/compose/node/detail/tools/stream.hpp][tool_event_stream_reader::read_async][condition][branch][concurrency]") {
+TEST_CASE("tools stream output maps per-call streams through final tool events and preserves stop and close behavior",
+          "[UT][wh/compose/node/detail/tools/output.hpp][build_stream_output][condition][branch][concurrency]") {
   wh::compose::tools_options options{};
   options.middleware.push_back({
       .after =
@@ -35,29 +60,26 @@ TEST_CASE("tools stream reader maps merged lanes through bindings supports stop 
   });
 
   auto [writer, source] = wh::compose::make_graph_stream(4U);
-  std::vector<wh::schema::stream::named_stream_reader<wh::compose::graph_stream_reader>>
-      lanes{};
-  lanes.push_back({"call-1", std::move(source), false});
-
-  wh::compose::detail::tool_stream_binding_map bindings{};
-  bindings.emplace(
-      "call-1",
-      wh::compose::detail::tool_stream_binding{
-          .call =
+  std::vector<wh::compose::detail::stream_completion> wrapped_inputs{};
+  wrapped_inputs.push_back(
+      wh::compose::detail::stream_completion{
+          .index = 0U,
+          .call_id = "call-1",
+          .stream = wh::compose::detail::make_tool_event_stream_reader(
+              std::move(source),
               wh::compose::tool_call{
                   .call_id = "call-1",
                   .tool_name = "echo",
                   .arguments = "payload",
               },
-          .context = wh::core::run_context{},
-      });
+              wh::compose::detail::make_tool_after_chain(options),
+              wh::core::run_context{}),
+          .rerun_extra = {}});
+  auto wrapped =
+      materialize_stream_output(options, std::move(wrapped_inputs));
+  REQUIRE(wrapped.has_value());
 
-  wh::compose::detail::tool_event_stream_reader wrapped{
-      wh::compose::detail::make_graph_merge_reader(std::move(lanes)),
-      std::move(bindings),
-      wh::compose::detail::collect_tool_afters(options)};
-
-  auto pending = wrapped.try_read();
+  auto pending = wrapped.value().try_read();
   REQUIRE(std::holds_alternative<wh::schema::stream::stream_signal>(pending));
   REQUIRE(std::get<wh::schema::stream::stream_signal>(pending) ==
           wh::schema::stream::stream_pending);
@@ -65,7 +87,7 @@ TEST_CASE("tools stream reader maps merged lanes through bindings supports stop 
   wh::testing::helper::sender_capture<> stopped{};
   stdexec::inplace_stop_source stop_source{};
   auto operation = stdexec::connect(
-      wrapped.read_async(),
+      wrapped.value().read_async(),
       wh::testing::helper::sender_capture_receiver{
           &stopped,
           wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
@@ -82,7 +104,7 @@ TEST_CASE("tools stream reader maps merged lanes through bindings supports stop 
               .has_value());
   REQUIRE(writer.close().has_value());
 
-  auto resumed = wrapped.read();
+  auto resumed = wrapped.value().read();
   REQUIRE(resumed.has_value());
   REQUIRE_FALSE(resumed.value().eof);
   REQUIRE(resumed.value().value.has_value());
@@ -93,19 +115,19 @@ TEST_CASE("tools stream reader maps merged lanes through bindings supports stop 
   REQUIRE(event->tool_name == "echo");
   REQUIRE(read_text(event->value) == "chunk-after");
 
-  auto eof = wrapped.read();
+  auto eof = wrapped.value().read();
   REQUIRE(eof.has_value());
   REQUIRE(eof.value().eof);
 
-  REQUIRE_FALSE(wrapped.is_closed_impl());
-  REQUIRE(wrapped.is_source_closed());
-  wrapped.set_automatic_close({});
-  REQUIRE(wrapped.close_impl().has_value());
-  REQUIRE(wrapped.is_closed_impl());
+  REQUIRE_FALSE(wrapped.value().is_closed());
+  REQUIRE(wrapped.value().is_source_closed());
+  wrapped.value().set_automatic_close({});
+  REQUIRE(wrapped.value().close().has_value());
+  REQUIRE(wrapped.value().is_closed());
 }
 
-TEST_CASE("tools stream async sender keeps wrapper state alive after wrapper destruction",
-          "[UT][wh/compose/node/detail/tools/stream.hpp][tool_event_stream_reader::read_async][lifetime][concurrency]") {
+TEST_CASE("tools stream async sender keeps transformed stream state alive after reader destruction",
+          "[UT][wh/compose/node/detail/tools/output.hpp][build_stream_output][lifetime][concurrency]") {
   wh::compose::tools_options options{};
   options.middleware.push_back({
       .after =
@@ -119,24 +141,22 @@ TEST_CASE("tools stream async sender keeps wrapper state alive after wrapper des
   });
 
   auto [writer, source] = wh::compose::make_graph_stream(4U);
-  wh::compose::detail::tool_stream_binding_map bindings{};
-  bindings.emplace(
-      "call-1",
-      wh::compose::detail::tool_stream_binding{
-          .call = {.call_id = "call-1", .tool_name = "echo"},
-          .context = {},
-      });
-
   auto sender = [&]() {
-    std::vector<wh::schema::stream::named_stream_reader<
-        wh::compose::graph_stream_reader>>
-        lanes{};
-    lanes.emplace_back("call-1", std::move(source), false);
-    wh::compose::detail::tool_event_stream_reader wrapped{
-        wh::compose::detail::make_graph_merge_reader(std::move(lanes)),
-        std::move(bindings),
-        wh::compose::detail::collect_tool_afters(options)};
-    return wrapped.read_async();
+    std::vector<wh::compose::detail::stream_completion> sender_inputs{};
+    sender_inputs.push_back(
+        wh::compose::detail::stream_completion{
+            .index = 0U,
+            .call_id = "call-1",
+            .stream = wh::compose::detail::make_tool_event_stream_reader(
+                std::move(source), {.call_id = "call-1", .tool_name = "echo"},
+                wh::compose::detail::make_tool_after_chain(options),
+                wh::core::run_context{}),
+            .rerun_extra = {}});
+    auto wrapped =
+        materialize_stream_output(options, std::move(sender_inputs));
+    REQUIRE(wrapped.has_value());
+    auto reader = std::move(wrapped).value();
+    return std::move(reader).read_async();
   }();
 
   using result_t = wh::schema::stream::stream_result<
@@ -165,11 +185,14 @@ TEST_CASE("tools stream async sender keeps wrapper state alive after wrapper des
   REQUIRE(read_text(event->value) == "chunk-owned");
 }
 
-TEST_CASE("tools stream helpers filter after middleware and surface missing binding or after error failures",
-          "[UT][wh/compose/node/detail/tools/stream.hpp][make_tool_event_stream_reader][branch][boundary]") {
-  wh::compose::tools_options options{};
-  options.middleware.push_back({});
-  options.middleware.push_back({
+TEST_CASE("tools stream output surfaces after-middleware failures as terminal error chunks",
+          "[UT][wh/compose/node/detail/tools/output.hpp][build_stream_output][failure][boundary]") {
+  auto [writer_ok, reader_ok] = wh::compose::make_graph_stream(2U);
+  REQUIRE(writer_ok.try_write(wh::compose::graph_value{1}).has_value());
+  REQUIRE(writer_ok.close().has_value());
+
+  wh::compose::tools_options ok_options{};
+  ok_options.middleware.push_back({
       .after =
           [](const wh::compose::tool_call &, wh::compose::graph_value &value,
              const wh::tool::call_scope &) -> wh::core::result<void> {
@@ -180,31 +203,21 @@ TEST_CASE("tools stream helpers filter after middleware and surface missing bind
       },
   });
 
-  auto afters = wh::compose::detail::collect_tool_afters(options);
-  REQUIRE(afters.size() == 1U);
+  std::vector<wh::compose::detail::stream_completion> ok_inputs{};
+  ok_inputs.push_back(wh::compose::detail::stream_completion{
+      .index = 0U,
+      .call_id = "call",
+      .stream = wh::compose::detail::make_tool_event_stream_reader(
+          std::move(reader_ok), {.call_id = "call", .tool_name = "tool"},
+          wh::compose::detail::make_tool_after_chain(ok_options),
+          wh::core::run_context{}),
+      .rerun_extra = {}});
+  auto ok_reader =
+      materialize_stream_output(ok_options, std::move(ok_inputs));
+  REQUIRE(ok_reader.has_value());
 
-  auto [writer_ok, reader_ok] = wh::compose::make_graph_stream(2U);
-  REQUIRE(writer_ok.try_write(wh::compose::graph_value{1}).has_value());
-  REQUIRE(writer_ok.close().has_value());
-
-  wh::compose::detail::tool_stream_binding_map ok_bindings{};
-  ok_bindings.emplace(
-      "call",
-      wh::compose::detail::tool_stream_binding{
-          .call = {.call_id = "call", .tool_name = "tool"},
-          .context = {},
-      });
-  auto erased = wh::compose::detail::make_tool_event_stream_reader(
-      wh::compose::detail::make_graph_merge_reader(
-          [&] {
-            std::vector<wh::schema::stream::named_stream_reader<
-                wh::compose::graph_stream_reader>>
-                lanes{};
-            lanes.emplace_back("call", std::move(reader_ok), false);
-            return lanes;
-          }()),
-      std::move(ok_bindings), std::move(afters));
-  auto collected = wh::compose::collect_graph_stream_reader(std::move(erased));
+  auto collected = wh::compose::collect_graph_stream_reader(
+      std::move(ok_reader).value());
   REQUIRE(collected.has_value());
   REQUIRE(collected.value().size() == 1U);
   auto *ok_event =
@@ -212,48 +225,34 @@ TEST_CASE("tools stream helpers filter after middleware and surface missing bind
   REQUIRE(ok_event != nullptr);
   REQUIRE(*wh::core::any_cast<int>(&ok_event->value) == 2);
 
-  auto [writer_missing, reader_missing] = wh::compose::make_graph_stream(2U);
-  REQUIRE(writer_missing.try_write(wh::compose::graph_value{5}).has_value());
-  REQUIRE(writer_missing.close().has_value());
-  wh::compose::detail::tool_event_stream_reader missing_binding{
-      wh::compose::detail::make_graph_merge_reader(
-          [&] {
-            std::vector<wh::schema::stream::named_stream_reader<
-                wh::compose::graph_stream_reader>>
-                lanes{};
-            lanes.emplace_back("missing", std::move(reader_missing), false);
-            return lanes;
-          }()),
-      {}, {}};
-  auto missing_status = missing_binding.read();
-  REQUIRE(missing_status.has_error());
-  REQUIRE(missing_status.error() == wh::core::errc::not_found);
-
   auto [writer_error, reader_error] = wh::compose::make_graph_stream(2U);
   REQUIRE(writer_error.try_write(wh::compose::graph_value{7}).has_value());
   REQUIRE(writer_error.close().has_value());
-  wh::compose::detail::tool_stream_binding_map error_bindings{};
-  error_bindings.emplace(
-      "call",
-      wh::compose::detail::tool_stream_binding{
-          .call = {.call_id = "call", .tool_name = "tool"},
-          .context = {},
-      });
-  wh::compose::detail::tool_event_stream_reader after_error{
-      wh::compose::detail::make_graph_merge_reader(
-          [&] {
-            std::vector<wh::schema::stream::named_stream_reader<
-                wh::compose::graph_stream_reader>>
-                lanes{};
-            lanes.emplace_back("call", std::move(reader_error), false);
-            return lanes;
-          }()),
-      std::move(error_bindings),
-      {[](const wh::compose::tool_call &, wh::compose::graph_value &,
-          const wh::tool::call_scope &) -> wh::core::result<void> {
-        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-      }}};
-  auto error_status = after_error.read();
+
+  wh::compose::tools_options error_options{};
+  error_options.middleware.push_back({
+      .after =
+          [](const wh::compose::tool_call &, wh::compose::graph_value &,
+             const wh::tool::call_scope &) -> wh::core::result<void> {
+        return wh::core::result<void>::failure(
+            wh::core::errc::invalid_argument);
+      },
+  });
+
+  std::vector<wh::compose::detail::stream_completion> error_inputs{};
+  error_inputs.push_back(wh::compose::detail::stream_completion{
+      .index = 0U,
+      .call_id = "call",
+      .stream = wh::compose::detail::make_tool_event_stream_reader(
+          std::move(reader_error), {.call_id = "call", .tool_name = "tool"},
+          wh::compose::detail::make_tool_after_chain(error_options),
+          wh::core::run_context{}),
+      .rerun_extra = {}});
+  auto error_reader =
+      materialize_stream_output(error_options, std::move(error_inputs));
+  REQUIRE(error_reader.has_value());
+
+  auto error_status = error_reader.value().read();
   REQUIRE(error_status.has_value());
   REQUIRE(error_status.value().error == wh::core::errc::invalid_argument);
 }

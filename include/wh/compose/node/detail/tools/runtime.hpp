@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "wh/compose/node/detail/tools/call.hpp"
 #include "wh/compose/node/detail/tools/output.hpp"
 #include "wh/core/stdexec/concurrent_sender_vector.hpp"
 

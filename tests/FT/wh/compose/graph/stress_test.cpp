@@ -822,7 +822,7 @@ struct test_nested_graph_state {
       const wh::compose::graph_node_trace *) -> wh::compose::graph_sender {
     return wh::compose::detail::start_scoped_graph(
         graph, context, input, call_options, path_prefix, parent_process_state,
-        nested_outputs, scheduler());
+        nested_outputs, scheduler(), scheduler());
   }
 };
 

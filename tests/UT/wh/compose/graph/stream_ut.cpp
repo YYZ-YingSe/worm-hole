@@ -236,6 +236,23 @@ TEST_CASE(
   REQUIRE(typed_values.value().size() == 2U);
   REQUIRE(extract_int(typed_values.value()[0]) == 8);
   REQUIRE(extract_int(typed_values.value()[1]) == 9);
+
+  std::vector<std::unique_ptr<int>> move_only_values{};
+  move_only_values.push_back(std::make_unique<int>(21));
+  auto move_only_reader =
+      wh::schema::stream::make_values_stream_reader(std::move(move_only_values));
+  auto canonical_move_only =
+      wh::compose::to_graph_stream_reader(std::move(move_only_reader));
+  REQUIRE(canonical_move_only.has_value());
+  auto move_only_collected =
+      wh::compose::collect_graph_stream_reader(std::move(canonical_move_only).value());
+  REQUIRE(move_only_collected.has_value());
+  REQUIRE(move_only_collected.value().size() == 1U);
+  auto *move_only =
+      wh::core::any_cast<std::unique_ptr<int>>(&move_only_collected.value().front());
+  REQUIRE(move_only != nullptr);
+  REQUIRE(*move_only != nullptr);
+  REQUIRE(**move_only == 21);
 }
 
 TEST_CASE("make_values_stream_reader make_single_value_stream_reader and fork_graph_value preserve "

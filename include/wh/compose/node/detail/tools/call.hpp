@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "wh/compose/node/detail/tools/state.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 #include "wh/core/stdexec.hpp"
 #include "wh/core/stdexec/detail/receiver_stop_bridge.hpp"
 #include "wh/schema/stream.hpp"
@@ -99,6 +100,15 @@ clone_call_context(const wh::core::run_context &context)
   return wh::core::clone_run_context(context);
 }
 
+[[nodiscard]] inline auto
+wrap_tool_stream(const tools_state &state, tool_call call,
+                 graph_stream_reader stream,
+                 std::optional<wh::core::run_context> context = std::nullopt)
+    -> graph_stream_reader {
+  return make_tool_event_stream_reader(std::move(stream), std::move(call),
+                                       state.afters, std::move(context));
+}
+
 [[nodiscard]] inline auto call_value(const tools_state &state,
                                      const tool_call &call,
                                      wh::tool::call_scope scope)
@@ -168,32 +178,12 @@ clone_call_context(const wh::core::run_context &context)
   return {};
 }
 
-[[nodiscard]] inline auto run_after(const tools_options &options,
-                                    const tool_call &call, graph_value &value,
-                                    const wh::tool::call_scope &scope)
-    -> wh::core::result<void> {
-  for (const auto &middleware : options.middleware) {
-    if (!static_cast<bool>(middleware.after)) {
-      continue;
-    }
-    auto status = middleware.after(call, value, scope);
-    if (status.has_error()) {
-      return wh::core::result<void>::failure(status.error());
-    }
-  }
-  return {};
-}
-
 [[nodiscard]] inline auto run_call(const tools_state &state,
                                    const std::size_t index,
                                    wh::core::run_context &context)
     -> wh::core::result<call_completion> {
   const auto &plan = state.plans[index];
   auto call = make_call(plan);
-  auto call_context = clone_call_context(context);
-  if (call_context.has_error()) {
-    return wh::core::result<call_completion>::failure(call_context.error());
-  }
   auto &rerun = state.rerun();
   if (!rerun.ids.empty() && !rerun.ids.contains(call.call_id)) {
     const auto cached = rerun.outputs.find(call.call_id);
@@ -209,6 +199,10 @@ clone_call_context(const wh::core::run_context &context)
     };
   }
 
+  auto call_context = clone_call_context(context);
+  if (call_context.has_error()) {
+    return wh::core::result<call_completion>::failure(call_context.error());
+  }
   auto scope = make_scope(call, call_context.value());
   auto before = run_before(*state.options, call, scope);
   if (before.has_error()) {
@@ -228,13 +222,15 @@ clone_call_context(const wh::core::run_context &context)
     return wh::core::result<call_completion>::failure(invoked.error());
   }
   auto value = std::move(invoked).value();
-  auto after = run_after(*state.options, call, value, scope);
-  if (after.has_error()) {
-    auto merged = merge_call_context(context, call_context.value());
-    if (merged.has_error()) {
-      return wh::core::result<call_completion>::failure(merged.error());
+  if (has_tool_afters(state.afters)) {
+    auto after = run_after(state.afters, call, value, scope);
+    if (after.has_error()) {
+      auto merged = merge_call_context(context, call_context.value());
+      if (merged.has_error()) {
+        return wh::core::result<call_completion>::failure(merged.error());
+      }
+      return wh::core::result<call_completion>::failure(after.error());
     }
-    return wh::core::result<call_completion>::failure(after.error());
   }
 
   auto merged = merge_call_context(context, call_context.value());
@@ -256,10 +252,6 @@ clone_call_context(const wh::core::run_context &context)
     -> wh::core::result<stream_completion> {
   const auto &plan = state.plans[index];
   auto call = make_call(plan);
-  auto call_context = clone_call_context(context);
-  if (call_context.has_error()) {
-    return wh::core::result<stream_completion>::failure(call_context.error());
-  }
   auto &rerun = state.rerun();
   if (!rerun.ids.empty() && !rerun.ids.contains(call.call_id)) {
     const auto cached = rerun.outputs.find(call.call_id);
@@ -271,15 +263,34 @@ clone_call_context(const wh::core::run_context &context)
     if (replayed.has_error()) {
       return wh::core::result<stream_completion>::failure(replayed.error());
     }
+    auto call_id = call.call_id;
+    if (!has_tool_afters(state.afters)) {
+      return stream_completion{
+          .index = index,
+          .call_id = std::move(call_id),
+          .stream = wrap_tool_stream(state, std::move(call),
+                                     std::move(replayed).value()),
+          .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
+      };
+    }
+    auto call_context = clone_call_context(context);
+    if (call_context.has_error()) {
+      return wh::core::result<stream_completion>::failure(call_context.error());
+    }
     return stream_completion{
         .index = index,
-        .call = std::move(call),
-        .stream = std::move(replayed).value(),
+        .call_id = std::move(call_id),
+        .stream = wrap_tool_stream(state, std::move(call),
+                                   std::move(replayed).value(),
+                                   std::move(call_context).value()),
         .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-        .context = std::move(call_context).value(),
     };
   }
 
+  auto call_context = clone_call_context(context);
+  if (call_context.has_error()) {
+    return wh::core::result<stream_completion>::failure(call_context.error());
+  }
   auto scope = make_scope(call, call_context.value());
   auto before = run_before(*state.options, call, scope);
   if (before.has_error()) {
@@ -304,12 +315,17 @@ clone_call_context(const wh::core::run_context &context)
     return wh::core::result<stream_completion>::failure(merged.error());
   }
 
+  auto call_id = call.call_id;
   return stream_completion{
       .index = index,
-      .call = std::move(call),
-      .stream = std::move(streamed).value(),
+      .call_id = std::move(call_id),
+      .stream = has_tool_afters(state.afters)
+                    ? wrap_tool_stream(state, std::move(call),
+                                       std::move(streamed).value(),
+                                       std::move(call_context).value())
+                    : wrap_tool_stream(state, std::move(call),
+                                       std::move(streamed).value()),
       .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-      .context = std::move(call_context).value(),
   };
 }
 
@@ -319,14 +335,6 @@ clone_call_context(const wh::core::run_context &context)
     -> call_completion_sender {
   const auto &plan = state.plans[index];
   auto call = make_call(plan);
-  std::unique_ptr<wh::core::run_context> call_context{};
-  auto cloned_context = clone_call_context(base_context);
-  if (cloned_context.has_error()) {
-    return failure_sender<call_completion_sender,
-                          wh::core::result<call_completion>>(cloned_context.error());
-  }
-  call_context =
-      std::make_unique<wh::core::run_context>(std::move(cloned_context).value());
   auto &rerun = state.rerun();
   if (!rerun.ids.empty() && !rerun.ids.contains(call.call_id)) {
     const auto cached = rerun.outputs.find(call.call_id);
@@ -343,7 +351,13 @@ clone_call_context(const wh::core::run_context &context)
             .rerun_extra = wh::core::any(std::string{plan.call->arguments})}});
   }
 
-  auto scope = make_scope(call, *call_context);
+  auto cloned_context = clone_call_context(base_context);
+  if (cloned_context.has_error()) {
+    return failure_sender<call_completion_sender,
+                          wh::core::result<call_completion>>(cloned_context.error());
+  }
+  auto call_context = std::move(cloned_context).value();
+  auto scope = make_scope(call, call_context);
   auto before = run_before(*state.options, call, scope);
   if (before.has_error()) {
     return failure_sender<call_completion_sender,
@@ -351,11 +365,31 @@ clone_call_context(const wh::core::run_context &context)
   }
 
   auto invoke = start_value(state, tool_call{call}, scope);
+  if (!has_tool_afters(state.afters)) {
+    return erase_call_completion(
+        std::move(invoke) |
+        stdexec::then([call = std::move(call), index,
+                       rerun_extra = wh::core::any(
+                           std::string{plan.call->arguments})](
+                          wh::core::result<graph_value> status) mutable
+                          -> wh::core::result<call_completion> {
+          if (status.has_error()) {
+            return wh::core::result<call_completion>::failure(status.error());
+          }
+          return call_completion{.index = index,
+                                 .call = std::move(call),
+                                 .value = std::move(status).value(),
+                                 .rerun_extra = std::move(rerun_extra)};
+        }));
+  }
+
+  auto call_context_ptr =
+      std::make_unique<wh::core::run_context>(std::move(call_context));
   return erase_call_completion(
       std::move(invoke) |
       stdexec::then(
-          [options = *state.options, call = std::move(call), index,
-           call_context = std::move(call_context),
+          [afters = state.afters, call = std::move(call), index,
+           call_context = std::move(call_context_ptr),
            rerun_extra = wh::core::any(std::string{plan.call->arguments})](
               wh::core::result<graph_value> status) mutable
               -> wh::core::result<call_completion> {
@@ -364,7 +398,7 @@ clone_call_context(const wh::core::run_context &context)
             }
             auto value = std::move(status).value();
             auto scope = make_scope(call, *call_context);
-            auto after = run_after(options, call, value, scope);
+            auto after = run_after(afters, call, value, scope);
             if (after.has_error()) {
               return wh::core::result<call_completion>::failure(after.error());
             }
@@ -381,14 +415,6 @@ clone_call_context(const wh::core::run_context &context)
     -> stream_completion_sender {
   const auto &plan = state.plans[index];
   auto call = make_call(plan);
-  std::unique_ptr<wh::core::run_context> call_context{};
-  auto cloned_context = clone_call_context(base_context);
-  if (cloned_context.has_error()) {
-    return failure_sender<stream_completion_sender,
-                          wh::core::result<stream_completion>>(cloned_context.error());
-  }
-  call_context =
-      std::make_unique<wh::core::run_context>(std::move(cloned_context).value());
   auto &rerun = state.rerun();
   if (!rerun.ids.empty() && !rerun.ids.contains(call.call_id)) {
     const auto cached = rerun.outputs.find(call.call_id);
@@ -403,16 +429,41 @@ clone_call_context(const wh::core::run_context &context)
                             wh::core::result<stream_completion>>(
           replayed.error());
     }
+    auto call_id = call.call_id;
+    if (!has_tool_afters(state.afters)) {
+      return ready_sender<stream_completion_sender>(
+          wh::core::result<stream_completion>{stream_completion{
+              .index = index,
+              .call_id = std::move(call_id),
+              .stream = wrap_tool_stream(state, std::move(call),
+                                         std::move(replayed).value()),
+              .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
+          }});
+    }
+    auto cloned_context = clone_call_context(base_context);
+    if (cloned_context.has_error()) {
+      return failure_sender<stream_completion_sender,
+                            wh::core::result<stream_completion>>(
+          cloned_context.error());
+    }
     return ready_sender<stream_completion_sender>(
         wh::core::result<stream_completion>{stream_completion{
             .index = index,
-            .call = std::move(call),
-            .stream = std::move(replayed).value(),
+            .call_id = std::move(call_id),
+            .stream = wrap_tool_stream(state, std::move(call),
+                                       std::move(replayed).value(),
+                                       std::move(cloned_context).value()),
             .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-            .context = std::move(*call_context)}});
+        }});
   }
 
-  auto scope = make_scope(call, *call_context);
+  auto cloned_context = clone_call_context(base_context);
+  if (cloned_context.has_error()) {
+    return failure_sender<stream_completion_sender,
+                          wh::core::result<stream_completion>>(cloned_context.error());
+  }
+  auto call_context = std::move(cloned_context).value();
+  auto scope = make_scope(call, call_context);
   auto before = run_before(*state.options, call, scope);
   if (before.has_error()) {
     return failure_sender<stream_completion_sender,
@@ -420,10 +471,35 @@ clone_call_context(const wh::core::run_context &context)
   }
 
   auto stream = start_stream(state, tool_call{call}, scope);
+  auto call_id = call.call_id;
+  if (!has_tool_afters(state.afters)) {
+    return erase_stream_completion(
+        std::move(stream) |
+        stdexec::then([afters = state.afters, call = std::move(call), index,
+                       call_id = std::move(call_id),
+                       rerun_extra = wh::core::any(
+                           std::string{plan.call->arguments})](
+                          wh::core::result<graph_stream_reader> status) mutable
+                          -> wh::core::result<stream_completion> {
+          if (status.has_error()) {
+            return wh::core::result<stream_completion>::failure(status.error());
+          }
+          return stream_completion{
+              .index = index,
+              .call_id = std::move(call_id),
+              .stream = make_tool_event_stream_reader(
+                  std::move(status).value(), std::move(call), std::move(afters)),
+              .rerun_extra = std::move(rerun_extra)};
+        }));
+  }
+
+  auto call_context_ptr =
+      std::make_unique<wh::core::run_context>(std::move(call_context));
   return erase_stream_completion(
       std::move(stream) |
-      stdexec::then([call = std::move(call), index,
-                     call_context = std::move(call_context),
+      stdexec::then([afters = state.afters, call = std::move(call), index,
+                     call_id = std::move(call_id),
+                     call_context = std::move(call_context_ptr),
                      rerun_extra =
                          wh::core::any(std::string{plan.call->arguments})](
                         wh::core::result<graph_stream_reader> status) mutable
@@ -432,10 +508,12 @@ clone_call_context(const wh::core::run_context &context)
           return wh::core::result<stream_completion>::failure(status.error());
         }
         return stream_completion{.index = index,
-                                 .call = std::move(call),
-                                 .stream = std::move(status).value(),
-                                 .rerun_extra = std::move(rerun_extra),
-                                 .context = std::move(*call_context)};
+                                 .call_id = std::move(call_id),
+                                 .stream = make_tool_event_stream_reader(
+                                     std::move(status).value(), std::move(call),
+                                     std::move(afters),
+                                     std::move(*call_context)),
+                                 .rerun_extra = std::move(rerun_extra)};
       }));
 }
 

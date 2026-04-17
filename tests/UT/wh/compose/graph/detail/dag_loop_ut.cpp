@@ -33,9 +33,8 @@ TEST_CASE("dag loop selects the next ready launch action from the frontier",
   auto action = dag_state.take_ready_action();
   REQUIRE(action.kind ==
           wh::compose::detail::invoke_runtime::ready_action_kind::launch);
-  REQUIRE(action.frame.has_value());
-  REQUIRE(action.frame->node_id == worker_id.value());
-  REQUIRE(action.frame->cause.step == 1U);
+  REQUIRE(action.attempt.has_value());
+  REQUIRE(action.attempt.slot == worker_id.value());
 }
 
 TEST_CASE("dag loop returns continue scan when dequeued work is no longer pending",

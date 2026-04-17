@@ -71,21 +71,24 @@ struct filter_map_result_traits<wh::core::result<step_t, error_t>> {
 
 } // namespace detail
 
-template <borrowed_stream_reader reader_t, typename filter_map_t>
+template <stream_reader reader_t, typename filter_map_t>
 class filter_map_stream_reader final
     : public stream_base<
           filter_map_stream_reader<reader_t, filter_map_t>,
           typename detail::filter_map_result_traits<
-              wh::core::remove_cvref_t<wh::core::callable_result_t<
-                  filter_map_t &, const typename reader_t::value_type &>>>::
+              decltype(detail::select_adapter_result<filter_map_t,
+                                                     typename reader_t::value_type>(
+                  0))>::
               value_type> {
 private:
   using input_value_t = typename reader_t::value_type;
-  using filter_map_result_t = wh::core::remove_cvref_t<
-      wh::core::callable_result_t<filter_map_t &, const input_value_t &>>;
+  using filter_map_result_t =
+      decltype(detail::select_adapter_result<filter_map_t, input_value_t>(0));
   using traits_t = detail::filter_map_result_traits<filter_map_result_t>;
 
 public:
+  static_assert(detail::adapter_callback<filter_map_t, input_value_t>,
+                "filter_map callback must accept const T& or T&& and return wh::core::result<filter_map_step<T>>");
   static_assert(
       wh::core::is_result_v<filter_map_result_t>,
       "filter_map callback must return wh::core::result<filter_map_step<T>>");
@@ -96,7 +99,6 @@ public:
   using value_type = typename traits_t::value_type;
   using step_type = typename traits_t::step_type;
   using input_chunk_type = stream_chunk<input_value_t>;
-  using input_chunk_view_type = stream_chunk_view<input_value_t>;
   using chunk_type = stream_chunk<value_type>;
   using async_result_sender =
       typename exec::any_receiver_ref<stdexec::completion_signatures<
@@ -124,7 +126,7 @@ public:
   [[nodiscard]] auto read_impl() -> stream_result<chunk_type> {
     while (true) {
       try {
-        auto mapped = map_read_borrowed(state_, state_->reader.read_borrowed());
+        auto mapped = map_read_owned(state_, state_->reader.read());
         if (std::holds_alternative<skip_t>(mapped)) {
           continue;
         }
@@ -141,13 +143,14 @@ public:
   [[nodiscard]] auto try_read_impl() -> stream_try_result<chunk_type> {
     while (true) {
       try {
-        auto next = state_->reader.try_read_borrowed();
+        auto next = state_->reader.try_read();
         if (std::holds_alternative<stream_signal>(next)) {
           return stream_pending;
         }
-        auto mapped = map_read_borrowed(
-            state_,
-            std::move(std::get<stream_result<input_chunk_view_type>>(next)));
+        auto mapped =
+            map_read_owned(state_,
+                           std::move(std::get<stream_result<input_chunk_type>>(
+                               next)));
         if (std::holds_alternative<skip_t>(mapped)) {
           continue;
         }
@@ -220,40 +223,6 @@ private:
   }
 
   [[nodiscard]] static auto
-  map_read_borrowed(const wh::core::detail::intrusive_ptr<state> &state,
-                    stream_result<input_chunk_view_type> next)
-      -> mapped_read_t {
-    if (next.has_error()) {
-      state->adapter_state.terminal = true;
-      state->adapter_state.close_source_if_enabled(state->reader);
-      return stream_result<chunk_type>::failure(next.error());
-    }
-
-    const auto input_chunk = next.value();
-    if (input_chunk.eof) {
-      state->adapter_state.terminal = true;
-      state->adapter_state.close_source_if_enabled(state->reader);
-      auto eof_chunk = chunk_type::make_eof();
-      eof_chunk.source = std::string{input_chunk.source};
-      return stream_result<chunk_type>{std::move(eof_chunk)};
-    }
-    if (input_chunk.error.failed()) {
-      state->adapter_state.terminal = true;
-      state->adapter_state.close_source_if_enabled(state->reader);
-      auto output_chunk = chunk_type{};
-      output_chunk.source = std::string{input_chunk.source};
-      output_chunk.error = input_chunk.error;
-      return stream_result<chunk_type>{std::move(output_chunk)};
-    }
-    if (input_chunk.value == nullptr) {
-      state->adapter_state.terminal = true;
-      state->adapter_state.close_source_if_enabled(state->reader);
-      return stream_result<chunk_type>::failure(wh::core::errc::protocol_error);
-    }
-    return map_value(state, input_chunk.source, *input_chunk.value);
-  }
-
-  [[nodiscard]] static auto
   map_read_owned(const wh::core::detail::intrusive_ptr<state> &state,
                  stream_result<input_chunk_type> next) -> mapped_read_t {
     if (next.has_error()) {
@@ -283,7 +252,7 @@ private:
       state->adapter_state.close_source_if_enabled(state->reader);
       return stream_result<chunk_type>::failure(wh::core::errc::protocol_error);
     }
-    return map_value(state, input_chunk.source, *input_chunk.value);
+    return map_value(state, input_chunk.source, std::move(*input_chunk.value));
   }
 
   template <typename value_u>
@@ -292,7 +261,8 @@ private:
             std::string_view source, value_u &&value) -> mapped_read_t {
     filter_map_result_t converted{};
     try {
-      converted = state->filter_map(std::forward<value_u>(value));
+      converted = detail::invoke_adapter_callback(state->filter_map,
+                                                  std::forward<value_u>(value));
     } catch (...) {
       state->adapter_state.terminal = true;
       state->adapter_state.close_source_if_enabled(state->reader);
@@ -324,7 +294,7 @@ private:
 };
 
 template <typename reader_t, typename filter_map_t>
-  requires borrowed_stream_reader<std::remove_cvref_t<reader_t>>
+  requires stream_reader<std::remove_cvref_t<reader_t>>
 [[nodiscard]] inline auto
 make_filter_map_stream_reader(reader_t &&reader, filter_map_t &&filter_map)
     -> filter_map_stream_reader<std::remove_cvref_t<reader_t>,

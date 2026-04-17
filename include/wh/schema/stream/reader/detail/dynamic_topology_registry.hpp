@@ -179,7 +179,9 @@ public:
         mode_(lanes_.size() <= 5U ? topology_poll_mode::fixed
                                   : topology_poll_mode::dynamic),
         attached_lanes_(count_attached_lanes(lanes_)),
-        pending_lanes_(count_pending_lanes(lanes_)) {}
+        pending_lanes_(count_pending_lanes(lanes_)) {
+    seed_attached_lanes();
+  }
 
   explicit dynamic_topology_registry(std::vector<lane_source_type> &&sources)
       : lanes_(build_pending_lanes(std::move(sources))),
@@ -208,8 +210,15 @@ public:
                  ? try_status_type{stream_pending}
                  : try_status_type{status_type{chunk_type::make_eof()}};
     }
-    return mode_ == topology_poll_mode::fixed ? next_fixed_path_locked()
-                                              : next_dynamic_path_locked();
+
+    while (const auto lane_index = pop_ready_lane_locked()) {
+      status_type output{};
+      if (poll_ready_lane_locked(*lane_index, output)) {
+        return try_status_type{std::move(output)};
+      }
+      enqueue_probe_locked(*lane_index);
+    }
+    return stream_pending;
   }
 
   [[nodiscard]] auto prepare_round() -> round_plan {
@@ -238,7 +247,7 @@ public:
       return round_plan{.immediate_status = chunk_type::make_eof()};
     }
 
-    auto lanes = current_poll_order_locked();
+    auto lanes = take_round_lanes_locked();
     if (lanes.empty()) {
       if (pending_lanes_ > 0U) {
         return round_plan{
@@ -246,7 +255,10 @@ public:
             .wait_for_topology = true,
         };
       }
-      return round_plan{.immediate_status = chunk_type::make_eof()};
+      return round_plan{
+          .immediate_status =
+              status_type::failure(wh::core::errc::internal_error),
+      };
     }
 
     read_in_flight_ = true;
@@ -260,8 +272,8 @@ public:
     return lanes_[lane_index].reader->read_async();
   }
 
-  [[nodiscard]] auto complete_round_winner(const std::size_t lane_index,
-                                           const std::size_t winner_offset,
+  [[nodiscard]] auto complete_round_winner(const lane_list &round_lanes,
+                                           const std::size_t winner_position,
                                            status_type status)
       -> round_resolution {
     std::optional<std::size_t> close_lane{};
@@ -269,11 +281,18 @@ public:
     {
       std::scoped_lock lock(lock_);
       read_in_flight_ = false;
-      cursor_ += winner_offset + 1U;
+      complete_round_lanes_locked(round_lanes, winner_position);
+      if (winner_position >= round_lanes.size()) {
+        return round_resolution{
+            .status = status_type::failure(wh::core::errc::internal_error),
+        };
+      }
 
+      const auto lane_index = round_lanes[winner_position];
       auto &lane = lanes_[lane_index];
       if (status.has_error()) {
         resolved = status_type::failure(status.error());
+        enqueue_ready_locked(lane_index);
       } else {
         auto chunk = std::move(status).value();
         if (chunk.eof) {
@@ -291,6 +310,7 @@ public:
         } else {
           chunk.source = lane.source;
           resolved = std::move(chunk);
+          enqueue_ready_locked(lane_index);
         }
       }
     }
@@ -300,15 +320,10 @@ public:
     };
   }
 
-  auto complete_empty_round(const std::size_t lane_count) -> void {
+  auto complete_round_without_winner(const lane_list &round_lanes) -> void {
     std::scoped_lock lock(lock_);
     read_in_flight_ = false;
-    cursor_ += lane_count;
-  }
-
-  auto cancel_round() -> void {
-    std::scoped_lock lock(lock_);
-    read_in_flight_ = false;
+    complete_round_lanes_locked(round_lanes, std::nullopt);
   }
 
   auto close_lane_if_needed(const std::optional<std::size_t> lane_index)
@@ -342,10 +357,17 @@ public:
         }
         lane.reader.reset();
         lane.status = lane_phase::disabled;
+        lane.ready_queued = false;
+        lane.probe_queued = false;
+        lane.in_round = false;
       }
       attached_lanes_ = 0U;
       pending_lanes_ = 0U;
       closed_ = true;
+      ready_queue_.clear();
+      ready_head_ = 0U;
+      probe_queue_.clear();
+      probe_head_ = 0U;
       ++topology_epoch_;
       detach_topology_waiters_locked(sync_ready, async_ready);
     }
@@ -413,8 +435,12 @@ public:
       }
       lane->reader.emplace(std::move(reader));
       lane->status = lane_phase::attached;
+      lane->in_round = false;
+      lane->probe_queued = false;
+      lane->ready_queued = false;
       ++attached_lanes_;
       --pending_lanes_;
+      enqueue_ready_locked(static_cast<std::size_t>(lane - lanes_.data()));
       ++topology_epoch_;
       detach_topology_waiters_locked(sync_ready, async_ready);
     }
@@ -440,6 +466,9 @@ public:
             wh::core::errc::invalid_argument);
       }
       lane->status = lane_phase::disabled;
+      lane->ready_queued = false;
+      lane->probe_queued = false;
+      lane->in_round = false;
       if (pending_lanes_ > 0U) {
         --pending_lanes_;
       }
@@ -506,6 +535,9 @@ private:
     std::string source{};
     std::optional<reader_t> reader{};
     lane_phase status{lane_phase::pending};
+    bool ready_queued{false};
+    bool probe_queued{false};
+    bool in_round{false};
   };
 
   [[nodiscard]] static auto build_lanes(std::vector<lane_type> &&readers)
@@ -569,20 +601,144 @@ private:
         }));
   }
 
-  [[nodiscard]] auto current_poll_order_locked() const -> lane_list {
-    lane_list lanes{};
-    lanes.reserve(attached_lanes_);
-    const auto lane_count = lanes_.size();
-    for (std::size_t attempts = 0U; attempts < lane_count; ++attempts) {
-      const auto index = (cursor_ + attempts) % lane_count;
+  auto seed_attached_lanes() -> void {
+    for (std::size_t index = 0U; index < lanes_.size(); ++index) {
       if (lanes_[index].status == lane_phase::attached) {
-        lanes.push_back(index);
+        enqueue_ready_locked(index);
       }
     }
+  }
+
+  auto compact_queue_locked(std::vector<std::size_t> &queue, std::size_t &head)
+      -> void {
+    if (head == 0U) {
+      return;
+    }
+    if (head >= queue.size()) {
+      queue.clear();
+      head = 0U;
+      return;
+    }
+    if (head < 64U && head * 2U < queue.size()) {
+      return;
+    }
+    queue.erase(queue.begin(),
+                queue.begin() + static_cast<std::ptrdiff_t>(head));
+    head = 0U;
+  }
+
+  auto enqueue_ready_locked(const std::size_t index) -> void {
+    auto &lane = lanes_[index];
+    if (lane.status != lane_phase::attached || lane.in_round ||
+        lane.ready_queued) {
+      return;
+    }
+    lane.ready_queued = true;
+    lane.probe_queued = false;
+    ready_queue_.push_back(index);
+  }
+
+  auto enqueue_probe_locked(const std::size_t index) -> void {
+    auto &lane = lanes_[index];
+    if (lane.status != lane_phase::attached || lane.in_round ||
+        lane.ready_queued || lane.probe_queued) {
+      return;
+    }
+    lane.probe_queued = true;
+    probe_queue_.push_back(index);
+  }
+
+  [[nodiscard]] auto pop_ready_lane_locked() -> std::optional<std::size_t> {
+    while (ready_head_ < ready_queue_.size()) {
+      const auto index = ready_queue_[ready_head_++];
+      auto &lane = lanes_[index];
+      if (!lane.ready_queued || lane.status != lane_phase::attached ||
+          lane.in_round) {
+        continue;
+      }
+      lane.ready_queued = false;
+      compact_queue_locked(ready_queue_, ready_head_);
+      return index;
+    }
+    compact_queue_locked(ready_queue_, ready_head_);
+    return std::nullopt;
+  }
+
+  [[nodiscard]] auto take_probe_lanes_locked() -> lane_list {
+    lane_list lanes{};
+    while (probe_head_ < probe_queue_.size()) {
+      const auto index = probe_queue_[probe_head_++];
+      auto &lane = lanes_[index];
+      if (!lane.probe_queued || lane.status != lane_phase::attached ||
+          lane.in_round || lane.ready_queued) {
+        continue;
+      }
+      lane.probe_queued = false;
+      lane.in_round = true;
+      lanes.push_back(index);
+    }
+    compact_queue_locked(probe_queue_, probe_head_);
     return lanes;
   }
 
-  auto poll_one_reader_locked(const std::size_t index, status_type &output)
+  [[nodiscard]] auto take_ready_lanes_locked() -> lane_list {
+    lane_list lanes{};
+    while (ready_head_ < ready_queue_.size()) {
+      const auto index = ready_queue_[ready_head_++];
+      auto &lane = lanes_[index];
+      if (!lane.ready_queued || lane.status != lane_phase::attached ||
+          lane.in_round) {
+        continue;
+      }
+      lane.ready_queued = false;
+      lane.in_round = true;
+      lanes.push_back(index);
+    }
+    compact_queue_locked(ready_queue_, ready_head_);
+    return lanes;
+  }
+
+  [[nodiscard]] auto take_round_lanes_locked() -> lane_list {
+    auto lanes = take_probe_lanes_locked();
+    if (!lanes.empty()) {
+      return lanes;
+    }
+
+    lanes = take_ready_lanes_locked();
+    if (!lanes.empty()) {
+      return lanes;
+    }
+
+    rebuild_probe_queue_locked();
+    lanes = take_probe_lanes_locked();
+    if (!lanes.empty()) {
+      return lanes;
+    }
+
+    return take_ready_lanes_locked();
+  }
+
+  auto rebuild_probe_queue_locked() -> void {
+    for (std::size_t index = 0U; index < lanes_.size(); ++index) {
+      enqueue_probe_locked(index);
+    }
+  }
+
+  auto complete_round_lanes_locked(
+      const lane_list &round_lanes,
+      const std::optional<std::size_t> winner_position) -> void {
+    for (std::size_t position = 0U; position < round_lanes.size(); ++position) {
+      const auto lane_index = round_lanes[position];
+      auto &lane = lanes_[lane_index];
+      lane.in_round = false;
+      if (winner_position.has_value() && position == *winner_position) {
+        continue;
+      }
+      enqueue_probe_locked(lane_index);
+    }
+  }
+
+  auto poll_ready_lane_locked(const std::size_t index, status_type &output)
       -> bool {
     auto &lane = lanes_[index];
     if (lane.status != lane_phase::attached || !lane.reader.has_value()) {
@@ -615,53 +771,8 @@ private:
     }
     chunk.source = lane.source;
     output = std::move(chunk);
+    enqueue_ready_locked(index);
     return true;
-  }
-
-  template <std::size_t width>
-  [[nodiscard]] auto next_fixed_width_locked() -> try_status_type {
-    static_assert(width >= 1U && width <= 5U);
-    for (std::size_t attempts = 0U; attempts < width; ++attempts) {
-      const auto index = cursor_ % width;
-      ++cursor_;
-      status_type output{};
-      if (poll_one_reader_locked(index, output)) {
-        return try_status_type{std::move(output)};
-      }
-    }
-    return stream_pending;
-  }
-
-  [[nodiscard]] auto next_fixed_path_locked() -> try_status_type {
-    switch (lanes_.size()) {
-    case 0U:
-      return status_type{chunk_type::make_eof()};
-    case 1U:
-      return next_fixed_width_locked<1U>();
-    case 2U:
-      return next_fixed_width_locked<2U>();
-    case 3U:
-      return next_fixed_width_locked<3U>();
-    case 4U:
-      return next_fixed_width_locked<4U>();
-    case 5U:
-      return next_fixed_width_locked<5U>();
-    default:
-      return next_dynamic_path_locked();
-    }
-  }
-
-  [[nodiscard]] auto next_dynamic_path_locked() -> try_status_type {
-    const auto lane_count = lanes_.size();
-    for (std::size_t attempts = 0U; attempts < lane_count; ++attempts) {
-      const auto index = cursor_ % lane_count;
-      ++cursor_;
-      status_type output{};
-      if (poll_one_reader_locked(index, output)) {
-        return try_status_type{std::move(output)};
-      }
-    }
-    return stream_pending;
   }
 
   [[nodiscard]] auto find_lane_locked(const std::string_view source) noexcept
@@ -697,7 +808,10 @@ private:
   topology_poll_mode mode_{topology_poll_mode::fixed};
   std::size_t attached_lanes_{0U};
   std::size_t pending_lanes_{0U};
-  std::size_t cursor_{0U};
+  std::vector<std::size_t> ready_queue_{};
+  std::size_t ready_head_{0U};
+  std::vector<std::size_t> probe_queue_{};
+  std::size_t probe_head_{0U};
   bool closed_{false};
   bool automatic_close_{true};
   bool read_in_flight_{false};

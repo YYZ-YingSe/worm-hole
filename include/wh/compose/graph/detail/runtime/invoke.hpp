@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -55,8 +56,10 @@ struct invoke_state {
   forwarded_checkpoint_map owned_forwarded_checkpoints{};
   /// Active forwarded checkpoint table visible to this run.
   forwarded_checkpoint_map *forwarded_checkpoints{nullptr};
-  /// Graph scheduler fixed for the whole invoke lifetime.
-  std::optional<wh::core::detail::any_resume_scheduler_t> graph_scheduler{};
+  /// Control scheduler fixed for the whole invoke lifetime.
+  std::optional<wh::core::detail::any_resume_scheduler_t> control_scheduler{};
+  /// Work scheduler fixed for the whole invoke lifetime.
+  std::optional<wh::core::detail::any_resume_scheduler_t> work_scheduler{};
   /// True retains node inputs for retries, checkpoint, or interrupt hooks.
   bool retain_inputs{false};
   /// Monotonic runtime step counter.
@@ -84,7 +87,29 @@ enum class stage : std::uint8_t {
   freeze,
 };
 
-struct node_frame {
+struct attempt_id {
+  static constexpr std::uint32_t invalid =
+      std::numeric_limits<std::uint32_t>::max();
+
+  std::uint32_t slot{invalid};
+
+  [[nodiscard]] auto has_value() const noexcept -> bool {
+    return slot != invalid;
+  }
+
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return has_value();
+  }
+
+  friend auto operator==(attempt_id, attempt_id) noexcept -> bool = default;
+};
+
+struct attempt_input {
+  std::optional<graph_value> payload{};
+  std::optional<input_runtime::reader_lowering> lowering{};
+};
+
+struct attempt_slot {
   stage stage{stage::input};
   std::uint32_t node_id{0U};
   graph_state_cause cause{};
@@ -93,17 +118,14 @@ struct node_frame {
   std::size_t retry_budget{0U};
   std::size_t attempt{0U};
   std::optional<std::chrono::milliseconds> timeout_budget{};
-  std::optional<graph_stream_reader> pre_state_reader{};
-  std::optional<input_runtime::reader_lowering> input_lowering{};
-  std::optional<graph_value> node_input{};
+  std::optional<attempt_input> input{};
   node_runtime node_runtime{};
   runtime_state::node_scope node_scope{};
   process_runtime::scoped_node_local_process_state node_local_scope{};
 };
 
 struct state_step {
-  node_frame frame{};
-  graph_value payload{};
+  attempt_id attempt{};
   std::optional<graph_sender> sender{};
 };
 
@@ -116,7 +138,7 @@ enum class ready_action_kind : std::uint8_t {
 
 struct ready_action {
   ready_action_kind kind{ready_action_kind::continue_scan};
-  std::optional<node_frame> frame{};
+  attempt_id attempt{};
   wh::core::error_code error{wh::core::errc::ok};
 
   [[nodiscard]] static auto no_ready() noexcept -> ready_action {
@@ -135,10 +157,11 @@ struct ready_action {
     };
   }
 
-  [[nodiscard]] static auto launch(node_frame &&frame_value) -> ready_action {
+  [[nodiscard]] static auto launch(const attempt_id attempt_value)
+      -> ready_action {
     return ready_action{
         .kind = ready_action_kind::launch,
-        .frame = std::move(frame_value),
+        .attempt = attempt_value,
     };
   }
 };
@@ -154,7 +177,7 @@ struct pregel_action {
   kind action{kind::waiting};
   std::uint32_t node_id{0U};
   graph_state_cause cause{};
-  std::optional<node_frame> frame{};
+  attempt_id attempt{};
   wh::core::error_code error{wh::core::errc::ok};
 
   [[nodiscard]] static auto waiting(const std::uint32_t node_id_value) noexcept
@@ -175,12 +198,15 @@ struct pregel_action {
     };
   }
 
-  [[nodiscard]] static auto launch(node_frame &&frame_value) -> pregel_action {
+  [[nodiscard]] static auto launch(const std::uint32_t node_id_value,
+                                   graph_state_cause cause_value,
+                                   const attempt_id attempt_value)
+      -> pregel_action {
     return pregel_action{
         .action = kind::launch,
-        .node_id = frame_value.node_id,
-        .cause = frame_value.cause,
-        .frame = std::move(frame_value),
+        .node_id = node_id_value,
+        .cause = std::move(cause_value),
+        .attempt = attempt_value,
     };
   }
 

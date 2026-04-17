@@ -205,16 +205,18 @@ template <typename reader_t>
 template <typename reader_t>
   requires(!std::same_as<std::remove_cvref_t<reader_t>, graph_stream_reader>) &&
           wh::schema::stream::stream_reader<std::remove_cvref_t<reader_t>> &&
-          (!std::same_as<typename std::remove_cvref_t<reader_t>::value_type, graph_value>) &&
-          std::constructible_from<graph_value,
-                                  const typename std::remove_cvref_t<reader_t>::value_type &>
+          (!std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
+                         graph_value>) &&
+          std::constructible_from<
+              graph_value,
+              typename std::remove_cvref_t<reader_t>::value_type>
 [[nodiscard]] inline auto to_graph_stream_reader(reader_t &&reader)
     -> wh::core::result<graph_stream_reader> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;
   auto mapped = wh::schema::stream::make_transform_stream_reader(
       stored_reader_t{std::forward<reader_t>(reader)},
-      [](const typename stored_reader_t::value_type &value) -> wh::core::result<graph_value> {
-        return graph_value{value};
+      [](auto &&value) -> wh::core::result<graph_value> {
+        return graph_value{std::forward<decltype(value)>(value)};
       });
   return graph_stream_reader{std::move(mapped)};
 }

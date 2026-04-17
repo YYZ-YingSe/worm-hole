@@ -11,7 +11,8 @@ namespace wh::compose {
 inline detail::invoke_runtime::invoke_session::invoke_session(
     const graph *owner, graph_value &&input, wh::core::run_context &context,
     graph_call_options &&call_options,
-    wh::core::detail::any_resume_scheduler_t graph_scheduler,
+    wh::core::detail::any_resume_scheduler_t control_scheduler,
+    wh::core::detail::any_resume_scheduler_t work_scheduler,
     node_path path_prefix, graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
     const graph_runtime_services *services, graph_invoke_controls controls,
@@ -25,7 +26,8 @@ inline detail::invoke_runtime::invoke_session::invoke_session(
   invoke_.parent_process_state = parent_process_state;
   invoke_.nested_outputs = nested_outputs;
   invoke_.published_outputs = published_outputs;
-  invoke_.graph_scheduler.emplace(std::move(graph_scheduler));
+  invoke_.control_scheduler.emplace(std::move(control_scheduler));
+  invoke_.work_scheduler.emplace(std::move(work_scheduler));
   invoke_.owned_call_options =
       std::make_unique<graph_call_options>(std::move(call_options));
   initialize(std::move(input), graph_call_scope{*invoke_.owned_call_options});
@@ -34,7 +36,8 @@ inline detail::invoke_runtime::invoke_session::invoke_session(
 inline detail::invoke_runtime::invoke_session::invoke_session(
     const graph *owner, graph_value &&input, wh::core::run_context &context,
     graph_call_scope call_scope,
-    wh::core::detail::any_resume_scheduler_t graph_scheduler,
+    wh::core::detail::any_resume_scheduler_t control_scheduler,
+    wh::core::detail::any_resume_scheduler_t work_scheduler,
     node_path path_prefix, graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
     const graph_runtime_services *services, graph_invoke_controls controls,
@@ -48,7 +51,8 @@ inline detail::invoke_runtime::invoke_session::invoke_session(
   invoke_.parent_process_state = parent_process_state;
   invoke_.nested_outputs = nested_outputs;
   invoke_.published_outputs = published_outputs;
-  invoke_.graph_scheduler.emplace(std::move(graph_scheduler));
+  invoke_.control_scheduler.emplace(std::move(control_scheduler));
+  invoke_.work_scheduler.emplace(std::move(work_scheduler));
   initialize(std::move(input), std::move(call_scope));
 }
 
@@ -112,7 +116,8 @@ template <typename scope_t>
 inline auto detail::start_session(
     const graph &graph, wh::core::run_context &context, graph_value &&input,
     scope_t &&call_scope,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &work_scheduler,
     node_path path_prefix, graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
     const graph_runtime_services *services, graph_invoke_controls controls,
@@ -124,7 +129,8 @@ inline auto detail::start_session(
       detail::invoke_runtime::invoke_session{
           std::addressof(graph), std::move(input), context,
           std::forward<scope_t>(call_scope),
-          wh::core::detail::any_resume_scheduler_t{graph_scheduler},
+          wh::core::detail::any_resume_scheduler_t{control_scheduler},
+          wh::core::detail::any_resume_scheduler_t{work_scheduler},
           std::move(path_prefix), parent_process_state, nested_outputs,
           services, std::move(controls), published_outputs, parent_state});
 }
@@ -132,7 +138,8 @@ inline auto detail::start_session(
 inline auto detail::start_request(
     const graph &graph, wh::core::run_context &context,
     graph_invoke_request request,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &work_scheduler,
     detail::runtime_state::invoke_outputs *published_outputs) -> graph_sender {
   auto controls = std::move(request.controls);
   auto call_options = std::move(controls.call);
@@ -146,7 +153,8 @@ inline auto detail::start_request(
     return detail::failure_graph_sender(input.error());
   }
   return start_session(graph, context, std::move(input).value(),
-                       std::move(call_options), graph_scheduler, {}, nullptr,
+                       std::move(call_options), control_scheduler,
+                       work_scheduler, {}, nullptr,
                        nullptr, request.services, std::move(controls),
                        published_outputs, nullptr);
 }
@@ -156,7 +164,8 @@ inline auto detail::start_bound_graph(
     const graph_call_options *call_options, const node_path *path_prefix,
     graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &work_scheduler,
     const detail::invoke_runtime::invoke_session *parent_state,
     const graph_runtime_services *services, graph_invoke_controls controls)
     -> graph_sender {
@@ -166,7 +175,8 @@ inline auto detail::start_bound_graph(
   auto bound_path_prefix =
       path_prefix != nullptr ? node_path{*path_prefix} : node_path{};
   return start_session(graph, context, std::move(input),
-                       std::move(bound_call_options), graph_scheduler,
+                       std::move(bound_call_options), control_scheduler,
+                       work_scheduler,
                        std::move(bound_path_prefix), parent_process_state,
                        nested_outputs, services, std::move(controls), nullptr,
                        parent_state);
@@ -177,7 +187,8 @@ inline auto detail::start_scoped_graph(
     const graph_call_scope *call_scope, const node_path *path_prefix,
     graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &work_scheduler,
     const detail::invoke_runtime::invoke_session *parent_state,
     const graph_runtime_services *services, graph_invoke_controls controls)
     -> graph_sender {
@@ -186,7 +197,8 @@ inline auto detail::start_scoped_graph(
   auto bound_path_prefix =
       path_prefix != nullptr ? node_path{*path_prefix} : node_path{};
   return start_session(graph, context, std::move(input),
-                       std::move(bound_call_scope), graph_scheduler,
+                       std::move(bound_call_scope), control_scheduler,
+                       work_scheduler,
                        std::move(bound_path_prefix), parent_process_state,
                        nested_outputs, services, std::move(controls), nullptr,
                        parent_state);

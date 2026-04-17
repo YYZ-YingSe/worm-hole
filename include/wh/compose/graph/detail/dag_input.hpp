@@ -900,7 +900,7 @@ graph::build_node_input(const std::uint32_t node_id, io_storage &io_storage,
 inline auto graph::build_node_input_sender(
     const std::uint32_t node_id, io_storage &io_storage, const std::vector<dag_node_phase> &dag_node_phases,
     const std::vector<branch_state> &branch_states, wh::core::run_context &context,
-    node_frame *frame, const detail::runtime_state::invoke_config &config,
+    attempt_slot *slot, const detail::runtime_state::invoke_config &config,
     const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const -> graph_sender {
   if (node_id >= core().compiled_execution_index_.index.nodes_by_id.size()) {
     return detail::failure_graph_sender(wh::core::errc::not_found);
@@ -949,8 +949,8 @@ inline auto graph::build_node_input_sender(
   const auto lanes =
       collect_input_lanes(node_id, dag_node_phases, branch_states, io_storage.output_valid);
   const bool preserve_stream_pre =
-      frame != nullptr && detail::state_runtime::has_stream_phase(
-                              frame->state_handlers, detail::state_runtime::state_phase::pre);
+      slot != nullptr && detail::state_runtime::has_stream_phase(
+                             slot->state_handlers, detail::state_runtime::state_phase::pre);
   if (preserve_stream_pre) {
     std::vector<std::uint32_t> active_edges{};
     active_edges.reserve(lanes.size());
@@ -973,9 +973,13 @@ inline auto graph::build_node_input_sender(
         if (lowering.has_error()) {
           return detail::failure_graph_sender(lowering.error());
         }
-        frame->pre_state_reader.emplace(std::move(reader).value());
-        frame->input_lowering = std::move(lowering).value();
-        return detail::ready_graph_sender(wh::core::result<graph_value>{});
+        if (!slot->input.has_value()) {
+          slot->input.emplace();
+        }
+        slot->input->lowering = std::move(lowering).value();
+        return detail::ready_graph_sender(
+            wh::core::result<graph_value>{graph_value{
+                std::move(reader).value()}});
       }
     }
   }

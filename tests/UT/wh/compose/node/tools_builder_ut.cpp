@@ -238,7 +238,7 @@ TEST_CASE("async stream tools node returns graph stream reader payload",
   auto scheduler =
       wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
   wh::compose::node_runtime runtime{};
-  runtime.set_graph_scheduler(&scheduler);
+  runtime.set_control_scheduler(&scheduler);
 
   wh::compose::graph_value input = make_tool_batch({wh::compose::tool_call{
       .call_id = "call-stream",
@@ -292,7 +292,7 @@ TEST_CASE("tools node builders also compile async value endpoints and preserve l
   auto scheduler =
       wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
   wh::compose::node_runtime runtime{};
-  runtime.set_graph_scheduler(&scheduler);
+  runtime.set_control_scheduler(&scheduler);
 
   wh::core::run_context context{};
   wh::compose::graph_value input = make_tool_batch({

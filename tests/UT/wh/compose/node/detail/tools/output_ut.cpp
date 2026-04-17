@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "wh/compose/node/detail/tools/output.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 
 namespace {
 
@@ -31,14 +32,14 @@ TEST_CASE("build_value_output preserves indexed slots for non-return-direct plan
   auto indexed = wh::compose::detail::build_value_output(
       indexed_state,
       std::vector<wh::compose::detail::call_completion>{
-          {.index = 2U,
-           .call = {.call_id = "c", .tool_name = "gamma"},
-           .value = wh::compose::graph_value{30},
-           .rerun_extra = wh::compose::graph_value{std::string{"extra-c"}}},
           {.index = 0U,
            .call = {.call_id = "a", .tool_name = "alpha"},
            .value = wh::compose::graph_value{10},
            .rerun_extra = wh::compose::graph_value{std::string{"extra-a"}}},
+          {.index = 2U,
+           .call = {.call_id = "c", .tool_name = "gamma"},
+           .value = wh::compose::graph_value{30},
+           .rerun_extra = wh::compose::graph_value{std::string{"extra-c"}}},
       });
   REQUIRE(indexed.has_value());
 
@@ -71,14 +72,14 @@ TEST_CASE("build_value_output compacts direct-return outputs in sorted call orde
   auto direct = wh::compose::detail::build_value_output(
       direct_state,
       std::vector<wh::compose::detail::call_completion>{
-          {.index = 1U,
-           .call = {.call_id = "b", .tool_name = "beta"},
-           .value = wh::compose::graph_value{20},
-           .rerun_extra = wh::compose::graph_value{std::string{"extra-b"}}},
           {.index = 0U,
            .call = {.call_id = "a", .tool_name = "alpha"},
            .value = wh::compose::graph_value{10},
            .rerun_extra = wh::compose::graph_value{std::string{"extra-a"}}},
+          {.index = 1U,
+           .call = {.call_id = "b", .tool_name = "beta"},
+           .value = wh::compose::graph_value{20},
+           .rerun_extra = wh::compose::graph_value{std::string{"extra-b"}}},
       });
   REQUIRE(direct.has_value());
   auto *direct_results =
@@ -124,24 +125,31 @@ TEST_CASE("build_stream_output merges per-call streams and applies after middlew
 
   wh::compose::detail::tools_state state{};
   state.options = &options;
+  state.afters = wh::compose::detail::make_tool_after_chain(options);
 
   std::vector<wh::compose::detail::stream_completion> completions{};
-  completions.push_back({.index = 1U,
-                         .call = {.call_id = "b", .tool_name = "beta"},
-                         .stream = wh::compose::make_values_stream_reader(
-                                       make_graph_values({2}))
-                                       .value(),
-                         .rerun_extra = wh::compose::graph_value{
-                             std::string{"extra-b"}},
-                         .context = {}});
   completions.push_back({.index = 0U,
-                         .call = {.call_id = "a", .tool_name = "alpha"},
-                         .stream = wh::compose::make_values_stream_reader(
-                                       make_graph_values({1}))
-                                       .value(),
+                         .call_id = "a",
+                         .stream = wh::compose::detail::make_tool_event_stream_reader(
+                             wh::compose::make_values_stream_reader(
+                                 make_graph_values({1}))
+                                 .value(),
+                             {.call_id = "a", .tool_name = "alpha"},
+                             wh::compose::detail::make_tool_after_chain(options),
+                             wh::core::run_context{}),
                          .rerun_extra = wh::compose::graph_value{
-                             std::string{"extra-a"}},
-                         .context = {}});
+                             std::string{"extra-a"}}});
+  completions.push_back({.index = 1U,
+                         .call_id = "b",
+                         .stream = wh::compose::detail::make_tool_event_stream_reader(
+                             wh::compose::make_values_stream_reader(
+                                 make_graph_values({2}))
+                                 .value(),
+                             {.call_id = "b", .tool_name = "beta"},
+                             wh::compose::detail::make_tool_after_chain(options),
+                             wh::core::run_context{}),
+                         .rerun_extra = wh::compose::graph_value{
+                             std::string{"extra-b"}}});
 
   auto stream_output = wh::compose::detail::build_stream_output(
       state, std::move(completions));

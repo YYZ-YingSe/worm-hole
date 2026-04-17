@@ -18,7 +18,8 @@
 #include "helper/component_contract_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/graph/stream.hpp"
-#include "wh/compose/node/detail/tools/stream.hpp"
+#include "wh/compose/node/detail/tools/output.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 #include "wh/core/type_utils.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
@@ -489,32 +490,34 @@ TEST_CASE("graph stream async merge pending read resumes when lane attaches",
 TEST_CASE("tools event stream async read preserves stopped and remains readable after resume",
           "[core][compose][graph_stream][tools][stop]") {
   auto [writer, source] = wh::compose::make_graph_stream(4U);
-  std::vector<wh::schema::stream::named_stream_reader<wh::compose::graph_stream_reader>>
-      lanes{};
-  lanes.push_back({"call-1", std::move(source), false});
-
-  wh::compose::detail::tool_stream_binding_map bindings{};
-  bindings.emplace(
-      "call-1",
-      wh::compose::detail::tool_stream_binding{
-          .call =
+  wh::compose::tools_options options{};
+  wh::compose::detail::tools_state state{};
+  state.options = &options;
+  std::vector<wh::compose::detail::stream_completion> stream_inputs{};
+  stream_inputs.push_back(
+      wh::compose::detail::stream_completion{
+          .index = 0U,
+          .call_id = "call-1",
+          .stream = wh::compose::detail::make_tool_event_stream_reader(
+              std::move(source),
               wh::compose::tool_call{
                   .call_id = "call-1",
                   .tool_name = "echo",
                   .arguments = "payload",
               },
-          .context = wh::core::run_context{},
-      });
-
-  wh::compose::detail::tool_event_stream_reader wrapped{
-      wh::compose::detail::make_graph_merge_reader(std::move(lanes)),
-      std::move(bindings),
-      {}};
+              wh::compose::detail::make_tool_after_chain(options), {}),
+          .rerun_extra = {}});
+  auto output = wh::compose::detail::build_stream_output(
+      state, std::move(stream_inputs));
+  REQUIRE(output.has_value());
+  auto *wrapped =
+      wh::core::any_cast<wh::compose::graph_stream_reader>(&output.value());
+  REQUIRE(wrapped != nullptr);
 
   wh::testing::helper::sender_capture<> completion{};
   stdexec::inplace_stop_source stop_source{};
   auto operation = stdexec::connect(
-      wrapped.read_async(),
+      wrapped->read_async(),
       wh::testing::helper::sender_capture_receiver{
           &completion,
           wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
@@ -531,7 +534,7 @@ TEST_CASE("tools event stream async read preserves stopped and remains readable 
   REQUIRE(writer.try_write(wh::core::any(std::string{"chunk-1"})).has_value());
   REQUIRE(writer.close().has_value());
 
-  auto resumed = wrapped.read();
+  auto resumed = wrapped->read();
   REQUIRE(resumed.has_value());
   REQUIRE_FALSE(resumed.value().eof);
   REQUIRE_FALSE(resumed.value().error.failed());
@@ -546,7 +549,7 @@ TEST_CASE("tools event stream async read preserves stopped and remains readable 
   REQUIRE(text.has_value());
   REQUIRE(text.value() == "chunk-1");
 
-  auto eof = wrapped.read();
+  auto eof = wrapped->read();
   REQUIRE(eof.has_value());
   REQUIRE(eof.value().eof);
 }

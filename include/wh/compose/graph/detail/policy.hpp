@@ -36,6 +36,17 @@ inline auto graph::resolve_node_parallel_gate(const std::uint32_t node_id) const
   return core().options_.max_parallel_per_node;
 }
 
+inline auto graph::resolve_node_sync_dispatch(const std::uint32_t node_id) const
+    -> sync_dispatch {
+  const auto *node =
+      core().compiled_execution_index_.index.nodes_by_id[node_id];
+  if (node == nullptr || node->meta.exec_mode != node_exec_mode::sync ||
+      node->meta.exec_origin != node_exec_origin::authored) {
+    return sync_dispatch::inline_control;
+  }
+  return node->meta.options.sync_dispatch;
+}
+
 inline auto graph::resolve_branch_merge(
     const detail::runtime_state::invoke_config &config) noexcept
     -> graph_branch_merge {

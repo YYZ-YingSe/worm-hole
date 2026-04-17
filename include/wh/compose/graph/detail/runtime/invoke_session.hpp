@@ -87,7 +87,9 @@ public:
   using branch_state = dag_branch_state;
   using io_storage = runtime_io_storage;
   using dag_schedule = dag_schedule_state;
-  using node_frame = detail::invoke_runtime::node_frame;
+  using attempt_id = detail::invoke_runtime::attempt_id;
+  using attempt_input = detail::invoke_runtime::attempt_input;
+  using attempt_slot = detail::invoke_runtime::attempt_slot;
   using state_step = detail::invoke_runtime::state_step;
   using invoke_stage = detail::invoke_runtime::stage;
   using ready_action_kind = detail::invoke_runtime::ready_action_kind;
@@ -96,7 +98,8 @@ public:
 
   invoke_session(const graph *owner, graph_value &&input,
             wh::core::run_context &context, graph_call_options &&call_options,
-            wh::core::detail::any_resume_scheduler_t graph_scheduler,
+            wh::core::detail::any_resume_scheduler_t control_scheduler,
+            wh::core::detail::any_resume_scheduler_t work_scheduler,
             node_path path_prefix = {},
             graph_process_state *parent_process_state = nullptr,
             detail::runtime_state::invoke_outputs *nested_outputs = nullptr,
@@ -107,7 +110,8 @@ public:
 
   invoke_session(const graph *owner, graph_value &&input,
             wh::core::run_context &context, graph_call_scope call_scope,
-            wh::core::detail::any_resume_scheduler_t graph_scheduler,
+            wh::core::detail::any_resume_scheduler_t control_scheduler,
+            wh::core::detail::any_resume_scheduler_t work_scheduler,
             node_path path_prefix = {},
             graph_process_state *parent_process_state = nullptr,
             detail::runtime_state::invoke_outputs *nested_outputs = nullptr,
@@ -183,8 +187,6 @@ protected:
   [[nodiscard]] auto evaluate_resume_match(const std::uint32_t node_id)
       -> wh::core::result<std::optional<wh::core::interrupt_signal>>;
 
-  [[nodiscard]] auto control_slot_id() const noexcept -> std::uint32_t;
-
   auto request_freeze(const bool external_interrupt) noexcept -> void;
 
   [[nodiscard]] auto freeze_requested() const noexcept -> bool;
@@ -203,7 +205,7 @@ protected:
   // Node-stage pipeline helpers normalize inputs, run state phases, and wrap
   // sync/async node execution with timeout and retry behavior.
   static auto
-  bind_node_runtime_call_options(node_frame &frame,
+  bind_node_runtime_call_options(attempt_slot &slot,
                                  const graph_call_scope &bound_call_options,
                                  invoke_session *state) noexcept -> void;
 
@@ -221,27 +223,40 @@ protected:
   [[nodiscard]] static auto timeout_scheduler() noexcept
       -> exec::timed_thread_scheduler;
 
-  [[nodiscard]] auto make_input_frame(const std::uint32_t node_id,
-                                      std::size_t step)
-      -> wh::core::result<node_frame>;
+  [[nodiscard]] auto make_input_attempt(const std::uint32_t node_id,
+                                        std::size_t step)
+      -> wh::core::result<attempt_id>;
 
-  [[nodiscard]] auto begin_state_pre(node_frame &&frame, graph_value input)
+  [[nodiscard]] auto control_attempt_id() const noexcept -> attempt_id;
+
+  [[nodiscard]] auto slot(const attempt_id attempt) noexcept -> attempt_slot &;
+
+  [[nodiscard]] auto slot(const attempt_id attempt) const noexcept
+      -> const attempt_slot &;
+
+  auto release_attempt(const attempt_id attempt) noexcept -> void;
+
+  auto release_attempts() noexcept -> void;
+
+  auto store_attempt_input(attempt_id attempt, graph_value input)
+      -> wh::core::result<void>;
+
+  [[nodiscard]] auto begin_state_pre(attempt_id attempt)
       -> wh::core::result<state_step>;
 
-  [[nodiscard]] auto prepare_execution_input(node_frame &&frame,
-                                             graph_value input)
+  [[nodiscard]] auto prepare_execution_input(attempt_id attempt)
       -> wh::core::result<state_step>;
 
-  [[nodiscard]] auto should_retain_input(const node_frame &frame) const noexcept
+  [[nodiscard]] auto should_retain_input(const attempt_slot &slot) const noexcept
       -> bool;
 
-  [[nodiscard]] auto finalize_node_frame(node_frame &&frame, graph_value input)
-      -> wh::core::result<node_frame>;
+  [[nodiscard]] auto finalize_node_attempt(attempt_id attempt)
+      -> wh::core::result<void>;
 
-  [[nodiscard]] auto begin_state_post(node_frame &&frame, graph_value output)
-      -> wh::core::result<state_step>;
+  [[nodiscard]] auto begin_state_post(attempt_id attempt, graph_value &output)
+      -> wh::core::result<std::optional<graph_sender>>;
 
-  auto fail_node_stage(node_frame &&frame, wh::core::error_code code,
+  auto fail_node_stage(attempt_id attempt, wh::core::error_code code,
                        std::string_view message) -> wh::core::result<void>;
 
   [[nodiscard]] static auto make_node_timeout_failure(
@@ -252,30 +267,35 @@ protected:
       -> wh::core::result<graph_value>;
 
   [[nodiscard]] static auto apply_node_timeout(
-      detail::runtime_state::invoke_outputs &outputs, const node_frame &frame,
+      detail::runtime_state::invoke_outputs &outputs, const attempt_slot &slot,
       const std::chrono::steady_clock::time_point attempt_start,
       wh::core::result<graph_value> executed) -> wh::core::result<graph_value>;
 
   template <stdexec::sender sender_t>
   [[nodiscard]] static auto make_async_timed_node_sender(
       sender_t &&sender, detail::runtime_state::invoke_outputs &outputs,
-      const node_frame &frame,
+      const attempt_slot &slot,
       const std::chrono::steady_clock::time_point attempt_start)
       -> graph_sender;
 
-  template <typename retry_fn_t>
   [[nodiscard]] static auto
   run_sync_node_execution(const compiled_node &node, graph_value &input_value,
                           wh::core::run_context &context,
                           const graph_call_scope &bound_call_options,
-                          invoke_session *state, node_frame &frame,
-                          retry_fn_t retry_fn) -> wh::core::result<graph_value>;
+                          invoke_session *state, attempt_slot &slot)
+      -> wh::core::result<graph_value>;
+
+  [[nodiscard]] static auto make_sync_node_attempt_sender(
+      const compiled_node &node, graph_value &input_value,
+      wh::core::run_context &context,
+      const graph_call_scope &bound_call_options, invoke_session *state,
+      attempt_slot &slot) -> graph_sender;
 
   [[nodiscard]] static auto make_async_node_attempt_sender(
       const compiled_node &node, graph_value &input_value,
       wh::core::run_context &context,
       const graph_call_scope &bound_call_options, invoke_session *state,
-      node_frame &frame) -> graph_sender;
+      attempt_slot &slot) -> graph_sender;
 
   // Concrete runtimes still reach core graph/session data through the shared
   // invoke session rather than through mode-specific forwarding wrappers.
@@ -309,6 +329,11 @@ protected:
 
   [[nodiscard]] auto max_parallel_nodes() const noexcept -> std::size_t {
     return graph_options().max_parallel_nodes;
+  }
+
+  [[nodiscard]] auto resolve_node_sync_dispatch(
+      const std::uint32_t node_id) const -> sync_dispatch {
+    return owner_->resolve_node_sync_dispatch(node_id);
   }
 
   [[nodiscard]] auto node_key(const std::uint32_t node_id) const
@@ -420,6 +445,7 @@ protected:
   input_runtime::io_storage io_storage_{};
   detail::process_runtime::node_local_process_state_slots
       node_local_process_states_{};
+  std::vector<attempt_slot> attempt_slots_{};
 };
 
 } // namespace wh::compose::detail::invoke_runtime

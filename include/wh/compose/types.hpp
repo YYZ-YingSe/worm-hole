@@ -52,6 +52,14 @@ enum class node_exec_mode : std::uint8_t {
   async,
 };
 
+/// Dispatch policy for authored sync nodes.
+enum class sync_dispatch : std::uint8_t {
+  /// Offload sync work onto the invoke work scheduler.
+  work = 0U,
+  /// Run sync work inline on the invoke control scheduler.
+  inline_control,
+};
+
 /// Records whether `exec_mode` came from user choice or built-in node rules.
 enum class node_exec_origin : std::uint8_t {
   authored = 0U,

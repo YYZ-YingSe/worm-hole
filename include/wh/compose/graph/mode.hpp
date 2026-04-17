@@ -261,6 +261,16 @@ public:
     return graph_.invoke(context, std::forward<request_t>(request));
   }
 
+  template <typename request_t>
+    requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+  /// Invokes the fixed-mode graph with explicit control/work schedulers.
+  [[nodiscard]] auto invoke(wh::core::run_context &context,
+                            request_t &&request,
+                            graph_invoke_schedulers schedulers) const -> auto {
+    return graph_.invoke(context, std::forward<request_t>(request),
+                         std::move(schedulers));
+  }
+
 private:
   graph graph_{};
 };

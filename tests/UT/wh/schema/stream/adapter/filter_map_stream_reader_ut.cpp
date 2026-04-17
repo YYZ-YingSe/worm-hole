@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -142,4 +143,36 @@ TEST_CASE("filter map stream async sender skips values and keeps state alive aft
   REQUIRE(capture.value.has_value());
   REQUIRE(capture.value->has_value());
   REQUIRE(capture.value->value().value == std::optional<int>{7});
+}
+
+TEST_CASE("filter map stream reader forwards owned chunks to move-only callbacks",
+          "[UT][wh/schema/stream/adapter/filter_map_stream_reader.hpp][make_filter_map_stream_reader][move_only][ownership]") {
+  std::vector<std::unique_ptr<int>> values{};
+  values.push_back(std::make_unique<int>(3));
+  values.push_back(std::make_unique<int>(9));
+
+  auto reader = wh::schema::stream::make_filter_map_stream_reader(
+      wh::schema::stream::make_values_stream_reader(std::move(values)),
+      [](std::unique_ptr<int> value)
+          -> wh::core::result<wh::schema::stream::filter_map_step<int>> {
+        if (value == nullptr) {
+          return wh::core::result<
+              wh::schema::stream::filter_map_step<int>>::failure(
+              wh::core::errc::invalid_argument);
+        }
+        if (*value == 3) {
+          return wh::schema::stream::skip;
+        }
+        return *value + 1;
+      });
+
+  auto first = std::get<wh::schema::stream::stream_result<
+      wh::schema::stream::stream_chunk<int>>>(reader.try_read());
+  REQUIRE(first.has_value());
+  REQUIRE(first.value().value == std::optional<int>{10});
+
+  auto eof = std::get<wh::schema::stream::stream_result<
+      wh::schema::stream::stream_chunk<int>>>(reader.try_read());
+  REQUIRE(eof.has_value());
+  REQUIRE(eof.value().eof);
 }

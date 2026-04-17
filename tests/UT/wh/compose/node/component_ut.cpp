@@ -275,7 +275,7 @@ TEST_CASE("component node builders cover custom sync async stream and explicit m
   auto scheduler =
       wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
   wh::compose::node_runtime runtime{};
-  runtime.set_graph_scheduler(&scheduler);
+  runtime.set_control_scheduler(&scheduler);
 
   wh::compose::graph_value async_input{4};
   auto async_status = await_graph_sender(wh::compose::run_compiled_async_node(

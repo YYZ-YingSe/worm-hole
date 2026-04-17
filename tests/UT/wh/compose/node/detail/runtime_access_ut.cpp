@@ -32,16 +32,20 @@ TEST_CASE("node_runtime_access bind_scope and bind_runtime expose public node_ru
   wh::compose::graph_node_trace trace{};
   trace.trace_id = "trace";
   wh::compose::detail::runtime_state::invoke_outputs outputs{};
-  const auto scheduler =
+  const auto control_scheduler =
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{});
+  const auto work_scheduler =
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{});
 
   wh::compose::detail::node_runtime_access::bind_scope(runtime, &scope, &path);
   wh::compose::detail::node_runtime_access::bind_runtime(
-      runtime, &scheduler, &process_state, &observation, &trace);
+      runtime, &control_scheduler, &work_scheduler, &process_state,
+      &observation, &trace);
 
   REQUIRE(runtime.call_options() == &scope);
   REQUIRE(runtime.path() == &path);
-  REQUIRE(runtime.graph_scheduler() == &scheduler);
+  REQUIRE(runtime.control_scheduler() == &control_scheduler);
+  REQUIRE(runtime.work_scheduler() == &work_scheduler);
   REQUIRE(runtime.process_state() == &process_state);
   REQUIRE(runtime.observation() == &observation);
   REQUIRE(runtime.trace() == &trace);
@@ -81,7 +85,8 @@ TEST_CASE("node_runtime_access reset clears every bound pointer and replaces par
   REQUIRE(runtime.parallel_gate() == 3U);
   REQUIRE(runtime.call_options() == nullptr);
   REQUIRE(runtime.path() == nullptr);
-  REQUIRE(runtime.graph_scheduler() == nullptr);
+  REQUIRE(runtime.control_scheduler() == nullptr);
+  REQUIRE(runtime.work_scheduler() == nullptr);
   REQUIRE(runtime.process_state() == nullptr);
   REQUIRE(runtime.observation() == nullptr);
   REQUIRE(runtime.trace() == nullptr);

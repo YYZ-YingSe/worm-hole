@@ -8,30 +8,32 @@
 namespace wh::compose {
 
 inline auto
-detail::invoke_runtime::dag_runtime::make_input_sender(node_frame *frame)
+detail::invoke_runtime::dag_runtime::make_input_sender(const attempt_id attempt)
     -> graph_sender {
   auto &invoke = session_.invoke_state();
+  auto &attempt_slot = session_.slot(attempt);
   return session_.owner_->build_node_input_sender(
-      frame->node_id, session_.io_storage_, dag_node_phases(),
-      branch_states(), session_.context_, frame, invoke.config,
-      *invoke.graph_scheduler);
+      attempt_slot.node_id, session_.io_storage_, dag_node_phases(),
+      branch_states(), session_.context_, std::addressof(attempt_slot),
+      invoke.config,
+      *invoke.work_scheduler);
 }
 
-inline auto detail::invoke_runtime::dag_runtime::make_input_frame(
+inline auto detail::invoke_runtime::dag_runtime::make_input_attempt(
     const std::uint32_t node_id, std::size_t step)
-    -> wh::core::result<node_frame> {
-  auto frame = session_.make_input_frame(node_id, step);
-  if (frame.has_error()) {
-    return frame;
+    -> wh::core::result<attempt_id> {
+  auto attempt = session_.make_input_attempt(node_id, step);
+  if (attempt.has_error()) {
+    return attempt;
   }
   dag_node_phases()[node_id] = invoke_session::dag_node_phase::running;
-  return frame;
+  return attempt;
 }
 
 inline auto detail::invoke_runtime::dag_runtime::begin_state_pre(
-    node_frame &&frame, graph_value input) -> wh::core::result<state_step> {
-  const auto node_id = frame.node_id;
-  auto prepared = session_.begin_state_pre(std::move(frame), std::move(input));
+    const attempt_id attempt) -> wh::core::result<state_step> {
+  const auto node_id = session_.slot(attempt).node_id;
+  auto prepared = session_.begin_state_pre(attempt);
   if (prepared.has_error() && prepared.error() == wh::core::errc::canceled &&
       session_.freeze_requested()) {
     dag_node_phases()[node_id] = invoke_session::dag_node_phase::pending;
@@ -40,23 +42,25 @@ inline auto detail::invoke_runtime::dag_runtime::begin_state_pre(
 }
 
 inline auto detail::invoke_runtime::dag_runtime::commit_terminal_input(
-    node_frame &&frame, graph_value input) -> wh::core::result<void> {
-  auto stored = session_.store_output(frame.node_id, std::move(input));
+    const attempt_id attempt, graph_value input) -> wh::core::result<void> {
+  auto &attempt_slot = session_.slot(attempt);
+  auto stored = session_.store_output(attempt_slot.node_id, std::move(input));
   if (stored.has_error()) {
     try_persist_checkpoint();
     return wh::core::result<void>::failure(stored.error());
   }
-  dag_node_phases()[frame.node_id] = invoke_session::dag_node_phase::executed;
-  session_.state_table_.update(frame.node_id,
+  dag_node_phases()[attempt_slot.node_id] = invoke_session::dag_node_phase::executed;
+  session_.state_table_.update(attempt_slot.node_id,
                                graph_node_lifecycle_state::completed, 0U,
                                std::nullopt);
-  session_.append_transition(frame.node_id,
+  session_.append_transition(attempt_slot.node_id,
                              graph_state_transition_event{
                                  .kind = graph_state_transition_kind::route_commit,
-                                 .cause = frame.cause,
+                                 .cause = attempt_slot.cause,
                                  .lifecycle =
                                      graph_node_lifecycle_state::completed,
                              });
+  session_.release_attempt(attempt);
   return {};
 }
 
@@ -115,8 +119,9 @@ public:
     this->state().enqueue_dependents(node_id);
   }
 
-  [[nodiscard]] auto build_input_sender(node_frame *frame) -> graph_sender {
-    return this->state().make_input_sender(frame);
+  [[nodiscard]] auto build_input_sender(const attempt_id attempt)
+      -> graph_sender {
+    return this->state().make_input_sender(attempt);
   }
 
   [[nodiscard]] auto build_freeze_sender(const bool external_interrupt)
@@ -126,10 +131,10 @@ public:
   }
 
   template <typename enqueue_fn_t>
-  auto commit_node_output(node_frame &&frame, graph_value node_output,
+  auto commit_node_output(const attempt_id attempt, graph_value node_output,
                           enqueue_fn_t &&enqueue_fn) -> wh::core::result<void> {
     return this->state().commit_node_output(
-        std::move(frame), std::move(node_output),
+        attempt, std::move(node_output),
         std::forward<enqueue_fn_t>(enqueue_fn));
   }
 
@@ -161,7 +166,7 @@ public:
           this->finish(wh::core::result<graph_value>::failure(action.error));
           break;
         }
-        auto started = this->launch_input_stage(std::move(*action.frame));
+        auto started = this->launch_input_stage(action.attempt);
         if (started.has_error()) {
           this->finish(wh::core::result<graph_value>::failure(started.error()));
           break;

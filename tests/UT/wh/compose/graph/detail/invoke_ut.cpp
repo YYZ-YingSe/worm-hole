@@ -148,7 +148,7 @@ TEST_CASE("start_bound_graph and start_scoped_graph run nested graph entrypoints
 
   auto waited = stdexec::sync_wait(wh::compose::detail::start_bound_graph(
       graph.value(), context, input, &call_options, nullptr, nullptr, nullptr,
-      scheduler, nullptr, nullptr, {}));
+      scheduler, scheduler, nullptr, nullptr, {}));
   REQUIRE(waited.has_value());
   REQUIRE(std::get<0>(*waited).has_value());
   REQUIRE(*wh::core::any_cast<int>(&std::get<0>(*waited).value()) == 42);
@@ -157,7 +157,7 @@ TEST_CASE("start_bound_graph and start_scoped_graph run nested graph entrypoints
   wh::compose::graph_call_scope scope{call_options};
   auto scoped_waited = stdexec::sync_wait(wh::compose::detail::start_scoped_graph(
       graph.value(), context, second_input, &scope, nullptr, nullptr, nullptr,
-      scheduler, nullptr, nullptr, {}));
+      scheduler, scheduler, nullptr, nullptr, {}));
   REQUIRE(scoped_waited.has_value());
   REQUIRE(std::get<0>(*scoped_waited).has_value());
   REQUIRE(*wh::core::any_cast<int>(&std::get<0>(*scoped_waited).value()) == 99);

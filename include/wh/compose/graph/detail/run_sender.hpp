@@ -29,7 +29,7 @@ public:
     using graph_scheduler_t = wh::core::detail::any_resume_scheduler_t;
     using run_operation_t = run_t<stored_receiver_t, graph_scheduler_t>;
     auto graph_scheduler = graph_scheduler_t{
-        *self.runtime_->session().invoke_state().graph_scheduler};
+        *self.runtime_->session().invoke_state().control_scheduler};
     return run_operation_t{std::move(*self.runtime_), std::move(receiver),
                            std::move(graph_scheduler)};
   }

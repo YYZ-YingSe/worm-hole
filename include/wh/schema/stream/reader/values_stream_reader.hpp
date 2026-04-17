@@ -111,7 +111,7 @@ private:
       return stream_result<chunk_type>{chunk_type::make_eof()};
     }
 
-    auto chunk = chunk_type::make_value(value_type{std::move(*current_)});
+    auto chunk = chunk_type::make_value(std::move(*current_));
     ++current_;
     ++index_;
     return stream_result<chunk_type>{std::move(chunk)};

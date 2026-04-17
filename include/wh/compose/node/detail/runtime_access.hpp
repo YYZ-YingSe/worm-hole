@@ -13,7 +13,8 @@ struct node_runtime_access {
     runtime.parallel_gate_ = parallel_gate;
     runtime.call_options_ = nullptr;
     runtime.path_ = nullptr;
-    runtime.graph_scheduler_ = nullptr;
+    runtime.control_scheduler_ = nullptr;
+    runtime.work_scheduler_ = nullptr;
     runtime.process_state_ = nullptr;
     runtime.observation_ = nullptr;
     runtime.trace_ = nullptr;
@@ -29,11 +30,13 @@ struct node_runtime_access {
   }
 
   static auto bind_runtime(node_runtime &runtime,
-                           const wh::core::detail::any_resume_scheduler_t *scheduler,
+                           const wh::core::detail::any_resume_scheduler_t *control_scheduler,
+                           const wh::core::detail::any_resume_scheduler_t *work_scheduler,
                            graph_process_state *process_state,
                            const graph_resolved_node_observation *observation,
                            const graph_node_trace *trace) noexcept -> void {
-    runtime.graph_scheduler_ = scheduler;
+    runtime.control_scheduler_ = control_scheduler;
+    runtime.work_scheduler_ = work_scheduler;
     runtime.process_state_ = process_state;
     runtime.observation_ = observation;
     runtime.trace_ = trace;

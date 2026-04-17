@@ -114,7 +114,7 @@ inline auto graph::stage_pregel_successors(
 inline auto graph::build_pregel_node_input_sender(
     const std::uint32_t node_id, const pregel_node_inputs &inputs,
     io_storage &io_storage, wh::core::run_context &context,
-    node_frame *frame,
+    attempt_slot *slot,
     [[maybe_unused]] const detail::runtime_state::invoke_config &config,
     const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const
     -> graph_sender {
@@ -206,9 +206,9 @@ inline auto graph::build_pregel_node_input_sender(
   }
 
   const bool preserve_stream_pre =
-      frame != nullptr &&
+      slot != nullptr &&
       detail::state_runtime::has_stream_phase(
-          frame->state_handlers, detail::state_runtime::state_phase::pre);
+          slot->state_handlers, detail::state_runtime::state_phase::pre);
   if (preserve_stream_pre && lanes.size() == 1U) {
     const auto &edge =
         core().compiled_execution_index_.index.indexed_edges[lanes.front().edge_id];
@@ -221,9 +221,13 @@ inline auto graph::build_pregel_node_input_sender(
       if (lowering.has_error()) {
         return detail::failure_graph_sender(lowering.error());
       }
-      frame->pre_state_reader.emplace(std::move(reader).value());
-      frame->input_lowering = std::move(lowering).value();
-      return detail::ready_graph_sender(wh::core::result<graph_value>{});
+      if (!slot->input.has_value()) {
+        slot->input.emplace();
+      }
+      slot->input->lowering = std::move(lowering).value();
+      return detail::ready_graph_sender(
+          wh::core::result<graph_value>{graph_value{
+              std::move(reader).value()}});
     }
   }
 

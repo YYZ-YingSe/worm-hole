@@ -44,10 +44,10 @@ inline auto detail::invoke_runtime::pregel_runtime::take_ready_action(
                                          wh::core::errc::not_found);
   }
 
-  auto frame = make_input_frame(node_id, step);
-  if (frame.has_error()) {
+  auto attempt = make_input_attempt(node_id, step);
+  if (attempt.has_error()) {
     session.state_table_.update(node_id, graph_node_lifecycle_state::failed, 1U,
-                                frame.error());
+                                attempt.error());
     session.append_transition(node_id,
                       graph_state_transition_event{
                           .kind = graph_state_transition_kind::node_fail,
@@ -55,10 +55,10 @@ inline auto detail::invoke_runtime::pregel_runtime::take_ready_action(
                           .lifecycle = graph_node_lifecycle_state::failed,
                       });
     try_persist_checkpoint();
-    return pregel_action::terminal_error(node_id, cause, frame.error());
+    return pregel_action::terminal_error(node_id, cause, attempt.error());
   }
 
-  return pregel_action::launch(std::move(frame).value());
+  return pregel_action::launch(node_id, cause, attempt.value());
 }
 
 } // namespace wh::compose

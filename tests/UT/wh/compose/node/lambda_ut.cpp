@@ -265,7 +265,7 @@ TEST_CASE("async value to stream lambda returns graph stream reader payload",
   auto scheduler =
       wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
   wh::compose::node_runtime runtime{};
-  runtime.set_graph_scheduler(&scheduler);
+  runtime.set_control_scheduler(&scheduler);
 
   wh::compose::graph_value async_input{6};
   wh::core::run_context context{};

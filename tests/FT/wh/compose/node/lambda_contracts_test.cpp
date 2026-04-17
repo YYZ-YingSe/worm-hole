@@ -350,7 +350,7 @@ TEST_CASE("compose async value-to-stream lambda should preserve graph stream rea
   auto graph_scheduler =
       wh::core::detail::erase_resume_scheduler(pool.get_scheduler());
   wh::compose::node_runtime runtime{};
-  runtime.set_graph_scheduler(&graph_scheduler);
+  runtime.set_control_scheduler(&graph_scheduler);
 
   wh::compose::graph_value input = wh::core::any(5);
   wh::core::run_context context{};

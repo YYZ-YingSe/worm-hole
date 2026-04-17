@@ -41,7 +41,8 @@ TEST_CASE("pregel loop prepares launch actions for current frontier nodes",
   REQUIRE(action.action ==
           wh::compose::detail::invoke_runtime::pregel_action::kind::launch);
   REQUIRE(action.node_id == worker_id.value());
-  REQUIRE(action.frame.has_value());
+  REQUIRE(action.attempt.has_value());
+  REQUIRE(action.attempt.slot == worker_id.value());
   REQUIRE(action.cause.step == 1U);
 }
 
@@ -71,7 +72,8 @@ TEST_CASE("pregel loop still launches re-enqueued nodes after a prior lifecycle 
   REQUIRE(action.action ==
           wh::compose::detail::invoke_runtime::pregel_action::kind::launch);
   REQUIRE(action.node_id == worker_id.value());
-  REQUIRE(action.frame.has_value());
+  REQUIRE(action.attempt.has_value());
+  REQUIRE(action.attempt.slot == worker_id.value());
   REQUIRE(action.cause.step == 2U);
 }
 

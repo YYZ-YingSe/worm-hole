@@ -134,7 +134,7 @@ TEST_CASE("dynamic topology registry covers pending attach disable immediate rea
   REQUIRE(round.lanes.size() == 2U);
   REQUIRE_FALSE(round.wait_for_topology);
   REQUIRE(fixed.close_all().has_error());
-  fixed.cancel_round();
+  fixed.complete_round_without_winner(round.lanes);
   REQUIRE(fixed.close_all().has_value());
 }
 
@@ -156,14 +156,18 @@ TEST_CASE("dynamic topology registry complete_round_winner and async waiters res
   auto round = registry.prepare_round();
   REQUIRE(round.lanes.size() == 1U);
   auto value_resolution =
-      registry.complete_round_winner(0U, 0U, status_t{chunk_t::make_value(5)});
+      registry.complete_round_winner(round.lanes, 0U,
+                                     status_t{chunk_t::make_value(5)});
   REQUIRE(value_resolution.status.has_value());
   REQUIRE(value_resolution.status.value().value == std::optional<int>{5});
   REQUIRE(value_resolution.status.value().source == "A");
   REQUIRE_FALSE(value_resolution.close_lane.has_value());
 
+  round = registry.prepare_round();
+  REQUIRE(round.lanes.size() == 1U);
   auto eof_resolution =
-      registry.complete_round_winner(0U, 0U, status_t{chunk_t::make_eof()});
+      registry.complete_round_winner(round.lanes, 0U,
+                                     status_t{chunk_t::make_eof()});
   REQUIRE(eof_resolution.status.has_value());
   REQUIRE(eof_resolution.status.value().eof);
   REQUIRE(eof_resolution.status.value().source == "A");

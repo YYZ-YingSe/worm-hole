@@ -307,17 +307,17 @@ template <typename sender_factory_t>
     owned_context.emplace(std::move(prepared_context).value());
     detail::apply_node_callbacks(*owned_context, observation, trace);
   }
-  const auto *graph_scheduler = runtime.graph_scheduler();
+  const auto *work_scheduler = runtime.work_scheduler();
   return ::wh::compose::detail::bridge_graph_sender(::wh::core::detail::defer_sender(
-      [owned_context = std::move(owned_context), &context, graph_scheduler,
+      [owned_context = std::move(owned_context), &context, work_scheduler,
        make_sender = std::forward<sender_factory_t>(make_sender)]() mutable {
         auto &node_context = owned_context.has_value() ? *owned_context : context;
-        if (graph_scheduler == nullptr) {
+        if (work_scheduler == nullptr) {
           return ::wh::compose::detail::failure_graph_sender(wh::core::errc::contract_violation);
         }
         auto sender = make_sender(node_context);
         return ::wh::compose::detail::bridge_graph_sender(
-            ::wh::core::detail::write_sender_scheduler(std::move(sender), *graph_scheduler));
+            ::wh::core::detail::write_sender_scheduler(std::move(sender), *work_scheduler));
       }));
 }
 

@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -118,4 +119,27 @@ TEST_CASE("transform stream async sender keeps state alive after wrapper destruc
   REQUIRE(capture.value.has_value());
   REQUIRE(capture.value->has_value());
   REQUIRE(capture.value->value().value == std::optional<int>{11});
+}
+
+TEST_CASE("transform stream reader forwards owned chunks as movable inputs when source is not borrowed",
+          "[UT][wh/schema/stream/adapter/transform_stream_reader.hpp][make_transform_stream_reader][move_only][ownership]") {
+  std::vector<std::unique_ptr<int>> values{};
+  values.push_back(std::make_unique<int>(7));
+
+  auto reader = wh::schema::stream::make_transform_stream_reader(
+      wh::schema::stream::make_values_stream_reader(std::move(values)),
+      [](std::unique_ptr<int> value) -> wh::core::result<int> {
+        if (value == nullptr) {
+          return wh::core::result<int>::failure(wh::core::errc::invalid_argument);
+        }
+        return *value + 5;
+      });
+
+  auto first = reader.read();
+  REQUIRE(first.has_value());
+  REQUIRE(first.value().value == std::optional<int>{12});
+
+  auto eof = reader.read();
+  REQUIRE(eof.has_value());
+  REQUIRE(eof.value().eof);
 }

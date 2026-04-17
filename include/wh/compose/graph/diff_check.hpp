@@ -157,6 +157,12 @@ dispatch_policy_text(const graph_dispatch_policy policy) -> std::string_view {
   return origin == node_exec_origin::lowered ? "lowered" : "authored";
 }
 
+[[nodiscard]] inline auto sync_dispatch_text(const sync_dispatch dispatch)
+    -> std::string_view {
+  return dispatch == sync_dispatch::inline_control ? "inline_control"
+                                                   : "work";
+}
+
 [[nodiscard]] inline auto size_text(const std::size_t value) -> std::string {
   return std::to_string(value);
 }
@@ -307,6 +313,9 @@ inline auto compare_node_options(graph_diff &diff,
                  bool_text(candidate.options.allow_no_control));
   compare_policy("allow_no_data", bool_text(baseline.options.allow_no_data),
                  bool_text(candidate.options.allow_no_data));
+  compare_policy("sync_dispatch",
+                 std::string{sync_dispatch_text(baseline.options.sync_dispatch)},
+                 std::string{sync_dispatch_text(candidate.options.sync_dispatch)});
   compare_policy("callbacks_enabled",
                  bool_text(baseline.options.observation.callbacks_enabled),
                  bool_text(candidate.options.observation.callbacks_enabled));

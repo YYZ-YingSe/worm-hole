@@ -13,7 +13,8 @@ template <typename scope_t>
            std::same_as<std::remove_cvref_t<scope_t>, graph_call_scope>
 auto start_session(const graph &graph, wh::core::run_context &context,
                    graph_value &&input, scope_t &&call_scope,
-                   const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+                   const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+                   const wh::core::detail::any_resume_scheduler_t &work_scheduler,
                    node_path path_prefix = {},
                    graph_process_state *parent_process_state = nullptr,
                    detail::runtime_state::invoke_outputs *nested_outputs = nullptr,
@@ -25,7 +26,8 @@ auto start_session(const graph &graph, wh::core::run_context &context,
 
 auto start_request(const graph &graph, wh::core::run_context &context,
                    graph_invoke_request request,
-                   const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+                   const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+                   const wh::core::detail::any_resume_scheduler_t &work_scheduler,
                    detail::runtime_state::invoke_outputs *published_outputs = nullptr)
     -> graph_sender;
 
@@ -35,7 +37,8 @@ auto start_bound_graph(const graph &graph, wh::core::run_context &context,
                        const node_path *path_prefix,
                        graph_process_state *parent_process_state,
                        detail::runtime_state::invoke_outputs *nested_outputs,
-                       const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+                       const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+                       const wh::core::detail::any_resume_scheduler_t &work_scheduler,
                        const detail::invoke_runtime::invoke_session *parent_state,
                        const graph_runtime_services *services,
                        graph_invoke_controls controls) -> graph_sender;
@@ -44,7 +47,8 @@ auto start_scoped_graph(const graph &graph, wh::core::run_context &context, grap
                         const graph_call_scope *call_scope, const node_path *path_prefix,
                         graph_process_state *parent_process_state,
                         detail::runtime_state::invoke_outputs *nested_outputs,
-                        const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+                        const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+                        const wh::core::detail::any_resume_scheduler_t &work_scheduler,
                         const detail::invoke_runtime::invoke_session *parent_state = nullptr,
                         const graph_runtime_services *services = nullptr,
                         graph_invoke_controls controls = {}) -> graph_sender;
@@ -116,7 +120,7 @@ public:
   using operation_state_concept = stdexec::operation_state_t;
   using receiver_env_t =
       std::remove_cvref_t<decltype(stdexec::get_env(std::declval<const receiver_t &>()))>;
-  using graph_scheduler_t = wh::core::detail::any_resume_scheduler_t;
+  using scheduler_t = wh::core::detail::any_resume_scheduler_t;
 
   class child_receiver {
   public:
@@ -143,18 +147,21 @@ public:
   };
 
   using child_sender_t =
-      decltype(stdexec::starts_on(std::declval<const graph_scheduler_t &>(),
+      decltype(stdexec::starts_on(std::declval<const scheduler_t &>(),
                                   std::declval<graph_sender>()));
   using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
 
   template <typename request_arg_t, typename receiver_arg_t>
     requires std::same_as<std::remove_cvref_t<request_arg_t>, graph_invoke_request> &&
                  std::constructible_from<receiver_t, receiver_arg_t>
-  invoke_operation(const graph *owner, request_arg_t &&request, wh::core::run_context &context,
-                   const graph_scheduler_t &graph_scheduler,
+  invoke_operation(const graph *owner, request_arg_t &&request,
+                   wh::core::run_context &context,
+                   std::shared_ptr<graph_invoke_schedulers> invoke_schedulers,
+                   std::optional<scheduler_t> fallback_control_scheduler,
                    receiver_arg_t &&receiver)
       : owner_(owner), context_(context), request_(std::forward<request_arg_t>(request)),
-        graph_scheduler_(graph_scheduler),
+        invoke_schedulers_(std::move(invoke_schedulers)),
+        fallback_control_scheduler_(std::move(fallback_control_scheduler)),
         receiver_(std::forward<receiver_arg_t>(receiver)),
         receiver_env_(stdexec::get_env(receiver_)) {}
 
@@ -217,14 +224,20 @@ private:
   }
 
   auto start_runtime() noexcept -> void {
+    const auto *control_scheduler = this->control_scheduler();
+    const auto *work_scheduler = this->work_scheduler();
+    if (control_scheduler == nullptr || work_scheduler == nullptr) {
+      complete_error(wh::core::errc::contract_violation);
+      return;
+    }
     try {
       auto sender = detail::start_request(
           *owner_, context_, std::move(request_),
-          graph_scheduler_t{graph_scheduler_}, std::addressof(report_outputs_));
+          *control_scheduler, *work_scheduler,
+          std::addressof(report_outputs_));
       [[maybe_unused]] auto &child_op = child_op_.construct_with([&]() {
         return stdexec::connect(
-            stdexec::starts_on(graph_scheduler_t{graph_scheduler_},
-                               std::move(sender)),
+            stdexec::starts_on(scheduler_t{*control_scheduler}, std::move(sender)),
             child_receiver{this, receiver_env_});
       });
       child_op_engaged_ = true;
@@ -242,11 +255,31 @@ private:
     }
   }
 
+  [[nodiscard]] auto control_scheduler() const noexcept -> const scheduler_t * {
+    if (invoke_schedulers_ != nullptr &&
+        invoke_schedulers_->control_scheduler.has_value()) {
+      return std::addressof(*invoke_schedulers_->control_scheduler);
+    }
+    if (fallback_control_scheduler_.has_value()) {
+      return std::addressof(*fallback_control_scheduler_);
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] auto work_scheduler() const noexcept -> const scheduler_t * {
+    if (invoke_schedulers_ != nullptr &&
+        invoke_schedulers_->work_scheduler.has_value()) {
+      return std::addressof(*invoke_schedulers_->work_scheduler);
+    }
+    return control_scheduler();
+  }
+
   const graph *owner_{nullptr};
   wh::core::run_context &context_;
   graph_invoke_request request_{};
   detail::runtime_state::invoke_outputs report_outputs_{};
-  graph_scheduler_t graph_scheduler_;
+  std::shared_ptr<graph_invoke_schedulers> invoke_schedulers_{};
+  std::optional<scheduler_t> fallback_control_scheduler_{};
   receiver_t receiver_;
   receiver_env_t receiver_env_{};
   wh::core::detail::manual_lifetime<child_op_t> child_op_{};
@@ -261,32 +294,44 @@ public:
 
   template <typename owner_t, typename request_arg_t>
     requires std::constructible_from<request_t, request_arg_t>
-  invoke_sender(owner_t *owner, wh::core::run_context &context, request_arg_t &&request)
-      : owner_(owner), context_(&context), request_(std::forward<request_arg_t>(request)) {}
+  invoke_sender(owner_t *owner, wh::core::run_context &context,
+                request_arg_t &&request,
+                std::shared_ptr<graph_invoke_schedulers> schedulers = {})
+      : owner_(owner), context_(&context), request_(std::forward<request_arg_t>(request)),
+        schedulers_(std::move(schedulers)) {}
 
   template <typename self_t, stdexec::receiver_of<completion_signatures> receiver_t>
     requires std::same_as<std::remove_cvref_t<self_t>, invoke_sender> &&
-             wh::core::detail::receiver_with_launch_scheduler<receiver_t> &&
              (!std::is_const_v<std::remove_reference_t<self_t>> ||
               std::copy_constructible<request_t>)
   STDEXEC_EXPLICIT_THIS_BEGIN(auto connect)(this self_t &&self, receiver_t receiver) {
     using stored_receiver_t = std::remove_cvref_t<receiver_t>;
-    const auto env = stdexec::get_env(receiver);
-    auto graph_scheduler = wh::core::detail::get_launch_scheduler(env);
     using operation_t = invoke_operation<stored_receiver_t>;
+    const auto fallback_scheduler = [&]() -> std::optional<wh::core::detail::any_resume_scheduler_t> {
+      if constexpr (wh::core::detail::env_with_launch_scheduler<
+                        decltype(stdexec::get_env(receiver))>) {
+        auto env = stdexec::get_env(receiver);
+        return wh::core::detail::erase_resume_scheduler(
+            wh::core::detail::get_launch_scheduler(env));
+      } else {
+        return std::nullopt;
+      }
+    }();
     if constexpr (std::is_const_v<std::remove_reference_t<self_t>>) {
       return operation_t{
           self.owner_,
           self.request_,
           *self.context_,
-          wh::core::detail::erase_resume_scheduler(std::move(graph_scheduler)),
+          self.schedulers_,
+          fallback_scheduler,
           std::move(receiver)};
     } else {
       return operation_t{
           self.owner_,
           std::forward<self_t>(self).request_,
           *self.context_,
-          wh::core::detail::erase_resume_scheduler(std::move(graph_scheduler)),
+          std::forward<self_t>(self).schedulers_,
+          fallback_scheduler,
           std::move(receiver)};
     }
   }
@@ -296,6 +341,7 @@ private:
   const graph *owner_{nullptr};
   wh::core::run_context *context_{nullptr};
   wh_no_unique_address request_t request_{};
+  std::shared_ptr<graph_invoke_schedulers> schedulers_{};
 };
 
 template <typename request_t>
@@ -306,10 +352,29 @@ inline auto graph::invoke(wh::core::run_context &context, request_t &&request) c
 
 template <typename request_t>
   requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+inline auto graph::invoke(wh::core::run_context &context, request_t &&request,
+                          graph_invoke_schedulers schedulers) const -> auto {
+  return make_invoke_sender(graph_invoke_request{std::forward<request_t>(request)},
+                            context, std::move(schedulers));
+}
+
+template <typename request_t>
+  requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
 inline auto graph::make_invoke_sender(request_t &&request, wh::core::run_context &context) const
     -> invoke_sender<graph_invoke_request> {
   return invoke_sender<graph_invoke_request>{
       this, context, graph_invoke_request{std::forward<request_t>(request)}};
+}
+
+template <typename request_t>
+  requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+inline auto graph::make_invoke_sender(request_t &&request,
+                                      wh::core::run_context &context,
+                                      graph_invoke_schedulers schedulers) const
+    -> invoke_sender<graph_invoke_request> {
+  return invoke_sender<graph_invoke_request>{
+      this, context, graph_invoke_request{std::forward<request_t>(request)},
+      std::make_shared<graph_invoke_schedulers>(std::move(schedulers))};
 }
 
 namespace detail {

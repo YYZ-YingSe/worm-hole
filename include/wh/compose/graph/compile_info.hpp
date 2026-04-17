@@ -62,6 +62,8 @@ struct graph_compile_node_options_info {
   bool allow_no_control{false};
   /// True means node may execute with no data predecessor.
   bool allow_no_data{false};
+  /// Dispatch policy for authored sync execution.
+  sync_dispatch sync_dispatch{sync_dispatch::work};
   /// Optional node-level retry budget override.
   std::optional<std::size_t> retry_budget_override{};
   /// Optional node-level timeout override (`nullopt` falls back to graph

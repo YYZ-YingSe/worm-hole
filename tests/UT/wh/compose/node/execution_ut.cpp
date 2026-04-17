@@ -75,7 +75,7 @@ auto bound_nested_start(const void *state, const wh::compose::graph &,
 } // namespace
 
 TEST_CASE("node runtime accessors and nested graph entry expose bound execution state",
-          "[UT][wh/compose/node/execution.hpp][node_runtime::set_graph_scheduler][condition][branch][boundary]") {
+          "[UT][wh/compose/node/execution.hpp][node_runtime::set_control_scheduler][condition][branch][boundary]") {
   wh::compose::node_runtime runtime{};
   wh::compose::graph_call_options options{};
   wh::compose::graph_call_scope scope{options};
@@ -95,7 +95,7 @@ TEST_CASE("node runtime accessors and nested graph entry expose bound execution 
   runtime.set_parallel_gate(9U)
       .set_call_options(&scope)
       .set_path(&path)
-      .set_graph_scheduler(&scheduler)
+      .set_control_scheduler(&scheduler)
       .set_process_state(&process_state)
       .set_observation(&observation)
       .set_trace(&trace);
@@ -103,10 +103,18 @@ TEST_CASE("node runtime accessors and nested graph entry expose bound execution 
   REQUIRE(runtime.parallel_gate() == 9U);
   REQUIRE(runtime.call_options() == &scope);
   REQUIRE(runtime.path() == &path);
-  REQUIRE(runtime.graph_scheduler() == &scheduler);
+  REQUIRE(runtime.control_scheduler() == &scheduler);
+  REQUIRE(runtime.work_scheduler() == &scheduler);
   REQUIRE(runtime.process_state() == &process_state);
   REQUIRE(runtime.observation() == &observation);
   REQUIRE(runtime.trace() == &trace);
+
+  wh::testing::helper::static_thread_scheduler_helper work_helper{1U};
+  auto work_scheduler =
+      wh::core::detail::erase_resume_scheduler(work_helper.scheduler());
+  runtime.set_work_scheduler(&work_scheduler);
+  REQUIRE(runtime.control_scheduler() == &scheduler);
+  REQUIRE(runtime.work_scheduler() == &work_scheduler);
 
   wh::compose::nested_graph_entry empty{};
   REQUIRE_FALSE(empty.bound());
@@ -223,7 +231,7 @@ TEST_CASE("execution factory binders preserve sync behavior and enforce async sc
   auto scheduler =
       wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
   wh::compose::node_runtime runtime{};
-  runtime.set_graph_scheduler(&scheduler);
+  runtime.set_control_scheduler(&scheduler);
 
   auto async_status = await_graph_sender(async_factory(async_input, context, runtime));
   REQUIRE(async_status.has_value());

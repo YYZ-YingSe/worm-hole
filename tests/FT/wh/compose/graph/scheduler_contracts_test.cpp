@@ -358,7 +358,136 @@ TEST_CASE("compose graph returns to graph scheduler at node boundary after impl 
   REQUIRE(*observed_downstream_thread != completion_thread);
 }
 
-TEST_CASE("compose graph binds async node resume scheduler to graph scheduler",
+TEST_CASE("compose graph explicit invoke schedulers split control and work execution",
+          "[core][compose][graph][scheduler][split]") {
+  wh::compose::graph graph{};
+  std::mutex observed_mutex{};
+  std::optional<std::thread::id> async_thread{};
+  std::optional<std::thread::id> sync_work_thread{};
+  std::optional<std::thread::id> sync_control_thread{};
+
+  REQUIRE(graph
+              .add_lambda<wh::compose::node_contract::value,
+                          wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>(
+                  "async_work",
+                  [&](const wh::compose::graph_value &input,
+                      wh::core::run_context &,
+                      const wh::compose::graph_call_scope &) {
+                    std::lock_guard lock{observed_mutex};
+                    async_thread = std::this_thread::get_id();
+                    return stdexec::just(
+                        wh::core::result<wh::compose::graph_value>{input});
+                  })
+              .has_value());
+  REQUIRE(graph
+              .add_lambda(
+                  "sync_work",
+                  [&](const wh::compose::graph_value &input,
+                      wh::core::run_context &,
+                      const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    std::lock_guard lock{observed_mutex};
+                    sync_work_thread = std::this_thread::get_id();
+                    return input;
+                  })
+              .has_value());
+
+  wh::compose::graph_add_node_options inline_control{};
+  inline_control.sync_dispatch = wh::compose::sync_dispatch::inline_control;
+  REQUIRE(graph
+              .add_lambda(
+                  "sync_control",
+                  [&](const wh::compose::graph_value &input,
+                      wh::core::run_context &,
+                      const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    std::lock_guard lock{observed_mutex};
+                    sync_control_thread = std::this_thread::get_id();
+                    return input;
+                  },
+                  inline_control)
+              .has_value());
+
+  REQUIRE(graph.add_entry_edge("async_work").has_value());
+  REQUIRE(graph.add_edge("async_work", "sync_work").has_value());
+  REQUIRE(graph.add_edge("sync_work", "sync_control").has_value());
+  REQUIRE(graph.add_exit_edge("sync_control").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  exec::static_thread_pool control_pool{1U};
+  exec::static_thread_pool work_pool{1U};
+  exec::static_thread_pool launch_pool{1U};
+  exec::static_thread_pool completion_pool{1U};
+  const auto control_thread = scheduler_thread_id(control_pool.get_scheduler());
+  const auto work_thread = scheduler_thread_id(work_pool.get_scheduler());
+  const auto launch_thread = scheduler_thread_id(launch_pool.get_scheduler());
+  const auto completion_thread =
+      scheduler_thread_id(completion_pool.get_scheduler());
+  REQUIRE(control_thread != work_thread);
+  REQUIRE(control_thread != launch_thread);
+  REQUIRE(control_thread != completion_thread);
+  REQUIRE(work_thread != launch_thread);
+  REQUIRE(work_thread != completion_thread);
+
+  using launch_scheduler_t =
+      std::remove_cvref_t<decltype(launch_pool.get_scheduler())>;
+  using completion_scheduler_t =
+      std::remove_cvref_t<decltype(completion_pool.get_scheduler())>;
+
+  wh::core::run_context context{};
+  wh::compose::graph_invoke_schedulers schedulers{};
+  schedulers.set_control_scheduler(control_pool.get_scheduler())
+      .set_work_scheduler(work_pool.get_scheduler());
+
+  auto receiver_state = std::make_shared<graph_test_receiver_state>();
+  auto receiver =
+      graph_scheduler_receiver<launch_scheduler_t, completion_scheduler_t>{
+          .state = receiver_state,
+          .receiver_env =
+              {
+                  .stop_token = stdexec::never_stop_token{},
+                  .launch_scheduler = launch_pool.get_scheduler(),
+                  .completion_scheduler = completion_pool.get_scheduler(),
+              },
+      };
+
+  auto op = stdexec::connect(
+      graph.invoke(context, make_graph_request(wh::core::any(1)),
+                   std::move(schedulers)),
+      std::move(receiver));
+  stdexec::start(op);
+
+  REQUIRE(wait_for_graph_receiver(receiver_state));
+  REQUIRE(receiver_state->value_count == 1);
+  REQUIRE(receiver_state->error_count == 0);
+  REQUIRE(receiver_state->stopped_count == 0);
+  REQUIRE(receiver_state->status.has_value());
+  REQUIRE(receiver_state->status->has_value());
+  REQUIRE(receiver_state->status->value().output_status.has_value());
+
+  std::optional<std::thread::id> observed_async_thread{};
+  std::optional<std::thread::id> observed_sync_work_thread{};
+  std::optional<std::thread::id> observed_sync_control_thread{};
+  {
+    std::lock_guard lock{observed_mutex};
+    observed_async_thread = async_thread;
+    observed_sync_work_thread = sync_work_thread;
+    observed_sync_control_thread = sync_control_thread;
+  }
+  REQUIRE(observed_async_thread.has_value());
+  REQUIRE(observed_sync_work_thread.has_value());
+  REQUIRE(observed_sync_control_thread.has_value());
+  REQUIRE(*observed_async_thread == work_thread);
+  REQUIRE(*observed_sync_work_thread == work_thread);
+  REQUIRE(*observed_sync_control_thread == control_thread);
+  REQUIRE(*observed_async_thread != launch_thread);
+  REQUIRE(*observed_async_thread != completion_thread);
+  REQUIRE(*observed_sync_control_thread != launch_thread);
+  REQUIRE(*observed_sync_control_thread != completion_thread);
+}
+
+TEST_CASE("compose graph keeps async node internal resume on work scheduler",
           "[core][compose][graph][scheduler][restore]") {
   wh::compose::graph graph{};
   std::mutex observed_mutex{};
@@ -402,7 +531,8 @@ TEST_CASE("compose graph binds async node resume scheduler to graph scheduler",
                   })
               .has_value());
   REQUIRE(graph
-              .add_lambda("downstream",
+              .add_lambda(
+                  "downstream",
                           [&](const wh::compose::graph_value &input,
                               wh::core::run_context &,
                               const wh::compose::graph_call_scope &)
@@ -410,20 +540,30 @@ TEST_CASE("compose graph binds async node resume scheduler to graph scheduler",
                             std::lock_guard lock{observed_mutex};
                             downstream_thread = std::this_thread::get_id();
                             return input;
-                          })
+                          },
+                  wh::compose::graph_add_node_options{
+                      .sync_dispatch =
+                          wh::compose::sync_dispatch::inline_control})
               .has_value());
   REQUIRE(graph.add_entry_edge("restore").has_value());
   REQUIRE(graph.add_edge("restore", "downstream").has_value());
   REQUIRE(graph.add_exit_edge("downstream").has_value());
   REQUIRE(graph.compile().has_value());
 
+  exec::static_thread_pool control_pool{1U};
+  exec::static_thread_pool work_pool{1U};
   exec::static_thread_pool launch_pool{1U};
   exec::static_thread_pool completion_pool{1U};
+  const auto control_thread = scheduler_thread_id(control_pool.get_scheduler());
+  const auto work_thread = scheduler_thread_id(work_pool.get_scheduler());
   const auto launch_thread = scheduler_thread_id(launch_pool.get_scheduler());
   const auto completion_thread =
       scheduler_thread_id(completion_pool.get_scheduler());
   REQUIRE(launch_thread != completion_thread);
-  REQUIRE(launch_thread != worker_scheduler_thread);
+  REQUIRE(control_thread != completion_thread);
+  REQUIRE(control_thread != launch_thread);
+  REQUIRE(control_thread != worker_scheduler_thread);
+  REQUIRE(work_thread != control_thread);
 
   using launch_scheduler_t =
       std::remove_cvref_t<decltype(launch_pool.get_scheduler())>;
@@ -431,6 +571,9 @@ TEST_CASE("compose graph binds async node resume scheduler to graph scheduler",
       std::remove_cvref_t<decltype(completion_pool.get_scheduler())>;
 
   wh::core::run_context context{};
+  wh::compose::graph_invoke_schedulers schedulers{};
+  schedulers.set_control_scheduler(control_pool.get_scheduler())
+      .set_work_scheduler(work_pool.get_scheduler());
   auto receiver_state = std::make_shared<graph_test_receiver_state>();
   auto receiver =
       graph_scheduler_receiver<launch_scheduler_t, completion_scheduler_t>{
@@ -443,7 +586,9 @@ TEST_CASE("compose graph binds async node resume scheduler to graph scheduler",
               },
   };
 
-  auto op = stdexec::connect(graph.invoke(context, make_graph_request(wh::core::any(1))),
+  auto op = stdexec::connect(
+      graph.invoke(context, make_graph_request(wh::core::any(1)),
+                   std::move(schedulers)),
                              std::move(receiver));
   stdexec::start(op);
 
@@ -468,9 +613,12 @@ TEST_CASE("compose graph binds async node resume scheduler to graph scheduler",
   REQUIRE(observed_resumed_thread.has_value());
   REQUIRE(observed_downstream_thread.has_value());
   REQUIRE(*observed_worker_thread == worker_scheduler_thread);
+  REQUIRE(*observed_worker_thread != work_thread);
+  REQUIRE(*observed_worker_thread != control_thread);
   REQUIRE(*observed_worker_thread != launch_thread);
-  REQUIRE(*observed_resumed_thread == launch_thread);
+  REQUIRE(*observed_resumed_thread == work_thread);
   REQUIRE(*observed_resumed_thread != worker_scheduler_thread);
+  REQUIRE(*observed_resumed_thread != control_thread);
   REQUIRE(*observed_resumed_thread != completion_thread);
-  REQUIRE(*observed_downstream_thread == launch_thread);
+  REQUIRE(*observed_downstream_thread == control_thread);
 }

@@ -85,7 +85,8 @@ class pregel_runtime;
     graph_value &input, const graph_call_options *call_options,
     const node_path *path_prefix, graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+    const wh::core::detail::any_resume_scheduler_t &work_scheduler,
     const invoke_runtime::invoke_session *parent_state = nullptr,
     const graph_runtime_services *services = nullptr,
     graph_invoke_controls controls = {})
@@ -113,6 +114,13 @@ class graph {
     requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
   [[nodiscard]] auto make_invoke_sender(request_t &&request,
                                         wh::core::run_context &context) const
+      -> invoke_sender<graph_invoke_request>;
+
+  template <typename request_t>
+    requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+  [[nodiscard]] auto make_invoke_sender(request_t &&request,
+                                        wh::core::run_context &context,
+                                        graph_invoke_schedulers schedulers) const
       -> invoke_sender<graph_invoke_request>;
 
 public:
@@ -297,6 +305,12 @@ public:
   [[nodiscard]] auto invoke(wh::core::run_context &context,
                             request_t &&request) const -> auto;
 
+  template <typename request_t>
+    requires std::same_as<std::remove_cvref_t<request_t>, graph_invoke_request>
+  /// Invokes graph with explicit control/work schedulers.
+  [[nodiscard]] auto invoke(wh::core::run_context &context, request_t &&request,
+                            graph_invoke_schedulers schedulers) const -> auto;
+
 private:
   [[nodiscard]] auto core() noexcept -> detail::graph_core & {
     return core_storage_;
@@ -313,7 +327,8 @@ private:
       graph_value &input, const graph_call_options *call_options,
       const node_path *path_prefix, graph_process_state *parent_process_state,
       detail::runtime_state::invoke_outputs *nested_outputs,
-      const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
+      const wh::core::detail::any_resume_scheduler_t &control_scheduler,
+      const wh::core::detail::any_resume_scheduler_t &work_scheduler,
       const detail::invoke_runtime::invoke_session *parent_state,
       const graph_runtime_services *services, graph_invoke_controls controls)
       -> graph_sender;
@@ -347,7 +362,8 @@ private:
   using io_storage = detail::graph_core::io_storage;
   using dag_schedule = detail::graph_core::dag_schedule;
   using invoke_stage = detail::graph_core::invoke_stage;
-  using node_frame = detail::graph_core::node_frame;
+  using attempt_id = detail::graph_core::attempt_id;
+  using attempt_slot = detail::graph_core::attempt_slot;
   using state_step = detail::graph_core::state_step;
   using ready_action_kind = detail::graph_core::ready_action_kind;
   using ready_action = detail::graph_core::ready_action;
@@ -730,7 +746,7 @@ private:
       const std::uint32_t node_id, io_storage &io_storage,
       const std::vector<dag_node_phase> &dag_node_phases,
       const std::vector<branch_state> &branch_states,
-      wh::core::run_context &context, node_frame *frame,
+      wh::core::run_context &context, attempt_slot *slot,
       const detail::runtime_state::invoke_config &config,
       const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const
       -> graph_sender;
@@ -738,7 +754,7 @@ private:
   [[nodiscard]] auto build_pregel_node_input_sender(
       const std::uint32_t node_id, const pregel_node_inputs &inputs,
       io_storage &io_storage, wh::core::run_context &context,
-      node_frame *frame, const detail::runtime_state::invoke_config &config,
+      attempt_slot *slot, const detail::runtime_state::invoke_config &config,
       const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const
       -> graph_sender;
 
@@ -750,6 +766,9 @@ private:
 
   [[nodiscard]] auto resolve_node_parallel_gate(const std::uint32_t node_id) const
       -> std::size_t;
+
+  [[nodiscard]] auto resolve_node_sync_dispatch(const std::uint32_t node_id) const
+      -> sync_dispatch;
 
   [[nodiscard]] static auto resolve_branch_merge(
       const detail::runtime_state::invoke_config &config) noexcept

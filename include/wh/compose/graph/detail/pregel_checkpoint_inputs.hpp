@@ -39,7 +39,7 @@ detail::invoke_runtime::pregel_runtime::capture_pending_inputs()
     pending.push_back(pending_input{.node_id = node_id});
     senders.push_back(session.owner_->build_pregel_node_input_sender(
         node_id, inputs, session.io_storage_, session.context_, nullptr,
-        invoke.config, *invoke.graph_scheduler));
+        invoke.config, *invoke.work_scheduler));
   };
 
   for (const auto node_id : pregel_delivery_.current_frontier()) {
@@ -95,7 +95,7 @@ detail::invoke_runtime::pregel_runtime::capture_pending_inputs()
       [](pending_capture_stage &&) -> wh::core::result<graph_value> {
         return make_graph_unit_value();
       },
-      *invoke.graph_scheduler));
+      *invoke.work_scheduler));
 }
 
 } // namespace wh::compose

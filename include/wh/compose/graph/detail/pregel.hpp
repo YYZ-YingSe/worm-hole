@@ -7,43 +7,48 @@
 namespace wh::compose {
 
 inline auto
-detail::invoke_runtime::pregel_runtime::make_input_sender(node_frame *frame)
+detail::invoke_runtime::pregel_runtime::make_input_sender(
+    const attempt_id attempt)
     -> graph_sender {
   auto &invoke = session_.invoke_state();
+  auto &attempt_slot = session_.slot(attempt);
   return session_.owner_->build_pregel_node_input_sender(
-      frame->node_id, pregel_delivery_.current[frame->node_id],
-      session_.io_storage_, session_.context_, frame, invoke.config,
-      *invoke.graph_scheduler);
+      attempt_slot.node_id, pregel_delivery_.current[attempt_slot.node_id],
+      session_.io_storage_, session_.context_, std::addressof(attempt_slot),
+      invoke.config,
+      *invoke.work_scheduler);
 }
 
-inline auto detail::invoke_runtime::pregel_runtime::make_input_frame(
+inline auto detail::invoke_runtime::pregel_runtime::make_input_attempt(
     const std::uint32_t node_id, const std::size_t step)
-    -> wh::core::result<node_frame> {
-  return session_.make_input_frame(node_id, step);
+    -> wh::core::result<attempt_id> {
+  return session_.make_input_attempt(node_id, step);
 }
 
 inline auto detail::invoke_runtime::pregel_runtime::begin_state_pre(
-    node_frame &&frame, graph_value input) -> wh::core::result<state_step> {
-  return session_.begin_state_pre(std::move(frame), std::move(input));
+    const attempt_id attempt) -> wh::core::result<state_step> {
+  return session_.begin_state_pre(attempt);
 }
 
 inline auto detail::invoke_runtime::pregel_runtime::commit_terminal_input(
-    node_frame &&frame, graph_value input) -> wh::core::result<void> {
-  auto stored = session_.store_output(frame.node_id, std::move(input));
+    const attempt_id attempt, graph_value input) -> wh::core::result<void> {
+  auto &attempt_slot = session_.slot(attempt);
+  auto stored = session_.store_output(attempt_slot.node_id, std::move(input));
   if (stored.has_error()) {
     try_persist_checkpoint();
     return wh::core::result<void>::failure(stored.error());
   }
-  session_.state_table_.update(frame.node_id,
+  session_.state_table_.update(attempt_slot.node_id,
                                graph_node_lifecycle_state::completed, 0U,
                                std::nullopt);
-  session_.append_transition(frame.node_id,
+  session_.append_transition(attempt_slot.node_id,
                              graph_state_transition_event{
                                  .kind = graph_state_transition_kind::route_commit,
-                                 .cause = frame.cause,
+                                 .cause = attempt_slot.cause,
                                  .lifecycle =
                                      graph_node_lifecycle_state::completed,
                              });
+  session_.release_attempt(attempt);
   return {};
 }
 
@@ -104,8 +109,9 @@ public:
 
   auto enqueue_committed_node(const std::uint32_t) -> void {}
 
-  [[nodiscard]] auto build_input_sender(node_frame *frame) -> graph_sender {
-    return this->state().make_input_sender(frame);
+  [[nodiscard]] auto build_input_sender(const attempt_id attempt)
+      -> graph_sender {
+    return this->state().make_input_sender(attempt);
   }
 
   [[nodiscard]] auto build_freeze_sender(const bool external_interrupt)
@@ -115,10 +121,10 @@ public:
   }
 
   template <typename enqueue_fn_t>
-  auto commit_node_output(node_frame &&frame, graph_value node_output,
+  auto commit_node_output(const attempt_id attempt, graph_value node_output,
                           enqueue_fn_t &&enqueue_fn) -> wh::core::result<void> {
     return this->state().commit_node_output(
-        std::move(frame), std::move(node_output),
+        attempt, std::move(node_output),
         std::forward<enqueue_fn_t>(enqueue_fn));
   }
 
@@ -178,7 +184,7 @@ public:
     case pregel_action::kind::terminal_error:
       return wh::core::result<void>::failure(action.error);
     case pregel_action::kind::launch:
-      return this->launch_input_stage(std::move(*action.frame));
+      return this->launch_input_stage(action.attempt);
     }
     return {};
   }

@@ -335,6 +335,8 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
   const auto total_nodes = index.nodes_by_id.size();
   state_table_.reset(index.id_to_key);
   pending_inputs_.reset(total_nodes);
+  attempt_slots_.clear();
+  attempt_slots_.resize(total_nodes + 1U);
 
   detail::process_runtime::bind_parent_process_state(
       process_state_, invoke.parent_process_state);
@@ -426,6 +428,45 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
   interrupt.policy = resolve_external_interrupt_policy(invoke.bound_call_scope);
   interrupt.policy_latch = {};
   entry_input_ = std::move(input);
+}
+
+inline auto detail::invoke_runtime::invoke_session::control_attempt_id() const
+    noexcept -> attempt_id {
+  return attempt_id{static_cast<std::uint32_t>(node_count())};
+}
+
+inline auto
+detail::invoke_runtime::invoke_session::slot(const attempt_id attempt) noexcept
+    -> attempt_slot & {
+  wh_precondition(attempt.has_value());
+  wh_precondition(attempt.slot < attempt_slots_.size());
+  return attempt_slots_[attempt.slot];
+}
+
+inline auto detail::invoke_runtime::invoke_session::slot(
+    const attempt_id attempt) const noexcept -> const attempt_slot & {
+  wh_precondition(attempt.has_value());
+  wh_precondition(attempt.slot < attempt_slots_.size());
+  return attempt_slots_[attempt.slot];
+}
+
+inline auto
+detail::invoke_runtime::invoke_session::release_attempt(const attempt_id attempt)
+    noexcept -> void {
+  if (!attempt.has_value() || attempt.slot >= attempt_slots_.size()) {
+    return;
+  }
+  auto &attempt_slot = attempt_slots_[attempt.slot];
+  attempt_slot.node_local_scope.release(node_local_process_states_);
+  attempt_slot = detail::invoke_runtime::attempt_slot{};
+}
+
+inline auto detail::invoke_runtime::invoke_session::release_attempts() noexcept
+    -> void {
+  for (auto &attempt_slot : attempt_slots_) {
+    attempt_slot.node_local_scope.release(node_local_process_states_);
+    attempt_slot = detail::invoke_runtime::attempt_slot{};
+  }
 }
 
 inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(
@@ -749,11 +790,6 @@ inline auto detail::invoke_runtime::invoke_session::evaluate_resume_match(
     signal.interrupt_id = context_.interrupt_info->interrupt_id;
   }
   return std::optional<wh::core::interrupt_signal>{std::move(signal)};
-}
-
-inline auto detail::invoke_runtime::invoke_session::control_slot_id() const noexcept
-    -> std::uint32_t {
-  return static_cast<std::uint32_t>(node_count());
 }
 
 inline auto detail::invoke_runtime::invoke_session::request_freeze(

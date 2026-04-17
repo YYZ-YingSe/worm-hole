@@ -13,6 +13,7 @@
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/detail/context.hpp"
 #include "wh/compose/node/tools_contract.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 
 namespace wh::compose {
 namespace detail {
@@ -61,6 +62,60 @@ namespace detail {
   return calls;
 }
 
+using tool_after = wh::core::callback_function<wh::core::result<void>(
+    const tool_call &, graph_value &, const wh::tool::call_scope &) const>;
+
+struct tool_after_chain final
+    : wh::core::detail::intrusive_enable_from_this<tool_after_chain> {
+  std::vector<tool_after> handlers{};
+
+  tool_after_chain() = default;
+
+  explicit tool_after_chain(std::vector<tool_after> handlers_value)
+      : handlers(std::move(handlers_value)) {}
+};
+
+using tool_after_chain_ptr =
+    wh::core::detail::intrusive_ptr<const tool_after_chain>;
+
+[[nodiscard]] inline auto make_tool_after_chain(const tools_options &options)
+    -> tool_after_chain_ptr {
+  std::vector<tool_after> handlers{};
+  handlers.reserve(options.middleware.size());
+  for (const auto &middleware : options.middleware) {
+    if (!static_cast<bool>(middleware.after)) {
+      continue;
+    }
+    handlers.push_back(middleware.after);
+  }
+  if (handlers.empty()) {
+    return {};
+  }
+  return wh::core::detail::make_intrusive<tool_after_chain>(
+      std::move(handlers));
+}
+
+[[nodiscard]] inline auto has_tool_afters(
+    const tool_after_chain_ptr &afters) noexcept -> bool {
+  return static_cast<bool>(afters);
+}
+
+[[nodiscard]] inline auto run_after(const tool_after_chain_ptr &afters,
+                                    const tool_call &call, graph_value &value,
+                                    const wh::tool::call_scope &scope)
+    -> wh::core::result<void> {
+  if (!afters) {
+    return {};
+  }
+  for (const auto &after : afters->handlers) {
+    auto status = after(call, value, scope);
+    if (status.has_error()) {
+      return wh::core::result<void>::failure(status.error());
+    }
+  }
+  return {};
+}
+
 struct call_plan {
   std::size_t index{0U};
   const tool_call *call{nullptr};
@@ -77,10 +132,9 @@ struct call_completion {
 
 struct stream_completion {
   std::size_t index{0U};
-  tool_call call{};
+  std::string call_id{};
   graph_stream_reader stream{};
   graph_value rerun_extra{};
-  wh::core::run_context context{};
 };
 
 struct tools_state {
@@ -91,6 +145,7 @@ struct tools_state {
   std::optional<std::reference_wrapper<const tool_registry>> override_tools{};
   tools_rerun local_rerun{};
   std::optional<std::reference_wrapper<tools_rerun>> shared_rerun{};
+  tool_after_chain_ptr afters{};
   bool sequential{true};
   bool has_return_direct{false};
   std::vector<call_plan> plans{};
@@ -144,6 +199,7 @@ struct tools_state {
   tools_state state{};
   state.options = std::addressof(options);
   state.default_tools = std::addressof(tools);
+  state.afters = make_tool_after_chain(options);
   state.sequential = options.sequential;
 
   if (runtime.call_options() != nullptr && runtime.call_options()->tools().has_value()) {

@@ -79,7 +79,7 @@ TEST_CASE("compose graph resume matching respects runtime node-path prefix",
   auto invoked = wait_sender_result<wh::core::result<wh::compose::graph_value>>(
       wh::compose::detail::start_bound_graph(
           graph, context, nested_input, nullptr, &path_prefix, nullptr, nullptr,
-          inline_graph_scheduler()));
+          inline_graph_scheduler(), inline_graph_scheduler()));
   REQUIRE(invoked.has_value());
   auto typed = read_any<int>(invoked.value());
   REQUIRE(typed.has_value());

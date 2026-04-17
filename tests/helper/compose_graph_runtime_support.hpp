@@ -90,6 +90,7 @@ namespace wh::testing::helper {
       context,
       wh::compose::graph_call_options{},
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
 }
 

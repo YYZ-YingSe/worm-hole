@@ -86,3 +86,67 @@ TEST_CASE("invoke stage run honors node timeout overrides when settling executio
   REQUIRE(invoked->report.node_timeout_error->timeout ==
           std::chrono::milliseconds{5});
 }
+
+TEST_CASE("invoke stage run restores retained stream input before retrying a consumed node",
+          "[UT][wh/compose/graph/detail/invoke_stage_run.hpp][invoke_stage_run::launch_node_from_retained_input][retry][stream]") {
+  wh::compose::graph_compile_options options{};
+  options.mode = wh::compose::graph_runtime_mode::dag;
+  options.retry_budget = 1U;
+  options.boundary = {
+      .input = wh::compose::node_contract::stream,
+      .output = wh::compose::node_contract::value,
+  };
+  wh::compose::graph graph{std::move(options)};
+
+  int attempts = 0;
+  REQUIRE(graph
+              .add_lambda<wh::compose::node_contract::stream,
+                          wh::compose::node_contract::value>(
+                  "worker",
+                  [&attempts](wh::compose::graph_stream_reader input,
+                              wh::core::run_context &,
+                              const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    auto chunks =
+                        wh::compose::collect_graph_stream_reader(std::move(input));
+                    if (chunks.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(
+                          chunks.error());
+                    }
+                    ++attempts;
+                    if (attempts == 1) {
+                      return wh::core::result<wh::compose::graph_value>::failure(
+                          wh::core::errc::unavailable);
+                    }
+                    REQUIRE(chunks->size() == 1U);
+                    auto typed =
+                        wh::testing::helper::read_graph_value<std::string>(
+                            chunks->front());
+                    if (typed.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(
+                          typed.error());
+                    }
+                    return wh::compose::graph_value{
+                        typed.value() + "-replayed"};
+                  })
+              .has_value());
+  REQUIRE(graph.add_entry_edge("worker").has_value());
+  REQUIRE(graph.add_exit_edge("worker").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  auto input_reader =
+      wh::compose::make_single_value_stream_reader(std::string{"chunk"});
+  REQUIRE(input_reader.has_value());
+
+  wh::core::run_context context{};
+  auto invoked = wh::testing::helper::invoke_graph_sync(
+      graph, wh::compose::graph_value{std::move(input_reader).value()},
+      context);
+  REQUIRE(invoked.has_value());
+  REQUIRE(invoked->output_status.has_value());
+  auto typed = wh::testing::helper::read_graph_value<std::string>(
+      std::move(invoked->output_status).value());
+  REQUIRE(typed.has_value());
+  REQUIRE(typed.value() == "chunk-replayed");
+  REQUIRE(attempts == 2);
+}

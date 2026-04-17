@@ -23,13 +23,13 @@ public:
       -> wh::core::result<void>;
   [[nodiscard]] auto start_entry(graph_value input) -> wh::core::result<void>;
 
-  [[nodiscard]] auto make_input_sender(node_frame *frame) -> graph_sender;
-  [[nodiscard]] auto make_input_frame(const std::uint32_t node_id,
-                                      std::size_t step)
-      -> wh::core::result<node_frame>;
-  [[nodiscard]] auto begin_state_pre(node_frame &&frame, graph_value input)
+  [[nodiscard]] auto make_input_sender(attempt_id attempt) -> graph_sender;
+  [[nodiscard]] auto make_input_attempt(const std::uint32_t node_id,
+                                        std::size_t step)
+      -> wh::core::result<attempt_id>;
+  [[nodiscard]] auto begin_state_pre(attempt_id attempt)
       -> wh::core::result<state_step>;
-  auto commit_terminal_input(node_frame &&frame, graph_value input)
+  auto commit_terminal_input(attempt_id attempt, graph_value input)
       -> wh::core::result<void>;
 
   [[nodiscard]] auto finish() -> wh::core::result<graph_value>;
@@ -37,7 +37,7 @@ public:
   [[nodiscard]] auto capture_pending_inputs() -> graph_sender;
 
   template <typename enqueue_fn_t>
-  auto commit_node_output(node_frame &&frame, graph_value node_output,
+  auto commit_node_output(attempt_id attempt, graph_value node_output,
                           enqueue_fn_t &&enqueue_fn)
       -> wh::core::result<void>;
 

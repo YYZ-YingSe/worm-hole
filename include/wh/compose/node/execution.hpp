@@ -131,18 +131,33 @@ public:
     return path_;
   }
 
-  /// Binds the graph scheduler fixed by the enclosing invoke run.
-  auto set_graph_scheduler(
+  /// Binds the control scheduler fixed by the enclosing invoke run.
+  auto set_control_scheduler(
       const wh::core::detail::any_resume_scheduler_t *value) noexcept
       -> node_runtime & {
-    graph_scheduler_ = value;
+    control_scheduler_ = value;
     return *this;
   }
 
-  /// Returns the graph scheduler fixed by the enclosing invoke run.
-  [[nodiscard]] auto graph_scheduler() const noexcept
+  /// Returns the control scheduler fixed by the enclosing invoke run.
+  [[nodiscard]] auto control_scheduler() const noexcept
       -> const wh::core::detail::any_resume_scheduler_t * {
-    return graph_scheduler_;
+    return control_scheduler_;
+  }
+
+  /// Binds the work scheduler fixed by the enclosing invoke run.
+  auto set_work_scheduler(
+      const wh::core::detail::any_resume_scheduler_t *value) noexcept
+      -> node_runtime & {
+    work_scheduler_ = value;
+    return *this;
+  }
+
+  /// Returns the work scheduler for this node run. When unset it falls back to
+  /// the control scheduler.
+  [[nodiscard]] auto work_scheduler() const noexcept
+      -> const wh::core::detail::any_resume_scheduler_t * {
+    return work_scheduler_ != nullptr ? work_scheduler_ : control_scheduler_;
   }
 
   /// Binds the local process-state visible to this node run.
@@ -186,7 +201,8 @@ private:
   std::size_t parallel_gate_{0U};
   const graph_call_scope *call_options_{nullptr};
   const node_path *path_{nullptr};
-  const wh::core::detail::any_resume_scheduler_t *graph_scheduler_{nullptr};
+  const wh::core::detail::any_resume_scheduler_t *control_scheduler_{nullptr};
+  const wh::core::detail::any_resume_scheduler_t *work_scheduler_{nullptr};
   graph_process_state *process_state_{nullptr};
   const graph_resolved_node_observation *observation_{nullptr};
   const graph_node_trace *trace_{nullptr};
@@ -334,7 +350,7 @@ template <node_async_run run_t>
                                 wh::core::run_context &context,
                                 const node_runtime &runtime) -> graph_sender {
     auto sender = stored.value(input, context, runtime);
-    if (runtime.graph_scheduler() == nullptr) {
+    if (runtime.work_scheduler() == nullptr) {
       return failure_graph_sender(wh::core::errc::contract_violation);
     }
     if constexpr (std::same_as<std::remove_cvref_t<decltype(sender)>,
@@ -342,7 +358,7 @@ template <node_async_run run_t>
       return bridge_graph_sender(std::move(sender));
     }
     return bridge_graph_sender(wh::core::detail::write_sender_scheduler(
-        std::move(sender), *runtime.graph_scheduler()));
+        std::move(sender), *runtime.work_scheduler()));
   }};
 }
 
@@ -357,11 +373,11 @@ template <graph_result_sender sender_t>
   return node_async_factory{[stored = std::move(stored)](
                                 graph_value &, wh::core::run_context &,
                                 const node_runtime &runtime) -> graph_sender {
-    if (runtime.graph_scheduler() == nullptr) {
+    if (runtime.work_scheduler() == nullptr) {
       return failure_graph_sender(wh::core::errc::contract_violation);
     }
     return bridge_graph_sender(wh::core::detail::write_sender_scheduler(
-        stored.value, *runtime.graph_scheduler()));
+        stored.value, *runtime.work_scheduler()));
   }};
 }
 

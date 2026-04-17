@@ -19,6 +19,7 @@
 #include "wh/compose/runtime/state.hpp"
 #include "wh/compose/types.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 
 namespace wh::compose {
 
@@ -102,6 +103,29 @@ struct graph_invoke_controls {
     /// Optional subgraph interrupt signals forwarded into this invoke.
     std::vector<wh::core::interrupt_signal> subgraph_signals{};
   } interrupt{};
+};
+
+/// Explicit invoke scheduler pair resolved at graph entry.
+struct graph_invoke_schedulers {
+  /// Control-plane scheduler that owns resume / frontier / settle.
+  std::optional<wh::core::detail::any_resume_scheduler_t> control_scheduler{};
+  /// Work-plane scheduler for node work and runtime-owned async lowering.
+  std::optional<wh::core::detail::any_resume_scheduler_t> work_scheduler{};
+
+  template <typename scheduler_t>
+  auto set_control_scheduler(scheduler_t scheduler)
+      -> graph_invoke_schedulers & {
+    control_scheduler =
+        wh::core::detail::erase_resume_scheduler(std::move(scheduler));
+    return *this;
+  }
+
+  template <typename scheduler_t>
+  auto set_work_scheduler(scheduler_t scheduler) -> graph_invoke_schedulers & {
+    work_scheduler =
+        wh::core::detail::erase_resume_scheduler(std::move(scheduler));
+    return *this;
+  }
 };
 
 /// Structured runtime report returned after one graph invoke completes.

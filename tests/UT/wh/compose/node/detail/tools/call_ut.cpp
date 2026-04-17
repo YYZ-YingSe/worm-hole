@@ -13,6 +13,7 @@
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
 #include "wh/compose/node/detail/tools/call.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 
 namespace {
 
@@ -79,10 +80,9 @@ TEST_CASE("tools call helpers erase ready failure replay and direct dispatch pat
   auto ready_stream_reader = make_string_reader("ready");
   wh::compose::detail::stream_completion stream_completion{
       .index = 1U,
-      .call = {.call_id = "s", .tool_name = "stream"},
+      .call_id = "s",
       .stream = std::move(ready_stream_reader),
       .rerun_extra = wh::compose::graph_value{"extra-stream"},
-      .context = {},
   };
   auto ready_stream = wh::compose::detail::ready_sender<
       wh::compose::detail::stream_completion_sender>(
@@ -90,7 +90,7 @@ TEST_CASE("tools call helpers erase ready failure replay and direct dispatch pat
           std::move(stream_completion)});
   auto ready_stream_status = await_sender(std::move(ready_stream));
   REQUIRE(ready_stream_status.has_value());
-  REQUIRE(ready_stream_status.value().call.call_id == "s");
+  REQUIRE(ready_stream_status.value().call_id == "s");
 
   auto erased_call_completion = wh::compose::detail::erase_call_completion(
       stdexec::just(wh::core::result<wh::compose::detail::call_completion>{
@@ -273,8 +273,9 @@ TEST_CASE("tools call helpers erase ready failure replay and direct dispatch pat
               .has_value());
   REQUIRE(middleware_call.arguments == "payload-before");
   wh::compose::graph_value after_value{std::string{"payload-before"}};
-  REQUIRE(wh::compose::detail::run_after(options, middleware_call, after_value,
-                                         middleware_scope)
+  REQUIRE(wh::compose::detail::run_after(
+              wh::compose::detail::make_tool_after_chain(options),
+              middleware_call, after_value, middleware_scope)
               .has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&after_value) ==
           "payload-before-after");
@@ -348,6 +349,7 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
   sync_state.options = &sync_options;
   sync_state.default_tools = &sync_registry;
   sync_state.parent_context = &context;
+  sync_state.afters = wh::compose::detail::make_tool_after_chain(sync_options);
   sync_state.plans.push_back(
       {.index = 0U, .call = &sync_call, .call_id = "call-0"});
 
@@ -385,6 +387,8 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
   before_error_state.options = &before_error_options;
   before_error_state.default_tools = &sync_registry;
   before_error_state.parent_context = &context;
+  before_error_state.afters =
+      wh::compose::detail::make_tool_after_chain(before_error_options);
   before_error_state.plans.push_back(
       {.index = 0U, .call = &sync_call, .call_id = "call-0"});
   auto before_error =
@@ -404,6 +408,8 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
   after_error_state.options = &after_error_options;
   after_error_state.default_tools = &sync_registry;
   after_error_state.parent_context = &context;
+  after_error_state.afters =
+      wh::compose::detail::make_tool_after_chain(after_error_options);
   after_error_state.plans.push_back(
       {.index = 0U, .call = &sync_call, .call_id = "call-0"});
   auto after_error =
@@ -419,22 +425,31 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
   auto stream_values = wh::compose::collect_graph_stream_reader(
       std::move(stream_completion).value().stream);
   REQUIRE(stream_values.has_value());
-  REQUIRE(*wh::core::any_cast<std::string>(&stream_values.value().front()) ==
-          "payload-before");
+  auto *stream_event =
+      wh::core::any_cast<wh::compose::tool_event>(&stream_values.value().front());
+  REQUIRE(stream_event != nullptr);
+  REQUIRE(stream_event->call_id == "call-0");
+  REQUIRE(stream_event->tool_name == "echo");
+  REQUIRE(*wh::core::any_cast<std::string>(&stream_event->value) ==
+          "payload-before-after");
 
   auto cached_stream_state = sync_state;
   cached_stream_state.local_rerun.ids.insert("other");
   cached_stream_state.local_rerun.outputs.insert_or_assign(
       "call-0",
       wh::compose::graph_value{std::vector<wh::compose::graph_value>{
-          wh::compose::graph_value{1}}});
+          wh::compose::graph_value{std::string{"payload-before"}}}});
   auto replayed_stream =
       wh::compose::detail::run_stream_call(cached_stream_state, 0U, context);
   REQUIRE(replayed_stream.has_value());
   auto replayed_values = wh::compose::collect_graph_stream_reader(
       std::move(replayed_stream).value().stream);
   REQUIRE(replayed_values.has_value());
-  REQUIRE(*wh::core::any_cast<int>(&replayed_values.value().front()) == 1);
+  auto *replayed_event =
+      wh::core::any_cast<wh::compose::tool_event>(&replayed_values.value().front());
+  REQUIRE(replayed_event != nullptr);
+  REQUIRE(*wh::core::any_cast<std::string>(&replayed_event->value) ==
+          "payload-before-after");
 
   auto async_completion = await_sender(
       wh::compose::detail::start_call(sync_state, 0U, context));
@@ -448,8 +463,11 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
   auto async_stream_values = wh::compose::collect_graph_stream_reader(
       std::move(async_stream_completion).value().stream);
   REQUIRE(async_stream_values.has_value());
-  REQUIRE(*wh::core::any_cast<std::string>(&async_stream_values.value().front()) ==
-          "payload-before");
+  auto *async_stream_event = wh::core::any_cast<wh::compose::tool_event>(
+      &async_stream_values.value().front());
+  REQUIRE(async_stream_event != nullptr);
+  REQUIRE(*wh::core::any_cast<std::string>(&async_stream_event->value) ==
+          "payload-before-after");
 }
 
 TEST_CASE("tools stream sender erasure survives stop-driven completion",
@@ -547,10 +565,9 @@ TEST_CASE("tools sender erasures preserve outer stopped completion",
               REQUIRE(reader.has_value());
               return wh::compose::detail::stream_completion{
                   .index = 0U,
-                  .call = {.call_id = "s", .tool_name = "stream"},
+                  .call_id = "s",
                   .stream = std::move(reader).value(),
                   .rerun_extra = wh::compose::graph_value{"extra"},
-                  .context = {},
               };
             }));
       });

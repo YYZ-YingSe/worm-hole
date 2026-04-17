@@ -59,7 +59,8 @@ struct graph_core {
   using io_storage = runtime_io_storage;
   using dag_schedule = dag_schedule_state;
   using invoke_stage = detail::invoke_runtime::stage;
-  using node_frame = detail::invoke_runtime::node_frame;
+  using attempt_id = detail::invoke_runtime::attempt_id;
+  using attempt_slot = detail::invoke_runtime::attempt_slot;
   using state_step = detail::invoke_runtime::state_step;
   using ready_action_kind = detail::invoke_runtime::ready_action_kind;
   using ready_action = detail::invoke_runtime::ready_action;

@@ -2,8 +2,10 @@
 #pragma once
 
 #include <concepts>
+#include <functional>
 
 #include "wh/core/result.hpp"
+#include "wh/core/type_traits.hpp"
 
 namespace wh::schema::stream {
 
@@ -46,6 +48,34 @@ template <typename chunk_t>
   chunk_t chunk{};
   chunk.error = error;
   return chunk;
+}
+
+template <typename callback_t, typename input_value_t>
+concept adapter_callback =
+    std::invocable<callback_t &, const input_value_t &> ||
+    std::invocable<callback_t &, input_value_t &&>;
+
+template <typename callback_t, typename input_value_t>
+  requires std::invocable<callback_t &, input_value_t &&>
+[[nodiscard]] auto select_adapter_result(int)
+    -> wh::core::remove_cvref_t<
+        wh::core::callable_result_t<callback_t &, input_value_t &&>>;
+
+template <typename callback_t, typename input_value_t>
+  requires(!std::invocable<callback_t &, input_value_t &&> &&
+           std::invocable<callback_t &, const input_value_t &>)
+[[nodiscard]] auto select_adapter_result(long)
+    -> wh::core::remove_cvref_t<
+        wh::core::callable_result_t<callback_t &, const input_value_t &>>;
+
+template <typename callback_t, typename value_t>
+[[nodiscard]] decltype(auto) invoke_adapter_callback(callback_t &callback,
+                                                     value_t &&value) {
+  if constexpr (std::invocable<callback_t &, value_t>) {
+    return std::invoke(callback, std::forward<value_t>(value));
+  } else {
+    return std::invoke(callback, std::as_const(value));
+  }
 }
 
 struct stream_adapter_state {

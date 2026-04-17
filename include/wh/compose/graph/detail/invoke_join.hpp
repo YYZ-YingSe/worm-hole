@@ -84,16 +84,11 @@ protected:
   using outer_stop_callback_t =
       stdexec::stop_callback_for_t<outer_stop_token_t, outer_stop_callback>;
 
-  struct completion_payload {
-    node_frame frame{};
-    wh::core::result<graph_value> result{};
-  };
-
   struct child_receiver {
     using receiver_concept = stdexec::receiver_t;
 
     invoke_join_base *base{nullptr};
-    node_frame frame{};
+    attempt_id attempt{};
 
     auto set_value(wh::core::result<graph_value> result) noexcept -> void {
       complete(std::move(result));
@@ -119,7 +114,7 @@ protected:
   private:
     auto complete(wh::core::result<graph_value> result) noexcept -> void {
       auto *base_ptr = base;
-      base_ptr->enqueue_completion(std::move(frame), std::move(result));
+      base_ptr->enqueue_completion(attempt, std::move(result));
       base_ptr->request_resume();
       base_ptr->arrive();
     }
@@ -198,7 +193,7 @@ protected:
     [[nodiscard]] auto get() noexcept -> child_op_t & { return op_.get(); }
 
     wh::core::detail::manual_lifetime<child_op_t> op_{};
-    std::optional<completion_payload> completion{};
+    std::optional<wh::core::result<graph_value>> completion{};
     bool engaged_{false};
   };
 
@@ -343,18 +338,19 @@ protected:
 
   auto resume_turn_idle() noexcept -> void { maybe_complete(); }
 
-  auto start_child(graph_sender sender, node_frame &&frame)
+  auto start_child(graph_sender sender, const attempt_id attempt)
       -> wh::core::result<void> {
-    wh_precondition(frame.node_id < child_state_count_);
+    wh_precondition(attempt.has_value());
+    wh_precondition(attempt.slot < child_state_count_);
 
-    auto &child = child_states_[frame.node_id];
+    auto &child = child_states_[attempt.slot];
     wh_invariant(!child.engaged_);
 
     try {
       child.emplace(stdexec::associate(std::move(sender), scope_.get_token()),
                     child_receiver{
                         .base = this,
-                        .frame = std::move(frame),
+                        .attempt = attempt,
                     });
       ++active_child_count_;
       count_.fetch_add(1U, std::memory_order_relaxed);
@@ -377,18 +373,17 @@ protected:
         return;
       }
 
-      auto payload = std::move(*child.completion);
+      auto result = std::move(*child.completion);
       child.completion.reset();
       settle_child(slot_id);
+      const auto attempt = attempt_id{slot_id};
 
-      auto frame = std::move(payload.frame);
-      auto result = std::move(payload.result);
       if (terminal_pending() || completed()) {
-        release_fn(frame);
+        release_fn(attempt);
         return;
       }
 
-      auto settled = settle_fn(std::move(frame), std::move(result));
+      auto settled = settle_fn(attempt, std::move(result));
       if (settled.has_error()) {
         finish(wh::core::result<graph_value>::failure(settled.error()));
       }
@@ -533,21 +528,18 @@ private:
     stdexec::set_value(std::move(receiver_), std::move(status));
   }
 
-  auto enqueue_completion(node_frame &&frame,
+  auto enqueue_completion(const attempt_id attempt,
                           wh::core::result<graph_value> &&result) noexcept
       -> void {
-    const auto slot_id = frame.node_id;
-    wh_precondition(slot_id < child_state_count_);
-    auto &child = child_states_[slot_id];
+    wh_precondition(attempt.has_value());
+    wh_precondition(attempt.slot < child_state_count_);
+    auto &child = child_states_[attempt.slot];
     wh_invariant(!child.completion.has_value());
-    child.completion.emplace(completion_payload{
-        .frame = std::move(frame),
-        .result = std::move(result),
-    });
+    child.completion.emplace(std::move(result));
 #ifndef NDEBUG
-    wh_invariant(ready_children_.publish(slot_id));
+    wh_invariant(ready_children_.publish(attempt.slot));
 #else
-    ready_children_.publish(slot_id);
+    ready_children_.publish(attempt.slot);
 #endif
   }
 

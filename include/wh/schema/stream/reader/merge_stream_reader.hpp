@@ -474,14 +474,14 @@ private:
         round_state round{state_.lane_count()};
         round.lane_indices = std::move(spec.lanes);
         if (round.lane_indices.empty()) {
-          state_.complete_empty_round(0U);
+          state_.complete_round_without_winner(round.lane_indices);
           return status_type::failure(wh::core::errc::internal_error);
         }
 
         try {
           round.tracker.reset(round.lane_indices.size());
         } catch (...) {
-          state_.cancel_round();
+          state_.complete_round_without_winner(round.lane_indices);
           return status_type::failure(wh::core::errc::internal_error);
         }
 
@@ -547,19 +547,20 @@ private:
         auto outcome = round.tracker.take_outcome();
 
         if (outcome.winner_position.has_value() && outcome.winner_status.has_value()) {
-          auto resolution = state_.complete_round_winner(round.lane_indices[*outcome.winner_position],
-                                                         *outcome.winner_position,
-                                                         std::move(*outcome.winner_status));
+          auto resolution =
+              state_.complete_round_winner(round.lane_indices,
+                                           *outcome.winner_position,
+                                           std::move(*outcome.winner_status));
           state_.close_lane_if_needed(resolution.close_lane);
           return std::move(resolution.status);
         }
 
         if (outcome.stopped_without_winner) {
-          state_.cancel_round();
+          state_.complete_round_without_winner(round.lane_indices);
           return status_type::failure(wh::core::errc::internal_error);
         }
 
-        state_.complete_empty_round(round.lane_indices.size());
+        state_.complete_round_without_winner(round.lane_indices);
         return status_type::failure(wh::core::errc::internal_error);
       }
 
@@ -609,17 +610,18 @@ private:
       return topology_.lane_read_async(lane_index);
     }
 
-    [[nodiscard]] auto complete_round_winner(const std::size_t lane_index,
-                                             const std::size_t winner_offset, status_type status)
+    [[nodiscard]] auto complete_round_winner(const runtime::lane_list &round_lanes,
+                                             const std::size_t winner_position,
+                                             status_type status)
         -> round_resolution {
-      return topology_.complete_round_winner(lane_index, winner_offset, std::move(status));
+      return topology_.complete_round_winner(round_lanes, winner_position,
+                                             std::move(status));
     }
 
-    auto complete_empty_round(const std::size_t lane_count) -> void {
-      topology_.complete_empty_round(lane_count);
+    auto complete_round_without_winner(const runtime::lane_list &round_lanes)
+        -> void {
+      topology_.complete_round_without_winner(round_lanes);
     }
-
-    auto cancel_round() -> void { topology_.cancel_round(); }
 
     auto close_lane_if_needed(const std::optional<std::size_t> lane_index) -> void {
       topology_.close_lane_if_needed(lane_index);
@@ -1038,7 +1040,7 @@ private:
 
     [[nodiscard]] auto start_round(runtime::lane_list lanes) noexcept -> bool {
       if (lanes.empty()) {
-        state_->complete_empty_round(0U);
+        state_->complete_round_without_winner(lanes);
         set_terminal_value(
             stream_result<chunk_type>::failure(wh::core::errc::internal_error));
         return true;
@@ -1047,7 +1049,7 @@ private:
       try {
         construct_round();
       } catch (...) {
-        state_->cancel_round();
+        state_->complete_round_without_winner(lanes);
         set_terminal_error(std::current_exception());
         return true;
       }
@@ -1057,7 +1059,7 @@ private:
       try {
         round.tracker.reset(round.lane_indices.size());
       } catch (...) {
-        state_->cancel_round();
+        state_->complete_round_without_winner(round.lane_indices);
         destroy_round();
         set_terminal_error(std::current_exception());
         return true;
@@ -1117,7 +1119,7 @@ private:
 
       if (outcome.winner_position.has_value() && outcome.winner_status.has_value()) {
         auto resolution =
-            state_->complete_round_winner(lane_indices[*outcome.winner_position],
+            state_->complete_round_winner(lane_indices,
                                           *outcome.winner_position,
                                           std::move(*outcome.winner_status));
         state_->close_lane_if_needed(resolution.close_lane);
@@ -1127,7 +1129,7 @@ private:
       }
 
       if (outcome.stopped_without_winner) {
-        state_->cancel_round();
+        state_->complete_round_without_winner(lane_indices);
         destroy_round();
         if (stop_requested_.load(std::memory_order_acquire)) {
           set_terminal_stopped();
@@ -1138,7 +1140,7 @@ private:
         return true;
       }
 
-      state_->complete_empty_round(lane_indices.size());
+      state_->complete_round_without_winner(lane_indices);
       destroy_round();
       if (state_->topology_epoch() != round_topology_epoch_ || state_->has_pending_lanes()) {
         return false;
@@ -1160,7 +1162,7 @@ private:
         if (!round.finished || !round.publications_quiescent()) {
           return false;
         }
-        state_->cancel_round();
+        state_->complete_round_without_winner(round.lane_indices);
         destroy_round();
       }
 

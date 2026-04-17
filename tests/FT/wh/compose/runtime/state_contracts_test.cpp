@@ -298,7 +298,8 @@ TEST_CASE("compose graph runtime binds process-state parent chain from nested in
   auto invoked = wait_sender_result<wh::core::result<wh::compose::graph_value>>(
       wh::compose::detail::start_bound_graph(
           graph, context, nested_input, nullptr, nullptr, &parent, nullptr,
-          test_graph_scheduler(), nullptr, std::addressof(services)));
+          test_graph_scheduler(), test_graph_scheduler(), nullptr,
+          std::addressof(services)));
   REQUIRE(invoked.has_value());
   auto typed = read_graph_value<int>(invoked.value());
   REQUIRE(typed.has_value());
