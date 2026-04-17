@@ -6,6 +6,7 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/shared_state.hpp"
 
 namespace {
@@ -69,7 +70,7 @@ TEST_CASE("shared state reuses published try-read results across readers and clo
   auto stats = std::make_shared<source_stats>();
   stats->try_results = {std::optional<result_t>{result_t{3}}};
 
-  auto state = std::make_shared<
+  auto state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<scripted_async_source, policy_t>>(
       scripted_async_source{stats}, 2U);
 
@@ -90,34 +91,40 @@ TEST_CASE("shared state reuses published try-read results across readers and clo
   REQUIRE(stats->close_calls == 0);
 }
 
-TEST_CASE("shared state prepare_async_read remove_async_waiter and start_async_pull cover async waiter lifecycle",
-          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::prepare_async_read][branch][concurrency]") {
+TEST_CASE("shared state register_async_waiter remove_async_waiter and start_async_pull cover async waiter lifecycle",
+          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::register_async_waiter][branch][concurrency]") {
   using policy_t =
       wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
   auto stats = std::make_shared<source_stats>();
   stats->try_results = {std::nullopt};
   stats->async_result = result_t{8};
 
-  auto state = std::make_shared<
+  auto state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<scripted_async_source, policy_t>>(
       scripted_async_source{stats}, 1U);
 
   async_probe_waiter first_waiter{};
-  auto first_ticket = state->prepare_async_read(0U, &first_waiter);
+  auto first_ticket = state->register_async_waiter(0U, &first_waiter);
   REQUIRE_FALSE(first_ticket.ready.has_value());
+  REQUIRE(first_ticket.registered());
   REQUIRE(first_ticket.start_pull);
+  REQUIRE(first_waiter.waiting_registered());
   REQUIRE(state->remove_async_waiter(0U, &first_waiter));
+  REQUIRE_FALSE(first_waiter.waiting_registered());
   REQUIRE_FALSE(state->remove_async_waiter(0U, &first_waiter));
 
   async_probe_waiter second_waiter{};
-  auto second_ticket = state->prepare_async_read(0U, &second_waiter);
+  auto second_ticket = state->register_async_waiter(0U, &second_waiter);
   REQUIRE_FALSE(second_ticket.ready.has_value());
+  REQUIRE(second_ticket.registered());
   REQUIRE(second_ticket.start_pull);
+  REQUIRE(second_waiter.waiting_registered());
 
   state->start_async_pull(
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
 
   REQUIRE(second_waiter.completed);
+  REQUIRE_FALSE(second_waiter.waiting_registered());
   auto ready = second_waiter.take_ready();
   REQUIRE(ready.has_value());
   REQUIRE(ready.value() == 8);
@@ -130,7 +137,7 @@ TEST_CASE("shared state read_for uses blocking leader path and respects automati
   auto stats = std::make_shared<source_stats>();
   stats->read_results = {result_t{11}};
 
-  auto state = std::make_shared<
+  auto state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<scripted_async_source, policy_t>>(
       scripted_async_source{stats}, 1U);
   state->set_automatic_close(false);
@@ -145,9 +152,10 @@ TEST_CASE("shared state read_for uses blocking leader path and respects automati
   REQUIRE(stats->close_calls == 0);
 
   async_probe_waiter waiter{};
-  auto closed_ticket = state->prepare_async_read(0U, &waiter);
+  auto closed_ticket = state->register_async_waiter(0U, &waiter);
   REQUIRE(closed_ticket.ready.has_value());
   REQUIRE(closed_ticket.ready->has_error());
   REQUIRE(closed_ticket.ready->error() == wh::core::errc::channel_closed);
   REQUIRE_FALSE(closed_ticket.start_pull);
+  REQUIRE_FALSE(waiter.waiting_registered());
 }

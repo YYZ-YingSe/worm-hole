@@ -53,10 +53,17 @@
 #include "wh/tool/tool.hpp"
 
 #include "helper/async_coordination.hpp"
+#include "helper/compose_graph_runtime_support.hpp"
+#include "helper/compose_graph_test_utils.hpp"
+#include "helper/sender_capture.hpp"
+#include "helper/static_thread_scheduler.hpp"
 
 namespace {
 
 using graph_stream_result_sender = wh::compose::tools_stream_sender;
+using synchronized_scheduler_helper =
+    wh::testing::helper::static_thread_scheduler_helper;
+using wh::testing::helper::capture_exact_checkpoint;
 
 [[nodiscard]] auto make_int_graph_stream(std::initializer_list<int> values)
     -> wh::core::result<wh::compose::graph_stream_reader>;
@@ -104,18 +111,50 @@ struct collected_sum_consumer {
 
 template <typename result_t, stdexec::sender sender_t>
 [[nodiscard]] auto wait_sender_result(sender_t sender) -> result_t {
-  auto waited = stdexec::sync_wait(std::move(sender));
-  if (!waited.has_value()) {
+  constexpr auto timeout = std::chrono::seconds{30};
+  wh::testing::helper::sender_capture<result_t> capture{};
+  auto env = wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{});
+  auto operation = stdexec::connect(
+      std::move(sender),
+      wh::testing::helper::sender_capture_receiver<result_t, decltype(env)>{
+          &capture, env});
+  stdexec::start(operation);
+  if (!capture.ready.try_acquire_for(timeout)) {
+    return result_t::failure(wh::core::errc::timeout);
+  }
+  if (capture.terminal != wh::testing::helper::sender_terminal_kind::value ||
+      !capture.value.has_value()) {
     return result_t::failure(wh::core::errc::canceled);
   }
-  return std::move(std::get<0>(waited.value()));
+  return std::move(*capture.value);
 }
 
 template <typename input_t>
 [[nodiscard]] auto make_graph_request(input_t &&input)
     -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::forward<input_t>(input)};
+  request.input =
+      wh::compose::graph_input::value(std::forward<input_t>(input));
+  return request;
+}
+
+[[nodiscard]] auto make_graph_request(wh::compose::graph_input input)
+    -> wh::compose::graph_invoke_request {
+  wh::compose::graph_invoke_request request{};
+  request.input = std::move(input);
+  return request;
+}
+
+[[nodiscard]] auto
+make_graph_request(wh::compose::graph_value input)
+    -> wh::compose::graph_invoke_request {
+  wh::compose::graph_invoke_request request{};
+  if (auto *reader = wh::core::any_cast<wh::compose::graph_stream_reader>(&input);
+      reader != nullptr) {
+    request.input = wh::compose::graph_input::stream(std::move(*reader));
+  } else {
+    request.input = wh::compose::graph_input::value(std::move(input));
+  }
   return request;
 }
 
@@ -133,8 +172,7 @@ template <typename input_t>
     input_t &&input, wh::compose::graph_invoke_controls controls,
     const wh::compose::graph_runtime_services *services = nullptr)
     -> wh::compose::graph_invoke_request {
-  wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::forward<input_t>(input)};
+  auto request = make_graph_request(std::forward<input_t>(input));
   request.controls = std::move(controls);
   request.services = services;
   return request;
@@ -308,6 +346,37 @@ template <typename invokable_t, typename input_t>
 using synchronized_pair_gate_registry =
     wh::testing::helper::async_pair_gate_registry;
 
+struct synchronized_async_dispatchers {
+  using scheduler_type = synchronized_scheduler_helper::scheduler_type;
+
+  explicit synchronized_async_dispatchers(const std::uint32_t thread_count)
+      : threads_(std::max<std::uint32_t>(thread_count, 2U)),
+        left_(threads_.scheduler_on_thread(0U)),
+        right_(threads_.scheduler_on_thread(1U)) {}
+
+  auto warm() -> void {
+    auto left_ready =
+        stdexec::sync_wait(stdexec::schedule(left_) | stdexec::then([] {
+          return 0;
+        }));
+    REQUIRE(left_ready.has_value());
+
+    auto right_ready =
+        stdexec::sync_wait(stdexec::schedule(right_) | stdexec::then([] {
+          return 0;
+        }));
+    REQUIRE(right_ready.has_value());
+  }
+
+  [[nodiscard]] auto left() const -> scheduler_type { return left_; }
+  [[nodiscard]] auto right() const -> scheduler_type { return right_; }
+
+private:
+  synchronized_scheduler_helper threads_;
+  scheduler_type left_;
+  scheduler_type right_;
+};
+
 enum class synchronized_async_fan_in_shape : std::uint8_t {
   value = 0U,
   stream = 1U,
@@ -326,15 +395,15 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
 }
 
 [[nodiscard]] auto make_synchronized_async_value_source(
-    const std::shared_ptr<exec::static_thread_pool> &pool,
+    synchronized_async_dispatchers::scheduler_type scheduler,
     const std::shared_ptr<synchronized_pair_gate_registry> &gates,
     const int bias) {
-  return [pool, gates, bias](const wh::compose::graph_value &input,
-                             wh::core::run_context &,
-                             const wh::compose::graph_call_scope &) {
+  return [scheduler = std::move(scheduler), gates, bias](
+             const wh::compose::graph_value &input, wh::core::run_context &,
+             const wh::compose::graph_call_scope &) {
     auto copied_input = input;
     return wh::compose::detail::bridge_graph_sender(stdexec::starts_on(
-        pool->get_scheduler(),
+        scheduler,
         stdexec::just(std::move(copied_input)) |
             stdexec::let_value([gates, bias](wh::compose::graph_value payload)
                                    -> wh::compose::graph_sender {
@@ -354,16 +423,16 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
 }
 
 [[nodiscard]] auto make_synchronized_async_stream_source(
-    const std::shared_ptr<exec::static_thread_pool> &pool,
+    synchronized_async_dispatchers::scheduler_type scheduler,
     const std::shared_ptr<synchronized_pair_gate_registry> &gates,
     const int bias) {
-  return [pool, gates, bias](const wh::compose::graph_value &input,
-                             wh::core::run_context &,
-                             const wh::compose::graph_call_scope &)
+  return [scheduler = std::move(scheduler), gates, bias](
+             const wh::compose::graph_value &input, wh::core::run_context &,
+             const wh::compose::graph_call_scope &)
              -> graph_stream_result_sender {
     auto copied_input = input;
     auto sender = stdexec::starts_on(
-        pool->get_scheduler(),
+        scheduler,
         stdexec::just(std::move(copied_input)) |
             stdexec::let_value([gates, bias](wh::compose::graph_value payload)
                                    -> graph_stream_result_sender {
@@ -398,7 +467,7 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
 [[nodiscard]] auto build_synchronized_async_fan_in_graph(
     const synchronized_async_fan_in_shape shape,
     const wh::compose::graph_dispatch_policy dispatch_policy,
-    const std::shared_ptr<exec::static_thread_pool> &pool,
+    const std::shared_ptr<synchronized_async_dispatchers> &dispatchers,
     const std::shared_ptr<synchronized_pair_gate_registry> &gates)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph_compile_options options{};
@@ -415,14 +484,16 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
                             wh::compose::node_contract::value,
                             wh::compose::node_exec_mode::async>(
                     "left_source",
-                    make_synchronized_async_value_source(pool, gates, 0))
+                    make_synchronized_async_value_source(dispatchers->left(), gates,
+                                                         0))
                 .has_value());
     REQUIRE(graph
                 .add_lambda<wh::compose::node_contract::value,
                             wh::compose::node_contract::value,
                             wh::compose::node_exec_mode::async>(
                     "right_source",
-                    make_synchronized_async_value_source(pool, gates, 10))
+                    make_synchronized_async_value_source(dispatchers->right(),
+                                                         gates, 10))
                 .has_value());
     REQUIRE(graph
                 .add_lambda(
@@ -455,14 +526,16 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
                             wh::compose::node_contract::stream,
                             wh::compose::node_exec_mode::async>(
                     "left_source",
-                    make_synchronized_async_stream_source(pool, gates, 0))
+                    make_synchronized_async_stream_source(dispatchers->left(),
+                                                          gates, 0))
                 .has_value());
     REQUIRE(graph
                 .add_lambda<wh::compose::node_contract::value,
                             wh::compose::node_contract::stream,
                             wh::compose::node_exec_mode::async>(
                     "right_source",
-                    make_synchronized_async_stream_source(pool, gates, 10))
+                    make_synchronized_async_stream_source(dispatchers->right(),
+                                                          gates, 10))
                 .has_value());
     REQUIRE(graph
                 .add_lambda(
@@ -879,26 +952,48 @@ template <typename node_t>
   return "unknown";
 }
 
-inline auto set_checkpoint_start_input(wh::compose::checkpoint_state &state,
-                                       const int value) -> void {
-  state.rerun_inputs.insert_or_assign(
-      std::string{wh::compose::graph_start_node_key}, wh::core::any(value));
-}
-
-inline auto set_checkpoint_start_input(wh::compose::checkpoint_state &state,
-                                       wh::compose::graph_value value) -> void {
-  state.rerun_inputs.insert_or_assign(
-      std::string{wh::compose::graph_start_node_key}, std::move(value));
-}
-
-[[nodiscard]] auto checkpoint_rerun_input(
+[[nodiscard]] auto checkpoint_pending_input(
     const wh::compose::checkpoint_state &state, const std::string_view key)
     -> wh::core::result<int> {
-  const auto iter = state.rerun_inputs.find(key);
-  if (iter == state.rerun_inputs.end()) {
+  const auto *payload = [&]() -> const wh::compose::graph_value * {
+    const auto *pending = [&]() -> const wh::compose::checkpoint_pending_inputs * {
+      if (state.runtime.dag.has_value() && !state.runtime.pregel.has_value()) {
+        return std::addressof(state.runtime.dag->pending_inputs);
+      }
+      if (state.runtime.pregel.has_value() && !state.runtime.dag.has_value()) {
+        return std::addressof(state.runtime.pregel->pending_inputs);
+      }
+      if (state.restore_shape.options.mode == wh::compose::graph_runtime_mode::pregel &&
+          state.runtime.pregel.has_value()) {
+        return std::addressof(state.runtime.pregel->pending_inputs);
+      }
+      if (state.runtime.dag.has_value()) {
+        return std::addressof(state.runtime.dag->pending_inputs);
+      }
+      if (state.runtime.pregel.has_value()) {
+        return std::addressof(state.runtime.pregel->pending_inputs);
+      }
+      return nullptr;
+    }();
+    if (pending == nullptr) {
+      return nullptr;
+    }
+    if (key == wh::compose::graph_start_node_key) {
+      return pending->entry.has_value()
+                 ? std::addressof(*pending->entry)
+                 : nullptr;
+    }
+    for (const auto &node_input : pending->nodes) {
+      if (node_input.key == key) {
+        return std::addressof(node_input.input);
+      }
+    }
+    return nullptr;
+  }();
+  if (payload == nullptr) {
     return wh::core::result<int>::failure(wh::core::errc::not_found);
   }
-  return read_any<int>(iter->second);
+  return read_any<int>(*payload);
 }
 
 [[nodiscard]] auto make_int_graph_stream(std::initializer_list<int> values)
@@ -2254,14 +2349,11 @@ struct node_case_info {
                     .async_invoke =
                         [](wh::compose::tool_call call, wh::tool::call_scope)
                             -> wh::compose::tools_invoke_sender {
-                      return wh::compose::tools_invoke_sender{
-                          wh::core::detail::normalize_result_sender<
-                              wh::core::result<wh::compose::graph_value>>(
-                              stdexec::just(std::move(call.arguments)) |
-                              stdexec::then([](std::string value)
-                                                -> wh::core::result<wh::compose::graph_value> {
-                                return wh::core::any(std::string{"async:"} + value);
-                              }))};
+                      return stdexec::just(std::move(call.arguments)) |
+                             stdexec::then([](std::string value)
+                                               -> wh::core::result<wh::compose::graph_value> {
+                               return wh::core::any(std::string{"async:"} + value);
+                             });
                     }});
     return make_single_node_graph(wh::compose::make_tools_node<
                                   wh::compose::node_contract::value,
@@ -2277,15 +2369,12 @@ struct node_case_info {
                     .async_stream =
                         [](wh::compose::tool_call call, wh::tool::call_scope)
                             -> wh::compose::tools_stream_sender {
-                      return wh::compose::tools_stream_sender{
-                          wh::core::detail::normalize_result_sender<
-                              wh::core::result<wh::compose::graph_stream_reader>>(
-                              stdexec::just(std::move(call.arguments)) |
-                              stdexec::then([](std::string value)
-                                                -> wh::core::result<wh::compose::graph_stream_reader> {
-                                return make_string_graph_stream(
-                                    {value + ":a", value + ":b"});
-                              }))};
+                      return stdexec::just(std::move(call.arguments)) |
+                             stdexec::then([](std::string value)
+                                               -> wh::core::result<wh::compose::graph_stream_reader> {
+                               return make_string_graph_stream(
+                                   {value + ":a", value + ":b"});
+                             });
                     }});
     return make_single_node_graph(wh::compose::make_tools_node<
                                   wh::compose::node_contract::value,
@@ -4099,6 +4188,71 @@ TEST_CASE("compose graph runtime preserves async lambda move-only inputs",
   }
 }
 
+TEST_CASE(
+    "compose graph runtime rejects move-only value fanout to multiple async consumers",
+    "[core][compose][graph][runtime]") {
+  struct move_only_payload {
+    int value{0};
+
+    move_only_payload() = default;
+    explicit move_only_payload(const int current) : value(current) {}
+    move_only_payload(move_only_payload &&) noexcept = default;
+    auto operator=(move_only_payload &&) noexcept -> move_only_payload & = default;
+    move_only_payload(const move_only_payload &) = delete;
+    auto operator=(const move_only_payload &) -> move_only_payload & = delete;
+  };
+
+  for (const auto mode : runtime_modes()) {
+    DYNAMIC_SECTION(runtime_mode_name(mode)) {
+      wh::compose::graph_compile_options options{};
+      options.mode = mode;
+      wh::compose::graph graph{std::move(options)};
+      std::atomic<int> executions{0};
+      const auto make_worker =
+          [&executions](const int delta) {
+            return [delta, &executions](wh::compose::graph_value &input,
+                                        wh::core::run_context &,
+                                        const wh::compose::graph_call_scope &) {
+              executions.fetch_add(1, std::memory_order_relaxed);
+              auto payload = read_any<move_only_payload>(std::move(input));
+              if (payload.has_error()) {
+                return stdexec::just(
+                    wh::core::result<wh::compose::graph_value>::failure(
+                        payload.error()));
+              }
+              return stdexec::just(
+                  wh::core::result<wh::compose::graph_value>{
+                      wh::core::any(payload.value().value + delta)});
+            };
+          };
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::value,
+                              wh::compose::node_contract::value,
+                              wh::compose::node_exec_mode::async>(
+                      "left", make_worker(1))
+                  .has_value());
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::value,
+                              wh::compose::node_contract::value,
+                              wh::compose::node_exec_mode::async>(
+                      "right", make_worker(2))
+                  .has_value());
+      REQUIRE(graph.add_entry_edge("left").has_value());
+      REQUIRE(graph.add_entry_edge("right").has_value());
+      REQUIRE(graph.add_exit_edge("left").has_value());
+      REQUIRE(graph.add_exit_edge("right").has_value());
+      REQUIRE(graph.compile().has_value());
+
+      wh::core::run_context context{};
+      auto output = invoke_value_sync(
+          graph, wh::core::any(move_only_payload{12}), context);
+      REQUIRE(output.has_error());
+      REQUIRE(output.error() == wh::core::errc::contract_violation);
+      REQUIRE(executions.load(std::memory_order_relaxed) == 0);
+    }
+  }
+}
+
 TEST_CASE("compose node block pair matrix shard 0 remains stable",
           "[core][compose][graph][stress][pair]") {
   run_pair_matrix_shard(0U, 4U);
@@ -4623,12 +4777,9 @@ TEST_CASE("compose graph long mixed chain remains stable across repeated blocks"
                   .async_invoke =
                       [](wh::compose::tool_call call, wh::tool::call_scope)
                           -> wh::compose::tools_invoke_sender {
-                    return wh::compose::tools_invoke_sender{
-                        wh::core::detail::normalize_result_sender<
-                            wh::core::result<wh::compose::graph_value>>(
-                            stdexec::just(
-                                wh::core::result<wh::compose::graph_value>{
-                                    wh::core::any(call.arguments)}))};
+                    return stdexec::just(
+                        wh::core::result<wh::compose::graph_value>{
+                            wh::core::any(call.arguments)});
                   }});
           REQUIRE(append_node(wh::compose::make_tools_node<
                                   wh::compose::node_contract::value,
@@ -5064,9 +5215,9 @@ TEST_CASE("compose graph partial aggregation follows runtime barrier semantics",
                              " error=" + status.error().message() + "#" +
                              std::to_string(status.error().value());
 
-          if (!status.value().report.last_completed_nodes.empty()) {
+          if (!status.value().report.completed_node_keys.empty()) {
             std::string completed_text{};
-            for (const auto &node_key : status.value().report.last_completed_nodes) {
+            for (const auto &node_key : status.value().report.completed_node_keys) {
               if (!completed_text.empty()) {
                 completed_text += ",";
               }
@@ -5620,10 +5771,12 @@ TEST_CASE(
 
   for (const auto dispatch_policy : dispatch_policies) {
     DYNAMIC_SECTION(synchronized_dispatch_name(dispatch_policy)) {
-      auto pool = std::make_shared<exec::static_thread_pool>(2U);
+      auto dispatchers = std::make_shared<synchronized_async_dispatchers>(2U);
+      dispatchers->warm();
       auto gates = std::make_shared<synchronized_pair_gate_registry>();
       auto graph = build_synchronized_async_fan_in_graph(
-          synchronized_async_fan_in_shape::value, dispatch_policy, pool, gates);
+          synchronized_async_fan_in_shape::value, dispatch_policy, dispatchers,
+          gates);
       REQUIRE(graph.has_value());
 
       auto errors = run_synchronized_async_fan_in_wave(
@@ -5648,12 +5801,14 @@ TEST_CASE(
 
   for (const auto dispatch_policy : dispatch_policies) {
     DYNAMIC_SECTION(synchronized_dispatch_name(dispatch_policy)) {
-      // Keep the external pool wide enough so sibling completion gates do not
-      // deadlock the test itself before the runtime sees both completions.
-      auto pool = std::make_shared<exec::static_thread_pool>(8U);
+      // Pin sibling branches to dedicated workers so the test exercises graph
+      // fan-in semantics instead of anonymous pool fairness.
+      auto dispatchers = std::make_shared<synchronized_async_dispatchers>(2U);
+      dispatchers->warm();
       auto gates = std::make_shared<synchronized_pair_gate_registry>();
       auto graph = build_synchronized_async_fan_in_graph(
-          synchronized_async_fan_in_shape::value, dispatch_policy, pool, gates);
+          synchronized_async_fan_in_shape::value, dispatch_policy, dispatchers,
+          gates);
       REQUIRE(graph.has_value());
 
       auto errors = run_synchronized_async_fan_in_wave(
@@ -5678,10 +5833,12 @@ TEST_CASE(
 
   for (const auto dispatch_policy : dispatch_policies) {
     DYNAMIC_SECTION(synchronized_dispatch_name(dispatch_policy)) {
-      auto pool = std::make_shared<exec::static_thread_pool>(8U);
+      auto dispatchers = std::make_shared<synchronized_async_dispatchers>(2U);
+      dispatchers->warm();
       auto gates = std::make_shared<synchronized_pair_gate_registry>();
       auto graph = build_synchronized_async_fan_in_graph(
-          synchronized_async_fan_in_shape::stream, dispatch_policy, pool, gates);
+          synchronized_async_fan_in_shape::stream, dispatch_policy, dispatchers,
+          gates);
       REQUIRE(graph.has_value());
 
       auto errors = run_synchronized_async_fan_in_wave(
@@ -5764,10 +5921,10 @@ TEST_CASE("compose graph partial loop region matrix remains stable",
         const auto &detail = *status.value().report.step_limit_error;
         REQUIRE(detail.budget == budget);
         REQUIRE(detail.step > detail.budget);
-        REQUIRE(std::find(detail.completed_nodes.begin(),
-                          detail.completed_nodes.end(),
+        REQUIRE(std::find(detail.completed_node_keys.begin(),
+                          detail.completed_node_keys.end(),
                           std::string{"loop_a"}) !=
-                detail.completed_nodes.end());
+                detail.completed_node_keys.end());
       }
     }
   }
@@ -5890,29 +6047,18 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
           wh::compose::checkpoint_save_options save_options{};
           save_options.checkpoint_id = checkpoint_id;
 
-          wh::core::run_context context{};
-          wh::compose::graph_runtime_services services{};
-          services.checkpoint.store = std::addressof(store);
-          wh::compose::graph_invoke_controls controls{};
-          controls.checkpoint.save = save_options;
-          controls.checkpoint.before_save = wh::compose::checkpoint_state_modifier{
-              [](wh::compose::checkpoint_state &state,
-                 wh::core::run_context &) -> wh::core::result<void> {
-                set_checkpoint_start_input(state, 10);
-                return {};
-              }};
-
-          auto first = invoke_graph_sync(graph, wh::core::any(4), context, controls,
-                                         std::addressof(services));
-          REQUIRE(first.has_value());
-          REQUIRE(first.value().output_status.has_value());
-          REQUIRE(read_any<int>(first.value().output_status.value()).value() == 5);
+          wh::core::run_context capture_context{};
+          auto checkpoint =
+              capture_exact_checkpoint(graph, wh::core::any(10), capture_context);
+          REQUIRE(checkpoint.has_value());
+          checkpoint->checkpoint_id = checkpoint_id;
+          REQUIRE(store.save(std::move(checkpoint).value(), save_options).has_value());
 
           auto persisted = store.load(
               wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
           REQUIRE(persisted.has_value());
           REQUIRE(
-              checkpoint_rerun_input(persisted.value(),
+              checkpoint_pending_input(persisted.value(),
                                      wh::compose::graph_start_node_key)
                   .value() == 10);
 
@@ -5921,8 +6067,10 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
               wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id};
           resume_controls.checkpoint.save = save_options;
           wh::core::run_context resume_context{};
+          wh::compose::graph_runtime_services services{};
+          services.checkpoint.store = std::addressof(store);
           auto resumed =
-              invoke_graph_sync(graph, wh::core::any(std::monostate{}),
+              invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
                                 resume_context, resume_controls,
                                 std::addressof(services));
           REQUIRE(resumed.has_value());
@@ -5994,10 +6142,10 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
               wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
           REQUIRE(persisted.has_value());
           REQUIRE(
-              checkpoint_rerun_input(persisted.value(),
+              checkpoint_pending_input(persisted.value(),
                                      wh::compose::graph_start_node_key)
                   .value() == 9);
-          REQUIRE(checkpoint_rerun_input(persisted.value(), "worker").value() ==
+          REQUIRE(checkpoint_pending_input(persisted.value(), "worker").value() ==
                   9);
 
           wh::compose::graph_invoke_controls resume_controls{};
@@ -6006,7 +6154,7 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
           resume_controls.checkpoint.save = save_options;
           wh::core::run_context resume_context{};
           auto resumed =
-              invoke_graph_sync(graph, wh::core::any(std::monostate{}),
+              invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
                                 resume_context, resume_controls,
                                 std::addressof(services));
           REQUIRE(resumed.has_value());
@@ -6098,10 +6246,10 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
             wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
         REQUIRE(persisted.has_value());
         REQUIRE(
-            checkpoint_rerun_input(persisted.value(),
+            checkpoint_pending_input(persisted.value(),
                                    wh::compose::graph_start_node_key)
                 .value() == 12);
-        REQUIRE(checkpoint_rerun_input(persisted.value(), "tail").value() == 12);
+        REQUIRE(checkpoint_pending_input(persisted.value(), "tail").value() == 12);
 
         wh::compose::graph_invoke_controls resume_controls{};
         resume_controls.checkpoint.load =
@@ -6109,7 +6257,7 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
         resume_controls.checkpoint.save = save_options;
         wh::core::run_context resume_context{};
         auto resumed =
-            invoke_graph_sync(graph, wh::core::any(std::monostate{}),
+            invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
                               resume_context, resume_controls,
                               std::addressof(services));
         REQUIRE(resumed.has_value());
@@ -6169,38 +6317,40 @@ TEST_CASE("compose nested graph checkpoint restore matrix remains stable",
                wh::compose::checkpoint_save_options &&,
                wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
-        wh::compose::checkpoint_state middle_checkpoint{};
-        middle_checkpoint.checkpoint_id =
+        wh::core::run_context middle_capture_context{};
+        auto middle_checkpoint = capture_exact_checkpoint(
+            graphs.middle, wh::core::any(7), middle_capture_context);
+        REQUIRE(middle_checkpoint.has_value());
+        middle_checkpoint->checkpoint_id =
             std::string{"middle-"} + std::string{runtime_mode_name(mode)};
-        middle_checkpoint.restore_shape = graphs.middle.restore_shape();
-        set_checkpoint_start_input(middle_checkpoint,
-                                   wh::core::any(std::monostate{}));
 
-        wh::compose::checkpoint_state leaf_checkpoint{};
-        leaf_checkpoint.checkpoint_id =
+        wh::core::run_context leaf_capture_context{};
+        auto leaf_checkpoint = capture_exact_checkpoint(
+            graphs.leaf, wh::core::any(7), leaf_capture_context);
+        REQUIRE(leaf_checkpoint.has_value());
+        leaf_checkpoint->checkpoint_id =
             std::string{"leaf-"} + std::string{runtime_mode_name(mode)};
-        leaf_checkpoint.restore_shape = graphs.leaf.restore_shape();
-        set_checkpoint_start_input(leaf_checkpoint, 7);
 
         wh::compose::forwarded_checkpoint_map forwarded{};
-        forwarded.emplace(graphs.middle_path_key, std::move(middle_checkpoint));
-        forwarded.emplace(graphs.leaf_path_key, std::move(leaf_checkpoint));
+        forwarded.emplace(graphs.middle_path_key, std::move(middle_checkpoint).value());
+        forwarded.emplace(graphs.leaf_path_key, std::move(leaf_checkpoint).value());
 
         wh::core::run_context context{};
         wh::compose::graph_runtime_services services{};
         services.checkpoint.backend = std::addressof(backend);
 
         if (item == restore_case::matching_descendant) {
-          wh::compose::checkpoint_state ghost_checkpoint{};
-          ghost_checkpoint.checkpoint_id = "ghost";
-          ghost_checkpoint.restore_shape = graphs.leaf.restore_shape();
-          set_checkpoint_start_input(ghost_checkpoint, 99);
-          forwarded.emplace("ghost_graph", std::move(ghost_checkpoint));
+          wh::core::run_context ghost_capture_context{};
+          auto ghost_checkpoint = capture_exact_checkpoint(
+              graphs.leaf, wh::core::any(100), ghost_capture_context);
+          REQUIRE(ghost_checkpoint.has_value());
+          ghost_checkpoint->checkpoint_id = "ghost";
+          forwarded.emplace("ghost_graph", std::move(ghost_checkpoint).value());
 
           wh::compose::graph_invoke_controls controls{};
           controls.checkpoint.forwarded_once = std::move(forwarded);
           auto invoked = invoke_graph_sync(
-              graphs.parent, wh::core::any(std::monostate{}), context,
+              graphs.parent, wh::compose::graph_input::restore_checkpoint(), context,
               std::move(controls), std::addressof(services));
           REQUIRE(invoked.has_value());
           REQUIRE(invoked.value().output_status.has_value());

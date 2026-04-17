@@ -258,6 +258,10 @@ struct search_tool_impl {
     if (max_queries.has_error()) {
       return wh::tool::tool_invoke_result::failure(max_queries.error());
     }
+    auto frozen = flow.freeze();
+    if (frozen.has_error()) {
+      return wh::tool::tool_invoke_result::failure(frozen.error());
+    }
 
     wh::retriever::retriever_request retrieve_request{};
     retrieve_request.query = query;
@@ -312,6 +316,10 @@ auto main() -> int {
         }
         return ids;
       }};
+  auto indexing_frozen = indexing.freeze();
+  if (indexing_frozen.has_error()) {
+    return 1;
+  }
 
   wh::schema::document handbook{
       "Reset the build cache with ./build.sh --clean-root.|"
@@ -326,11 +334,11 @@ auto main() -> int {
   wh::core::run_context write_context{};
   auto indexed = stdexec::sync_wait(indexing.write(write_request, write_context));
   if (!indexed.has_value()) {
-    return 1;
+    return 2;
   }
   auto write_status = std::move(std::get<0>(indexed.value()));
   if (write_status.has_error() || write_status->success_count != 3U) {
-    return 2;
+    return 3;
   }
 
   wh::prompt::simple_chat_template prompt({
@@ -347,7 +355,7 @@ auto main() -> int {
   wh::core::run_context prompt_context{};
   auto rendered = prompt.render({context, {}}, prompt_context);
   if (rendered.has_error()) {
-    return 3;
+    return 4;
   }
 
   auto search_tool = wh::tool::tool{
@@ -388,38 +396,42 @@ auto main() -> int {
            .has_value()) {
     return 9;
   }
-
-  auto agent = wh::agent::make_agent(std::move(authored));
-  if (agent.has_error() || !agent->executable()) {
+  auto authored_frozen = authored.freeze();
+  if (authored_frozen.has_error()) {
     return 10;
   }
 
-  auto graph = agent->lower_graph();
-  if (graph.has_error()) {
+  auto agent = std::move(authored).into_agent();
+  if (agent.has_error() || !agent->executable()) {
     return 11;
   }
-  if (!graph->compiled() && !graph->compile().has_value()) {
+
+  auto graph = agent->lower();
+  if (graph.has_error()) {
     return 12;
+  }
+  if (!graph->compiled() && !graph->compile().has_value()) {
+    return 13;
   }
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any{rendered.value()};
+  request.input = wh::compose::graph_input::value(wh::core::any{rendered.value()});
 
   wh::core::run_context run_context{};
   auto invoked = stdexec::sync_wait(graph->invoke(run_context, std::move(request)));
   if (!invoked.has_value()) {
-    return 13;
+    return 14;
   }
 
   auto invoke_status = std::move(std::get<0>(invoked.value()));
   if (invoke_status.has_error() || !invoke_status->output_status.has_value()) {
-    return 14;
+    return 15;
   }
 
   auto *output = wh::core::any_cast<wh::agent::agent_output>(
       &invoke_status->output_status.value());
   if (output == nullptr) {
-    return 15;
+    return 16;
   }
 
   auto answer_iter = output->output_values.find("answer");

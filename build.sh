@@ -23,7 +23,7 @@ case "$1" in
   ci|local)
     exec "$PYTHON_BIN" "$ROOT/scripts/toolchain.py" "$@"
     ;;
-  configure|build|test|verify|clean|sync-thirdy-party)
+  configure|build|test|verify|clean|sync-third-party)
     exec "$PYTHON_BIN" "$ROOT/scripts/toolchain.py" local "$@"
     ;;
   help|-h|--help)
@@ -31,7 +31,7 @@ case "$1" in
     ;;
   *)
     echo "[build.sh] FAIL unsupported command: $1" >&2
-    echo "usage: ./build.sh <configure|build|test|verify|clean|sync-thirdy-party|local|ci> [...]" >&2
+    echo "usage: ./build.sh <configure|build|test|verify|clean|sync-third-party|local|ci> [...]" >&2
     exit 2
     ;;
 esac

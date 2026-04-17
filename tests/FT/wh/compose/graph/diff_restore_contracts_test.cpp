@@ -12,12 +12,15 @@
 #include "wh/compose/graph/restore_validation.hpp"
 #include "wh/compose/runtime.hpp"
 #include "wh/core/any.hpp"
+#include "helper/compose_graph_runtime_support.hpp"
+#include "helper/compose_graph_test_utils.hpp"
 #include "helper/static_thread_scheduler.hpp"
 #include "helper/sender_capture.hpp"
 
 namespace {
 
 using graph_result = wh::core::result<wh::compose::graph_invoke_result>;
+using wh::testing::helper::set_checkpoint_entry_input;
 
 template <typename value_t>
 [[nodiscard]] auto read_any(const wh::core::any &value)
@@ -81,20 +84,11 @@ template <typename value_t>
   return std::move(graph);
 }
 
-inline auto set_checkpoint_start_input(wh::compose::checkpoint_state &checkpoint,
-                                       const int value) -> void {
-  checkpoint.rerun_inputs.insert_or_assign(
-      std::string{wh::compose::graph_start_node_key},
-      wh::core::any(value));
-}
-
-[[nodiscard]] auto invoke_graph_int(wh::compose::graph &graph,
-                                    wh::core::run_context &context,
-                                    wh::compose::graph_value input,
-                                    const wh::compose::graph_runtime_services *services =
-                                        nullptr,
-                                    wh::compose::graph_invoke_controls controls = {})
-    -> wh::core::result<int> {
+[[nodiscard]] auto invoke_graph_int(
+    wh::compose::graph &graph, wh::core::run_context &context,
+    wh::compose::graph_input input,
+    const wh::compose::graph_runtime_services *services = nullptr,
+    wh::compose::graph_invoke_controls controls = {}) -> wh::core::result<int> {
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
   graph_result result{};
   wh::compose::graph_invoke_request request{};
@@ -153,10 +147,10 @@ TEST_CASE("compose validate_restore accepts matching snapshots and rejects chang
   wh::compose::checkpoint_state checkpoint{};
   checkpoint.checkpoint_id = "job-42";
   checkpoint.restore_shape = baseline.value().restore_shape();
-  checkpoint.node_states.push_back(wh::compose::graph_node_state{
+  checkpoint.runtime.lifecycle.push_back(wh::compose::graph_node_state{
       .key = "gate",
   });
-  set_checkpoint_start_input(checkpoint, 5);
+  set_checkpoint_entry_input(checkpoint, 5);
 
   auto matching = wh::compose::validate_restore(baseline.value(), checkpoint);
   REQUIRE(matching.has_value());
@@ -197,7 +191,7 @@ TEST_CASE("compose validate_restore ignores graph-name drift",
   wh::compose::checkpoint_state checkpoint{};
   checkpoint.checkpoint_id = "job-rename";
   checkpoint.restore_shape = checkpoint_graph.restore_shape();
-  set_checkpoint_start_input(checkpoint, 5);
+  set_checkpoint_entry_input(checkpoint, 5);
   REQUIRE(wh::compose::add_resume_target(checkpoint.resume_snapshot,
                                          "interrupt-1",
                                          wh::core::address{"graph-renamed",
@@ -220,13 +214,15 @@ TEST_CASE("compose checkpoint services and controls drive runtime restore throug
   REQUIRE(graph.has_value());
 
   wh::compose::checkpoint_store store{};
-  wh::compose::checkpoint_state checkpoint{};
-  checkpoint.checkpoint_id = "job-42";
-  checkpoint.restore_shape = graph.value().restore_shape();
-  set_checkpoint_start_input(checkpoint, 5);
-  REQUIRE(store.save(checkpoint, wh::compose::checkpoint_save_options{
-                                     .checkpoint_id = std::string{"job-42"},
-                                 })
+  wh::core::run_context capture_context{};
+  auto checkpoint = wh::testing::helper::capture_exact_checkpoint(
+      graph.value(), wh::core::any(5), capture_context);
+  REQUIRE(checkpoint.has_value());
+  checkpoint->checkpoint_id = "job-42";
+  REQUIRE(store.save(std::move(checkpoint).value(),
+                     wh::compose::checkpoint_save_options{
+                         .checkpoint_id = std::string{"job-42"},
+                     })
               .has_value());
 
   auto restore_plan = store.prepare_restore(
@@ -256,7 +252,7 @@ TEST_CASE("compose checkpoint services and controls drive runtime restore throug
 
   auto invoked =
       invoke_graph_int(graph.value(), context,
-                       wh::core::any(std::monostate{}), &services,
+                       wh::compose::graph_input::restore_checkpoint(), &services,
                        std::move(controls));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value() == 6);

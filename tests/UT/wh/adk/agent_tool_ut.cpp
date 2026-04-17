@@ -264,6 +264,12 @@ TEST_CASE("agent tool surface validates metadata schema freeze and runner dispat
   REQUIRE(tool.set_forward_internal_events(false).has_error());
   REQUIRE(tool.set_custom_schema({}).has_error());
   REQUIRE(tool.bind_runner(object_runner{}).has_error());
+
+  wh::adk::agent_tool missing_runner_tool{"missing", "missing runner",
+                                          wh::agent::agent{"worker"}};
+  auto missing_runner_freeze = missing_runner_tool.freeze();
+  REQUIRE(missing_runner_freeze.has_error());
+  REQUIRE(missing_runner_freeze.error() == wh::core::errc::not_found);
 }
 
 TEST_CASE("agent tool request history and entry paths map inputs flatten outputs and preserve boundary events",
@@ -287,6 +293,12 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
       .arguments = R"({"request":"hello bridge"})",
   };
   wh::core::run_context request_context{};
+  auto unfrozen_request_result = request_tool.run(
+      request_call,
+      make_call_scope(request_context, request_call.tool_name, request_call.call_id));
+  REQUIRE(unfrozen_request_result.has_error());
+  REQUIRE(unfrozen_request_result.error() == wh::core::errc::contract_violation);
+  REQUIRE(request_tool.freeze().has_value());
   auto request_result = request_tool.run(
       request_call,
       make_call_scope(request_context, request_call.tool_name, request_call.call_id));
@@ -326,6 +338,12 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
       .payload = wh::core::any(std::move(payload)),
   };
   wh::core::run_context history_context{};
+  auto unfrozen_history_result = history_tool.run(
+      history_call,
+      make_call_scope(history_context, history_call.tool_name, history_call.call_id));
+  REQUIRE(unfrozen_history_result.has_error());
+  REQUIRE(unfrozen_history_result.error() == wh::core::errc::contract_violation);
+  REQUIRE(history_tool.freeze().has_value());
   auto history_result = history_tool.run(
       history_call,
       make_call_scope(history_context, history_call.tool_name, history_call.call_id));
@@ -374,6 +392,10 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
                 };
               })
               .has_value());
+  auto unfrozen_live_entry = live_tool.compose_entry();
+  REQUIRE(unfrozen_live_entry.has_error());
+  REQUIRE(unfrozen_live_entry.error() == wh::core::errc::contract_violation);
+  REQUIRE(live_tool.freeze().has_value());
   auto live_entry = live_tool.compose_entry();
   REQUIRE(live_entry.has_value());
   wh::compose::tool_call live_call{
@@ -383,11 +405,16 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
   };
   wh::core::run_context live_context{};
   std::atomic<bool> produced{false};
+  std::atomic<bool> write_succeeded{false};
+  std::atomic<bool> close_succeeded{false};
   std::thread producer{[&]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    REQUIRE(message_writer.try_write(make_assistant_message("late chunk"))
-                .has_value());
-    REQUIRE(message_writer.close().has_value());
+    write_succeeded.store(
+        message_writer.try_write(make_assistant_message("late chunk"))
+            .has_value(),
+        std::memory_order_release);
+    close_succeeded.store(message_writer.close().has_value(),
+                          std::memory_order_release);
     produced.store(true, std::memory_order_release);
   }};
   auto live_stream = live_entry.value().stream(
@@ -411,6 +438,8 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
             wh::testing::helper::sender_terminal_kind::stopped);
   }
   producer.join();
+  REQUIRE(write_succeeded.load(std::memory_order_acquire));
+  REQUIRE(close_succeeded.load(std::memory_order_acquire));
   auto resumed = live_stream.value().read();
   REQUIRE(resumed.has_value());
   REQUIRE(resumed.value().value.has_value());
@@ -424,14 +453,12 @@ TEST_CASE("agent tool filters controls reports protocol and interrupt outcomes a
   REQUIRE(history_schema_tool
               .set_input_mode(wh::adk::agent_tool_input_mode::message_history)
               .has_value());
-  REQUIRE(history_schema_tool.freeze().has_value());
   auto history_schema = history_schema_tool.tool_schema();
   REQUIRE(history_schema.raw_parameters_json_schema.find("messages") !=
           std::string::npos);
 
   wh::adk::agent_tool request_schema_tool{"request", "request tool",
                                           wh::agent::agent{"worker"}};
-  REQUIRE(request_schema_tool.freeze().has_value());
   auto request_schema = request_schema_tool.tool_schema();
   REQUIRE(request_schema.parameters.size() == 1U);
   REQUIRE(request_schema.parameters.front().name == "request");
@@ -448,6 +475,7 @@ TEST_CASE("agent tool filters controls reports protocol and interrupt outcomes a
                 return run_scripted_agent_tool(*empty_state, request, context);
               })
               .has_value());
+  REQUIRE(empty_tool.freeze().has_value());
   wh::compose::tool_call empty_call{
       .call_id = "call-empty",
       .tool_name = "empty",
@@ -474,6 +502,7 @@ TEST_CASE("agent tool filters controls reports protocol and interrupt outcomes a
                 return run_scripted_agent_tool(*interrupt_state, request, context);
               })
               .has_value());
+  REQUIRE(interrupt_tool.freeze().has_value());
   wh::compose::tool_call interrupt_call{
       .call_id = "call-interrupt",
       .tool_name = "interrupt",

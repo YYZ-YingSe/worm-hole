@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <atomic>
 #include <functional>
 #include <span>
@@ -10,6 +11,9 @@
 
 #include <stdexec/execution.hpp>
 
+#include "helper/manual_scheduler.hpp"
+#include "helper/sender_capture.hpp"
+#include "helper/sender_env.hpp"
 #include "helper/test_thread_wait.hpp"
 #include "wh/core/compiler.hpp"
 #include "wh/tool/tool.hpp"
@@ -121,6 +125,83 @@ template <typename timing_checker_t, typename callback_t>
       std::move(context), std::forward<timing_checker_t>(timing_checker),
       std::move(callbacks), std::string{});
 }
+
+inline auto update_max_depth(std::atomic<int> &max_depth, const int current) noexcept
+    -> void {
+  auto previous = max_depth.load(std::memory_order_acquire);
+  while (previous < current &&
+         !max_depth.compare_exchange_weak(previous, current,
+                                          std::memory_order_acq_rel,
+                                          std::memory_order_acquire)) {
+  }
+}
+
+struct inline_retry_sender {
+  using sender_concept = stdexec::sender_t;
+  using completion_signatures =
+      stdexec::completion_signatures<stdexec::set_value_t(wh::tool::tool_invoke_result)>;
+
+  std::atomic<int> *attempts{nullptr};
+  std::atomic<int> *active_depth{nullptr};
+  std::atomic<int> *max_depth{nullptr};
+  int fail_before_success{0};
+
+  template <typename receiver_t> struct operation {
+    using operation_state_concept = stdexec::operation_state_t;
+
+    receiver_t receiver;
+    std::atomic<int> *attempts{nullptr};
+    std::atomic<int> *active_depth{nullptr};
+    std::atomic<int> *max_depth{nullptr};
+    int fail_before_success{0};
+
+    auto start() & noexcept -> void {
+      struct depth_guard {
+        std::atomic<int> *depth{nullptr};
+        ~depth_guard() {
+          depth->fetch_sub(1, std::memory_order_acq_rel);
+        }
+      };
+
+      const auto current =
+          active_depth->fetch_add(1, std::memory_order_acq_rel) + 1;
+      depth_guard guard{active_depth};
+      update_max_depth(*max_depth, current);
+
+      const auto attempt = attempts->fetch_add(1, std::memory_order_relaxed);
+      if (attempt < fail_before_success) {
+        stdexec::set_value(
+            std::move(receiver),
+            wh::tool::tool_invoke_result::failure(wh::core::errc::network_error));
+        return;
+      }
+      stdexec::set_value(std::move(receiver),
+                         wh::tool::tool_invoke_result{std::string{"ok"}});
+    }
+  };
+
+  template <typename receiver_t>
+  auto connect(receiver_t receiver) && -> operation<receiver_t> {
+    return operation<receiver_t>{std::move(receiver), attempts, active_depth,
+                                 max_depth, fail_before_success};
+  }
+};
+
+struct inline_retry_impl {
+  std::atomic<int> *attempts{nullptr};
+  std::atomic<int> *active_depth{nullptr};
+  std::atomic<int> *max_depth{nullptr};
+  int fail_before_success{0};
+
+  [[nodiscard]] auto invoke_sender(wh::tool::tool_request) const {
+    return inline_retry_sender{
+        .attempts = attempts,
+        .active_depth = active_depth,
+        .max_depth = max_depth,
+        .fail_before_success = fail_before_success,
+    };
+  }
+};
 
 } // namespace
 
@@ -328,6 +409,131 @@ TEST_CASE("tool wrapper preserves async validation retry and stream semantics",
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
   REQUIRE(first.value().value.value() == R"({"count":2})");
+}
+
+TEST_CASE("tool async stream survives external stop without dangling stop callbacks",
+          "[UT][wh/tool/tool.hpp][tool::async_stream][lifecycle][concurrency]") {
+  struct delayed_stream_impl {
+    wh::testing::helper::manual_scheduler<> scheduler{};
+
+    [[nodiscard]] auto
+    stream_sender(wh::tool::tool_request request) const {
+      return stdexec::schedule(scheduler) |
+             stdexec::then(
+                 [request = std::move(request)]() mutable
+                     -> wh::tool::tool_output_stream_result {
+                   return wh::tool::tool_output_stream_result{
+                       wh::schema::stream::make_single_value_stream_reader<std::string>(
+                           std::move(request.input_json))};
+                 });
+    }
+  };
+
+  wh::testing::helper::manual_scheduler_state scheduler_state{};
+  wh::schema::tool_schema_definition schema{};
+  schema.name = "delayed-stream";
+
+  wh::tool::tool delayed_tool{
+      schema,
+      delayed_stream_impl{
+          .scheduler = wh::testing::helper::manual_scheduler<>{&scheduler_state},
+      }};
+
+  wh::core::run_context context{};
+  wh::testing::helper::sender_capture<wh::tool::tool_output_stream_result>
+      capture{};
+  stdexec::inplace_stop_source stop_source{};
+
+  auto operation = stdexec::connect(
+      delayed_tool.async_stream(wh::tool::tool_request{"{}", {}}, context),
+      wh::testing::helper::sender_capture_receiver{
+          &capture,
+          wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
+                                                  stop_source.get_token()),
+      });
+
+  stdexec::start(operation);
+  REQUIRE(scheduler_state.pending_count() == 1U);
+
+  stop_source.request_stop();
+  REQUIRE(scheduler_state.run_one());
+  REQUIRE(capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.value.has_value());
+  REQUIRE(capture.value->has_error());
+  REQUIRE(capture.value->error() == wh::core::errc::canceled);
+}
+
+TEST_CASE("tool async invoke treats child set_stopped as terminal cancellation",
+          "[UT][wh/tool/tool.hpp][tool::async_invoke][stopped][concurrency]") {
+  wh::schema::tool_schema_definition schema{};
+  schema.name = "stopped-tool";
+
+  std::atomic<int> attempts{0};
+  struct stopped_invoke_impl {
+    std::atomic<int> *attempts{nullptr};
+
+    [[nodiscard]] auto invoke_sender(wh::tool::tool_request) const {
+      attempts->fetch_add(1, std::memory_order_relaxed);
+      return stdexec::just_stopped();
+    }
+  };
+
+  wh::tool::tool stopped_tool{
+      schema,
+      stopped_invoke_impl{.attempts = &attempts},
+  };
+
+  wh::tool::tool_options retry_options{};
+  retry_options.set_base(wh::tool::tool_common_options{
+      .failure_policy = wh::tool::tool_failure_policy::retry,
+      .max_retries = 3U});
+
+  wh::core::run_context context{};
+  auto result = wh::testing::helper::wait_value_on_test_thread(
+      stopped_tool.async_invoke(wh::tool::tool_request{"{}", retry_options},
+                                context));
+
+  REQUIRE(result.has_error());
+  REQUIRE(result.error() == wh::core::errc::canceled);
+  REQUIRE(attempts.load(std::memory_order_relaxed) == 1);
+}
+
+TEST_CASE("tool async invoke retries without recursive inline child starts",
+          "[UT][wh/tool/tool.hpp][tool::async_invoke][retry][trampoline]") {
+  std::atomic<int> attempts{0};
+  std::atomic<int> active_depth{0};
+  std::atomic<int> max_depth{0};
+
+  wh::schema::tool_schema_definition schema{};
+  schema.name = "inline-retry";
+
+  constexpr int fail_before_success = 256;
+  wh::tool::tool retry_tool{
+      schema,
+      inline_retry_impl{
+          .attempts = &attempts,
+          .active_depth = &active_depth,
+          .max_depth = &max_depth,
+          .fail_before_success = fail_before_success,
+      },
+  };
+
+  wh::tool::tool_options retry_options{};
+  retry_options.set_base(wh::tool::tool_common_options{
+      .failure_policy = wh::tool::tool_failure_policy::retry,
+      .max_retries = static_cast<std::size_t>(fail_before_success)});
+
+  wh::core::run_context context{};
+  auto result = wh::testing::helper::wait_value_on_test_thread(
+      retry_tool.async_invoke(wh::tool::tool_request{"{}", retry_options},
+                              context));
+
+  REQUIRE(result.has_value());
+  REQUIRE(result.value() == "ok");
+  REQUIRE(attempts.load(std::memory_order_relaxed) == fail_before_success + 1);
+  REQUIRE(max_depth.load(std::memory_order_relaxed) <= 16);
 }
 
 TEST_CASE(

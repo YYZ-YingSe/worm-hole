@@ -37,7 +37,8 @@ namespace {
     wh::compose::graph &graph, std::vector<wh::schema::message> messages)
     -> wh::agent::agent_output {
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any{std::move(messages)};
+  request.input =
+      wh::compose::graph_input::value(wh::core::any{std::move(messages)});
 
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
@@ -321,10 +322,12 @@ TEST_CASE("react graph lowers authored shells into executable graphs and binders
   REQUIRE(final_text != nullptr);
   REQUIRE(*final_text == "ok");
 
-  auto bound = wh::adk::detail::bind_react_agent(
-      wh::testing::helper::make_configured_react("bound-react", "assistant"));
+  auto bound_authored = wh::testing::helper::make_configured_react(
+      "bound-react", "assistant");
+  REQUIRE(bound_authored.freeze().has_value());
+  auto bound = wh::adk::detail::bind_react_agent(std::move(bound_authored));
   REQUIRE(bound.has_value());
-  auto bound_graph = bound->lower_graph();
+  auto bound_graph = bound->lower();
   REQUIRE(bound_graph.has_value());
   REQUIRE(bound_graph->compile().has_value());
 }

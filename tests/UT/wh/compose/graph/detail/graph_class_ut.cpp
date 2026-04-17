@@ -51,7 +51,7 @@ TEST_CASE("graph class declaration remains usable through detail header for cons
   REQUIRE(assigned.node_id("worker").has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{42};
+  request.input = wh::compose::graph_input::value(42);
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(assigned.invoke(context, std::move(request)));
   REQUIRE(waited.has_value());

@@ -67,6 +67,53 @@ TEST_CASE(
   REQUIRE(extract_int(second.value()[1]) == 5);
 }
 
+TEST_CASE("fork_graph_reader preserves the source reader and returns a sibling reader",
+          "[UT][wh/compose/graph/"
+          "stream.hpp][detail::fork_graph_reader][condition][branch][boundary]") {
+  auto source = wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
+      wh::compose::graph_value{11}, wh::compose::graph_value{13}});
+  REQUIRE(source.has_value());
+
+  auto sibling = wh::compose::detail::fork_graph_reader(source.value());
+  REQUIRE(sibling.has_value());
+
+  auto source_values = wh::compose::collect_graph_stream_reader(std::move(source).value());
+  REQUIRE(source_values.has_value());
+  REQUIRE(source_values.value().size() == 2U);
+  REQUIRE(extract_int(source_values.value()[0]) == 11);
+  REQUIRE(extract_int(source_values.value()[1]) == 13);
+
+  auto sibling_values = wh::compose::collect_graph_stream_reader(std::move(sibling).value());
+  REQUIRE(sibling_values.has_value());
+  REQUIRE(sibling_values.value().size() == 2U);
+  REQUIRE(extract_int(sibling_values.value()[0]) == 11);
+  REQUIRE(extract_int(sibling_values.value()[1]) == 13);
+
+  auto left = wh::compose::make_single_value_stream_reader(1);
+  REQUIRE(left.has_value());
+  auto right = wh::compose::make_single_value_stream_reader(2);
+  REQUIRE(right.has_value());
+
+  std::vector<wh::schema::stream::named_stream_reader<wh::compose::graph_stream_reader>> named{};
+  named.emplace_back("left", std::move(left).value());
+  named.emplace_back("right", std::move(right).value());
+  auto merged = wh::compose::detail::make_graph_merge_reader(std::move(named));
+
+  auto merged_sibling = wh::compose::detail::fork_graph_reader(merged);
+  REQUIRE(merged_sibling.has_value());
+  REQUIRE(merged.template target_if<
+              wh::schema::stream::merge_stream_reader<wh::compose::graph_stream_reader>>() !=
+          nullptr);
+  REQUIRE(merged_sibling.value().template target_if<
+              wh::schema::stream::merge_stream_reader<wh::compose::graph_stream_reader>>() !=
+          nullptr);
+
+  auto merged_values =
+      wh::compose::collect_graph_stream_reader(std::move(merged_sibling).value());
+  REQUIRE(merged_values.has_value());
+  REQUIRE(merged_values.value().size() == 2U);
+}
+
 TEST_CASE("make_graph_merge_reader merges named readers and builds dynamic source shells",
           "[UT][wh/compose/graph/"
           "stream.hpp][detail::make_graph_merge_reader][condition][branch][boundary]") {
@@ -111,6 +158,8 @@ TEST_CASE("fork_graph_reader_payload duplicates stream payloads and rejects non-
 
   auto sibling = wh::compose::detail::fork_graph_reader_payload(payload);
   REQUIRE(sibling.has_value());
+  REQUIRE_FALSE(payload.borrowed());
+  REQUIRE_FALSE(sibling.value().borrowed());
 
   auto *first_reader = wh::core::any_cast<wh::compose::graph_stream_reader>(&payload);
   REQUIRE(first_reader != nullptr);

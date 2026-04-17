@@ -62,6 +62,9 @@ function(wh_setup_third_party)
   if(BUILD_TESTING AND WH_BUILD_TESTING)
     wh_require_git_locked_dir("${WH_CATCH2_DIR}" "catch2")
   endif()
+  if(WH_BUILD_BENCHMARKS)
+    wh_require_git_locked_dir("${WH_BENCHMARK_DIR}" "benchmark")
+  endif()
 
   wh_require_source_header(
     "${WH_STDEXEC_DIR}/include/stdexec/execution.hpp"
@@ -79,6 +82,12 @@ function(wh_setup_third_party)
     "${WH_NLOHMANN_JSON_DIR}/include/nlohmann/json.hpp"
     "nlohmann_json header"
     "sync thirdy_party submodules or pass -DWH_NLOHMANN_JSON_DIR=<path>")
+  if(WH_BUILD_BENCHMARKS)
+    wh_require_source_header(
+      "${WH_BENCHMARK_DIR}/include/benchmark/benchmark.h"
+      "benchmark header"
+      "sync thirdy_party submodules or pass -DWH_BENCHMARK_DIR=<path>")
+  endif()
 
   wh_add_interface_include_library(
     wh_stdexec
@@ -102,4 +111,15 @@ function(wh_setup_third_party)
     "include/thirdy_party/minja")
 
   target_link_libraries(wh_minja INTERFACE nlohmann_json::nlohmann_json)
+
+  if(WH_BUILD_BENCHMARKS AND NOT TARGET benchmark::benchmark_main)
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_INSTALL_TOOLS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${WH_BENCHMARK_DIR}"
+                     "${PROJECT_BINARY_DIR}/thirdy_party/benchmark")
+  endif()
 endfunction()

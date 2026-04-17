@@ -71,6 +71,7 @@ TEST_CASE("flow public umbrella exposes retrieval and indexing facades through o
   retrieve_request.query = "hello";
   auto multi_query = wh::flow::retrieval::multi_query{make_retriever("mq:")};
   REQUIRE(multi_query.set_max_queries(2U).has_value());
+  REQUIRE(multi_query.freeze().has_value());
 
   auto retrieved_waited =
       stdexec::sync_wait(multi_query.retrieve(retrieve_request, context));
@@ -98,6 +99,7 @@ TEST_CASE("flow public umbrella exposes retrieval and indexing facades through o
         }
         return ids;
       }};
+  REQUIRE(parent.freeze().has_value());
 
   auto indexed_waited = stdexec::sync_wait(parent.write(index_request, context));
   REQUIRE(indexed_waited.has_value());

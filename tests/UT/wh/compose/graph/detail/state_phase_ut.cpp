@@ -15,7 +15,7 @@ namespace {
                                wh::compose::graph_value input)
     -> wh::core::result<wh::compose::graph_value> {
   wh::compose::graph_invoke_request request{};
-  request.input = std::move(input);
+  request.input = wh::compose::graph_input::value(std::move(input));
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(waited.has_value());

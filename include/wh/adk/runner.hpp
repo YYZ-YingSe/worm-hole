@@ -191,7 +191,8 @@ dispatch_run(const impl_t &impl, wh::compose::graph_invoke_request request,
 [[nodiscard]] inline auto lower_run_request(const run_request &request)
     -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request lowered{};
-  lowered.input = wh::core::any{request.messages};
+  lowered.input =
+      wh::compose::graph_input::value(wh::core::any{request.messages});
   lowered.controls = request.options.compose_controls;
   lowered.services = request.options.compose_services;
   return lowered;
@@ -222,7 +223,8 @@ template <typename impl_t>
 [[nodiscard]] inline auto lower_run_request(run_request &&request)
     -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request lowered{};
-  lowered.input = wh::core::any{std::move(request.messages)};
+  lowered.input = wh::compose::graph_input::value(
+      wh::core::any{std::move(request.messages)});
   lowered.controls = std::move(request.options.compose_controls);
   lowered.services = request.options.compose_services;
   return lowered;

@@ -118,7 +118,7 @@ TEST_CASE("graph invoke sender returns output status and report through public c
   REQUIRE(graph.compile().has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{1};
+  request.input = wh::compose::graph_input::value(1);
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(waited.has_value());

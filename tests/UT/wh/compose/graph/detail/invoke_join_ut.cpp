@@ -2,12 +2,116 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
+#include <stdexcept>
 #include <thread>
 
 #include <exec/static_thread_pool.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/graph/detail/invoke_join.hpp"
+
+namespace {
+
+struct invoke_join_receiver_state {
+  int value_count{0};
+  int error_count{0};
+  int stopped_count{0};
+  std::optional<wh::core::result<wh::compose::graph_value>> result{};
+};
+
+struct invoke_join_receiver {
+  using receiver_concept = stdexec::receiver_t;
+
+  invoke_join_receiver_state *state{nullptr};
+
+  auto set_value(wh::core::result<wh::compose::graph_value> result_value) && noexcept
+      -> void {
+    ++state->value_count;
+    state->result.emplace(std::move(result_value));
+  }
+
+  template <typename error_t> auto set_error(error_t &&) && noexcept -> void {
+    ++state->error_count;
+  }
+
+  auto set_stopped() && noexcept -> void { ++state->stopped_count; }
+
+  [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
+};
+
+struct throwing_scheduler_state {
+  std::size_t connect_calls{0U};
+  std::optional<std::size_t> fail_on_connect{};
+};
+
+struct throwing_scheduler {
+  using scheduler_concept = stdexec::scheduler_t;
+
+  template <typename receiver_t> struct schedule_op {
+    using operation_state_concept = stdexec::operation_state_t;
+
+    receiver_t receiver;
+
+    auto start() noexcept -> void { stdexec::set_value(std::move(receiver)); }
+  };
+
+  struct schedule_sender {
+    throwing_scheduler_state *state{nullptr};
+
+    using sender_concept = stdexec::sender_t;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t()>;
+
+    template <typename receiver_t>
+    auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
+      ++state->connect_calls;
+      if (state->fail_on_connect.has_value() &&
+          state->connect_calls == *state->fail_on_connect) {
+        throw std::runtime_error("schedule connect failed");
+      }
+      return schedule_op<receiver_t>{std::move(receiver)};
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
+  };
+
+  throwing_scheduler_state *state{nullptr};
+
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
+    return schedule_sender{state};
+  }
+
+  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept
+      -> bool = default;
+};
+
+class invoke_join_probe
+    : public wh::compose::detail::invoke_runtime::invoke_join_base<
+          invoke_join_receiver, invoke_join_probe, throwing_scheduler> {
+  using base_t = wh::compose::detail::invoke_runtime::invoke_join_base<
+      invoke_join_receiver, invoke_join_probe, throwing_scheduler>;
+
+public:
+  explicit invoke_join_probe(throwing_scheduler scheduler,
+                             invoke_join_receiver receiver)
+      : base_t(0U, std::move(scheduler), std::move(receiver)) {}
+
+  auto prepare_finish_delivery() noexcept -> void {}
+
+  auto resume() noexcept -> void {
+    if (this->terminal_pending()) {
+      return;
+    }
+    ++resume_calls;
+    this->finish(wh::core::result<wh::compose::graph_value>{
+        wh::compose::graph_value{7}});
+  }
+
+  int resume_calls{0};
+};
+
+} // namespace
 
 TEST_CASE("invoke join serializes async branch launches under graph parallel limits",
           "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::start_child][condition][branch][boundary][concurrency]") {
@@ -221,4 +325,44 @@ TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
   REQUIRE(typed.has_value());
   REQUIRE(typed.value() == 7);
   REQUIRE(max_active.load(std::memory_order_acquire) == 2);
+}
+
+TEST_CASE("invoke join maps resume scheduling setup failure into one terminal completion",
+          "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::request_resume][error][terminal]") {
+  throwing_scheduler_state scheduler_state{};
+  scheduler_state.fail_on_connect = 1U;
+
+  invoke_join_receiver_state receiver_state{};
+  invoke_join_probe operation{throwing_scheduler{&scheduler_state},
+                              invoke_join_receiver{&receiver_state}};
+
+  operation.start();
+
+  REQUIRE(scheduler_state.connect_calls == 2U);
+  REQUIRE(operation.resume_calls == 0);
+  REQUIRE(receiver_state.value_count == 1);
+  REQUIRE(receiver_state.error_count == 0);
+  REQUIRE(receiver_state.stopped_count == 0);
+  REQUIRE(receiver_state.result.has_value());
+  REQUIRE(receiver_state.result->has_error());
+}
+
+TEST_CASE("invoke join maps join setup failure over a prior terminal success",
+          "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::finish][error][terminal]") {
+  throwing_scheduler_state scheduler_state{};
+  scheduler_state.fail_on_connect = 2U;
+
+  invoke_join_receiver_state receiver_state{};
+  invoke_join_probe operation{throwing_scheduler{&scheduler_state},
+                              invoke_join_receiver{&receiver_state}};
+
+  operation.start();
+
+  REQUIRE(scheduler_state.connect_calls == 2U);
+  REQUIRE(operation.resume_calls == 1);
+  REQUIRE(receiver_state.value_count == 1);
+  REQUIRE(receiver_state.error_count == 0);
+  REQUIRE(receiver_state.stopped_count == 0);
+  REQUIRE(receiver_state.result.has_value());
+  REQUIRE(receiver_state.result->has_error());
 }

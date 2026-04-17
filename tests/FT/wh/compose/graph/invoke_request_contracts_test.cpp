@@ -27,7 +27,21 @@ template <typename input_t>
 [[nodiscard]] auto make_graph_request(input_t &&input)
     -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::forward<input_t>(input)};
+  request.input =
+      wh::compose::graph_input::value(std::forward<input_t>(input));
+  return request;
+}
+
+[[nodiscard]] auto
+make_graph_request(wh::compose::graph_value input)
+    -> wh::compose::graph_invoke_request {
+  wh::compose::graph_invoke_request request{};
+  if (auto *reader = wh::core::any_cast<wh::compose::graph_stream_reader>(&input);
+      reader != nullptr) {
+    request.input = wh::compose::graph_input::stream(std::move(*reader));
+  } else {
+    request.input = wh::compose::graph_input::value(std::move(input));
+  }
   return request;
 }
 
@@ -111,7 +125,7 @@ TEST_CASE("compose graph typed invoke request returns structured result and clea
   services.checkpoint.store = &store;
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any(7);
+  request.input = wh::compose::graph_input::value(7);
   request.services = &services;
   request.controls.call.record_transition_log = true;
   request.controls.call.stream_subscriptions.push_back(
@@ -157,7 +171,7 @@ TEST_CASE("compose graph typed invoke request preserves graph failure inside str
   REQUIRE(graph.compile().has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any(1);
+  request.input = wh::compose::graph_input::value(1);
   request.controls.call.record_transition_log = true;
 
   wh::core::run_context context{};
@@ -188,7 +202,7 @@ TEST_CASE("compose graph typed invoke request rejects conflicting checkpoint ser
   REQUIRE(graph.compile().has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any(3);
+  request.input = wh::compose::graph_input::value(3);
   wh::compose::checkpoint_store store{};
   wh::compose::checkpoint_backend backend{};
   wh::compose::graph_runtime_services services{};
@@ -205,6 +219,108 @@ TEST_CASE("compose graph typed invoke request rejects conflicting checkpoint ser
           wh::core::errc::invalid_argument);
   REQUIRE(invoke_status.value().report.checkpoint_error.has_value());
   REQUIRE(invoke_status.value().report.graph_run_error.has_value());
+}
+
+TEST_CASE("compose graph typed invoke request rejects restore checkpoint without restore source",
+          "[core][compose][invoke][boundary]") {
+  wh::compose::graph graph{};
+  auto added = graph.add_lambda<wh::compose::node_contract::value,
+                                wh::compose::node_contract::value>(
+      "passthrough",
+      [](const wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_value> {
+        return input;
+      });
+  REQUIRE(added.has_value());
+  REQUIRE(graph.add_entry_edge("passthrough").has_value());
+  REQUIRE(graph.add_exit_edge("passthrough").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::restore_checkpoint();
+
+  wh::core::run_context context{};
+  auto invoke_status = wh::testing::helper::wait_value_on_test_thread(
+      graph.invoke(context, std::move(request)));
+  REQUIRE(invoke_status.has_value());
+  REQUIRE(invoke_status.value().output_status.has_error());
+  REQUIRE(invoke_status.value().output_status.error() ==
+          wh::core::errc::invalid_argument);
+}
+
+TEST_CASE("compose graph typed invoke request rejects legacy monostate restore payload",
+          "[core][compose][invoke][boundary]") {
+  wh::compose::graph graph{};
+  auto added = graph.add_lambda<wh::compose::node_contract::value,
+                                wh::compose::node_contract::value>(
+      "passthrough",
+      [](const wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_value> {
+        return input;
+      });
+  REQUIRE(added.has_value());
+  REQUIRE(graph.add_entry_edge("passthrough").has_value());
+  REQUIRE(graph.add_exit_edge("passthrough").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::value(
+      wh::core::any(std::monostate{}));
+  request.controls.checkpoint.load = wh::compose::checkpoint_load_options{
+      .checkpoint_id = std::string{"legacy-monostate"},
+  };
+
+  wh::core::run_context context{};
+  auto invoke_status = wh::testing::helper::wait_value_on_test_thread(
+      graph.invoke(context, std::move(request)));
+  REQUIRE(invoke_status.has_value());
+  REQUIRE(invoke_status.value().output_status.has_error());
+  REQUIRE(invoke_status.value().output_status.error() ==
+          wh::core::errc::contract_violation);
+}
+
+TEST_CASE("compose graph typed invoke request accepts explicit restore on stream boundary",
+          "[core][compose][invoke][boundary]") {
+  wh::compose::graph graph{
+      wh::compose::graph_boundary{
+          .input = wh::compose::node_contract::stream,
+          .output = wh::compose::node_contract::stream,
+      }};
+  auto added = graph.add_lambda<wh::compose::node_contract::stream,
+                                wh::compose::node_contract::stream>(
+      "passthrough",
+      [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_stream_reader> {
+        return std::move(input);
+      });
+  REQUIRE(added.has_value());
+  REQUIRE(graph.add_entry_edge("passthrough").has_value());
+  REQUIRE(graph.add_exit_edge("passthrough").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  wh::compose::checkpoint_store store{};
+  wh::compose::graph_runtime_services services{};
+  services.checkpoint.store = &store;
+
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::restore_checkpoint();
+  request.services = &services;
+  request.controls.checkpoint.load = wh::compose::checkpoint_load_options{
+      .checkpoint_id = std::string{"missing-stream-checkpoint"},
+  };
+
+  wh::core::run_context context{};
+  auto invoke_status = wh::testing::helper::wait_value_on_test_thread(
+      graph.invoke(context, std::move(request)));
+  REQUIRE(invoke_status.has_value());
+  REQUIRE(invoke_status.value().output_status.has_error());
+  REQUIRE(invoke_status.value().output_status.error() !=
+          wh::core::errc::invalid_argument);
+  REQUIRE(invoke_status.value().output_status.error() !=
+          wh::core::errc::contract_violation);
 }
 
 TEST_CASE("compose graph async invoke does not destroy node sender op before callback returns",
@@ -229,7 +345,7 @@ TEST_CASE("compose graph async invoke does not destroy node sender op before cal
   REQUIRE(graph.compile().has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any(1);
+  request.input = wh::compose::graph_input::value(1);
 
   wh::core::run_context context{};
   wh::testing::helper::sender_capture<

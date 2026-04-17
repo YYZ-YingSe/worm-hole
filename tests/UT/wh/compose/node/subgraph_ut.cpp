@@ -59,7 +59,7 @@ TEST_CASE("subgraph nodes execute nested graphs and preserve compiled child snap
           child.boundary_output_gate());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{23};
+  request.input = wh::compose::graph_input::value(23);
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(parent.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());

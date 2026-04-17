@@ -394,8 +394,9 @@ public:
     using request_t = wh::compose::graph_invoke_request;
     using graph_sender_t = std::remove_cvref_t<decltype(map_graph_output_sender(
         graph_.invoke(context,
-                      request_t{.input = value_map_to_payload(graph_value_map{
-                                    std::forward<input_t>(input)})}),
+                      request_t{.input = wh::compose::graph_input::value(
+                                    value_map_to_payload(graph_value_map{
+                                        std::forward<input_t>(input)}))}),
         output_source_keys_))>;
     using sender_t =
         wh::core::detail::variant_sender<error_sender_t, graph_sender_t>;
@@ -407,8 +408,9 @@ public:
 
     return sender_t{map_graph_output_sender(
         graph_.invoke(context,
-                      request_t{.input = value_map_to_payload(graph_value_map{
-                                    std::forward<input_t>(input)})}),
+                      request_t{.input = wh::compose::graph_input::value(
+                                    value_map_to_payload(graph_value_map{
+                                        std::forward<input_t>(input)}))}),
         output_source_keys_)};
   }
 

@@ -6,6 +6,7 @@
 #include <concepts>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -301,23 +302,35 @@ template <typename fusion_t>
 
 template <retriever_component retriever_t, query_rewriter rewrite_t,
           multi_query_fusion fusion_t>
-struct storage {
-  storage(retriever_t retriever, rewrite_t rewriter, fusion_t fusion) noexcept
-      : retriever(std::make_unique<retriever_t>(std::move(retriever))),
-        rewriter(std::make_unique<rewrite_t>(std::move(rewriter))),
-        fusion(std::make_unique<fusion_t>(std::move(fusion))) {}
+struct authored_state {
+  authored_state(retriever_t retriever, rewrite_t rewriter, fusion_t fusion) noexcept
+      : retriever(std::move(retriever)), rewriter(std::move(rewriter)),
+        fusion(std::move(fusion)) {}
 
-  std::unique_ptr<retriever_t> retriever{};
-  std::unique_ptr<rewrite_t> rewriter{};
-  std::unique_ptr<fusion_t> fusion{};
+  retriever_t retriever;
+  rewrite_t rewriter;
+  fusion_t fusion;
   std::size_t max_queries{5U};
-  bool frozen{false};
+};
+
+template <retriever_component retriever_t, query_rewriter rewrite_t,
+          multi_query_fusion fusion_t>
+struct runtime_state {
+  runtime_state(retriever_t retriever, rewrite_t rewriter, fusion_t fusion,
+                const std::size_t max_queries) noexcept
+      : retriever(std::move(retriever)), rewriter(std::move(rewriter)),
+        fusion(std::move(fusion)), max_queries(max_queries) {}
+
+  retriever_t retriever;
+  rewrite_t rewriter;
+  fusion_t fusion;
+  std::size_t max_queries{5U};
 };
 
 template <retriever_component retriever_t, query_rewriter rewrite_t,
           multi_query_fusion fusion_t>
 [[nodiscard]] inline auto make_fanout_sender(
-    std::shared_ptr<storage<retriever_t, rewrite_t, fusion_t>> state,
+    std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>> state,
     rewrite_state rewrite, wh::core::run_context &context) {
   using query_status = wh::core::result<query_retrieval>;
   using output_status = wh::core::result<wh::retriever::retriever_response>;
@@ -326,7 +339,7 @@ template <retriever_component retriever_t, query_rewriter rewrite_t,
   std::vector<child_sender_t> senders{};
   senders.reserve(rewrite.queries.size());
   for (const auto &query : rewrite.queries) {
-    senders.push_back(make_query_sender(*state->retriever, query,
+    senders.push_back(make_query_sender(state->retriever, query,
                                         rewrite.base_request, context));
   }
 
@@ -343,7 +356,7 @@ template <retriever_component retriever_t, query_rewriter rewrite_t,
              }
              query_results.push_back(std::move(status).value());
            }
-           return fuse_query_results(*state->fusion, rewrite,
+           return fuse_query_results(state->fusion, rewrite,
                                      std::move(query_results), context);
          });
 }
@@ -351,21 +364,22 @@ template <retriever_component retriever_t, query_rewriter rewrite_t,
 template <retriever_component retriever_t, query_rewriter rewrite_t,
           multi_query_fusion fusion_t>
 [[nodiscard]] inline auto make_pipeline_sender(
-    std::shared_ptr<storage<retriever_t, rewrite_t, fusion_t>> state,
+    std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>> state,
     wh::retriever::retriever_request request, wh::core::run_context &context) {
   using rewrite_status = wh::core::result<rewrite_state>;
   using output_status = wh::core::result<wh::retriever::retriever_response>;
   using failure_sender_t =
       decltype(stdexec::just(output_status::failure(wh::core::errc::internal_error)));
   using fanout_sender_t = decltype(make_fanout_sender(
-      std::declval<std::shared_ptr<storage<retriever_t, rewrite_t, fusion_t>>>(),
+      std::declval<
+          std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>>>(),
       std::declval<rewrite_state>(), std::declval<wh::core::run_context &>()));
   using dispatch_sender_t =
       wh::core::detail::variant_sender<failure_sender_t, fanout_sender_t>;
 
   auto rewrite_sender = stdexec::just() | stdexec::then(
       [state, request = std::move(request), &context]() mutable -> rewrite_status {
-        return build_rewrite_state(*state->rewriter, request, state->max_queries,
+        return build_rewrite_state(state->rewriter, request, state->max_queries,
                                    context);
       });
 
@@ -396,14 +410,16 @@ template <detail::multi_query::retriever_component retriever_t,
           detail::multi_query::multi_query_fusion fusion_t =
               detail::multi_query::first_hit_fusion>
 class multi_query {
-  using storage_t = detail::multi_query::storage<retriever_t, rewrite_t, fusion_t>;
+  using authored_state_t =
+      detail::multi_query::authored_state<retriever_t, rewrite_t, fusion_t>;
+  using runtime_state_t =
+      detail::multi_query::runtime_state<retriever_t, rewrite_t, fusion_t>;
 
 public:
   multi_query(retriever_t retriever, rewrite_t rewriter = {},
               fusion_t fusion = {}) noexcept
-      : storage_(std::make_shared<storage_t>(std::move(retriever),
-                                             std::move(rewriter),
-                                             std::move(fusion))) {}
+      : authored_(std::in_place, std::move(retriever), std::move(rewriter),
+                  std::move(fusion)) {}
 
   multi_query(const multi_query &) = default;
   auto operator=(const multi_query &) -> multi_query & = default;
@@ -417,56 +433,56 @@ public:
   }
 
   /// Returns true after the flow configuration has frozen successfully.
-  [[nodiscard]] auto frozen() const noexcept -> bool {
-    return storage_ != nullptr && storage_->frozen;
-  }
+  [[nodiscard]] auto frozen() const noexcept -> bool { return runtime_ != nullptr; }
 
   /// Replaces the maximum query fanout. Zero falls back to 5.
   auto set_max_queries(const std::size_t max_queries) -> wh::core::result<void> {
-    if (storage_ == nullptr || storage_->frozen) {
+    if (!authored_.has_value() || runtime_ != nullptr) {
       return wh::core::result<void>::failure(
           wh::core::errc::contract_violation);
     }
-    storage_->max_queries = max_queries == 0U ? 5U : max_queries;
+    authored_->max_queries = max_queries == 0U ? 5U : max_queries;
     return {};
   }
 
   /// Freezes configuration for later direct wrapper execution.
   auto freeze() -> wh::core::result<void> {
-    if (storage_ == nullptr) {
-      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-    }
-    if (storage_->frozen) {
+    if (runtime_ != nullptr) {
       return {};
     }
-    if (storage_->retriever == nullptr || storage_->rewriter == nullptr ||
-        storage_->fusion == nullptr || storage_->max_queries == 0U) {
+    if (!authored_.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    storage_->frozen = true;
+    if (authored_->max_queries == 0U) {
+      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+    }
+    runtime_ = std::make_shared<runtime_state_t>(
+        std::move(authored_->retriever), std::move(authored_->rewriter),
+        std::move(authored_->fusion), authored_->max_queries);
+    authored_.reset();
     return {};
   }
 
-  /// Runs query rewrite, concurrent retrieval, and final fusion.
+  /// Runs query rewrite, concurrent retrieval, and final fusion on one frozen flow.
   [[nodiscard]] auto retrieve(const wh::retriever::retriever_request &request,
                               wh::core::run_context &context) const {
     return async_retrieve(request, context);
   }
 
-  /// Runs query rewrite, concurrent retrieval, and final fusion.
+  /// Runs query rewrite, concurrent retrieval, and final fusion on one frozen flow.
   [[nodiscard]] auto retrieve(wh::retriever::retriever_request &&request,
                               wh::core::run_context &context) const {
     return async_retrieve(std::move(request), context);
   }
 
-  /// Async component-node entry that forwards one retriever-like sender.
+  /// Async component-node entry that forwards one frozen retriever-like sender.
   [[nodiscard]] auto async_retrieve(
       const wh::retriever::retriever_request &request,
       wh::core::run_context &context) const {
     return dispatch_request(wh::retriever::retriever_request{request}, context);
   }
 
-  /// Async component-node entry that forwards one retriever-like sender.
+  /// Async component-node entry that forwards one frozen retriever-like sender.
   [[nodiscard]] auto async_retrieve(wh::retriever::retriever_request &&request,
                                     wh::core::run_context &context) const {
     return dispatch_request(std::move(request), context);
@@ -485,28 +501,27 @@ private:
     using pipeline_sender_t = decltype(
         detail::multi_query::map_multi_query_result_sender(
             detail::multi_query::make_pipeline_sender(
-                std::declval<std::shared_ptr<storage_t>>(),
+                std::declval<std::shared_ptr<const runtime_state_t>>(),
                 std::declval<wh::retriever::retriever_request>(),
                 std::declval<wh::core::run_context &>())));
     using dispatch_sender_t =
         wh::core::detail::variant_sender<failure_sender_t, pipeline_sender_t>;
 
-    auto self = const_cast<multi_query *>(this);
-    auto frozen = self->freeze();
-    if (frozen.has_error()) {
+    if (runtime_ == nullptr) {
       return dispatch_sender_t{
           wh::core::detail::failure_result_sender<output_status>(
-              frozen.error())};
+              wh::core::errc::contract_violation)};
     }
 
     return dispatch_sender_t{detail::multi_query::map_multi_query_result_sender(
         detail::multi_query::make_pipeline_sender(
-            storage_,
+            runtime_,
             wh::retriever::retriever_request{std::forward<request_t>(request)},
             context))};
   }
 
-  std::shared_ptr<storage_t> storage_{};
+  std::optional<authored_state_t> authored_{};
+  std::shared_ptr<const runtime_state_t> runtime_{};
 };
 
 } // namespace wh::flow::retrieval

@@ -30,7 +30,7 @@ public:
   static constexpr bool can_create_v = base::template can_create_from<fun_t, args_t...>();
 };
 
-using lower_graph_hook_probe =
+using lower_hook_probe =
     owning_storage_probe<wh::core::result<wh::compose::graph>(), wh::core::fn::deep_copy,
                          wh::core::fn::non_copyable_accept, wh::core::fn::assert_on_error,
                          sizeof(void *)>;
@@ -103,10 +103,10 @@ TEST_CASE("function storage accepts representative callable layouts across "
   };
   using lower_t = decltype(lower);
   STATIC_REQUIRE(!std::is_copy_constructible_v<lower_t>);
-  STATIC_REQUIRE(lower_graph_hook_probe::template can_create_v<lower_t, lower_t>);
-  STATIC_REQUIRE(std::is_constructible_v<wh::agent::agent::lower_graph_hook, lower_t>);
+  STATIC_REQUIRE(lower_hook_probe::template can_create_v<lower_t, lower_t>);
+  STATIC_REQUIRE(std::is_constructible_v<wh::agent::agent::lower_hook, lower_t>);
 
-  wh::agent::agent::lower_graph_hook lower_hook{std::move(lower)};
+  wh::agent::agent::lower_hook lower_hook{std::move(lower)};
   REQUIRE(static_cast<bool>(lower_hook));
 
   auto selector =

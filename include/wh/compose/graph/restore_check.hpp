@@ -84,8 +84,9 @@ enum class issue_kind : std::uint8_t {
   graph_changed = 0U,
   /// One persisted node-state target no longer exists in the current graph.
   missing_node_state,
-  /// One persisted rerun-input target no longer exists in the current graph.
-  missing_rerun_input,
+  /// One persisted runtime node-input target no longer exists in the current
+  /// graph.
+  missing_node_input,
   /// One persisted resume target address no longer exists in the current graph.
   missing_resume_target,
   /// One persisted interrupt target address no longer exists in the current
@@ -590,7 +591,7 @@ has_blocking_diff(const restore_diff &restore_diff) noexcept -> bool {
   path_set valid_paths{};
   collect_shape_paths(current_shape, "", valid_paths);
 
-  for (const auto &state : checkpoint.node_states) {
+  for (const auto &state : checkpoint.runtime.lifecycle) {
     if (!state.key.empty() && !valid_paths.contains(state.key)) {
       append_issue(
           validation, issue_kind::missing_node_state, state.key,
@@ -598,15 +599,22 @@ has_blocking_diff(const restore_diff &restore_diff) noexcept -> bool {
     }
   }
 
-  for (const auto &[node_key, _] : checkpoint.rerun_inputs) {
-    if (node_key == graph_start_node_key) {
-      continue;
+  const auto validate_pending_inputs = [&](const checkpoint_pending_inputs &pending)
+      -> void {
+    for (const auto &node_input : pending.nodes) {
+      const auto &node_key = node_input.key;
+      if (!valid_paths.contains(node_key)) {
+        append_issue(
+            validation, issue_kind::missing_node_input, node_key,
+            "checkpoint node input targets a node that no longer exists");
+      }
     }
-    if (!valid_paths.contains(node_key)) {
-      append_issue(
-          validation, issue_kind::missing_rerun_input, node_key,
-          "checkpoint rerun input targets a node that no longer exists");
-    }
+  };
+  if (checkpoint.runtime.dag.has_value()) {
+    validate_pending_inputs(checkpoint.runtime.dag->pending_inputs);
+  }
+  if (checkpoint.runtime.pregel.has_value()) {
+    validate_pending_inputs(checkpoint.runtime.pregel->pending_inputs);
   }
 
   for (const auto &interrupt_id : checkpoint.resume_snapshot.interrupt_ids()) {

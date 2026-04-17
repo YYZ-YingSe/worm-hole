@@ -8,16 +8,16 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/pull_op.hpp"
 
 namespace {
 
 using result_t = wh::core::result<int>;
 
-struct owner_probe {
+struct owner_probe : wh::core::detail::intrusive_enable_from_this<owner_probe> {
   int finish_calls{0};
   int stopped_calls{0};
-  int reset_calls{0};
   std::optional<result_t> last_status{};
   bool last_terminal_override{false};
   std::optional<wh::core::error_code> async_failure_code{};
@@ -30,8 +30,6 @@ struct owner_probe {
   }
 
   auto finish_source_pull_stopped(void *) noexcept -> void { ++stopped_calls; }
-
-  auto reset_active_pull(void *) noexcept -> void { ++reset_calls; }
 
   [[nodiscard]] auto async_failure(const wh::core::error_code code) noexcept
       -> result_t {
@@ -122,81 +120,82 @@ struct stoppable_async_source : base_async_source {
 
 TEST_CASE("pull op forwards successful async source completion to owner and resets storage",
           "[UT][wh/core/cursor_reader/detail/pull_op.hpp][pull_op::start][branch]") {
-  owner_probe owner{};
+  auto owner = wh::core::detail::make_intrusive<owner_probe>();
   success_async_source source{};
-  wh::core::cursor_reader_detail::pull_op<owner_probe, success_async_source, result_t>
-      pull{&owner};
+  auto pull = wh::core::detail::make_intrusive<
+      wh::core::cursor_reader_detail::pull_op<owner_probe, success_async_source,
+                                              result_t>>(*owner);
 
-  pull.start(source, wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
-             std::make_shared<stdexec::inplace_stop_source>());
+  pull->start(source,
+              wh::core::detail::erase_resume_scheduler(
+                  stdexec::inline_scheduler{}));
 
-  REQUIRE(owner.finish_calls == 1);
-  REQUIRE(owner.last_status.has_value());
-  REQUIRE(owner.last_status->has_value());
-  REQUIRE(owner.last_status->value() == 7);
-  REQUIRE_FALSE(owner.last_terminal_override);
-  REQUIRE(owner.reset_calls == 1);
+  REQUIRE(owner->finish_calls == 1);
+  REQUIRE(owner->last_status.has_value());
+  REQUIRE(owner->last_status->has_value());
+  REQUIRE(owner->last_status->value() == 7);
+  REQUIRE_FALSE(owner->last_terminal_override);
 }
 
 TEST_CASE("pull op maps async source errors through owner async failure path",
           "[UT][wh/core/cursor_reader/detail/pull_op.hpp][pull_op::receiver::set_error][branch]") {
-  owner_probe owner{};
+  auto owner = wh::core::detail::make_intrusive<owner_probe>();
   error_async_source source{};
-  wh::core::cursor_reader_detail::pull_op<owner_probe, error_async_source, result_t>
-      pull{&owner};
+  auto pull = wh::core::detail::make_intrusive<
+      wh::core::cursor_reader_detail::pull_op<owner_probe, error_async_source,
+                                              result_t>>(*owner);
 
-  pull.start(source, wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
-             std::make_shared<stdexec::inplace_stop_source>());
+  pull->start(source,
+              wh::core::detail::erase_resume_scheduler(
+                  stdexec::inline_scheduler{}));
 
-  REQUIRE(owner.finish_calls == 1);
-  REQUIRE(owner.last_status.has_value());
-  REQUIRE(owner.last_status->has_error());
-  REQUIRE(owner.async_failure_code.has_value());
-  REQUIRE(*owner.async_failure_code == wh::core::errc::internal_error);
-  REQUIRE(owner.last_terminal_override);
-  REQUIRE(owner.reset_calls == 1);
+  REQUIRE(owner->finish_calls == 1);
+  REQUIRE(owner->last_status.has_value());
+  REQUIRE(owner->last_status->has_error());
+  REQUIRE(owner->async_failure_code.has_value());
+  REQUIRE(*owner->async_failure_code == wh::core::errc::internal_error);
+  REQUIRE(owner->last_terminal_override);
 }
 
 TEST_CASE("pull op request_stop propagates stop to async sender and reports stopped once",
           "[UT][wh/core/cursor_reader/detail/pull_op.hpp][pull_op::request_stop][concurrency][branch]") {
-  owner_probe owner{};
+  auto owner = wh::core::detail::make_intrusive<owner_probe>();
   stoppable_async_source source{};
-  auto stop_source = std::make_shared<stdexec::inplace_stop_source>();
-  wh::core::cursor_reader_detail::pull_op<owner_probe, stoppable_async_source,
-                                          result_t>
-      pull{&owner};
+  auto pull =
+      wh::core::detail::make_intrusive<wh::core::cursor_reader_detail::pull_op<
+          owner_probe, stoppable_async_source, result_t>>(*owner);
 
-  pull.start(source, wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
-             stop_source);
-  REQUIRE(owner.finish_calls == 0);
-  REQUIRE(owner.stopped_calls == 0);
+  pull->start(source,
+              wh::core::detail::erase_resume_scheduler(
+                  stdexec::inline_scheduler{}));
+  REQUIRE(owner->finish_calls == 0);
+  REQUIRE(owner->stopped_calls == 0);
 
-  pull.request_stop();
+  pull->request_stop();
 
-  REQUIRE(owner.stopped_calls == 1);
-  REQUIRE(owner.reset_calls == 1);
-  REQUIRE(owner.finish_calls == 0);
+  REQUIRE(owner->stopped_calls == 1);
+  REQUIRE(owner->finish_calls == 0);
 }
 
 TEST_CASE("pull op maps direct error codes and ignores request_stop without a stop source",
           "[UT][wh/core/cursor_reader/detail/pull_op.hpp][pull_op::receiver::set_error][condition][branch][boundary]") {
-  owner_probe owner{};
+  auto owner = wh::core::detail::make_intrusive<owner_probe>();
   coded_error_async_source source{};
-  wh::core::cursor_reader_detail::pull_op<owner_probe, coded_error_async_source,
-                                          result_t>
-      pull{&owner};
+  auto pull = wh::core::detail::make_intrusive<
+      wh::core::cursor_reader_detail::pull_op<owner_probe,
+                                              coded_error_async_source,
+                                              result_t>>(*owner);
 
-  pull.request_stop();
-  pull.start(source,
-             wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
-             std::shared_ptr<stdexec::inplace_stop_source>{});
+  pull->request_stop();
+  pull->start(source,
+              wh::core::detail::erase_resume_scheduler(
+                  stdexec::inline_scheduler{}));
 
-  REQUIRE(owner.finish_calls == 1);
-  REQUIRE(owner.last_status.has_value());
-  REQUIRE(owner.last_status->has_error());
-  REQUIRE(owner.last_status->error() == wh::core::errc::timeout);
-  REQUIRE(owner.async_failure_code.has_value());
-  REQUIRE(*owner.async_failure_code == wh::core::errc::timeout);
-  REQUIRE(owner.last_terminal_override);
-  REQUIRE(owner.reset_calls == 1);
+  REQUIRE(owner->finish_calls == 1);
+  REQUIRE(owner->last_status.has_value());
+  REQUIRE(owner->last_status->has_error());
+  REQUIRE(owner->last_status->error() == wh::core::errc::timeout);
+  REQUIRE(owner->async_failure_code.has_value());
+  REQUIRE(*owner->async_failure_code == wh::core::errc::timeout);
+  REQUIRE(owner->last_terminal_override);
 }

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <vector>
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/graph/detail/runtime/checkpoint.hpp"
@@ -44,44 +45,98 @@ TEST_CASE("runtime checkpoint helpers resolve serializers backends and validatio
           "root/child");
 }
 
-TEST_CASE("runtime checkpoint helpers roundtrip stream rerun payload codecs for save and load",
+TEST_CASE("runtime checkpoint helpers roundtrip stream runtime payload codecs for save and load",
           "[UT][wh/compose/graph/detail/runtime/checkpoint.hpp][apply_stream_codecs_for_save][condition][branch][boundary]") {
   using namespace wh::compose::detail::checkpoint_runtime;
 
   wh::compose::checkpoint_stream_codecs codecs{};
   const auto start_key = std::string{wh::compose::graph_start_node_key};
+  const auto end_key = std::string{wh::compose::graph_end_node_key};
   codecs.emplace(start_key,
                  wh::compose::make_default_stream_codec());
   codecs.emplace("worker", wh::compose::make_default_stream_codec());
+  codecs.emplace(end_key, wh::compose::make_default_stream_codec());
+
+  const std::vector<std::string> node_keys{
+      std::string{wh::compose::graph_start_node_key},
+      "worker",
+      std::string{wh::compose::graph_end_node_key},
+  };
+  const std::vector<wh::compose::detail::graph_core::indexed_edge> indexed_edges{
+      wh::compose::detail::graph_core::indexed_edge{
+          .from = 0U,
+          .to = 1U,
+          .source_output = wh::compose::node_contract::stream,
+          .target_input = wh::compose::node_contract::stream,
+      },
+  };
 
   wh::compose::checkpoint_state checkpoint{};
-  checkpoint.rerun_inputs.emplace(
-      start_key,
-      wh::compose::graph_value{
-          wh::compose::make_single_value_stream_reader(std::string{"start"})
-              .value()});
-  checkpoint.rerun_inputs.emplace(
-      "worker",
-      wh::compose::graph_value{
+  checkpoint.runtime.dag = wh::compose::checkpoint_dag_runtime_state{};
+  checkpoint.runtime.dag->pending_inputs.entry = wh::compose::graph_value{
+      wh::compose::make_single_value_stream_reader(std::string{"start"}).value()};
+  checkpoint.runtime.dag->pending_inputs.nodes.push_back(
+      wh::compose::checkpoint_node_input{
+      .node_id = 1U,
+      .key = "worker",
+      .input = wh::compose::graph_value{
           wh::compose::make_single_value_stream_reader(std::string{"chunk"})
-              .value()});
+              .value()},
+  });
+  checkpoint.runtime.dag->edge_readers.push_back(wh::compose::checkpoint_runtime_slot{
+      .slot_id = 0U,
+      .value = wh::compose::graph_value{
+          wh::compose::make_single_value_stream_reader(std::string{"edge"})
+              .value()},
+  });
+  checkpoint.runtime.dag->merged_readers.push_back(wh::compose::checkpoint_runtime_slot{
+      .slot_id = 1U,
+      .value = wh::compose::graph_value{
+          wh::compose::make_single_value_stream_reader(std::string{"merged"})
+              .value()},
+  });
+  checkpoint.runtime.dag->final_output_reader = wh::compose::graph_value{
+      wh::compose::make_single_value_stream_reader(std::string{"final"})
+          .value()};
+  REQUIRE(checkpoint.runtime.dag->edge_readers.front().value.template has_value<
+          wh::compose::graph_stream_reader>());
 
   wh::core::run_context context{};
-  REQUIRE(apply_stream_codecs_for_save(checkpoint, context, &codecs).has_value());
+  REQUIRE(apply_stream_codecs_for_save(checkpoint, context, &codecs, node_keys,
+                                       indexed_edges, 2U)
+              .has_value());
   REQUIRE(wh::core::any_cast<wh::compose::checkpoint_stream_value_payload>(
-              &checkpoint.rerun_inputs.at(start_key)) !=
+              &*checkpoint.runtime.dag->pending_inputs.entry) !=
           nullptr);
   REQUIRE(wh::core::any_cast<wh::compose::checkpoint_stream_value_payload>(
-              &checkpoint.rerun_inputs.at("worker")) != nullptr);
+              &checkpoint.runtime.dag->pending_inputs.nodes.front().input) != nullptr);
+  REQUIRE(wh::core::any_cast<wh::compose::checkpoint_stream_value_payload>(
+              &checkpoint.runtime.dag->edge_readers.front().value) != nullptr);
+  REQUIRE(wh::core::any_cast<wh::compose::checkpoint_stream_value_payload>(
+              &checkpoint.runtime.dag->merged_readers.front().value) != nullptr);
+  REQUIRE(wh::core::any_cast<wh::compose::checkpoint_stream_value_payload>(
+              &*checkpoint.runtime.dag->final_output_reader) != nullptr);
 
-  REQUIRE(apply_stream_codecs_for_load(checkpoint, context, &codecs).has_value());
+  REQUIRE(apply_stream_codecs_for_load(checkpoint, context, &codecs, node_keys,
+                                       indexed_edges, 2U)
+              .has_value());
   auto start_reader = wh::testing::helper::read_graph_value<
       wh::compose::graph_stream_reader>(
-      std::move(checkpoint.rerun_inputs.at(start_key)));
+      std::move(*checkpoint.runtime.dag->pending_inputs.entry));
   REQUIRE(start_reader.has_value());
   auto start_chunks =
       wh::compose::collect_graph_stream_reader(std::move(start_reader).value());
   REQUIRE(start_chunks.has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&start_chunks.value().front()) ==
           "start");
+
+  auto edge_reader = wh::testing::helper::read_graph_value<
+      wh::compose::graph_stream_reader>(
+      std::move(checkpoint.runtime.dag->edge_readers.front().value));
+  REQUIRE(edge_reader.has_value());
+  auto edge_chunks =
+      wh::compose::collect_graph_stream_reader(std::move(edge_reader).value());
+  REQUIRE(edge_chunks.has_value());
+  REQUIRE(*wh::core::any_cast<std::string>(&edge_chunks.value().front()) ==
+          "edge");
 }

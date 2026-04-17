@@ -65,7 +65,7 @@ template <typename value_t>
                                             wh::compose::graph_value input)
     -> wh::core::result<wh::compose::graph_invoke_result> {
   wh::compose::graph_invoke_request request{};
-  request.input = std::move(input);
+  request.input = wh::compose::graph_input::value(std::move(input));
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());

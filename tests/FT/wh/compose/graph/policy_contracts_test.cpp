@@ -403,10 +403,10 @@ TEST_CASE("compose graph enforces dag-pregel mode constraints",
   const auto &step_limit_detail = *invoked.value().report.step_limit_error;
   REQUIRE(step_limit_detail.budget == 1U);
   REQUIRE(step_limit_detail.step > step_limit_detail.budget);
-  REQUIRE(std::find(step_limit_detail.completed_nodes.begin(),
-                    step_limit_detail.completed_nodes.end(),
+  REQUIRE(std::find(step_limit_detail.completed_node_keys.begin(),
+                    step_limit_detail.completed_node_keys.end(),
                     std::string{wh::compose::graph_start_node_key}) !=
-          step_limit_detail.completed_nodes.end());
+          step_limit_detail.completed_node_keys.end());
 
   wh::compose::graph_call_options pregel_call_options{};
   pregel_call_options.pregel_max_steps = static_cast<std::size_t>(4U);

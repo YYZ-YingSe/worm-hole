@@ -178,7 +178,7 @@ public:
     return {};
   }
 
-  /// Converts this authored shell into the common executable agent surface.
+  /// Converts this frozen authored shell into the common executable agent surface.
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:

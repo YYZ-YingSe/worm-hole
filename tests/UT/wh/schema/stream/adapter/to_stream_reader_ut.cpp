@@ -3,12 +3,14 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <vector>
 #include <variant>
 
 #include <stdexec/execution.hpp>
 
 #include "helper/sender_capture.hpp"
 #include "wh/schema/stream/adapter/to_stream_reader.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 namespace {
 
@@ -137,4 +139,28 @@ TEST_CASE("to stream reader async read preserves stopped completion",
 
   REQUIRE(capture.ready.try_acquire());
   REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::stopped);
+}
+
+TEST_CASE("to stream async sender keeps state alive after wrapper destruction",
+          "[UT][wh/schema/stream/adapter/to_stream_reader.hpp][to_stream_reader::read_async][lifetime][concurrency]") {
+  auto sender = []() {
+    auto reader = wh::schema::stream::make_to_stream_reader(
+        wh::schema::stream::make_values_stream_reader(std::vector<int>{13}));
+    return reader.read_async();
+  }();
+
+  using result_t =
+      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
+  wh::testing::helper::sender_capture<result_t> capture{};
+  auto operation = stdexec::connect(
+      std::move(sender),
+      wh::testing::helper::sender_capture_receiver<result_t>{&capture});
+  stdexec::start(operation);
+
+  REQUIRE(capture.ready.try_acquire());
+  REQUIRE(capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.value.has_value());
+  REQUIRE(capture.value->has_value());
+  REQUIRE(capture.value->value().value == std::optional<int>{13});
 }

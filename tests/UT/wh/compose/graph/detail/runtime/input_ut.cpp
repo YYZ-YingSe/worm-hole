@@ -1,24 +1,24 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <type_traits>
+#include <vector>
 
 #include "wh/compose/graph/detail/runtime/input.hpp"
 
-TEST_CASE("runtime input umbrella re-exports the shared dag and progress aliases",
-          "[UT][wh/compose/graph/detail/runtime/input.hpp][input_runtime::progress_state][condition][branch][boundary]") {
+TEST_CASE("runtime input umbrella re-exports the shared dag and runtime aliases",
+          "[UT][wh/compose/graph/detail/runtime/input.hpp][input_runtime::dag_node_phase][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
-  static_assert(std::same_as<node_state, runtime_node_state>);
+  static_assert(std::same_as<dag_node_phase, dag_node_phase>);
   static_assert(std::same_as<edge_status, dag_edge_status>);
   static_assert(std::same_as<ready_state, dag_ready_state>);
   static_assert(std::same_as<branch_state, dag_branch_state>);
-  static_assert(std::same_as<progress_state, runtime_progress_state>);
   static_assert(std::same_as<io_storage, runtime_io_storage>);
   static_assert(std::same_as<dag_schedule, dag_schedule_state>);
 
-  progress_state progress{};
-  progress.reset(2U);
-  REQUIRE(progress.node_states.size() >= 2U);
+  std::vector<dag_node_phase> progress(2U, dag_node_phase::pending);
+  REQUIRE(progress.size() >= 2U);
+  REQUIRE(progress[0U] == dag_node_phase::pending);
 
   dag_schedule schedule{};
   schedule.reset(2U);

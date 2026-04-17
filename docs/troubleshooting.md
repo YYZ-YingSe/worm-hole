@@ -5,7 +5,7 @@
 `worm-hole` keeps third-party dependencies in-tree. Start by syncing submodules:
 
 ```bash
-./build.sh sync-thirdy-party
+./build.sh sync-third-party
 ```
 
 ## I want a clean local state
@@ -66,7 +66,10 @@ The tracked CI surface currently covers:
 - macOS
 - Windows
 - debug and release build shards where they materially add signal
-- Linux sanitizer and nightly heavy-test jobs
+- Linux sanitizer, coverage, and nightly stress jobs
+
+Repository CodeQL scanning is handled by GitHub's default Code Scanning setup
+rather than a repo-local workflow.
 
 ## Where to look next
 

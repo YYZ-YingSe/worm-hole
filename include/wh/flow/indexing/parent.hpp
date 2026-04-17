@@ -5,6 +5,7 @@
 #include <concepts>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -122,27 +123,34 @@ template <detail::indexing::indexer_component indexer_t,
           detail::indexing::parent_transformer transformer_t,
           detail::indexing::sub_id_generator sub_id_generator_t>
 class parent {
-  struct storage {
-    storage(indexer_t indexer, transformer_t transformer,
-            sub_id_generator_t sub_id_generator) noexcept
-        : indexer(std::make_unique<indexer_t>(std::move(indexer))),
-          transformer(std::make_unique<transformer_t>(std::move(transformer))),
-          sub_id_generator(
-              std::make_unique<sub_id_generator_t>(std::move(sub_id_generator))) {}
+  struct authored_state {
+    authored_state(indexer_t indexer, transformer_t transformer,
+                   sub_id_generator_t sub_id_generator) noexcept
+        : indexer(std::move(indexer)), transformer(std::move(transformer)),
+          sub_id_generator(std::move(sub_id_generator)) {}
 
-    std::unique_ptr<indexer_t> indexer{};
-    std::unique_ptr<transformer_t> transformer{};
-    std::unique_ptr<sub_id_generator_t> sub_id_generator{};
+    indexer_t indexer;
+    transformer_t transformer;
+    sub_id_generator_t sub_id_generator;
+  };
+
+  struct runtime_state {
+    runtime_state(indexer_t indexer, transformer_t transformer,
+                  sub_id_generator_t sub_id_generator) noexcept
+        : indexer(std::move(indexer)), transformer(std::move(transformer)),
+          sub_id_generator(std::move(sub_id_generator)) {}
+
+    indexer_t indexer;
+    transformer_t transformer;
+    sub_id_generator_t sub_id_generator;
     wh::compose::chain runtime_graph{};
-    bool frozen{false};
   };
 
 public:
   parent(indexer_t indexer, transformer_t transformer,
          sub_id_generator_t sub_id_generator) noexcept
-      : storage_(std::make_shared<storage>(std::move(indexer),
-                                           std::move(transformer),
-                                           std::move(sub_id_generator))) {}
+      : authored_(std::in_place, std::move(indexer), std::move(transformer),
+                  std::move(sub_id_generator)) {}
 
   parent(const parent &) = default;
   auto operator=(const parent &) -> parent & = default;
@@ -156,31 +164,29 @@ public:
   }
 
   /// Returns true after the authored parent-indexer graph has frozen.
-  [[nodiscard]] auto frozen() const noexcept -> bool {
-    return storage_ != nullptr && storage_->frozen;
-  }
+  [[nodiscard]] auto frozen() const noexcept -> bool { return runtime_ != nullptr; }
 
   /// Freezes the authored parent-indexer shape into one compose chain.
   auto freeze() -> wh::core::result<void> {
-    if (storage_ == nullptr) {
-      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-    }
-    if (storage_->frozen) {
+    if (runtime_ != nullptr) {
       return {};
     }
-    if (storage_->indexer == nullptr || storage_->transformer == nullptr ||
-        storage_->sub_id_generator == nullptr) {
+    if (!authored_.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
+
+    auto runtime = std::make_shared<runtime_state>(
+        std::move(authored_->indexer), std::move(authored_->transformer),
+        std::move(authored_->sub_id_generator));
 
     wh::compose::graph_compile_options options{};
     options.name = "indexing_parent";
-    wh::compose::chain lowered{std::move(options)};
+    runtime->runtime_graph = wh::compose::chain{std::move(options)};
 
-    auto prepare_added = lowered.append(wh::compose::make_lambda_node(
+    auto prepare_added = runtime->runtime_graph.append(wh::compose::make_lambda_node(
         "parent_prepare_sub_documents",
-        [transformer = storage_->transformer.get(),
-         sub_id_generator = storage_->sub_id_generator.get()](
+        [transformer = &runtime->transformer,
+         sub_id_generator = &runtime->sub_id_generator](
             const wh::compose::graph_value &input, wh::core::run_context &context,
             const wh::compose::graph_call_scope &)
             -> wh::core::result<wh::compose::graph_value> {
@@ -234,66 +240,76 @@ public:
       return prepare_added;
     }
 
-    auto index_added = lowered.append(
+    auto index_added = runtime->runtime_graph.append(
         wh::compose::make_component_node<wh::compose::component_kind::indexer,
                                          wh::compose::node_contract::value,
                                          wh::compose::node_contract::value>(
             "parent_write_index",
             detail::indexing::borrowed_indexer<indexer_t>{
-                .indexer = storage_->indexer.get()}));
+                .indexer = &runtime->indexer}));
     if (index_added.has_error()) {
       return index_added;
     }
 
-    auto compiled = lowered.compile();
+    auto compiled = runtime->runtime_graph.compile();
     if (compiled.has_error()) {
       return compiled;
     }
-    storage_->runtime_graph = std::move(lowered);
-    storage_->frozen = true;
+    runtime_ = std::move(runtime);
+    authored_.reset();
     return {};
   }
 
   /// Expands parents into grouped child documents and delegates one batch write.
   [[nodiscard]] auto write(const wh::indexer::indexer_request &request,
                            wh::core::run_context &context) const {
-    using write_result = wh::core::result<wh::indexer::indexer_response>;
-    using failure_sender_t = decltype(
-        wh::core::detail::failure_result_sender<write_result>(
-            wh::core::errc::internal_error));
-    using mapped_sender_t = decltype(detail::indexing::map_indexer_result_sender(
-        std::declval<wh::compose::chain &>().invoke(
-            context, wh::compose::graph_value{wh::core::any(std::declval<
-                         wh::indexer::indexer_request>())})));
-    using dispatch_sender_t =
-        wh::core::detail::variant_sender<failure_sender_t, mapped_sender_t>;
-
-    auto self = const_cast<parent *>(this);
-    auto frozen = self->freeze();
-    if (frozen.has_error()) {
-      return dispatch_sender_t{
-          wh::core::detail::failure_result_sender<write_result>(
-              frozen.error())};
-    }
-    return dispatch_sender_t{detail::indexing::map_indexer_result_sender(
-        storage_->runtime_graph.invoke(
-            context, wh::compose::graph_value{wh::core::any(request)}))};
+    return dispatch_request(wh::indexer::indexer_request{request}, context);
   }
 
   /// Async component-node entry that forwards to the flow-level sender.
   [[nodiscard]] auto async_write(const wh::indexer::indexer_request &request,
                                  wh::core::run_context &context) const {
-    return write(request, context);
+    return dispatch_request(wh::indexer::indexer_request{request}, context);
   }
 
   /// Async component-node entry that forwards to the flow-level sender.
   [[nodiscard]] auto async_write(wh::indexer::indexer_request &&request,
                                  wh::core::run_context &context) const {
-    return write(request, context);
+    return dispatch_request(std::move(request), context);
   }
 
 private:
-  std::shared_ptr<storage> storage_{};
+  template <typename request_t>
+    requires std::same_as<std::remove_cvref_t<request_t>,
+                          wh::indexer::indexer_request>
+  [[nodiscard]] auto dispatch_request(request_t &&request,
+                                      wh::core::run_context &context) const {
+    using write_result = wh::core::result<wh::indexer::indexer_response>;
+    using failure_sender_t = decltype(
+        wh::core::detail::failure_result_sender<write_result>(
+            wh::core::errc::internal_error));
+    using mapped_sender_t = decltype(detail::indexing::map_indexer_result_sender(
+        std::declval<const wh::compose::chain &>().invoke(
+            context, wh::compose::graph_value{wh::core::any(std::declval<
+                         wh::indexer::indexer_request>())})));
+    using dispatch_sender_t =
+        wh::core::detail::variant_sender<failure_sender_t, mapped_sender_t>;
+
+    if (runtime_ == nullptr) {
+      return dispatch_sender_t{
+          wh::core::detail::failure_result_sender<write_result>(
+              wh::core::errc::contract_violation)};
+    }
+
+    return dispatch_sender_t{detail::indexing::map_indexer_result_sender(
+        runtime_->runtime_graph.invoke(
+            context, wh::compose::graph_value{wh::core::any(
+                         wh::indexer::indexer_request{
+                             std::forward<request_t>(request)})}))};
+  }
+
+  std::optional<authored_state> authored_{};
+  std::shared_ptr<const runtime_state> runtime_{};
 };
 
 } // namespace wh::flow::indexing

@@ -104,6 +104,67 @@ TEST_CASE("tools stream reader maps merged lanes through bindings supports stop 
   REQUIRE(wrapped.is_closed_impl());
 }
 
+TEST_CASE("tools stream async sender keeps wrapper state alive after wrapper destruction",
+          "[UT][wh/compose/node/detail/tools/stream.hpp][tool_event_stream_reader::read_async][lifetime][concurrency]") {
+  wh::compose::tools_options options{};
+  options.middleware.push_back({
+      .after =
+          [](const wh::compose::tool_call &, wh::compose::graph_value &value,
+             const wh::tool::call_scope &) -> wh::core::result<void> {
+        auto *typed = wh::core::any_cast<std::string>(&value);
+        REQUIRE(typed != nullptr);
+        value = wh::compose::graph_value{*typed + "-owned"};
+        return {};
+      },
+  });
+
+  auto [writer, source] = wh::compose::make_graph_stream(4U);
+  wh::compose::detail::tool_stream_binding_map bindings{};
+  bindings.emplace(
+      "call-1",
+      wh::compose::detail::tool_stream_binding{
+          .call = {.call_id = "call-1", .tool_name = "echo"},
+          .context = {},
+      });
+
+  auto sender = [&]() {
+    std::vector<wh::schema::stream::named_stream_reader<
+        wh::compose::graph_stream_reader>>
+        lanes{};
+    lanes.emplace_back("call-1", std::move(source), false);
+    wh::compose::detail::tool_event_stream_reader wrapped{
+        wh::compose::detail::make_graph_merge_reader(std::move(lanes)),
+        std::move(bindings),
+        wh::compose::detail::collect_tool_afters(options)};
+    return wrapped.read_async();
+  }();
+
+  using result_t = wh::schema::stream::stream_result<
+      wh::schema::stream::stream_chunk<wh::compose::graph_value>>;
+  wh::testing::helper::sender_capture<result_t> capture{};
+  auto operation = stdexec::connect(
+      std::move(sender),
+      wh::testing::helper::sender_capture_receiver{
+          &capture,
+          wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{}),
+      });
+  stdexec::start(operation);
+
+  REQUIRE(writer.try_write(wh::compose::graph_value{std::string{"chunk"}})
+              .has_value());
+  REQUIRE(writer.close().has_value());
+  REQUIRE(capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.value.has_value());
+  REQUIRE(capture.value->has_value());
+  REQUIRE(capture.value->value().value.has_value());
+  auto *event = wh::core::any_cast<wh::compose::tool_event>(
+      &*capture.value->value().value);
+  REQUIRE(event != nullptr);
+  REQUIRE(read_text(event->value) == "chunk-owned");
+}
+
 TEST_CASE("tools stream helpers filter after middleware and surface missing binding or after error failures",
           "[UT][wh/compose/node/detail/tools/stream.hpp][make_tool_event_stream_reader][branch][boundary]") {
   wh::compose::tools_options options{};

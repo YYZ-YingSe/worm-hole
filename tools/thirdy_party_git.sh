@@ -17,16 +17,16 @@ Commands:
     show submodule commit status and lock summary
 
   add-direct <name> <repo> <commit>
-    add direct dependency submodule under thirdy_party/<name> and checkout pinned commit
+    add direct third-party dependency under thirdy_party/<name> and checkout pinned commit
 
   add-transitive <name> <repo> <commit>
-    add transitive dependency submodule under thirdy_party/dependencies/<name> and checkout pinned commit
+    add transitive third-party dependency under thirdy_party/dependencies/<name> and checkout pinned commit
 
   pin-direct <name> <commit>
-    pin existing direct dependency submodule under thirdy_party/<name>
+    pin existing direct third-party dependency under thirdy_party/<name>
 
   pin-transitive <name> <commit>
-    pin existing transitive dependency submodule under thirdy_party/dependencies/<name>
+    pin existing transitive third-party dependency under thirdy_party/dependencies/<name>
 
   lock
     regenerate thirdy_party/LOCK.txt from current git submodules
@@ -45,7 +45,7 @@ transitive_dependency_path() {
 
 ensure_repo_root() {
   if [[ ! -d .git ]]; then
-    echo "[thirdy-party-git] must run in repo root" >&2
+    echo "[third-party-git] must run in repo root" >&2
     exit 1
   fi
 }
@@ -53,7 +53,7 @@ ensure_repo_root() {
 ensure_sha() {
   local value="$1"
   if [[ ! "$value" =~ ^[0-9a-fA-F]{40}$ ]]; then
-    echo "[thirdy-party-git] commit must be 40-char SHA: $value" >&2
+    echo "[third-party-git] commit must be 40-char SHA: $value" >&2
     exit 1
   fi
 }
@@ -61,7 +61,7 @@ ensure_sha() {
 write_lock() {
   mkdir -p thirdy_party
   {
-    echo "# thirdy_party lock"
+    echo "# third-party lock rooted at thirdy_party/"
     echo "# generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "# format=path|remote_url|commit_sha|tree_sha"
     echo "# direct_path=thirdy_party/<name>"
@@ -75,7 +75,7 @@ write_lock() {
     done < <(git submodule status | awk '{print $1" "$2}')
   } > thirdy_party/LOCK.txt
 
-  echo "[thirdy-party-git] lock updated: thirdy_party/LOCK.txt"
+  echo "[third-party-git] lock updated: thirdy_party/LOCK.txt"
 }
 
 add_dependency() {

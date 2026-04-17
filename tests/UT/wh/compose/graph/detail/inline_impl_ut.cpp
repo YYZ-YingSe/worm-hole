@@ -18,7 +18,7 @@ TEST_CASE("inline impl umbrella exposes the fully linked graph inline runtime su
   REQUIRE(graph.compiled());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{11};
+  request.input = wh::compose::graph_input::value(11);
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(waited.has_value());

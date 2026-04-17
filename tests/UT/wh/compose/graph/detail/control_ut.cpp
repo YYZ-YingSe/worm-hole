@@ -33,7 +33,7 @@ TEST_CASE("control helpers reject invalid call options through public invoke val
 
   SECTION("invalid component default key") {
     wh::compose::graph_invoke_request request{};
-    request.input = wh::compose::graph_value{1};
+    request.input = wh::compose::graph_input::value(1);
     request.controls.call.component_defaults.emplace("bad/key",
                                                      wh::compose::graph_value{7});
     auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
@@ -47,7 +47,7 @@ TEST_CASE("control helpers reject invalid call options through public invoke val
 
   SECTION("missing designated top-level node") {
     wh::compose::graph_invoke_request request{};
-    request.input = wh::compose::graph_value{1};
+    request.input = wh::compose::graph_input::value(1);
     request.controls.call.designated_top_level_nodes = {"missing"};
     auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
     REQUIRE(waited.has_value());
@@ -60,7 +60,7 @@ TEST_CASE("control helpers reject invalid call options through public invoke val
 
   SECTION("null debug observer callback") {
     wh::compose::graph_invoke_request request{};
-    request.input = wh::compose::graph_value{1};
+    request.input = wh::compose::graph_input::value(1);
     request.controls.call.node_path_debug_observers.push_back(
         {.path = wh::compose::make_node_path({"worker"}),
          .include_descendants = true,
@@ -79,7 +79,7 @@ TEST_CASE("control helpers respect valid designation paths through public invoke
           "[UT][wh/compose/graph/detail/control.hpp][graph::is_node_designated][branch]") {
   wh::compose::graph graph = make_control_graph();
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{9};
+  request.input = wh::compose::graph_input::value(9);
   request.controls.call.designated_top_level_nodes = {"worker"};
   request.controls.call.designated_node_paths = {
       wh::compose::make_node_path({"worker"})};

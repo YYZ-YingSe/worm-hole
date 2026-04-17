@@ -40,7 +40,6 @@ inline auto graph::classify_pregel_node_readiness(
 inline auto graph::reset_pregel_source_caches(
     const std::uint32_t source_node_id,
     io_storage &io_storage) const -> void {
-  io_storage.reader_copy_ready.clear(source_node_id);
   for (const auto edge_id :
        core().compiled_execution_index_.index.outgoing_data(source_node_id)) {
     io_storage.edge_value_valid.clear(edge_id);
@@ -132,7 +131,7 @@ inline auto graph::build_pregel_node_input_sender(
       -> wh::core::result<graph_value> {
     if (resolved.has_error() && resolved.error() == wh::core::errc::not_found &&
         context.resume_info.has_value()) {
-      auto fallback = resolve_missing_rerun_input(node->meta.input_contract);
+      auto fallback = resolve_missing_pending_input(node->meta.input_contract);
       if (fallback.has_error()) {
         return wh::core::result<graph_value>::failure(fallback.error());
       }
@@ -171,7 +170,7 @@ inline auto graph::build_pregel_node_input_sender(
     if (lanes.empty()) {
       resolved = build_missing_input(*node);
     } else if (lanes.size() == 1U) {
-      auto reader = take_edge_reader(lanes.front().edge_id, io_storage, context);
+      auto reader = take_edge_reader(lanes.front().edge_id, io_storage);
       if (reader.has_error()) {
         resolved = wh::core::result<resolved_input>::failure(reader.error());
       } else {
@@ -182,7 +181,7 @@ inline auto graph::build_pregel_node_input_sender(
           readers{};
       readers.reserve(lanes.size());
       for (const auto &lane : lanes) {
-        auto reader = take_edge_reader(lane.edge_id, io_storage, context);
+        auto reader = take_edge_reader(lane.edge_id, io_storage);
         if (reader.has_error()) {
           resolved = wh::core::result<resolved_input>::failure(reader.error());
           break;
@@ -214,7 +213,7 @@ inline auto graph::build_pregel_node_input_sender(
     const auto &edge =
         core().compiled_execution_index_.index.indexed_edges[lanes.front().edge_id];
     if (needs_reader_lowering(edge)) {
-      auto reader = take_edge_reader(lanes.front().edge_id, io_storage, context);
+      auto reader = take_edge_reader(lanes.front().edge_id, io_storage);
       if (reader.has_error()) {
         return detail::failure_graph_sender(reader.error());
       }
@@ -292,7 +291,7 @@ inline auto graph::build_pregel_node_input_sender(
   std::vector<graph_sender> senders{};
   senders.reserve(stage.edge_ids.size());
   for (const auto edge_id : stage.edge_ids) {
-    auto reader = take_edge_reader(edge_id, io_storage, context);
+    auto reader = take_edge_reader(edge_id, io_storage);
     if (reader.has_error()) {
       return detail::failure_graph_sender(reader.error());
     }

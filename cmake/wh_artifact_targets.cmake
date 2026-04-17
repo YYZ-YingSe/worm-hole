@@ -112,5 +112,5 @@ endfunction()
 
 function(wh_setup_benchmark_support_target)
   wh_define_support_target("${WH_TARGET_BENCHMARK_SUPPORT}"
-                           LINK_LIBRARIES wh::core)
+                           LINK_LIBRARIES wh::core benchmark::benchmark_main)
 endfunction()

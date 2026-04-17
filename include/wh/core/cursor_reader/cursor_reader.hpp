@@ -2,11 +2,11 @@
 
 #include <concepts>
 #include <cstddef>
-#include <memory>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/read_sender.hpp"
 #include "wh/core/cursor_reader/detail/source.hpp"
 
@@ -71,7 +71,7 @@ public:
       return {};
     }
 
-    auto state = std::make_shared<shared_state_t>(
+    auto state = wh::core::detail::make_intrusive<shared_state_t>(
         source_t{std::forward<source_u>(source)}, count);
     std::vector<cursor_reader> readers{};
     readers.reserve(count);
@@ -151,7 +151,7 @@ private:
     state_->close_reader(reader_index_);
   }
 
-  std::shared_ptr<shared_state_t> state_{};
+  wh::core::detail::intrusive_ptr<shared_state_t> state_{};
   std::size_t reader_index_{0U};
   bool released_{true};
 };

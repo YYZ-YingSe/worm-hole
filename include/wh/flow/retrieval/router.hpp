@@ -6,6 +6,7 @@
 #include <concepts>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -188,22 +189,11 @@ struct reciprocal_rank_fusion {
 
 template <retriever_component retriever_t, route_policy route_t,
           fusion_policy fusion_t>
-struct storage {
-  explicit storage(route_t route, fusion_t fusion) noexcept(
+struct authored_state {
+  explicit authored_state(route_t route, fusion_t fusion) noexcept(
       std::is_nothrow_move_constructible_v<route_t> &&
       std::is_nothrow_move_constructible_v<fusion_t>)
       : route_policy(std::move(route)), fusion_policy(std::move(fusion)) {}
-
-  auto rebuild_frozen_view() -> void {
-    frozen_names.clear();
-    frozen_name_to_index.clear();
-    frozen_names.reserve(retrievers.size());
-    frozen_name_to_index.reserve(retrievers.size());
-    for (std::size_t index = 0U; index < retrievers.size(); ++index) {
-      frozen_names.push_back(retrievers[index].name);
-      frozen_name_to_index.emplace(retrievers[index].name, index);
-    }
-  }
 
   route_t route_policy;
   fusion_t fusion_policy;
@@ -211,12 +201,41 @@ struct storage {
   std::unordered_set<std::string, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       name_index{};
-  std::vector<std::string> frozen_names{};
+};
+
+template <retriever_component retriever_t, route_policy route_t,
+          fusion_policy fusion_t>
+struct runtime_state {
+  runtime_state(route_t route, fusion_t fusion,
+                std::vector<retriever_binding<retriever_t>> authored_retrievers) noexcept(
+      std::is_nothrow_move_constructible_v<route_t> &&
+      std::is_nothrow_move_constructible_v<fusion_t> &&
+      std::is_nothrow_move_constructible_v<
+          std::vector<retriever_binding<retriever_t>>>)
+      : route_policy(std::move(route)), fusion_policy(std::move(fusion)),
+        retrievers(std::move(authored_retrievers)) {
+    rebuild_lookup();
+  }
+
+  auto rebuild_lookup() -> void {
+    names.clear();
+    name_to_index.clear();
+    names.reserve(retrievers.size());
+    name_to_index.reserve(retrievers.size());
+    for (std::size_t index = 0U; index < retrievers.size(); ++index) {
+      names.push_back(retrievers[index].name);
+      name_to_index.emplace(retrievers[index].name, index);
+    }
+  }
+
+  route_t route_policy;
+  fusion_t fusion_policy;
+  std::vector<retriever_binding<retriever_t>> retrievers{};
+  std::vector<std::string> names{};
   std::unordered_map<std::string, std::size_t,
                      wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
-      frozen_name_to_index{};
-  bool frozen{false};
+      name_to_index{};
 };
 
 template <retriever_component retriever_t>
@@ -264,7 +283,7 @@ using retrieve_sender_t =
 template <retriever_component retriever_t, route_policy route_t,
           fusion_policy fusion_t>
 [[nodiscard]] inline auto build_route_plan(
-    const storage<retriever_t, route_t, fusion_t> &state,
+    const runtime_state<retriever_t, route_t, fusion_t> &state,
     const wh::retriever::retriever_request &request,
     wh::core::run_context &context) -> wh::core::result<route_plan> {
   auto sink = wh::callbacks::filter_callback_sink(
@@ -273,7 +292,7 @@ template <retriever_component retriever_t, route_policy route_t,
       make_callback_state(router_stage_name, request, request.query);
   emit_callback(sink, wh::callbacks::stage::start, callback_state);
 
-  auto selected = state.route_policy(request, state.frozen_names);
+  auto selected = state.route_policy(request, state.names);
   if (selected.has_error()) {
     emit_callback(sink, wh::callbacks::stage::error, callback_state);
     return wh::core::result<route_plan>::failure(selected.error());
@@ -291,8 +310,8 @@ template <retriever_component retriever_t, route_policy route_t,
   plan.selected_names.reserve(selected.value().size());
   plan.selected_indices.reserve(selected.value().size());
   for (const auto &name : selected.value()) {
-    const auto index_iter = state.frozen_name_to_index.find(name);
-    if (index_iter == state.frozen_name_to_index.end()) {
+    const auto index_iter = state.name_to_index.find(name);
+    if (index_iter == state.name_to_index.end()) {
       emit_callback(sink, wh::callbacks::stage::error, callback_state);
       return wh::core::result<route_plan>::failure(wh::core::errc::not_found);
     }
@@ -316,7 +335,7 @@ template <retriever_component retriever_t, route_policy route_t,
 template <retriever_component retriever_t, route_policy route_t,
           fusion_policy fusion_t>
 [[nodiscard]] inline auto fuse_results(
-    const storage<retriever_t, route_t, fusion_t> &state,
+    const runtime_state<retriever_t, route_t, fusion_t> &state,
     const route_plan &plan, std::vector<routed_retriever_result> results,
     wh::core::run_context &context)
     -> wh::core::result<wh::retriever::retriever_response> {
@@ -341,7 +360,7 @@ template <retriever_component retriever_t, route_policy route_t,
 template <retriever_component retriever_t, route_policy route_t,
           fusion_policy fusion_t>
 [[nodiscard]] inline auto make_fanout_sender(
-    std::shared_ptr<const storage<retriever_t, route_t, fusion_t>> state,
+    std::shared_ptr<const runtime_state<retriever_t, route_t, fusion_t>> state,
     route_plan plan, wh::core::run_context &context) {
   using retrieve_status = wh::core::result<routed_retriever_result>;
   using output_status = wh::core::result<wh::retriever::retriever_response>;
@@ -376,15 +395,16 @@ template <retriever_component retriever_t, route_policy route_t,
 template <retriever_component retriever_t, route_policy route_t,
           fusion_policy fusion_t>
 [[nodiscard]] inline auto make_pipeline_sender(
-    std::shared_ptr<const storage<retriever_t, route_t, fusion_t>> state,
+    std::shared_ptr<const runtime_state<retriever_t, route_t, fusion_t>> state,
     wh::retriever::retriever_request request, wh::core::run_context &context) {
   using route_status = wh::core::result<route_plan>;
   using output_status = wh::core::result<wh::retriever::retriever_response>;
   using route_failure_sender_t =
       decltype(stdexec::just(output_status::failure(wh::core::errc::internal_error)));
-  using fanout_sender_t = decltype(make_fanout_sender(
-      std::declval<std::shared_ptr<const storage<retriever_t, route_t, fusion_t>>>(),
-      std::declval<route_plan>(), std::declval<wh::core::run_context &>()));
+    using fanout_sender_t = decltype(make_fanout_sender(
+        std::declval<
+            std::shared_ptr<const runtime_state<retriever_t, route_t, fusion_t>>>(),
+        std::declval<route_plan>(), std::declval<wh::core::run_context &>()));
   using route_dispatch_sender_t =
       wh::core::detail::variant_sender<route_failure_sender_t, fanout_sender_t>;
 
@@ -414,7 +434,10 @@ template <detail::router::retriever_component retriever_t,
           detail::router::fusion_policy fusion_t =
               detail::router::reciprocal_rank_fusion>
 class router {
-  using storage_t = detail::router::storage<retriever_t, route_t, fusion_t>;
+  using authored_state_t =
+      detail::router::authored_state<retriever_t, route_t, fusion_t>;
+  using runtime_state_t =
+      detail::router::runtime_state<retriever_t, route_t, fusion_t>;
 
 public:
   router()
@@ -423,9 +446,8 @@ public:
       : router(route_t{}, fusion_t{}) {}
 
   explicit router(route_t route_policy, fusion_t fusion_policy = {}) noexcept
-      : storage_(
-            std::make_shared<storage_t>(std::move(route_policy),
-                                        std::move(fusion_policy))) {}
+      : authored_(std::in_place, std::move(route_policy),
+                  std::move(fusion_policy)) {}
 
   router(const router &) = default;
   auto operator=(const router &) -> router & = default;
@@ -439,42 +461,42 @@ public:
   }
 
   /// Returns true after registration has frozen successfully.
-  [[nodiscard]] auto frozen() const noexcept -> bool {
-    return storage_ != nullptr && storage_->frozen;
-  }
+  [[nodiscard]] auto frozen() const noexcept -> bool { return runtime_ != nullptr; }
 
   /// Registers one named retriever before freeze.
   auto add_retriever(std::string name, retriever_t retriever)
       -> wh::core::result<void> {
-    if (storage_ == nullptr || storage_->frozen) {
+    if (!authored_.has_value() || runtime_ != nullptr) {
       return wh::core::result<void>::failure(
           wh::core::errc::contract_violation);
     }
     if (name.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    if (storage_->name_index.contains(name)) {
+    if (authored_->name_index.contains(name)) {
       return wh::core::result<void>::failure(wh::core::errc::already_exists);
     }
-    storage_->name_index.insert(name);
-    storage_->retrievers.push_back(detail::router::retriever_binding<retriever_t>{
+    authored_->name_index.insert(name);
+    authored_->retrievers.push_back(detail::router::retriever_binding<retriever_t>{
         .name = std::move(name), .retriever = std::move(retriever)});
     return {};
   }
 
   /// Freezes the retriever registry and route lookup tables.
   auto freeze() -> wh::core::result<void> {
-    if (storage_ == nullptr) {
-      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
-    }
-    if (storage_->frozen) {
+    if (runtime_ != nullptr) {
       return {};
     }
-    if (storage_->retrievers.empty()) {
+    if (!authored_.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    storage_->rebuild_frozen_view();
-    storage_->frozen = true;
+    if (authored_->retrievers.empty()) {
+      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+    }
+    runtime_ = std::make_shared<runtime_state_t>(
+        std::move(authored_->route_policy), std::move(authored_->fusion_policy),
+        std::move(authored_->retrievers));
+    authored_.reset();
     return {};
   }
 
@@ -490,14 +512,14 @@ public:
     return async_retrieve(std::move(request), context);
   }
 
-  /// Runs route, selected concurrent retrieval, and fusion as one sender.
+  /// Runs route, selected concurrent retrieval, and fusion on one frozen flow.
   [[nodiscard]] auto async_retrieve(
       const wh::retriever::retriever_request &request,
       wh::core::run_context &context) const {
     return dispatch_request(wh::retriever::retriever_request{request}, context);
   }
 
-  /// Runs route, selected concurrent retrieval, and fusion as one sender.
+  /// Runs route, selected concurrent retrieval, and fusion on one frozen flow.
   [[nodiscard]] auto async_retrieve(wh::retriever::retriever_request &&request,
                                     wh::core::run_context &context) const {
     return dispatch_request(std::move(request), context);
@@ -514,27 +536,26 @@ private:
         wh::core::detail::failure_result_sender<output_status>(
             wh::core::errc::internal_error));
     using pipeline_sender_t = decltype(detail::router::make_pipeline_sender(
-        std::declval<std::shared_ptr<const storage_t>>(),
+        std::declval<std::shared_ptr<const runtime_state_t>>(),
         std::declval<wh::retriever::retriever_request>(),
         std::declval<wh::core::run_context &>()));
     using dispatch_sender_t =
         wh::core::detail::variant_sender<failure_sender_t, pipeline_sender_t>;
 
-    auto self = const_cast<router *>(this);
-    auto frozen = self->freeze();
-    if (frozen.has_error()) {
+    if (runtime_ == nullptr) {
       return dispatch_sender_t{
           wh::core::detail::failure_result_sender<output_status>(
-              frozen.error())};
+              wh::core::errc::contract_violation)};
     }
 
     return dispatch_sender_t{detail::router::make_pipeline_sender(
-        std::shared_ptr<const storage_t>{storage_},
+        runtime_,
         wh::retriever::retriever_request{std::forward<request_t>(request)},
         context)};
   }
 
-  std::shared_ptr<storage_t> storage_{};
+  std::optional<authored_state_t> authored_{};
+  std::shared_ptr<const runtime_state_t> runtime_{};
 };
 
 } // namespace wh::flow::retrieval

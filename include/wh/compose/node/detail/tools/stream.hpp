@@ -12,6 +12,7 @@
 
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/detail/tools/state.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/stdexec.hpp"
 #include "wh/core/type_traits.hpp"
 #include "wh/schema/stream/core/stream_base.hpp"
@@ -51,102 +52,113 @@ public:
   tool_event_stream_reader(graph_stream_reader reader,
                            tool_stream_binding_map bindings,
                            std::vector<tool_after> afters)
-      : reader_(std::move(reader)), bindings_(std::move(bindings)),
-        afters_(std::move(afters)) {}
+      : state_(wh::core::detail::make_intrusive<state>(
+            std::move(reader), std::move(bindings), std::move(afters))) {}
 
   [[nodiscard]] auto read_impl()
       -> wh::schema::stream::stream_result<chunk_type> {
-    return map(reader_.read());
+    return state_->map(state_->reader.read());
   }
 
   [[nodiscard]] auto try_read_impl()
       -> wh::schema::stream::stream_try_result<chunk_type> {
-    return map(reader_.try_read());
+    return state_->map(state_->reader.try_read());
   }
 
   [[nodiscard]] auto read_async() & {
-    return reader_.read_async() | stdexec::then([this](result_t status) {
-             return map(std::move(status));
+    auto state = state_;
+    return state->reader.read_async() |
+           stdexec::then([state = std::move(state)](result_t status) {
+             return state->map(std::move(status));
            });
   }
 
   auto close_impl() -> wh::core::result<void> {
-    closed_ = true;
-    return reader_.close();
+    state_->closed = true;
+    return state_->reader.close();
   }
 
   [[nodiscard]] auto is_closed_impl() const noexcept -> bool {
-    return closed_ || reader_.is_closed();
+    return state_->closed || state_->reader.is_closed();
   }
 
   [[nodiscard]] auto is_source_closed() const noexcept -> bool {
-    return reader_.is_source_closed();
+    return state_->reader.is_source_closed();
   }
 
   auto
   set_automatic_close(const wh::schema::stream::auto_close_options &options)
       -> void {
-    reader_.set_automatic_close(options);
+    state_->reader.set_automatic_close(options);
   }
 
 private:
   using result_t = wh::schema::stream::stream_result<chunk_type>;
   using try_result_t = wh::schema::stream::stream_try_result<chunk_type>;
 
-  [[nodiscard]] auto map(wh::schema::stream::stream_result<chunk_type> status)
-      -> wh::schema::stream::stream_result<chunk_type> {
-    if (status.has_error()) {
-      return wh::schema::stream::stream_result<chunk_type>::failure(
-          status.error());
-    }
+  struct state : wh::core::detail::intrusive_enable_from_this<state> {
+    graph_stream_reader reader{};
+    tool_stream_binding_map bindings{};
+    std::vector<tool_after> afters{};
+    bool closed{false};
 
-    auto chunk = std::move(status).value();
-    if (chunk.eof || chunk.error.failed()) {
-      return chunk;
-    }
-    if (!chunk.value.has_value()) {
-      return wh::schema::stream::stream_result<chunk_type>::failure(
-          wh::core::errc::protocol_error);
-    }
+    state() = default;
 
-    auto iter = bindings_.find(chunk.source);
-    if (iter == bindings_.end()) {
-      return wh::schema::stream::stream_result<chunk_type>::failure(
-          wh::core::errc::not_found);
-    }
+    state(graph_stream_reader reader_value, tool_stream_binding_map bindings_value,
+          std::vector<tool_after> afters_value)
+        : reader(std::move(reader_value)),
+          bindings(std::move(bindings_value)),
+          afters(std::move(afters_value)) {}
 
-    auto &binding = iter->second;
-    graph_value value = std::move(*chunk.value);
-    auto scope = make_scope(binding.call, binding.context);
-    for (auto &after : afters_) {
-      auto after_status = after(binding.call, value, scope);
-      if (after_status.has_error()) {
-        auto output = chunk_type{};
-        output.error = after_status.error();
-        return output;
+    [[nodiscard]] auto map(result_t status) -> result_t {
+      if (status.has_error()) {
+        return result_t::failure(status.error());
       }
+
+      auto chunk = std::move(status).value();
+      if (chunk.eof || chunk.error.failed()) {
+        return chunk;
+      }
+      if (!chunk.value.has_value()) {
+        return result_t::failure(wh::core::errc::protocol_error);
+      }
+
+      auto iter = bindings.find(chunk.source);
+      if (iter == bindings.end()) {
+        return result_t::failure(wh::core::errc::not_found);
+      }
+
+      auto &binding = iter->second;
+      graph_value value = std::move(*chunk.value);
+      auto scope = make_scope(binding.call, binding.context);
+      for (auto &after : afters) {
+        auto after_status = after(binding.call, value, scope);
+        if (after_status.has_error()) {
+          auto output = chunk_type{};
+          output.error = after_status.error();
+          return output;
+        }
+      }
+
+      auto output = chunk_type::make_value(tool_event{
+          .call_id = binding.call.call_id,
+          .tool_name = binding.call.tool_name,
+          .value = std::move(value),
+      });
+      output.source = std::move(chunk.source);
+      return output;
     }
 
-    auto output = chunk_type::make_value(tool_event{
-        .call_id = binding.call.call_id,
-        .tool_name = binding.call.tool_name,
-        .value = std::move(value),
-    });
-    output.source = std::move(chunk.source);
-    return output;
-  }
-
-  [[nodiscard]] auto map(try_result_t status) -> try_result_t {
-    if (std::holds_alternative<wh::schema::stream::stream_signal>(status)) {
-      return wh::schema::stream::stream_pending;
+    [[nodiscard]] auto map(try_result_t status) -> try_result_t {
+      if (std::holds_alternative<wh::schema::stream::stream_signal>(status)) {
+        return wh::schema::stream::stream_pending;
+      }
+      return map(std::move(std::get<result_t>(status)));
     }
-    return map(std::move(std::get<result_t>(status)));
-  }
+  };
 
-  graph_stream_reader reader_{};
-  tool_stream_binding_map bindings_{};
-  std::vector<tool_after> afters_{};
-  bool closed_{false};
+  wh::core::detail::intrusive_ptr<state> state_{
+      wh::core::detail::make_intrusive<state>()};
 };
 
 [[nodiscard]] inline auto collect_tool_afters(const tools_options &options)

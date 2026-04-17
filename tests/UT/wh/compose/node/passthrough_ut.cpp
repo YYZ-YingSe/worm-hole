@@ -38,7 +38,7 @@ TEST_CASE("passthrough node graph execution forwards payload unchanged",
   REQUIRE(graph.compile().has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{19};
+  request.input = wh::compose::graph_input::value(19);
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());
@@ -64,7 +64,8 @@ TEST_CASE("stream passthrough node preserves reader payloads through graph invok
   REQUIRE(input_reader.has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::move(input_reader).value()};
+  request.input =
+      wh::compose::graph_input::value(std::move(input_reader).value());
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());
@@ -94,7 +95,8 @@ TEST_CASE("stream passthrough node collects stream into value output at default 
   REQUIRE(input_reader.has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::move(input_reader).value()};
+  request.input =
+      wh::compose::graph_input::stream(std::move(input_reader).value());
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());
@@ -129,7 +131,8 @@ TEST_CASE("stream passthrough node preserves reader payloads at stream graph bou
   REQUIRE(input_reader.has_value());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::move(input_reader).value()};
+  request.input =
+      wh::compose::graph_input::stream(std::move(input_reader).value());
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());

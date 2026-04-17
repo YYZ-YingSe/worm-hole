@@ -14,11 +14,10 @@ option(WH_REQUIRE_GIT_LOCKED_THIRDY_PARTY
 set(WH_TEST_EXECUTABLE_LAYOUT
     "source"
     CACHE STRING
-    "Test executable layout. Supported values: source, coverage-monolith")
-set_property(CACHE WH_TEST_EXECUTABLE_LAYOUT PROPERTY STRINGS
-             source coverage-monolith)
+    "Test executable layout. Supported values: source")
+set_property(CACHE WH_TEST_EXECUTABLE_LAYOUT PROPERTY STRINGS source)
 
-set(_wh_supported_test_layouts source coverage-monolith)
+set(_wh_supported_test_layouts source)
 if(NOT WH_TEST_EXECUTABLE_LAYOUT IN_LIST _wh_supported_test_layouts)
   message(
     FATAL_ERROR
@@ -52,6 +51,10 @@ set(WH_CATCH2_DIR
     "${WH_THIRDY_PARTY_DIRECT_DIR}/catch2"
     CACHE PATH
     "catch2 source directory")
+set(WH_BENCHMARK_DIR
+    "${WH_THIRDY_PARTY_DIRECT_DIR}/benchmark"
+    CACHE PATH
+    "benchmark source directory")
 set(WH_MINJA_DIR
     "${WH_THIRDY_PARTY_DIRECT_DIR}/minja"
     CACHE PATH

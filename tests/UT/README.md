@@ -22,6 +22,6 @@ Rules:
 Examples:
 
 - `include/wh/core/error.hpp` -> `tests/UT/wh/core/error_ut.cpp`
-- `include/wh/core/stdexec/detail/scheduled_drive_loop.hpp` ->
-  `tests/UT/wh/core/stdexec/detail/scheduled_drive_loop_ut.cpp`
+- `include/wh/core/stdexec/manual_lifetime.hpp` ->
+  `tests/UT/wh/core/stdexec/manual_lifetime_ut.cpp`
 - `include/wh/flow.hpp` -> `tests/UT/wh/flow_ut.cpp`

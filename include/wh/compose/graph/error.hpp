@@ -40,7 +40,7 @@ struct graph_step_limit_error_detail {
   /// Node key being evaluated when overflow happened.
   std::string node{};
   /// Completed node set captured at overflow point.
-  std::vector<std::string> completed_nodes{};
+  std::vector<std::string> completed_node_keys{};
 };
 
 /// Structured detail emitted when one node execution exceeds timeout budget.

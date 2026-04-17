@@ -33,6 +33,16 @@ namespace {
       wh::core::errc::type_mismatch);
 }
 
+[[nodiscard]] auto read_messages(const wh::compose::graph_input &input)
+    -> wh::core::result<std::vector<wh::schema::message>> {
+  const auto *payload = input.value_payload();
+  if (payload == nullptr) {
+    return wh::core::result<std::vector<wh::schema::message>>::failure(
+        wh::core::errc::contract_violation);
+  }
+  return read_messages(*payload);
+}
+
 [[nodiscard]] auto make_ready_stream() -> wh::adk::agent_event_stream_reader {
   auto [writer, reader] = wh::adk::make_agent_event_stream();
   auto sent = wh::adk::send_agent_event(

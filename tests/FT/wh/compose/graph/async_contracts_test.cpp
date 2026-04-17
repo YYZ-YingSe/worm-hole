@@ -238,10 +238,10 @@ TEST_CASE("compose dag executes ready async branches concurrently",
                          }
                        };
 
-                       started.fetch_add(1, std::memory_order_acq_rel);
                        active.fetch_add(1, std::memory_order_acq_rel);
                        active_guard guard{std::addressof(active)};
                        update_max_active();
+                       started.fetch_add(1, std::memory_order_acq_rel);
                        const auto deadline = std::chrono::steady_clock::now() +
                                              std::chrono::milliseconds{50};
                        while (started.load(std::memory_order_acquire) < 2 &&

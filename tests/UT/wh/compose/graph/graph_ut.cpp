@@ -27,7 +27,7 @@ TEST_CASE("graph class compiles passthrough nodes and exposes snapshots",
   REQUIRE(graph.restore_shape().nodes.size() == 1U);
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{9};
+  request.input = wh::compose::graph_input::value(9);
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());

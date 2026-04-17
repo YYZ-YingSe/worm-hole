@@ -138,7 +138,21 @@ template <typename input_t>
 [[nodiscard]] auto make_graph_request(input_t &&input)
     -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::forward<input_t>(input)};
+  request.input =
+      wh::compose::graph_input::value(std::forward<input_t>(input));
+  return request;
+}
+
+[[nodiscard]] auto
+make_graph_request(wh::compose::graph_value input)
+    -> wh::compose::graph_invoke_request {
+  wh::compose::graph_invoke_request request{};
+  if (auto *reader = wh::core::any_cast<wh::compose::graph_stream_reader>(&input);
+      reader != nullptr) {
+    request.input = wh::compose::graph_input::stream(std::move(*reader));
+  } else {
+    request.input = wh::compose::graph_input::value(std::move(input));
+  }
   return request;
 }
 

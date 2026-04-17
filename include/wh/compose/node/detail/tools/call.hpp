@@ -3,30 +3,28 @@
 
 #include <concepts>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 #include "wh/compose/node/detail/tools/state.hpp"
 #include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/detail/receiver_stop_bridge.hpp"
 #include "wh/schema/stream.hpp"
 
 namespace wh::compose {
 namespace detail {
 
 using call_completion_sender =
-    exec::any_receiver_ref<stdexec::completion_signatures<
-        stdexec::set_value_t(wh::core::result<call_completion>),
-        stdexec::set_stopped_t()>>::any_sender<>;
+    wh::core::detail::result_sender<wh::core::result<call_completion>>;
 using stream_completion_sender =
-    exec::any_receiver_ref<stdexec::completion_signatures<
-        stdexec::set_value_t(wh::core::result<stream_completion>),
-        stdexec::set_stopped_t()>>::any_sender<>;
+    wh::core::detail::result_sender<wh::core::result<stream_completion>>;
 
-template <stdexec::sender sender_t>
+template <typename sender_t>
+  requires stdexec::sender<sender_t> &&
+           (!std::same_as<std::remove_cvref_t<sender_t>, tools_invoke_sender>)
 [[nodiscard]] inline auto erase_tools_invoke(sender_t &&sender)
     -> tools_invoke_sender {
-  return tools_invoke_sender{
-      wh::core::detail::normalize_result_sender<wh::core::result<graph_value>>(
-          std::forward<sender_t>(sender))};
+  return tools_invoke_sender{std::forward<sender_t>(sender)};
 }
 
 [[nodiscard]] inline auto erase_tools_invoke(tools_invoke_sender sender)
@@ -34,11 +32,12 @@ template <stdexec::sender sender_t>
   return sender;
 }
 
-template <stdexec::sender sender_t>
+template <typename sender_t>
+  requires stdexec::sender<sender_t> &&
+           (!std::same_as<std::remove_cvref_t<sender_t>, tools_stream_sender>)
 [[nodiscard]] inline auto erase_tools_stream(sender_t &&sender)
     -> tools_stream_sender {
-  return tools_stream_sender{wh::core::detail::normalize_result_sender<
-      wh::core::result<graph_stream_reader>>(std::forward<sender_t>(sender))};
+  return tools_stream_sender{std::forward<sender_t>(sender)};
 }
 
 [[nodiscard]] inline auto erase_tools_stream(tools_stream_sender sender)
@@ -57,11 +56,12 @@ template <typename sender_t, typename result_t>
   return sender_t{wh::core::detail::failure_result_sender<result_t>(error)};
 }
 
-template <stdexec::sender sender_t>
+template <typename sender_t>
+  requires stdexec::sender<sender_t> &&
+           (!std::same_as<std::remove_cvref_t<sender_t>, call_completion_sender>)
 [[nodiscard]] inline auto erase_call_completion(sender_t &&sender)
     -> call_completion_sender {
-  return call_completion_sender{wh::core::detail::normalize_result_sender<
-      wh::core::result<call_completion>>(std::forward<sender_t>(sender))};
+  return call_completion_sender{std::forward<sender_t>(sender)};
 }
 
 [[nodiscard]] inline auto erase_call_completion(call_completion_sender sender)
@@ -69,11 +69,12 @@ template <stdexec::sender sender_t>
   return sender;
 }
 
-template <stdexec::sender sender_t>
+template <typename sender_t>
+  requires stdexec::sender<sender_t> &&
+           (!std::same_as<std::remove_cvref_t<sender_t>, stream_completion_sender>)
 [[nodiscard]] inline auto erase_stream_completion(sender_t &&sender)
     -> stream_completion_sender {
-  return stream_completion_sender{wh::core::detail::normalize_result_sender<
-      wh::core::result<stream_completion>>(std::forward<sender_t>(sender))};
+  return stream_completion_sender{std::forward<sender_t>(sender)};
 }
 
 [[nodiscard]] inline auto

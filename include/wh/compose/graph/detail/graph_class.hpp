@@ -39,10 +39,10 @@
 #include "wh/compose/graph/invoke_types.hpp"
 #include "wh/compose/graph/detail/bitset.hpp"
 #include "wh/compose/graph/detail/graph_core.hpp"
-#include "wh/compose/graph/detail/runtime/rerun.hpp"
+#include "wh/compose/graph/detail/runtime/pending_inputs.hpp"
 #include "wh/compose/graph/call_options.hpp"
 #include "wh/compose/graph/compile_options.hpp"
-#include "wh/compose/graph/detail/runtime/checkpoint.hpp"
+#include "wh/compose/graph/detail/runtime/checkpoint/core.hpp"
 #include "wh/compose/graph/detail/runtime/interrupt.hpp"
 #include "wh/compose/graph/detail/runtime/input.hpp"
 #include "wh/compose/graph/like.hpp"
@@ -75,9 +75,9 @@ namespace detail {
 using string_hash = wh::core::transparent_string_hash;
 using string_equal = wh::core::transparent_string_equal;
 namespace invoke_runtime {
-class run_state;
-class dag_run_state;
-class pregel_run_state;
+class invoke_session;
+class dag_runtime;
+class pregel_runtime;
 }
 
 [[nodiscard]] auto start_bound_graph(
@@ -86,7 +86,7 @@ class pregel_run_state;
     const node_path *path_prefix, graph_process_state *parent_process_state,
     detail::runtime_state::invoke_outputs *nested_outputs,
     const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
-    const invoke_runtime::run_state *parent_state = nullptr,
+    const invoke_runtime::invoke_session *parent_state = nullptr,
     const graph_runtime_services *services = nullptr,
     graph_invoke_controls controls = {})
     -> graph_sender;
@@ -95,9 +95,9 @@ class pregel_run_state;
 
 /// Mutable graph definition that compiles into a stable executable topology.
 class graph {
-  friend class detail::invoke_runtime::run_state;
-  friend class detail::invoke_runtime::dag_run_state;
-  friend class detail::invoke_runtime::pregel_run_state;
+  friend class detail::invoke_runtime::invoke_session;
+  friend class detail::invoke_runtime::dag_runtime;
+  friend class detail::invoke_runtime::pregel_runtime;
 
   template <typename receiver_t>
   class invoke_operation;
@@ -314,7 +314,7 @@ private:
       const node_path *path_prefix, graph_process_state *parent_process_state,
       detail::runtime_state::invoke_outputs *nested_outputs,
       const wh::core::detail::any_resume_scheduler_t &graph_scheduler,
-      const detail::invoke_runtime::run_state *parent_state,
+      const detail::invoke_runtime::invoke_session *parent_state,
       const graph_runtime_services *services, graph_invoke_controls controls)
       -> graph_sender;
   friend auto detail::start_nested_graph(const graph &graph,
@@ -326,7 +326,7 @@ private:
   [[nodiscard]] static auto next_invoke_run_id() noexcept -> std::uint64_t;
 
   using dynamic_bitset = detail::graph_core::dynamic_bitset;
-  using runtime_node_state = detail::graph_core::runtime_node_state;
+  using dag_node_phase = detail::graph_core::dag_node_phase;
   using dag_edge_status = detail::graph_core::dag_edge_status;
   using dag_ready_state = detail::graph_core::dag_ready_state;
   using pregel_ready_state = detail::graph_core::pregel_ready_state;
@@ -334,7 +334,6 @@ private:
   using dag_branch_state = detail::graph_core::dag_branch_state;
   using reader_lane_state = detail::graph_core::reader_lane_state;
   using reader_lowering = detail::graph_core::reader_lowering;
-  using runtime_progress_state = detail::graph_core::runtime_progress_state;
   using runtime_io_storage = detail::graph_core::runtime_io_storage;
   using dag_schedule_state = detail::graph_core::dag_schedule_state;
   using pregel_node_inputs = detail::graph_core::pregel_node_inputs;
@@ -342,11 +341,9 @@ private:
   using resolved_input = detail::graph_core::resolved_input;
   using value_input = detail::graph_core::value_input;
   using value_batch = detail::graph_core::value_batch;
-  using node_state = detail::graph_core::node_state;
   using edge_status = detail::graph_core::edge_status;
   using ready_state = detail::graph_core::ready_state;
   using branch_state = detail::graph_core::branch_state;
-  using progress_state = detail::graph_core::progress_state;
   using io_storage = detail::graph_core::io_storage;
   using dag_schedule = detail::graph_core::dag_schedule;
   using invoke_stage = detail::graph_core::invoke_stage;
@@ -374,13 +371,16 @@ private:
   using stream_branch_definition =
       detail::graph_core::stream_branch_definition;
 
-  [[nodiscard]] auto collect_completed_nodes(
-      const std::vector<node_state> &node_states) const
-      -> std::vector<std::string>;
+  struct value_output_consumers {
+    std::vector<std::uint32_t> value_edges{};
+    std::vector<std::uint32_t> stream_edges{};
+    bool final_output{false};
 
-  auto publish_last_completed_nodes(
-      detail::runtime_state::invoke_outputs &outputs,
-      const std::vector<node_state> &node_states) const -> void;
+    [[nodiscard]] auto owner_count() const noexcept -> std::size_t {
+      return value_edges.size() + stream_edges.size() +
+             static_cast<std::size_t>(final_output);
+    }
+  };
 
   template <typename node_t>
   auto add_node_impl(node_t &&node) -> wh::core::result<void>;
@@ -532,10 +532,10 @@ private:
       -> wh::core::result<std::optional<wh::core::interrupt_signal>>;
 
   [[nodiscard]] static auto
-  make_missing_rerun_input_default(const node_contract contract)
+  make_missing_pending_input_default(const node_contract contract)
       -> wh::core::result<graph_value>;
 
-  auto resolve_missing_rerun_input(const node_contract input_contract) const
+  auto resolve_missing_pending_input(const node_contract input_contract) const
       -> wh::core::result<graph_value>;
 
   auto apply_runtime_resume_controls(
@@ -543,32 +543,29 @@ private:
       const detail::runtime_state::invoke_config &config) const
       -> wh::core::result<void>;
 
-  auto maybe_restore_from_checkpoint(
-      graph_value &input, wh::core::run_context &context,
-      graph_state_table &state_table,
-      detail::runtime_state::rerun_state &rerun_state,
+  auto prepare_restore_checkpoint(
+      wh::core::run_context &context,
       const detail::runtime_state::invoke_config &config,
-      bool &skip_state_pre_handlers,
       detail::checkpoint_runtime::restore_scope scope,
       const node_path &runtime_path,
       detail::runtime_state::invoke_outputs &outputs,
       forwarded_checkpoint_map &forwarded_checkpoints) const
-      -> wh::core::result<void>;
+      -> wh::core::result<
+          std::optional<detail::checkpoint_runtime::prepared_restore>>;
 
   auto maybe_persist_checkpoint(
-      wh::core::run_context &context, const graph_state_table &state_table,
-      detail::runtime_state::rerun_state &rerun_state,
+      wh::core::run_context &context, checkpoint_state checkpoint,
       const detail::runtime_state::invoke_config &config,
       detail::runtime_state::invoke_outputs &outputs) const
       -> wh::core::result<void>;
 
   [[nodiscard]] auto resolve_edge_status_indexed(
-      const indexed_edge &edge, const std::vector<node_state> &node_states,
+      const indexed_edge &edge, const std::vector<dag_node_phase> &dag_node_phases,
       const std::vector<branch_state> &branch_states) const
       -> edge_status;
 
   [[nodiscard]] auto classify_node_readiness_indexed(
-      const std::uint32_t node_id, const std::vector<node_state> &node_states,
+      const std::uint32_t node_id, const std::vector<dag_node_phase> &dag_node_phases,
       const std::vector<branch_state> &branch_states,
       const dynamic_bitset &output_valid) const
       -> ready_state;
@@ -598,9 +595,6 @@ private:
                                              &graph_scheduler)
       -> graph_sender;
 
-  [[nodiscard]] auto needs_reader_copy(const std::uint32_t node_id) const
-      noexcept -> bool;
-
   [[nodiscard]] auto needs_reader_merge(
       const std::uint32_t node_id) const noexcept -> bool;
 
@@ -609,9 +603,25 @@ private:
                                        wh::core::run_context &context) const
       -> wh::core::result<graph_value>;
 
+  [[nodiscard]] auto plan_value_output_consumers(
+      const std::uint32_t source_node_id,
+      const std::optional<std::vector<std::uint32_t>> &selection) const
+      -> value_output_consumers;
+
+  [[nodiscard]] auto lower_value_output_reader(
+      const indexed_edge &edge, graph_value value,
+      wh::core::run_context &context) const
+      -> wh::core::result<graph_stream_reader>;
+
   auto store_node_output(const std::uint32_t node_id,
                          io_storage &io_storage,
                          graph_value value) const -> wh::core::result<void>;
+
+  auto commit_value_output(
+      const std::uint32_t source_node_id, io_storage &io_storage,
+      graph_value value,
+      const std::optional<std::vector<std::uint32_t>> &selection,
+      wh::core::run_context &context) const -> wh::core::result<void>;
 
   [[nodiscard]] auto view_node_output(
       const std::uint32_t node_id,
@@ -623,13 +633,15 @@ private:
       io_storage &io_storage) const
       -> wh::core::result<graph_value>;
 
-  auto prepare_reader_copies(
+  auto commit_stream_output(
       const std::uint32_t source_node_id,
-      io_storage &io_storage) const -> wh::core::result<void>;
+      io_storage &io_storage, graph_stream_reader reader,
+      const std::optional<std::vector<std::uint32_t>> &selection) const
+      -> wh::core::result<void>;
 
   [[nodiscard]] auto collect_input_lanes(
       const std::uint32_t node_id,
-      const std::vector<node_state> &node_states,
+      const std::vector<dag_node_phase> &dag_node_phases,
       const std::vector<branch_state> &branch_states,
       const dynamic_bitset &output_valid) const -> std::vector<input_lane>;
 
@@ -650,13 +662,11 @@ private:
       -> wh::core::result<graph_value *>;
 
   [[nodiscard]] auto resolve_edge_reader(
-      const std::uint32_t edge_id, io_storage &io_storage,
-      wh::core::run_context &context) const
+      const std::uint32_t edge_id, io_storage &io_storage) const
       -> wh::core::result<graph_stream_reader *>;
 
   [[nodiscard]] auto take_edge_reader(
-      const std::uint32_t edge_id, io_storage &io_storage,
-      wh::core::run_context &context) const
+      const std::uint32_t edge_id, io_storage &io_storage) const
       -> wh::core::result<graph_stream_reader>;
 
   [[nodiscard]] auto merged_reader(
@@ -665,19 +675,17 @@ private:
 
   auto update_merged_reader(
       const std::uint32_t node_id, io_storage &io_storage,
-      const std::vector<input_lane> &lanes,
-      wh::core::run_context &context) const -> wh::core::result<void>;
+      const std::vector<input_lane> &lanes) const -> wh::core::result<void>;
 
   auto refresh_merged_reader(
       const std::uint32_t node_id, io_storage &io_storage,
-      const std::vector<node_state> &node_states,
-      const std::vector<branch_state> &branch_states,
-      wh::core::run_context &context) const -> wh::core::result<void>;
+      const std::vector<dag_node_phase> &dag_node_phases,
+      const std::vector<branch_state> &branch_states) const
+      -> wh::core::result<void>;
 
   [[nodiscard]] auto build_reader_input(
       const compiled_node &node, const std::uint32_t node_id,
-      io_storage &io_storage, const std::vector<input_lane> &lanes,
-      wh::core::run_context &context) const
+      io_storage &io_storage, const std::vector<input_lane> &lanes) const
       -> wh::core::result<resolved_input>;
 
   [[nodiscard]] auto build_value_input(
@@ -692,9 +700,9 @@ private:
 
   auto refresh_source_readers(
       const std::uint32_t source_node_id, io_storage &io_storage,
-      const std::vector<node_state> &node_states,
-      const std::vector<branch_state> &branch_states,
-      wh::core::run_context &context) const -> wh::core::result<void>;
+      const std::vector<dag_node_phase> &dag_node_phases,
+      const std::vector<branch_state> &branch_states) const
+      -> wh::core::result<void>;
 
   auto reset_pregel_source_caches(
       const std::uint32_t source_node_id,
@@ -712,7 +720,7 @@ private:
 
   [[nodiscard]] auto build_node_input(
       const std::uint32_t node_id, io_storage &io_storage,
-      const std::vector<node_state> &node_states,
+      const std::vector<dag_node_phase> &dag_node_phases,
       const std::vector<branch_state> &branch_states,
       graph_value &scratch, wh::core::run_context &context,
       const detail::runtime_state::invoke_config &config) const
@@ -720,7 +728,7 @@ private:
 
   [[nodiscard]] auto build_node_input_sender(
       const std::uint32_t node_id, io_storage &io_storage,
-      const std::vector<node_state> &node_states,
+      const std::vector<dag_node_phase> &dag_node_phases,
       const std::vector<branch_state> &branch_states,
       wh::core::run_context &context, node_frame *frame,
       const detail::runtime_state::invoke_config &config,
@@ -767,7 +775,7 @@ private:
       -> wh::core::result<std::optional<std::vector<std::uint32_t>>>;
 
   [[nodiscard]] auto evaluate_stream_branch_indexed(
-      const std::uint32_t source_node_id, io_storage &io_storage,
+      const std::uint32_t source_node_id, graph_stream_reader &source_output,
       wh::core::run_context &context,
       const graph_call_scope &call_options) const
       -> wh::core::result<std::optional<std::vector<std::uint32_t>>>;

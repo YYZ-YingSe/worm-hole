@@ -24,7 +24,7 @@ struct compiled_node;
 struct graph_node_state_handlers;
 
 namespace detail::invoke_runtime {
-class run_state;
+class invoke_session;
 }
 
 namespace detail::runtime_state {
@@ -36,7 +36,7 @@ struct invoke_state {
   /// Optional runtime services injected by the host.
   const graph_runtime_services *services{nullptr};
   /// Optional parent runtime when running as a nested graph.
-  const detail::invoke_runtime::run_state *parent_state{nullptr};
+  const detail::invoke_runtime::invoke_session *parent_state{nullptr};
   /// Resolved invoke configuration after services and controls merge.
   invoke_config config{};
   /// Mutable publishable outputs accumulated during the run.

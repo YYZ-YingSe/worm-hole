@@ -57,6 +57,12 @@ TEST_CASE("indexing parent flow derives parent ids and writes transformed chunks
   request.documents.push_back(std::move(parent_document));
   wh::core::run_context context{};
 
+  auto unfrozen = stdexec::sync_wait(flow.write(request, context));
+  REQUIRE(unfrozen.has_value());
+  REQUIRE(std::get<0>(*unfrozen).has_error());
+  REQUIRE(std::get<0>(*unfrozen).error() == wh::core::errc::contract_violation);
+
+  REQUIRE(flow.freeze().has_value());
   auto awaited = stdexec::sync_wait(flow.write(request, context));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
@@ -83,6 +89,7 @@ TEST_CASE("indexing parent flow rejects empty transforms and id count mismatch",
          wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
         return std::vector<std::string>{};
       }};
+  REQUIRE(empty_transform.freeze().has_value());
   auto empty_waited = stdexec::sync_wait(empty_transform.write(request, context));
   REQUIRE(empty_waited.has_value());
   REQUIRE(std::get<0>(*empty_waited).has_error());
@@ -100,6 +107,7 @@ TEST_CASE("indexing parent flow rejects empty transforms and id count mismatch",
          wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
         return std::vector<std::string>{"only-one"};
       }};
+  REQUIRE(mismatched_ids.freeze().has_value());
   auto mismatched_waited = stdexec::sync_wait(mismatched_ids.write(request, context));
   REQUIRE(mismatched_waited.has_value());
   REQUIRE(std::get<0>(*mismatched_waited).has_error());

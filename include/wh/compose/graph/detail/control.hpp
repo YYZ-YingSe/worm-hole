@@ -16,28 +16,6 @@ graph::should_wrap_as_node_run_error(const wh::core::error_code code) noexcept
 }
 
 inline auto
-graph::collect_completed_nodes(const std::vector<node_state> &node_states) const
-    -> std::vector<std::string> {
-  std::vector<std::string> completed_nodes{};
-  completed_nodes.reserve(node_states.size());
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_states.size()); ++node_id) {
-    if (node_states[node_id] != node_state::executed) {
-      continue;
-    }
-    completed_nodes.push_back(
-        core().compiled_execution_index_.index.id_to_key[node_id]);
-  }
-  return completed_nodes;
-}
-
-inline auto graph::publish_last_completed_nodes(
-    detail::runtime_state::invoke_outputs &outputs,
-    const std::vector<node_state> &node_states) const -> void {
-  outputs.last_completed_nodes = collect_completed_nodes(node_states);
-}
-
-inline auto
 graph::validate_call_scope_for_runtime(const graph_call_scope &call_scope) const
     -> wh::core::result<void> {
   const auto &call_options = call_scope.options();
@@ -342,7 +320,7 @@ inline auto graph::evaluate_interrupt_hook(
 }
 
 inline auto
-graph::make_missing_rerun_input_default(const node_contract contract)
+graph::make_missing_pending_input_default(const node_contract contract)
     -> wh::core::result<graph_value> {
   if (contract == node_contract::stream) {
     auto [writer, reader] = make_graph_stream(1U);
@@ -356,9 +334,9 @@ graph::make_missing_rerun_input_default(const node_contract contract)
 }
 
 inline auto
-graph::resolve_missing_rerun_input(const node_contract input_contract) const
+graph::resolve_missing_pending_input(const node_contract input_contract) const
     -> wh::core::result<graph_value> {
-  return make_missing_rerun_input_default(input_contract);
+  return make_missing_pending_input_default(input_contract);
 }
 
 inline auto graph::apply_runtime_resume_controls(
@@ -369,58 +347,32 @@ inline auto graph::apply_runtime_resume_controls(
                                                                   config);
 }
 
-inline auto graph::maybe_restore_from_checkpoint(
-    graph_value &input, wh::core::run_context &context,
-    graph_state_table &state_table,
-    detail::runtime_state::rerun_state &rerun_state,
+inline auto graph::prepare_restore_checkpoint(
+    wh::core::run_context &context,
     const detail::runtime_state::invoke_config &config,
-    bool &skip_state_pre_handlers,
     const detail::checkpoint_runtime::restore_scope scope,
     const node_path &runtime_path,
     detail::runtime_state::invoke_outputs &outputs,
     forwarded_checkpoint_map &forwarded_checkpoints) const
-    -> wh::core::result<void> {
-  const auto &restore_shape = core().restore_shape_;
-  const auto *start_node =
-      core().compiled_execution_index_.index.start_id <
-              core().compiled_execution_index_.index.nodes_by_id.size()
-          ? core()
-                .compiled_execution_index_.index
-                .nodes_by_id[core().compiled_execution_index_.index.start_id]
-          : nullptr;
-  const auto start_input_contract = start_node != nullptr
-                                        ? start_node->meta.input_contract
-                                        : node_contract::value;
-  return detail::checkpoint_runtime::maybe_restore(
-      input, context, state_table, rerun_state, skip_state_pre_handlers, scope,
-      core().options_.name, runtime_path, restore_shape,
-      core().compiled_execution_index_.index.start_id, config, outputs,
-      forwarded_checkpoints,
-      [this](const std::string_view node_key) -> std::optional<std::uint32_t> {
-        const auto iter =
-            core().compiled_execution_index_.index.key_to_id.find(node_key);
-        if (iter == core().compiled_execution_index_.index.key_to_id.end()) {
-          return std::nullopt;
-        }
-        return iter->second;
-      },
-      [this, start_input_contract]() {
-        return resolve_missing_rerun_input(start_input_contract);
-      });
+    -> wh::core::result<
+        std::optional<detail::checkpoint_runtime::prepared_restore>> {
+  return detail::checkpoint_runtime::prepare_restore(
+      context, scope, core().options_.name, runtime_path, core().restore_shape_,
+      core().compiled_execution_index_.index.id_to_key,
+      core().compiled_execution_index_.index.indexed_edges,
+      core().compiled_execution_index_.index.end_id, config, outputs,
+      forwarded_checkpoints);
 }
 
 inline auto graph::maybe_persist_checkpoint(
-    wh::core::run_context &context, const graph_state_table &state_table,
-    detail::runtime_state::rerun_state &rerun_state,
+    wh::core::run_context &context, checkpoint_state checkpoint,
     const detail::runtime_state::invoke_config &config,
     detail::runtime_state::invoke_outputs &outputs) const
     -> wh::core::result<void> {
-  const auto &restore_shape = core().restore_shape_;
   return detail::checkpoint_runtime::maybe_persist(
-      context, state_table, rerun_state,
-      core().compiled_execution_index_.index.id_to_key,
-      core().compiled_execution_index_.index.nodes_by_id, core().options_.name,
-      restore_shape, config, outputs);
+      context, std::move(checkpoint), core().compiled_execution_index_.index.id_to_key,
+      core().compiled_execution_index_.index.indexed_edges,
+      core().compiled_execution_index_.index.end_id, config, outputs);
 }
 
 } // namespace wh::compose

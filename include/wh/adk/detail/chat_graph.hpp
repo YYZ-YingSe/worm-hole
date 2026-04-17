@@ -208,9 +208,9 @@ private:
 /// Wraps one frozen chat shell as the common executable agent surface.
 [[nodiscard]] inline auto bind_chat_agent(wh::agent::chat authored)
     -> wh::core::result<wh::agent::agent> {
-  auto frozen = authored.freeze();
-  if (frozen.has_error()) {
-    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  if (!authored.frozen()) {
+    return wh::core::result<wh::agent::agent>::failure(
+        wh::core::errc::contract_violation);
   }
 
   wh::agent::agent exported{std::string{authored.name()}};
@@ -228,6 +228,10 @@ private:
       });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
+  }
+  auto exported_frozen = exported.freeze();
+  if (exported_frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(exported_frozen.error());
   }
   return exported;
 }

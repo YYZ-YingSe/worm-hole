@@ -80,6 +80,10 @@ Lowered Compose Graph
 - 用 `wh::prompt::simple_chat_template` 渲染初始对话
 - 运行一个 ReAct agent，让 model 先发起 tool call，再根据工具结果回答
 
+这些 flow wrapper 也遵循项目统一的 authored surface 约束：先配置，
+再显式调用 `freeze()`，最后再直接执行或接进 graph node。agent shell
+则走对应的公开相位路径：`freeze() -> into_agent() -> lower()`，然后再执行。
+
 示例构建入口：
 
 ```bash
@@ -127,7 +131,7 @@ python3 scripts/toolchain.py --help
 - CMake 3.25+
 - C++20
 - build/test CI 覆盖 Ubuntu、macOS、Windows
-- 深度分析、coverage 和 nightly 重型任务运行在 Linux
+- 深度分析、coverage 和 nightly stress 分片运行在 Linux
 
 ## 文档入口
 

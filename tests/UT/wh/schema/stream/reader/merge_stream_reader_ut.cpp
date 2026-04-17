@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,83 @@
 #include "helper/sender_env.hpp"
 #include "wh/schema/stream/pipe.hpp"
 #include "wh/schema/stream/reader/merge_stream_reader.hpp"
+
+namespace {
+
+struct throwing_scheduler_state {
+  std::size_t connect_calls{0U};
+  std::optional<std::size_t> fail_on_connect{};
+};
+
+struct throwing_scheduler {
+  using scheduler_concept = stdexec::scheduler_t;
+
+  template <typename receiver_t> struct schedule_op {
+    using operation_state_concept = stdexec::operation_state_t;
+
+    receiver_t receiver;
+
+    auto start() noexcept -> void { stdexec::set_value(std::move(receiver)); }
+  };
+
+  struct schedule_sender {
+    throwing_scheduler_state *state{nullptr};
+
+    using sender_concept = stdexec::sender_t;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t()>;
+
+    template <typename receiver_t>
+    auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
+      ++state->connect_calls;
+      if (state->fail_on_connect.has_value() &&
+          state->connect_calls == *state->fail_on_connect) {
+        throw std::runtime_error("schedule connect failed");
+      }
+      return schedule_op<receiver_t>{std::move(receiver)};
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
+  };
+
+  throwing_scheduler_state *state{nullptr};
+
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
+    return schedule_sender{state};
+  }
+
+  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept
+      -> bool = default;
+};
+
+template <typename value_t, typename env_t> struct single_completion_state {
+  int value_count{0};
+  int error_count{0};
+  int stopped_count{0};
+  std::optional<value_t> value{};
+};
+
+template <typename value_t, typename env_t> struct single_completion_receiver {
+  using receiver_concept = stdexec::receiver_t;
+
+  single_completion_state<value_t, env_t> *state{nullptr};
+  env_t env{};
+
+  auto set_value(value_t value) && noexcept -> void {
+    ++state->value_count;
+    state->value.emplace(std::move(value));
+  }
+
+  template <typename error_t> auto set_error(error_t &&) && noexcept -> void {
+    ++state->error_count;
+  }
+
+  auto set_stopped() && noexcept -> void { ++state->stopped_count; }
+
+  [[nodiscard]] auto get_env() const noexcept -> env_t { return env; }
+};
+
+} // namespace
 
 TEST_CASE("merge stream reader detail helpers sort and label lanes deterministically",
           "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][sort_named_stream_readers][branch][boundary]") {
@@ -154,4 +232,39 @@ TEST_CASE("merge stream reader async stop restart and pending attach paths remai
   REQUIRE(terminal.has_value());
   REQUIRE(terminal.value().eof);
   REQUIRE(terminal.value().source.empty());
+}
+
+TEST_CASE("merge stream reader resume scheduling failure delivers one terminal failure",
+          "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][merge_stream_reader::read_async][resume][failure]") {
+  using reader_t = wh::schema::stream::pipe_stream_reader<int>;
+  using result_t =
+      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
+
+  auto [writer, reader] = wh::schema::stream::make_pipe_stream<int>(2U);
+  REQUIRE(writer.try_write(7).has_value());
+  REQUIRE(writer.close().has_value());
+
+  std::vector<reader_t> readers{};
+  readers.push_back(std::move(reader));
+  auto merged = wh::schema::stream::make_merge_stream_reader(std::move(readers));
+
+  throwing_scheduler_state scheduler_state{};
+  scheduler_state.fail_on_connect = 1U;
+  auto env =
+      wh::testing::helper::make_scheduler_env(throwing_scheduler{&scheduler_state});
+
+  using env_t = decltype(env);
+  single_completion_state<result_t, env_t> state{};
+  auto operation = stdexec::connect(
+      merged.read_async(),
+      single_completion_receiver<result_t, env_t>{&state, env});
+  stdexec::start(operation);
+
+  REQUIRE(scheduler_state.connect_calls == 1U);
+  REQUIRE(state.value_count == 1);
+  REQUIRE(state.error_count == 0);
+  REQUIRE(state.stopped_count == 0);
+  REQUIRE(state.value.has_value());
+  REQUIRE(state.value->has_error());
+  REQUIRE(state.value->error() == wh::core::errc::internal_error);
 }

@@ -8,11 +8,9 @@
 
 namespace wh::compose::detail::input_runtime {
 
-using node_state = runtime_node_state;
 using edge_status = dag_edge_status;
 using ready_state = dag_ready_state;
 using branch_state = dag_branch_state;
-using progress_state = runtime_progress_state;
 using io_storage = runtime_io_storage;
 using dag_schedule = dag_schedule_state;
 

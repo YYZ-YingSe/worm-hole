@@ -75,11 +75,14 @@ TEST_CASE("agent shell exposes metadata topology transfer contracts and typed re
   REQUIRE(root.child("planner").value().get().frozen());
 }
 
-TEST_CASE("agent shell validates freeze lower_graph and hook error paths",
-          "[UT][wh/agent/agent.hpp][agent::lower_graph][condition][branch][boundary]") {
+TEST_CASE("agent shell validates freeze lower and hook error paths",
+          "[UT][wh/agent/agent.hpp][agent::lower][condition][branch][boundary]") {
   wh::agent::agent plain{"plain"};
+  auto unfrozen = plain.lower();
+  REQUIRE(unfrozen.has_error());
+  REQUIRE(unfrozen.error() == wh::core::errc::contract_violation);
   REQUIRE(plain.freeze().has_value());
-  auto unsupported = plain.lower_graph();
+  auto unsupported = plain.lower();
   REQUIRE(unsupported.has_error());
   REQUIRE(unsupported.error() == wh::core::errc::not_supported);
 
@@ -106,7 +109,7 @@ TEST_CASE("agent shell validates freeze lower_graph and hook error paths",
   REQUIRE(executable.freeze().has_value());
   REQUIRE(*freeze_calls == 1U);
 
-  auto graph = executable.lower_graph();
+  auto graph = executable.lower();
   REQUIRE(graph.has_value());
   REQUIRE(graph.value().compiled());
 
@@ -176,7 +179,8 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
         return wh::testing::helper::make_passthrough_graph(copied_name);
       });
   REQUIRE(copied_bound.has_value());
-  auto named_graph = named.lower_graph();
+  REQUIRE(named.freeze().has_value());
+  auto named_graph = named.lower();
   REQUIRE(named_graph.has_value());
   REQUIRE(named_graph->compiled());
 
@@ -189,7 +193,8 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
         return wh::testing::helper::make_passthrough_graph(*shell_name);
       });
   REQUIRE(move_only_bound.has_value());
-  auto move_only_graph = move_only.lower_graph();
+  REQUIRE(move_only.freeze().has_value());
+  auto move_only_graph = move_only.lower();
   REQUIRE(move_only_graph.has_value());
   REQUIRE(move_only_graph->compiled());
 
@@ -202,7 +207,8 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
       [graph = std::move(frozen_graph).value()]() mutable
           -> wh::core::result<wh::compose::graph> { return graph; });
   REQUIRE(prebuilt_bound.has_value());
-  auto prebuilt_graph = prebuilt.lower_graph();
+  REQUIRE(prebuilt.freeze().has_value());
+  auto prebuilt_graph = prebuilt.lower();
   REQUIRE(prebuilt_graph.has_value());
   REQUIRE(prebuilt_graph->compiled());
 }

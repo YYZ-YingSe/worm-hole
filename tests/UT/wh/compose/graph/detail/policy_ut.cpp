@@ -14,7 +14,7 @@ TEST_CASE("policy helpers enforce step-budget rules across dag and pregel invoke
   REQUIRE(dag_graph.has_value());
 
   wh::compose::graph_invoke_request dag_request{};
-  dag_request.input = wh::compose::graph_value{3};
+  dag_request.input = wh::compose::graph_input::value(3);
   dag_request.controls.call.pregel_max_steps = 2U;
   wh::core::run_context dag_context{};
   auto dag_waited =
@@ -31,7 +31,7 @@ TEST_CASE("policy helpers enforce step-budget rules across dag and pregel invoke
   REQUIRE(pregel_graph.has_value());
 
   wh::compose::graph_invoke_request zero_step_request{};
-  zero_step_request.input = wh::compose::graph_value{4};
+  zero_step_request.input = wh::compose::graph_input::value(4);
   zero_step_request.controls.call.pregel_max_steps = 0U;
   wh::core::run_context zero_step_context{};
   auto zero_step_waited = stdexec::sync_wait(
@@ -44,7 +44,7 @@ TEST_CASE("policy helpers enforce step-budget rules across dag and pregel invoke
   REQUIRE(std::get<0>(*zero_step_waited)->report.graph_run_error.has_value());
 
   wh::compose::graph_invoke_request pregel_request{};
-  pregel_request.input = wh::compose::graph_value{5};
+  pregel_request.input = wh::compose::graph_input::value(5);
   pregel_request.controls.call.pregel_max_steps = 2U;
   wh::core::run_context pregel_context{};
   auto pregel_waited = stdexec::sync_wait(

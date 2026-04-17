@@ -25,7 +25,7 @@
 #include "wh/compose/graph/detail/bitset.hpp"
 #include "wh/compose/graph/detail/runtime/input.hpp"
 #include "wh/compose/graph/detail/runtime/invoke.hpp"
-#include "wh/compose/graph/detail/runtime/rerun.hpp"
+#include "wh/compose/graph/detail/runtime/pending_inputs.hpp"
 #include "wh/compose/graph/edge_lowering.hpp"
 #include "wh/compose/graph/error.hpp"
 #include "wh/compose/graph/invoke_types.hpp"
@@ -38,7 +38,7 @@ namespace wh::compose::detail {
 
 struct graph_core {
   using dynamic_bitset = detail::dynamic_bitset;
-  using runtime_node_state = detail::input_runtime::runtime_node_state;
+  using dag_node_phase = detail::input_runtime::dag_node_phase;
   using dag_edge_status = detail::input_runtime::dag_edge_status;
   using dag_ready_state = detail::input_runtime::dag_ready_state;
   using pregel_ready_state = detail::input_runtime::pregel_ready_state;
@@ -46,7 +46,6 @@ struct graph_core {
   using dag_branch_state = detail::input_runtime::dag_branch_state;
   using reader_lane_state = detail::input_runtime::reader_lane_state;
   using reader_lowering = detail::input_runtime::reader_lowering;
-  using runtime_progress_state = detail::input_runtime::runtime_progress_state;
   using runtime_io_storage = detail::input_runtime::runtime_io_storage;
   using dag_schedule_state = detail::input_runtime::dag_schedule_state;
   using pregel_node_inputs = detail::input_runtime::pregel_node_inputs;
@@ -54,11 +53,9 @@ struct graph_core {
   using resolved_input = detail::input_runtime::resolved_input;
   using value_input = detail::input_runtime::value_input;
   using value_batch = detail::input_runtime::value_batch;
-  using node_state = runtime_node_state;
   using edge_status = dag_edge_status;
   using ready_state = dag_ready_state;
   using branch_state = dag_branch_state;
-  using progress_state = runtime_progress_state;
   using io_storage = runtime_io_storage;
   using dag_schedule = dag_schedule_state;
   using invoke_stage = detail::invoke_runtime::stage;

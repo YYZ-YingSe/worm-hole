@@ -72,64 +72,6 @@ function(wh_filter_test_sources_by_labels out_var)
   set("${out_var}" "${filtered_sources}" PARENT_SCOPE)
 endfunction()
 
-function(wh_add_coverage_ci_pr_monolith)
-  wh_collect_bundle_sources(
-    ut_sources
-    RECURSE
-    SOURCE_ROOT "${PROJECT_SOURCE_DIR}/tests/UT"
-    GLOB "wh/*_ut.cpp")
-  wh_collect_bundle_sources(
-    ft_sources
-    RECURSE
-    SOURCE_ROOT "${PROJECT_SOURCE_DIR}/tests/FT"
-    GLOB "wh/*_test.cpp")
-
-  wh_filter_test_sources_by_labels(
-    coverage_ut_sources
-    SUITE_LABEL "UT"
-    SOURCES ${ut_sources}
-    INCLUDE_LABELS "ci.pr"
-    EXCLUDE_LABELS "ci.nightly")
-  wh_filter_test_sources_by_labels(
-    coverage_ft_sources
-    SUITE_LABEL "FT"
-    SOURCES ${ft_sources}
-    INCLUDE_LABELS "ci.pr"
-    EXCLUDE_LABELS "ci.nightly")
-
-  set(coverage_sources ${coverage_ut_sources} ${coverage_ft_sources})
-  list(SORT coverage_sources)
-  list(LENGTH coverage_sources coverage_source_count)
-  if(coverage_source_count EQUAL 0)
-    message(FATAL_ERROR "coverage-monolith layout selected no ci.pr test sources")
-  endif()
-
-  wh_add_catch_test_bundle(
-    coverage_target
-    TARGET_NAME "wh_coverage_ci_pr_tests"
-    TEST_PREFIX "COVERAGE::"
-    SUITE_NAME "COVERAGE"
-    MANIFEST_SOURCE "tests/coverage/ci_pr_bundle.cpp"
-    SOURCES ${coverage_sources}
-    LINK_LIBRARIES "${WH_TARGET_TEST_SUPPORT}"
-    INCLUDE_DIRECTORIES
-      "${PROJECT_SOURCE_DIR}/tests"
-      "${PROJECT_SOURCE_DIR}/tests/UT"
-      "${PROJECT_SOURCE_DIR}/tests/FT"
-    LABELS "ci.pr" "coverage"
-    WEIGHT "${coverage_source_count}"
-    TIMEOUT_SECONDS "3600")
-
-  add_dependencies("${WH_TARGET_UT_TESTS}" "${coverage_target}")
-  add_dependencies("${WH_TARGET_FT_TESTS}" "${coverage_target}")
-  wh_register_project_artifact(TESTS "${WH_TARGET_UT_TESTS}")
-  wh_register_project_artifact(TESTS "${WH_TARGET_FT_TESTS}")
-endfunction()
-
-if(WH_TEST_EXECUTABLE_LAYOUT STREQUAL "coverage-monolith")
-  wh_add_coverage_ci_pr_monolith()
-endif()
-
 if(WH_BUILD_FT)
   add_subdirectory(FT)
 endif()

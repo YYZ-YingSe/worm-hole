@@ -17,7 +17,7 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parent.parent
-THIRD_PARTY_DIR = ROOT / "thirdy_party"
+THIRD_PARTY_ROOT = ROOT / "thirdy_party"
 BUILD_ROOT = ROOT / "build"
 TESTS_DIR = ROOT / "tests"
 DEFAULT_REPORTER = "compact"
@@ -25,7 +25,6 @@ DEFAULT_LOCAL_PRESET = "dev-debug"
 DEFAULT_ANALYSIS_PRESET = "ci-static-analysis"
 DEFAULT_SANITIZER_PRESET = "ci-asan-ubsan"
 DEFAULT_COVERAGE_PRESET = "ci-coverage"
-DEFAULT_CODEQL_PRESET = "ci-codeql"
 
 
 @dataclass(frozen=True)
@@ -146,7 +145,7 @@ def is_project_path_in_scope(
         return False
     if not under(path, ROOT):
         return False
-    if not include_third_party and under(path, THIRD_PARTY_DIR):
+    if not include_third_party and under(path, THIRD_PARTY_ROOT):
         return False
     if under(path, BUILD_ROOT):
         return False
@@ -388,7 +387,7 @@ def collect_source_files(scope_mode: str) -> tuple[list[Path], str]:
     filtered = [
         file
         for file in files
-        if under(file, ROOT) and not under(file, THIRD_PARTY_DIR) and not under(file, BUILD_ROOT)
+        if under(file, ROOT) and not under(file, THIRD_PARTY_ROOT) and not under(file, BUILD_ROOT)
     ]
     return filtered, scope_label
 
@@ -407,7 +406,7 @@ def collect_shell_files(scope_mode: str) -> tuple[list[Path], str]:
     filtered = [
         file
         for file in files
-        if under(file, ROOT) and not under(file, THIRD_PARTY_DIR) and not under(file, BUILD_ROOT)
+        if under(file, ROOT) and not under(file, THIRD_PARTY_ROOT) and not under(file, BUILD_ROOT)
     ]
     return filtered, scope_label
 
@@ -809,6 +808,115 @@ def filter_coverage_report_to_project_scope(
     report_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print_step("coverage", f"FILTER files {total_files_after}/{total_files_before}")
     return payload
+
+
+def coverage_tools() -> tuple[str, str]:
+    llvm_cov_bin = os.environ.get("WH_LLVM_COV_BIN", "llvm-cov")
+    llvm_profdata_bin = os.environ.get("WH_LLVM_PROFDATA_BIN", "llvm-profdata")
+    require_commands("coverage", "cmake", llvm_cov_bin, llvm_profdata_bin)
+    return llvm_cov_bin, llvm_profdata_bin
+
+
+def merge_coverage_profiles(
+    tag: str,
+    llvm_profdata_bin: str,
+    profile_inputs: Sequence[Path],
+    output_file: Path,
+) -> None:
+    if not profile_inputs:
+        fail(tag, "no coverage profiles to merge")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    run(
+        [
+            llvm_profdata_bin,
+            "merge",
+            "-sparse",
+            *[str(path) for path in profile_inputs],
+            "-o",
+            str(output_file),
+        ]
+    )
+    print_step(tag, f"MERGED profiles={len(profile_inputs)} -> {output_file}")
+
+
+def export_coverage_summary(
+    tag: str,
+    llvm_cov_bin: str,
+    profdata_file: Path,
+    binaries: Sequence[str],
+    report_json: Path,
+) -> None:
+    report_json.parent.mkdir(parents=True, exist_ok=True)
+    export_result = run(
+        [
+            llvm_cov_bin,
+            "export",
+            "--summary-only",
+            "--instr-profile",
+            str(profdata_file),
+            *binaries,
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if export_result.stdout:
+        report_json.write_text(export_result.stdout, encoding="utf-8")
+    else:
+        report_json.write_text("", encoding="utf-8")
+    if export_result.stderr:
+        sys.stderr.write(export_result.stderr)
+    if export_result.returncode != 0:
+        fail(tag, f"llvm-cov export failed with status {export_result.returncode}")
+    if "mismatched data" in export_result.stderr:
+        fail(
+            tag,
+            "llvm-cov reported mismatched data across coverage binaries; "
+            "aggregate line coverage is unreliable",
+        )
+
+
+def check_coverage_gate(tag: str, report_json: Path, minimum_lines: float) -> None:
+    payload = filter_coverage_report_to_project_scope(
+        report_json,
+        include_tests=True,
+    )
+    data = payload.get("data") or []
+    totals = data[0].get("totals", {}) if data else {}
+    lines = totals.get("lines", {}) if isinstance(totals, dict) else {}
+    percent = lines.get("percent")
+    if percent is None:
+        fail(tag, "coverage export did not contain line percentage")
+
+    line_pct = float(percent)
+    min_pct = float(minimum_lines) * 100.0
+    if line_pct + 1e-9 < min_pct:
+        fail(tag, f"line coverage {line_pct:.2f}% below threshold {min_pct:.2f}%")
+    print_step(tag, f"PASS line coverage {line_pct:.2f}% (threshold {min_pct:.2f}%)")
+
+
+def collect_coverage_profiles(tag: str, profile_dir: Path) -> list[Path]:
+    if not profile_dir.exists():
+        fail(tag, f"missing coverage profile directory: {profile_dir}")
+
+    profdata_files = sorted(path for path in profile_dir.rglob("*.profdata") if path.is_file())
+    if profdata_files:
+        return profdata_files
+
+    profraw_files = sorted(path for path in profile_dir.rglob("*.profraw") if path.is_file())
+    if profraw_files:
+        return profraw_files
+
+    fail(tag, f"no coverage profiles found under {profile_dir}")
+
+
+def collect_coverage_binaries(tag: str, binaries_dir: Path) -> list[Path]:
+    if not binaries_dir.exists():
+        fail(tag, f"missing coverage binaries directory: {binaries_dir}")
+
+    binaries = sorted(path for path in binaries_dir.rglob("*") if path.is_file())
+    if not binaries:
+        fail(tag, f"no coverage binaries found under {binaries_dir}")
+    return binaries
 
 
 def shard_compile_entries(
@@ -1222,25 +1330,8 @@ def ci_codechecker(args: argparse.Namespace) -> None:
     print_step("codechecker", "PASS")
 
 
-def ci_codeql_build(args: argparse.Namespace) -> None:
-    if not (ROOT / "CMakeLists.txt").exists():
-        print_step("codeql-build", "SKIP no CMakeLists.txt")
-        return
-
-    build_dir = configure_preset(args.configure_preset, "codeql-build")
-    build_preset(
-        args.build_preset or args.configure_preset,
-        "codeql-build",
-        targets=[build_artifact_target("tests")],
-    )
-    print_compiler_cache_stats()
-    print_step("codeql-build", f"PASS {build_dir}")
-
-
 def ci_coverage(args: argparse.Namespace) -> None:
-    llvm_cov_bin = os.environ.get("WH_LLVM_COV_BIN", "llvm-cov")
-    llvm_profdata_bin = os.environ.get("WH_LLVM_PROFDATA_BIN", "llvm-profdata")
-    require_commands("coverage", "cmake", llvm_cov_bin, llvm_profdata_bin)
+    llvm_cov_bin, llvm_profdata_bin = coverage_tools()
 
     manifest_path = configure_and_validate_manifest(args.configure_preset, "coverage")
     build_dir = build_dir_for_preset(args.configure_preset)
@@ -1265,13 +1356,15 @@ def ci_coverage(args: argparse.Namespace) -> None:
 
     profile_dir = build_dir / "profiles"
     report_dir = build_dir / "reports"
-    profdata_file = profile_dir / "coverage.profdata"
+    profdata_file = report_dir / "coverage.profdata"
     report_json = report_dir / "coverage-summary.json"
     profile_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
 
     for file in profile_dir.glob("*.profraw"):
         file.unlink()
+    if profdata_file.exists():
+        profdata_file.unlink()
 
     run_test_entries(
         shard,
@@ -1280,74 +1373,105 @@ def ci_coverage(args: argparse.Namespace) -> None:
         env={"LLVM_PROFILE_FILE": str(profile_dir / "%m-%p.profraw")},
     )
 
-    profraw_files = sorted(profile_dir.glob("*.profraw"))
-    if not profraw_files:
-        fail("coverage", f"no profile data produced under {profile_dir}")
+    profraw_files = collect_coverage_profiles("coverage", profile_dir)
+    merge_coverage_profiles("coverage", llvm_profdata_bin, profraw_files, profdata_file)
 
     binaries = [str(entry.executable) for entry in shard]
-    run(
-        [
-            llvm_profdata_bin,
-            "merge",
-            "-sparse",
-            *map(str, profraw_files),
-            "-o",
-            str(profdata_file),
-        ]
+    export_coverage_summary("coverage", llvm_cov_bin, profdata_file, binaries, report_json)
+    check_coverage_gate("coverage", report_json, args.coverage_min_lines)
+
+
+def ci_coverage_shard(args: argparse.Namespace) -> None:
+    _, llvm_profdata_bin = coverage_tools()
+    if args.profile_output is None and args.artifact_dir is None:
+        fail("coverage-shard", "either --profile-output or --artifact-dir is required", code=2)
+
+    manifest_path = configure_and_validate_manifest(args.configure_preset, "coverage-shard")
+    build_dir = build_dir_for_preset(args.configure_preset)
+    shard = manifest_shard(
+        manifest_path,
+        shard_count=args.shard_count,
+        shard_index=args.shard_index,
+        suites=args.suite,
+        include_labels=args.include_label or ["ci.pr"],
+        exclude_labels=args.exclude_label,
+    )
+    if not shard:
+        fail("coverage-shard", "coverage shard selected no tests")
+
+    targets = [entry.target for entry in shard]
+    print_step(
+        "coverage-shard",
+        f"preset={args.configure_preset} shard={args.shard_index}/{args.shard_count} "
+        f"targets={len(targets)}",
+    )
+    build_targets_in_batches(
+        args.build_preset or args.configure_preset,
+        "coverage-shard",
+        targets=targets,
+    )
+    print_compiler_cache_stats()
+
+    profile_dir = build_dir / "profiles" / f"shard-{args.shard_index}"
+    if profile_dir.exists():
+        shutil.rmtree(profile_dir)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    run_test_entries(
+        shard,
+        reporter=args.reporter,
+        default_timeout_seconds=args.default_timeout_seconds,
+        env={"LLVM_PROFILE_FILE": str(profile_dir / "%m-%p.profraw")},
     )
 
-    export_result = run(
-        [
-            llvm_cov_bin,
-            "export",
-            "--summary-only",
-            "--instr-profile",
-            str(profdata_file),
-            *binaries,
-        ],
-        check=False,
-        capture_output=True,
+    profile_output = (
+        args.profile_output.resolve()
+        if args.profile_output is not None
+        else (build_dir / "reports" / f"coverage-shard-{args.shard_index}.profdata")
     )
-    if export_result.stdout:
-        report_json.write_text(export_result.stdout, encoding="utf-8")
-    else:
-        report_json.write_text("", encoding="utf-8")
-    if export_result.stderr:
-        sys.stderr.write(export_result.stderr)
-    if export_result.returncode != 0:
-        fail("coverage", f"llvm-cov export failed with status {export_result.returncode}")
-    if "mismatched data" in export_result.stderr:
-        fail(
-            "coverage",
-            "llvm-cov reported mismatched data across coverage binaries; "
-            "aggregate line coverage is unreliable",
+    merge_coverage_profiles(
+        "coverage-shard",
+        llvm_profdata_bin,
+        collect_coverage_profiles("coverage-shard", profile_dir),
+        profile_output,
+    )
+    if args.artifact_dir is not None:
+        artifact_dir = args.artifact_dir.resolve()
+        if artifact_dir.exists():
+            shutil.rmtree(artifact_dir)
+        profiles_dir = artifact_dir / "profiles"
+        binaries_dir = artifact_dir / "binaries"
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        binaries_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(
+            profile_output,
+            profiles_dir / f"coverage-shard-{args.shard_index}.profdata",
         )
-
-    # llvm-cov may still surface generated/build-tree paths in summary exports.
-    # Re-scope the exported JSON with the same first-party path rules used by
-    # the rest of the CI toolchain before evaluating the gate.
-    payload = filter_coverage_report_to_project_scope(
-        report_json,
-        include_tests=True,
-    )
-    data = payload.get("data") or []
-    totals = data[0].get("totals", {}) if data else {}
-    lines = totals.get("lines", {}) if isinstance(totals, dict) else {}
-    percent = lines.get("percent")
-    if percent is None:
-        fail("coverage", "coverage export did not contain line percentage")
-
-    line_pct = float(percent)
-    min_pct = float(args.coverage_min_lines) * 100.0
-    if line_pct + 1e-9 < min_pct:
-        fail("coverage", f"line coverage {line_pct:.2f}% below threshold {min_pct:.2f}%")
-    print_step("coverage", f"PASS line coverage {line_pct:.2f}% (threshold {min_pct:.2f}%)")
+        for entry in shard:
+            shutil.copy2(entry.executable, binaries_dir / entry.target)
+        print_step("coverage-shard", f"ARTIFACT {artifact_dir}")
+    print_step("coverage-shard", f"PASS {profile_output}")
 
 
-def local_sync_thirdy_party(_: argparse.Namespace) -> None:
-    require_commands("sync-thirdy-party", "git")
+def ci_coverage_aggregate(args: argparse.Namespace) -> None:
+    llvm_cov_bin, llvm_profdata_bin = coverage_tools()
+    artifact_dir = args.artifact_dir.resolve()
+    profile_inputs = collect_coverage_profiles("coverage", artifact_dir / "profiles")
+    binaries = [str(path) for path in collect_coverage_binaries("coverage", artifact_dir / "binaries")]
+    report_dir = artifact_dir / "reports"
+    profdata_file = report_dir / "coverage.profdata"
+    report_json = report_dir / "coverage-summary.json"
+
+    merge_coverage_profiles("coverage", llvm_profdata_bin, profile_inputs, profdata_file)
+    export_coverage_summary("coverage", llvm_cov_bin, profdata_file, binaries, report_json)
+    check_coverage_gate("coverage", report_json, args.coverage_min_lines)
+
+
+def local_sync_third_party(_: argparse.Namespace) -> None:
+    require_commands("sync-third-party", "git")
+    run(["git", "submodule", "sync", "--recursive"])
     run(["git", "submodule", "update", "--init", "--recursive"])
-    print_step("sync-thirdy-party", "PASS")
+    print_step("sync-third-party", "PASS")
 
 
 def local_clean(args: argparse.Namespace) -> None:
@@ -1450,8 +1574,11 @@ def build_parser() -> argparse.ArgumentParser:
     local = subparsers.add_parser("local", help="Local configure/build/test entrypoints.")
     local_sub = local.add_subparsers(dest="local_mode", required=True)
 
-    local_sync_parser = local_sub.add_parser("sync-thirdy-party")
-    local_sync_parser.set_defaults(func=local_sync_thirdy_party)
+    local_sync_parser = local_sub.add_parser(
+        "sync-third-party",
+        help="Sync in-tree third-party submodules.",
+    )
+    local_sync_parser.set_defaults(func=local_sync_third_party)
 
     local_clean_parser = local_sub.add_parser("clean")
     local_clean_parser.add_argument("--preset", default=DEFAULT_LOCAL_PRESET)
@@ -1533,17 +1660,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     codechecker_parser.set_defaults(func=ci_codechecker)
 
-    codeql_parser = ci_sub.add_parser("codeql-build")
-    codeql_parser.add_argument("--configure-preset", default=DEFAULT_CODEQL_PRESET)
-    codeql_parser.add_argument("--build-preset")
-    codeql_parser.set_defaults(func=ci_codeql_build)
-
     coverage_parser = ci_sub.add_parser("coverage")
     coverage_parser.add_argument("--configure-preset", default=DEFAULT_COVERAGE_PRESET)
     coverage_parser.add_argument("--build-preset")
     coverage_parser.add_argument("--coverage-min-lines", type=float, default=0.70)
     add_shard_args(coverage_parser)
     coverage_parser.set_defaults(func=ci_coverage)
+
+    coverage_shard_parser = ci_sub.add_parser("coverage-shard")
+    coverage_shard_parser.add_argument("--configure-preset", default=DEFAULT_COVERAGE_PRESET)
+    coverage_shard_parser.add_argument("--build-preset")
+    coverage_shard_parser.add_argument("--profile-output", type=Path)
+    coverage_shard_parser.add_argument("--artifact-dir", type=Path)
+    add_shard_args(coverage_shard_parser)
+    coverage_shard_parser.set_defaults(func=ci_coverage_shard)
+
+    coverage_aggregate_parser = ci_sub.add_parser("coverage-aggregate")
+    coverage_aggregate_parser.add_argument("--artifact-dir", type=Path, required=True)
+    coverage_aggregate_parser.add_argument("--coverage-min-lines", type=float, default=0.70)
+    coverage_aggregate_parser.set_defaults(func=ci_coverage_aggregate)
 
     return parser
 

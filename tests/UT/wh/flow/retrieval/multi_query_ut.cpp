@@ -101,6 +101,12 @@ TEST_CASE("multi query flow rewrites clips and fuses retrieved documents",
   wh::retriever::retriever_request request{};
   request.query = "hello";
   wh::core::run_context context{};
+  auto unfrozen = stdexec::sync_wait(mq.retrieve(request, context));
+  REQUIRE(unfrozen.has_value());
+  REQUIRE(std::get<0>(*unfrozen).has_error());
+  REQUIRE(std::get<0>(*unfrozen).error() == wh::core::errc::contract_violation);
+
+  REQUIRE(mq.freeze().has_value());
   auto awaited = stdexec::sync_wait(mq.retrieve(request, context));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
@@ -124,6 +130,7 @@ TEST_CASE("multi query flow propagates rewrite and fusion failures",
   };
   wh::flow::retrieval::multi_query failing_rewrite{
       wh::retriever::retriever{query_retriever_impl{}}, failing_rewriter};
+  REQUIRE(failing_rewrite.freeze().has_value());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";
@@ -141,6 +148,7 @@ TEST_CASE("multi query flow propagates rewrite and fusion failures",
   };
   wh::flow::retrieval::multi_query failing_merge{
       wh::retriever::retriever{query_retriever_impl{}}, original, failing_fusion};
+  REQUIRE(failing_merge.freeze().has_value());
   auto fusion_waited = stdexec::sync_wait(failing_merge.retrieve(request, context));
   REQUIRE(fusion_waited.has_value());
   REQUIRE(std::get<0>(*fusion_waited).has_error());
@@ -157,6 +165,7 @@ TEST_CASE("multi query flow clips expanded queries and rejects empty rewrite out
   wh::flow::retrieval::multi_query clipped{
       wh::retriever::retriever{query_retriever_impl{}}, repeated_rewriter};
   REQUIRE(clipped.set_max_queries(2U).has_value());
+  REQUIRE(clipped.freeze().has_value());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";
@@ -174,6 +183,7 @@ TEST_CASE("multi query flow clips expanded queries and rejects empty rewrite out
   wh::flow::retrieval::multi_query empty_queries{
       wh::retriever::retriever{query_retriever_impl{}}, empty_rewriter};
   REQUIRE(empty_queries.set_max_queries(0U).has_value());
+  REQUIRE(empty_queries.freeze().has_value());
   auto empty_waited = stdexec::sync_wait(empty_queries.retrieve(request, context));
   REQUIRE(empty_waited.has_value());
   REQUIRE(std::get<0>(*empty_waited).has_value());

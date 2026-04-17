@@ -281,22 +281,25 @@ TEST_CASE("host graph state callbacks lowerers and binders cover request routing
   auto supervisor =
       wh::testing::helper::make_configured_supervisor("supervisor");
   REQUIRE(supervisor.has_value());
+  REQUIRE(supervisor->freeze().has_value());
   auto bound_supervisor =
       wh::adk::detail::bind_supervisor_agent(std::move(supervisor).value());
   REQUIRE(bound_supervisor.has_value());
-  REQUIRE(bound_supervisor->lower_graph().has_value());
+  REQUIRE(bound_supervisor->lower().has_value());
 
   auto swarm = wh::testing::helper::make_configured_swarm("swarm");
   REQUIRE(swarm.has_value());
+  REQUIRE(swarm->freeze().has_value());
   auto bound_swarm =
       wh::adk::detail::bind_swarm_agent(std::move(swarm).value());
   REQUIRE(bound_swarm.has_value());
-  REQUIRE(bound_swarm->lower_graph().has_value());
+  REQUIRE(bound_swarm->lower().has_value());
 
   auto research = wh::testing::helper::make_configured_research("research");
   REQUIRE(research.has_value());
+  REQUIRE(research->freeze().has_value());
   auto bound_research =
       wh::adk::detail::bind_research_agent(std::move(research).value());
   REQUIRE(bound_research.has_value());
-  REQUIRE(bound_research->lower_graph().has_value());
+  REQUIRE(bound_research->lower().has_value());
 }

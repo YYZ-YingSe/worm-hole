@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <mutex>
 #include <optional>
 #include <utility>
 #include <vector>
 
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/pull_op.hpp"
 #include "wh/core/cursor_reader/detail/retained_ring_storage.hpp"
 #include "wh/core/cursor_reader/detail/source.hpp"
@@ -16,14 +16,14 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/stdexec.hpp"
-#include "wh/core/stdexec/manual_lifetime_box.hpp"
 
 namespace wh::core::cursor_reader_detail {
 
 template <wh::core::cursor_reader_source source_t, typename policy_t>
   requires wh::core::cursor_reader_detail::policy_for<source_t, policy_t>
 class shared_state
-    : public std::enable_shared_from_this<shared_state<source_t, policy_t>> {
+    : public wh::core::detail::intrusive_enable_from_this<
+          shared_state<source_t, policy_t>> {
 public:
   using result_type = typename policy_t::result_type;
   using try_result_type = typename policy_t::try_result_type;
@@ -35,15 +35,23 @@ public:
   using sync_ready_buffer_t = sync_ready_buffer<result_type>;
   using async_ready_list_t = async_ready_list<result_type>;
 
-  struct inactive_pull_op {};
+  struct inactive_pull_op
+      : wh::core::detail::intrusive_enable_from_this<inactive_pull_op> {
+    auto request_stop() noexcept -> void {}
+  };
   using pull_op_t =
       std::conditional_t<wh::core::cursor_reader_detail::async_source<source_t>,
                          pull_op<shared_state, source_t, result_type>,
                          inactive_pull_op>;
+  using active_pull_handle_t = wh::core::detail::intrusive_ptr<pull_op_t>;
 
   struct async_read_ticket {
     std::optional<result_type> ready{};
     bool start_pull{false};
+
+    [[nodiscard]] auto registered() const noexcept -> bool {
+      return !ready.has_value();
+    }
   };
 
 public:
@@ -91,8 +99,7 @@ public:
   auto close_reader(const std::size_t reader_index) noexcept -> void {
     async_ready_list_t async_ready{};
     bool start_close = false;
-    std::shared_ptr<stdexec::inplace_stop_source> stop_source{};
-    std::shared_ptr<shared_state> keepalive{};
+    active_pull_handle_t active_pull{};
     {
       std::scoped_lock lock(lock_);
       auto &reader = readers_[reader_index];
@@ -105,6 +112,7 @@ public:
         waiter->complete(policy_t::closed_result());
       }
       while (auto *waiter = reader.async_waiters.try_pop_front()) {
+        waiter->clear_waiting_registered();
         decrement_async_waiter_count_locked();
         waiter->store_ready(policy_t::closed_result());
         async_ready.push_back(waiter);
@@ -119,16 +127,14 @@ public:
         switch (pull_state_) {
         case pull_state::idle:
           pull_state_ = pull_state::closing;
-          keepalive = this->shared_from_this();
           start_close = true;
           break;
         case pull_state::try_reading:
         case pull_state::blocking_reading:
         case pull_state::async_reading:
-          stop_source = active_pull_stop_source_;
+          active_pull = active_pull_;
           break;
         case pull_state::closing:
-          break;
         case pull_state::terminal:
           break;
         }
@@ -138,8 +144,10 @@ public:
     if (start_close) {
       run_close_source();
     }
-    if (stop_source != nullptr) {
-      stop_source->request_stop();
+    if constexpr (wh::core::cursor_reader_detail::async_source<source_t>) {
+      if (active_pull) {
+        active_pull->request_stop();
+      }
     }
     notify_async_waiters(async_ready);
   }
@@ -217,21 +225,25 @@ public:
     }
   }
 
-  [[nodiscard]] auto prepare_async_read(const std::size_t reader_index,
-                                        async_waiter_t *waiter) noexcept
+  [[nodiscard]] auto register_async_waiter(const std::size_t reader_index,
+                                           async_waiter_t *waiter) noexcept
       -> async_read_ticket {
     std::scoped_lock lock(lock_);
     auto &reader = readers_[reader_index];
     if (reader.closed) {
+      waiter->clear_waiting_registered();
       return {.ready = policy_t::closed_result(), .start_pull = false};
     }
     if (auto ready = consume_local_locked(reader); ready.has_value()) {
+      waiter->clear_waiting_registered();
       return {.ready = std::move(*ready), .start_pull = false};
     }
     if (pull_state_ == pull_state::terminal) {
+      waiter->clear_waiting_registered();
       return {.ready = policy_t::closed_result(), .start_pull = false};
     }
 
+    waiter->mark_waiting_registered();
     reader.async_waiters.push_back(waiter);
     increment_async_waiter_count_locked();
     if (pull_state_ == pull_state::idle) {
@@ -243,25 +255,28 @@ public:
 
   auto remove_async_waiter(const std::size_t reader_index,
                            async_waiter_t *waiter) noexcept -> bool {
-    std::shared_ptr<stdexec::inplace_stop_source> stop_source{};
+    active_pull_handle_t active_pull{};
     {
       std::scoped_lock lock(lock_);
       auto removed = readers_[reader_index].async_waiters.try_remove(waiter);
       if (!removed) {
         return false;
       }
+      waiter->clear_waiting_registered();
       decrement_async_waiter_count_locked();
       if (pull_state_ == pull_state::async_reading &&
           async_waiter_count_ == 0U) {
-        if (active_pull_.has_value()) {
-          stop_source = active_pull_stop_source_;
+        if (active_pull_) {
+          active_pull = active_pull_;
         } else if (!close_requested_) {
           pull_state_ = pull_state::idle;
         }
       }
     }
-    if (stop_source != nullptr) {
-      stop_source->request_stop();
+    if constexpr (wh::core::cursor_reader_detail::async_source<source_t>) {
+      if (active_pull) {
+        active_pull->request_stop();
+      }
     }
     return true;
   }
@@ -271,25 +286,23 @@ public:
       -> void
     requires wh::core::cursor_reader_detail::async_source<source_t>
   {
+    active_pull_handle_t active_pull{};
     try {
-      auto keepalive = this->shared_from_this();
-      auto stop_source = std::make_shared<stdexec::inplace_stop_source>();
       {
         std::scoped_lock lock(lock_);
-        if (active_pull_.has_value() ||
-            pull_state_ != pull_state::async_reading) {
+        if (pull_state_ != pull_state::async_reading || active_pull_) {
           return;
         }
-        pull_keepalive_ = std::move(keepalive);
-        active_pull_stop_source_ = stop_source;
-        active_pull_.emplace_from(
-            [](shared_state *owner) { return pull_op_t{owner}; }, this);
+        active_pull = wh::core::detail::make_intrusive<pull_op_t>(*this);
+        active_pull_ = active_pull;
       }
-      active_pull_.get().start(source_, std::move(scheduler),
-                               std::move(stop_source));
+      active_pull->start(source_, std::move(scheduler));
     } catch (...) {
-      finish_source_pull(nullptr, policy_t::internal_result(), true);
-      reset_active_pull(nullptr);
+      {
+        std::scoped_lock lock(lock_);
+        active_pull_.reset();
+      }
+      publish(policy_t::internal_result(), true);
     }
   }
 
@@ -297,21 +310,15 @@ public:
                           const bool terminal_override) noexcept -> void {
     bool discard_result = false;
     bool start_close = false;
-    std::shared_ptr<shared_state> keepalive{};
     {
       std::scoped_lock lock(lock_);
-      if (pull != nullptr) {
-        if (!active_pull_.has_value() ||
-            std::addressof(active_pull_.get()) != pull) {
-          return;
-        }
-      } else if (!active_pull_.has_value()) {
+      if (!active_pull_ || active_pull_.get() != pull) {
         return;
       }
+      active_pull_.reset();
       if (open_reader_count_ == 0U && close_requested_) {
         pull_state_ = pull_state::closing;
         discard_result = true;
-        keepalive = this->shared_from_this();
         start_close = true;
       }
     }
@@ -327,21 +334,15 @@ public:
 
   auto finish_source_pull_stopped(const pull_op_t *pull) noexcept -> void {
     bool start_close = false;
-    std::shared_ptr<shared_state> keepalive{};
     {
       std::scoped_lock lock(lock_);
-      if (pull != nullptr) {
-        if (!active_pull_.has_value() ||
-            std::addressof(active_pull_.get()) != pull) {
-          return;
-        }
-      } else if (!active_pull_.has_value()) {
+      if (!active_pull_ || active_pull_.get() != pull) {
         return;
       }
+      active_pull_.reset();
 
       if (open_reader_count_ == 0U && close_requested_) {
         pull_state_ = pull_state::closing;
-        keepalive = this->shared_from_this();
         start_close = true;
       } else {
         pull_state_ = pull_state::idle;
@@ -350,19 +351,6 @@ public:
     if (start_close) {
       run_close_source();
     }
-  }
-
-  auto reset_active_pull(const pull_op_t *pull) noexcept -> void {
-    std::scoped_lock lock(lock_);
-    if (!active_pull_.has_value()) {
-      return;
-    }
-    if (pull != nullptr && std::addressof(active_pull_.get()) != pull) {
-      return;
-    }
-    active_pull_.reset();
-    active_pull_stop_source_.reset();
-    pull_keepalive_.reset();
   }
 
 private:
@@ -400,7 +388,6 @@ private:
     result_type published{};
     bool terminal = false;
     bool start_close = false;
-    std::shared_ptr<shared_state> keepalive{};
     try {
       auto next = source_.try_read();
       if (policy_t::is_pending(next)) {
@@ -408,7 +395,6 @@ private:
           std::scoped_lock lock(lock_);
           if (close_requested_) {
             pull_state_ = pull_state::closing;
-            keepalive = this->shared_from_this();
             start_close = true;
           } else {
             pull_state_ = pull_state::idle;
@@ -454,7 +440,6 @@ private:
     sync_ready_buffer_t sync_ready{};
     async_ready_list_t async_ready{};
     bool start_close = false;
-    std::shared_ptr<shared_state> keepalive{};
     {
       std::scoped_lock lock(lock_);
       ensure_capacity_locked();
@@ -466,7 +451,6 @@ private:
         pull_state_ = pull_state::terminal;
       } else if (close_requested_) {
         pull_state_ = pull_state::closing;
-        keepalive = this->shared_from_this();
         start_close = true;
       } else {
         pull_state_ = pull_state::idle;
@@ -501,6 +485,7 @@ private:
       while (reader.async_waiters.front() != nullptr) {
         if (auto ready = consume_local_locked(reader); ready.has_value()) {
           auto *waiter = reader.async_waiters.try_pop_front();
+          waiter->clear_waiting_registered();
           decrement_async_waiter_count_locked();
           waiter->store_ready(std::move(*ready));
           async_ready.push_back(waiter);
@@ -508,6 +493,7 @@ private:
         }
         if (pull_state_ == pull_state::terminal) {
           auto *waiter = reader.async_waiters.try_pop_front();
+          waiter->clear_waiting_registered();
           decrement_async_waiter_count_locked();
           waiter->store_ready(policy_t::closed_result());
           async_ready.push_back(waiter);
@@ -627,9 +613,7 @@ private:
   std::vector<reader_state_t> readers_{};
   std::size_t open_reader_count_{0U};
   std::size_t async_waiter_count_{0U};
-  wh::core::detail::manual_lifetime_box<pull_op_t> active_pull_{};
-  std::shared_ptr<stdexec::inplace_stop_source> active_pull_stop_source_{};
-  std::shared_ptr<shared_state> pull_keepalive_{};
+  active_pull_handle_t active_pull_{};
 };
 
 } // namespace wh::core::cursor_reader_detail

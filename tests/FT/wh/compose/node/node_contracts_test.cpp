@@ -513,11 +513,9 @@ TEST_CASE("compose authored nodes preserve explicit execution mode metadata",
                   .async_invoke =
                       [](wh::compose::tool_call call, wh::tool::call_scope)
                           -> wh::compose::tools_invoke_sender {
-                    return wh::compose::tools_invoke_sender{
-                        wh::core::detail::normalize_result_sender<
-                            wh::core::result<wh::compose::graph_value>>(
-                            stdexec::just(wh::core::any(
-                                std::string{"async:"} + call.arguments)))};
+                    return stdexec::just(
+                        wh::core::result<wh::compose::graph_value>{
+                            wh::core::any(std::string{"async:"} + call.arguments)});
                   }});
   auto async_tools_node = wh::compose::make_tools_node<
       wh::compose::node_contract::value, wh::compose::node_contract::value,

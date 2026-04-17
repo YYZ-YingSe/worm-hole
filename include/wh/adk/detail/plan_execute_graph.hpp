@@ -303,15 +303,15 @@ public:
       return wh::core::result<wh::compose::graph>::failure(replanner.error());
     }
 
-    auto planner_graph = planner.value().get().lower_graph();
+    auto planner_graph = planner.value().get().lower();
     if (planner_graph.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(planner_graph.error());
     }
-    auto executor_graph = executor.value().get().lower_graph();
+    auto executor_graph = executor.value().get().lower();
     if (executor_graph.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(executor_graph.error());
     }
-    auto replanner_graph = replanner.value().get().lower_graph();
+    auto replanner_graph = replanner.value().get().lower();
     if (replanner_graph.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(
           replanner_graph.error());
@@ -568,15 +568,15 @@ public:
   }
 
 private:
-  wh::agent::plan_execute *authored_{nullptr};
+  const wh::agent::plan_execute *authored_{nullptr};
 };
 
 /// Wraps one frozen plan-execute shell as the common executable agent surface.
 [[nodiscard]] inline auto bind_plan_execute_agent(wh::agent::plan_execute authored)
     -> wh::core::result<wh::agent::agent> {
-  auto frozen = authored.freeze();
-  if (frozen.has_error()) {
-    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  if (!authored.frozen()) {
+    return wh::core::result<wh::agent::agent>::failure(
+        wh::core::errc::contract_violation);
   }
 
   wh::agent::agent exported{std::string{authored.name()}};
@@ -589,6 +589,10 @@ private:
       });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
+  }
+  auto exported_frozen = exported.freeze();
+  if (exported_frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(exported_frozen.error());
   }
   return exported;
 }

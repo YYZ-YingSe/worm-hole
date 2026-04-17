@@ -138,7 +138,7 @@ inline auto graph::evaluate_value_branch_indexed(
 }
 
 inline auto graph::evaluate_stream_branch_indexed(
-    const std::uint32_t source_node_id, io_storage &io_storage,
+    const std::uint32_t source_node_id, graph_stream_reader &source_output,
     wh::core::run_context &context, const graph_call_scope &call_options) const
     -> wh::core::result<std::optional<std::vector<std::uint32_t>>> {
   const auto *branch =
@@ -154,23 +154,14 @@ inline auto graph::evaluate_stream_branch_indexed(
     return std::optional<std::vector<std::uint32_t>>{std::move(selected)};
   }
 
-  if (!io_storage.output_valid.test(source_node_id)) {
+  auto routed_input = detail::fork_graph_reader(source_output);
+  if (routed_input.has_error()) {
     return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
-        wh::core::errc::not_found);
+        routed_input.error());
   }
-
-  auto copied = detail::copy_graph_readers(
-      std::move(io_storage.node_readers[source_node_id]), 2U);
-  if (copied.has_error()) {
-    return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
-        copied.error());
-  }
-
-  auto readers = std::move(copied).value();
-  io_storage.node_readers[source_node_id] = std::move(readers[0]);
 
   auto routed_ids =
-      branch->selector_ids(std::move(readers[1]), context, call_options);
+      branch->selector_ids(std::move(routed_input).value(), context, call_options);
   if (routed_ids.has_error()) {
     return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
         routed_ids.error());

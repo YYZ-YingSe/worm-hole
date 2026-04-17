@@ -88,6 +88,7 @@ TEST_CASE("flow retrieval assemblers execute under flow namespace",
   auto router = wh::flow::retrieval::router<retriever_t>{};
   REQUIRE(router.add_retriever("left", make_retriever("left:")).has_value());
   REQUIRE(router.add_retriever("right", make_retriever("right:")).has_value());
+  REQUIRE(router.freeze().has_value());
   auto router_waited = stdexec::sync_wait(router.retrieve(request, context));
   REQUIRE(router_waited.has_value());
   auto router_status = std::move(std::get<0>(router_waited.value()));
@@ -103,6 +104,7 @@ TEST_CASE("flow retrieval assemblers execute under flow namespace",
   auto multi_query =
       wh::flow::retrieval::multi_query{make_retriever("mq:")};
   REQUIRE(multi_query.set_max_queries(3U).has_value());
+  REQUIRE(multi_query.freeze().has_value());
   auto multi_waited = stdexec::sync_wait(multi_query.retrieve(request, context));
   REQUIRE(multi_waited.has_value());
   auto multi_status = std::move(std::get<0>(multi_waited.value()));
@@ -126,6 +128,7 @@ TEST_CASE("flow retrieval assemblers execute under flow namespace",
         }
         return documents;
       }};
+  REQUIRE(parent.freeze().has_value());
   auto parent_waited = stdexec::sync_wait(parent.retrieve(request, context));
   REQUIRE(parent_waited.has_value());
   auto parent_status = std::move(std::get<0>(parent_waited.value()));
@@ -141,6 +144,7 @@ TEST_CASE("flow router can be used as one async retriever component node",
   auto router = wh::flow::retrieval::router<retriever_t>{};
   REQUIRE(router.add_retriever("left", make_retriever("left:")).has_value());
   REQUIRE(router.add_retriever("right", make_retriever("right:")).has_value());
+  REQUIRE(router.freeze().has_value());
 
   wh::compose::graph graph{};
   REQUIRE(graph
@@ -159,7 +163,8 @@ TEST_CASE("flow router can be used as one async retriever component node",
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(
       graph.invoke(context, wh::compose::graph_invoke_request{
-                                .input = wh::core::any(request)}));
+                                .input = wh::compose::graph_input::value(
+                                    wh::core::any(request))}));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
   REQUIRE(std::get<0>(*awaited).value().output_status.has_value());
@@ -179,6 +184,7 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
     auto multi_query =
         wh::flow::retrieval::multi_query{make_retriever("mq:")};
     REQUIRE(multi_query.set_max_queries(2U).has_value());
+    REQUIRE(multi_query.freeze().has_value());
 
     wh::compose::graph graph{};
     REQUIRE(graph
@@ -194,7 +200,8 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
 
     auto awaited = stdexec::sync_wait(
         graph.invoke(context, wh::compose::graph_invoke_request{
-                                  .input = wh::core::any(request)}));
+                                  .input = wh::compose::graph_input::value(
+                                      wh::core::any(request))}));
     REQUIRE(awaited.has_value());
     REQUIRE(std::get<0>(*awaited).has_value());
     auto *documents = wh::core::any_cast<wh::retriever::retriever_response>(
@@ -217,6 +224,7 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
           }
           return documents;
         }};
+    REQUIRE(parent.freeze().has_value());
 
     wh::compose::graph graph{};
     REQUIRE(graph
@@ -232,7 +240,8 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
 
     auto awaited = stdexec::sync_wait(
         graph.invoke(context, wh::compose::graph_invoke_request{
-                                  .input = wh::core::any(request)}));
+                                  .input = wh::compose::graph_input::value(
+                                      wh::core::any(request))}));
     REQUIRE(awaited.has_value());
     REQUIRE(std::get<0>(*awaited).has_value());
     auto *documents = wh::core::any_cast<wh::retriever::retriever_response>(
@@ -268,6 +277,7 @@ TEST_CASE("flow router executes custom route and fusion policies under flow name
                                                                    fusion_policy};
   REQUIRE(router.add_retriever("left", make_retriever("left:")).has_value());
   REQUIRE(router.add_retriever("right", make_retriever("right:")).has_value());
+  REQUIRE(router.freeze().has_value());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";
@@ -307,6 +317,7 @@ TEST_CASE("flow multi-query applies query clipping deduplication and custom fusi
                                                       fusion_t>{
       make_retriever("mq:"), rewriter, fusion};
   REQUIRE(multi_query.set_max_queries(0U).has_value());
+  REQUIRE(multi_query.freeze().has_value());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";

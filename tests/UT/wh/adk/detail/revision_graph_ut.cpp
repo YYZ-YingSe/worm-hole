@@ -200,18 +200,20 @@ TEST_CASE("revision graph lowerer and binder surfaces support self refine review
   auto self_refine =
       wh::testing::helper::make_configured_self_refine("self-refine");
   REQUIRE(self_refine.has_value());
+  REQUIRE(self_refine->freeze().has_value());
   auto bound_self_refine =
       wh::adk::detail::bind_self_refine_agent(std::move(self_refine).value());
   REQUIRE(bound_self_refine.has_value());
-  REQUIRE(bound_self_refine->lower_graph().has_value());
+  REQUIRE(bound_self_refine->lower().has_value());
 
   auto reviewer =
       wh::testing::helper::make_configured_reviewer_executor("reviewer");
   REQUIRE(reviewer.has_value());
+  REQUIRE(reviewer->freeze().has_value());
   auto bound_reviewer = wh::adk::detail::bind_reviewer_executor_agent(
       std::move(reviewer).value());
   REQUIRE(bound_reviewer.has_value());
-  REQUIRE(bound_reviewer->lower_graph().has_value());
+  REQUIRE(bound_reviewer->lower().has_value());
 
   auto reflexion = wh::testing::helper::make_configured_reflexion("reflexion");
   REQUIRE(reflexion.has_value());
@@ -221,10 +223,11 @@ TEST_CASE("revision graph lowerer and binder surfaces support self refine review
   REQUIRE(reflexion->set_memory_writer_request_builder(
               wh::testing::helper::make_revision_request_builder())
               .has_value());
+  REQUIRE(reflexion->freeze().has_value());
   auto bound_reflexion =
       wh::adk::detail::bind_reflexion_agent(std::move(reflexion).value());
   REQUIRE(bound_reflexion.has_value());
-  auto bound_graph = bound_reflexion->lower_graph();
+  auto bound_graph = bound_reflexion->lower();
   REQUIRE(bound_graph.has_value());
   REQUIRE(bound_graph->compile().has_value());
 }

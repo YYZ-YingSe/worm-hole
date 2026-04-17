@@ -94,7 +94,7 @@ struct invoke_outputs {
   /// Remaining forwarded checkpoint keys after nested restore consumption.
   std::vector<std::string> remaining_forwarded_checkpoint_keys{};
   /// Last completed node set published on terminal paths.
-  std::vector<std::string> last_completed_nodes{};
+  std::vector<std::string> completed_node_keys{};
   /// Optional step-limit error detail captured for this run.
   std::optional<graph_step_limit_error_detail> step_limit_error{};
   /// Optional node-timeout detail captured for this run.
@@ -174,9 +174,9 @@ inline auto merge_nested_outputs(invoke_outputs &target,
                                  invoke_outputs &&nested) -> void {
   target.publish_transition_log =
       target.publish_transition_log || nested.publish_transition_log;
-  if (target.last_completed_nodes.empty() &&
-      !nested.last_completed_nodes.empty()) {
-    target.last_completed_nodes = std::move(nested.last_completed_nodes);
+  if (target.completed_node_keys.empty() &&
+      !nested.completed_node_keys.empty()) {
+    target.completed_node_keys = std::move(nested.completed_node_keys);
   }
   target.transition_log.insert(
       target.transition_log.end(),

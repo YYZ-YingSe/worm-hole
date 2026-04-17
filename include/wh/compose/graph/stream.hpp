@@ -32,6 +32,33 @@ namespace detail {
   return wrapped;
 }
 
+/// Forks one graph reader in place and returns a stable sibling reader.
+///
+/// Concrete readers split ownership so the source and sibling can advance
+/// independently. Merge readers expose another handle that shares the same live
+/// merge state.
+[[nodiscard]] inline auto fork_graph_reader(graph_stream_reader &reader)
+    -> wh::core::result<graph_stream_reader> {
+  if (auto *merged =
+          reader.template target_if<wh::schema::stream::merge_stream_reader<graph_stream_reader>>();
+      merged != nullptr) {
+    return graph_stream_reader{merged->share()};
+  }
+
+  auto copied = copy_graph_readers(std::move(reader), 2U);
+  if (copied.has_error()) {
+    return wh::core::result<graph_stream_reader>::failure(copied.error());
+  }
+
+  auto readers = std::move(copied).value();
+  if (readers.size() != 2U) {
+    return wh::core::result<graph_stream_reader>::failure(wh::core::errc::type_mismatch);
+  }
+
+  reader = std::move(readers[0]);
+  return std::move(readers[1]);
+}
+
 /// Merges named graph readers into one graph reader.
 [[nodiscard]] inline auto make_graph_merge_reader(
     std::vector<wh::schema::stream::named_stream_reader<graph_stream_reader>> readers)
@@ -55,18 +82,11 @@ namespace detail {
     return wh::core::result<graph_value>::failure(wh::core::errc::type_mismatch);
   }
 
-  auto copied_readers = copy_graph_readers(std::move(*reader), 2U);
-  if (copied_readers.has_error()) {
-    return wh::core::result<graph_value>::failure(copied_readers.error());
+  auto sibling = fork_graph_reader(*reader);
+  if (sibling.has_error()) {
+    return wh::core::result<graph_value>::failure(sibling.error());
   }
-
-  auto readers = std::move(copied_readers).value();
-  if (readers.size() != 2U) {
-    return wh::core::result<graph_value>::failure(wh::core::errc::type_mismatch);
-  }
-
-  payload = wh::core::any(std::move(readers[0]));
-  return wh::core::any(std::move(readers[1]));
+  return graph_value{std::move(sibling).value()};
 }
 
 [[nodiscard]] inline auto is_reader_value_payload(const graph_value &value) noexcept -> bool {

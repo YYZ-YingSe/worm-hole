@@ -48,6 +48,9 @@ template <typename value_t>
 
 using wh::testing::helper::invoke_graph_sync;
 using wh::testing::helper::invoke_value_sync;
+using wh::testing::helper::checkpoint_entry_input;
+using wh::testing::helper::find_checkpoint_entry_input;
+using wh::testing::helper::find_checkpoint_node_input;
 using wh::testing::helper::make_auto_contract_edge_options;
 using wh::testing::helper::make_int_graph_stream;
 using wh::testing::helper::make_tool_batch;
@@ -125,12 +128,12 @@ TEST_CASE("compose graph runtime does not fall back to legacy interrupt payload"
       .state = wh::core::any{10},
   };
 
-  auto invoked = invoke_graph_sync(graph, wh::core::any(std::monostate{}),
+  auto invoked = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
                                    context, controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_error());
   REQUIRE(invoked.value().output_status.error() ==
-          wh::core::errc::type_mismatch);
+          wh::core::errc::contract_violation);
 }
 
 TEST_CASE("compose graph interrupt hooks can cancel at pre and post node boundary",
@@ -466,7 +469,7 @@ TEST_CASE("compose graph external interrupt publishes resolution mode",
           wh::compose::graph_external_interrupt_resolution_kind::wait_inflight);
 }
 
-TEST_CASE("compose graph external interrupt persists start and pending rerun inputs",
+TEST_CASE("compose graph external interrupt persists entry and node pending inputs",
           "[core][compose][interrupt][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
@@ -512,21 +515,19 @@ TEST_CASE("compose graph external interrupt persists start and pending rerun inp
   auto persisted = store.load(wh::compose::checkpoint_load_options{
       .checkpoint_id = std::string{"external-rerun"}});
   REQUIRE(persisted.has_value());
-  const auto start_iter =
-      persisted.value().rerun_inputs.find(wh::compose::graph_start_node_key);
-  REQUIRE(start_iter != persisted.value().rerun_inputs.end());
-  auto start_input = read_any<int>(start_iter->second);
+  auto start_input = checkpoint_entry_input(persisted.value());
   REQUIRE(start_input.has_value());
   REQUIRE(start_input.value() == 9);
 
-  const auto worker_iter = persisted.value().rerun_inputs.find("worker");
-  REQUIRE(worker_iter != persisted.value().rerun_inputs.end());
-  auto worker_input = read_any<int>(worker_iter->second);
+  const auto *worker_payload =
+      find_checkpoint_node_input(persisted.value(), "worker");
+  REQUIRE(worker_payload != nullptr);
+  auto worker_input = read_any<int>(*worker_payload);
   REQUIRE(worker_input.has_value());
   REQUIRE(worker_input.value() == 9);
 }
 
-TEST_CASE("compose graph external interrupt wait mode timeout persists pending rerun nodes",
+TEST_CASE("compose graph external interrupt wait mode timeout persists pending node inputs",
           "[core][compose][interrupt][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
@@ -585,16 +586,14 @@ TEST_CASE("compose graph external interrupt wait mode timeout persists pending r
   auto persisted = store.load(wh::compose::checkpoint_load_options{
       .checkpoint_id = std::string{"external-timeout-rerun"}});
   REQUIRE(persisted.has_value());
-  const auto start_iter =
-      persisted.value().rerun_inputs.find(wh::compose::graph_start_node_key);
-  REQUIRE(start_iter != persisted.value().rerun_inputs.end());
-  auto start_input = read_any<int>(start_iter->second);
+  auto start_input = checkpoint_entry_input(persisted.value());
   REQUIRE(start_input.has_value());
   REQUIRE(start_input.value() == 12);
 
-  const auto tail_iter = persisted.value().rerun_inputs.find("tail");
-  REQUIRE(tail_iter != persisted.value().rerun_inputs.end());
-  auto tail_input = read_any<int>(tail_iter->second);
+  const auto *tail_payload =
+      find_checkpoint_node_input(persisted.value(), "tail");
+  REQUIRE(tail_payload != nullptr);
+  auto tail_input = read_any<int>(*tail_payload);
   REQUIRE(tail_input.has_value());
   REQUIRE(tail_input.value() == 12);
 }
@@ -613,30 +612,27 @@ TEST_CASE("compose tools stream external interrupt persists rerun batch across m
                       .async_stream =
                           [](wh::compose::tool_call call, wh::tool::call_scope)
                               -> wh::compose::tools_stream_sender {
-                        return wh::compose::tools_stream_sender{
-                            wh::core::detail::normalize_result_sender<
-                                wh::core::result<wh::compose::graph_stream_reader>>(
-                                stdexec::just(std::move(call.arguments)) |
-                                stdexec::then([](std::string value)
-                                                  -> wh::core::result<
-                                                      wh::compose::graph_stream_reader> {
-                                  auto [writer, reader] =
-                                      wh::compose::make_graph_stream();
-                                  auto wrote =
-                                      writer.try_write(wh::core::any(std::move(value)));
-                                  if (wrote.has_error()) {
-                                    return wh::core::result<
-                                        wh::compose::graph_stream_reader>::failure(
-                                        wrote.error());
-                                  }
-                                  auto closed = writer.close();
-                                  if (closed.has_error()) {
-                                    return wh::core::result<
-                                        wh::compose::graph_stream_reader>::failure(
-                                        closed.error());
-                                  }
-                                  return std::move(reader);
-                                }))};
+                        return stdexec::just(std::move(call.arguments)) |
+                               stdexec::then([](std::string value)
+                                                 -> wh::core::result<
+                                                     wh::compose::graph_stream_reader> {
+                                 auto [writer, reader] =
+                                     wh::compose::make_graph_stream();
+                                 auto wrote =
+                                     writer.try_write(wh::core::any(std::move(value)));
+                                 if (wrote.has_error()) {
+                                   return wh::core::result<
+                                       wh::compose::graph_stream_reader>::failure(
+                                       wrote.error());
+                                 }
+                                 auto closed = writer.close();
+                                 if (closed.has_error()) {
+                                   return wh::core::result<
+                                       wh::compose::graph_stream_reader>::failure(
+                                       closed.error());
+                                 }
+                                 return std::move(reader);
+                               });
                       }});
 
       wh::compose::graph_compile_options options{};
@@ -696,18 +692,18 @@ TEST_CASE("compose tools stream external interrupt persists rerun batch across m
           .checkpoint_id = write_options.checkpoint_id});
       REQUIRE(persisted.has_value());
 
-      const auto start_iter =
-          persisted.value().rerun_inputs.find(wh::compose::graph_start_node_key);
-      REQUIRE(start_iter != persisted.value().rerun_inputs.end());
-      auto start_batch = read_any<wh::compose::tool_batch>(start_iter->second);
+      const auto *entry_payload = find_checkpoint_entry_input(persisted.value());
+      REQUIRE(entry_payload != nullptr);
+      auto start_batch = read_any<wh::compose::tool_batch>(*entry_payload);
       REQUIRE(start_batch.has_value());
       REQUIRE(start_batch.value().calls.size() == 1U);
       REQUIRE(start_batch.value().calls.front().tool_name == "echo");
       REQUIRE(start_batch.value().calls.front().arguments == "payload");
 
-      const auto tools_iter = persisted.value().rerun_inputs.find("tools");
-      REQUIRE(tools_iter != persisted.value().rerun_inputs.end());
-      auto tools_batch = read_any<wh::compose::tool_batch>(tools_iter->second);
+      const auto *tools_payload =
+          find_checkpoint_node_input(persisted.value(), "tools");
+      REQUIRE(tools_payload != nullptr);
+      auto tools_batch = read_any<wh::compose::tool_batch>(*tools_payload);
       REQUIRE(tools_batch.has_value());
       REQUIRE(tools_batch.value().calls.size() == 1U);
       REQUIRE(tools_batch.value().calls.front().call_id == "call-1");
@@ -719,7 +715,7 @@ TEST_CASE("compose tools stream external interrupt persists rerun batch across m
           .checkpoint_id = write_options.checkpoint_id};
       resume_controls.checkpoint.save = write_options;
       wh::core::run_context resume_context{};
-      auto resumed = invoke_graph_sync(graph, wh::core::any(std::monostate{}),
+      auto resumed = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
                                        resume_context, resume_controls,
                                        std::addressof(services));
       REQUIRE(resumed.has_value());
@@ -731,7 +727,7 @@ TEST_CASE("compose tools stream external interrupt persists rerun batch across m
   }
 }
 
-TEST_CASE("compose subgraph stream external interrupt persists rerun input across modes",
+TEST_CASE("compose subgraph stream external interrupt persists pending input across modes",
           "[core][compose][subgraph][interrupt][checkpoint]") {
   constexpr std::array modes{wh::compose::graph_runtime_mode::dag,
                              wh::compose::graph_runtime_mode::pregel};
@@ -812,16 +808,14 @@ TEST_CASE("compose subgraph stream external interrupt persists rerun input acros
           .checkpoint_id = write_options.checkpoint_id});
       REQUIRE(persisted.has_value());
 
-      const auto start_iter =
-          persisted.value().rerun_inputs.find(wh::compose::graph_start_node_key);
-      REQUIRE(start_iter != persisted.value().rerun_inputs.end());
-      auto start_input = read_any<int>(start_iter->second);
+      auto start_input = checkpoint_entry_input(persisted.value());
       REQUIRE(start_input.has_value());
       REQUIRE(start_input.value() == 9);
 
-      const auto child_iter = persisted.value().rerun_inputs.find("child");
-      REQUIRE(child_iter != persisted.value().rerun_inputs.end());
-      auto child_input = read_any<int>(child_iter->second);
+      const auto *child_payload =
+          find_checkpoint_node_input(persisted.value(), "child");
+      REQUIRE(child_payload != nullptr);
+      auto child_input = read_any<int>(*child_payload);
       REQUIRE(child_input.has_value());
       REQUIRE(child_input.value() == 9);
 
@@ -830,7 +824,7 @@ TEST_CASE("compose subgraph stream external interrupt persists rerun input acros
           .checkpoint_id = write_options.checkpoint_id};
       resume_controls.checkpoint.save = write_options;
       wh::core::run_context resume_context{};
-      auto resumed = invoke_graph_sync(graph, wh::core::any(std::monostate{}),
+      auto resumed = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
                                        resume_context, resume_controls,
                                        std::addressof(services));
       REQUIRE(resumed.has_value());

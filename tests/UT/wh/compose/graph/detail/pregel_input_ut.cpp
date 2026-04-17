@@ -93,11 +93,11 @@ TEST_CASE("pregel input readiness marks control-free nodes ready when allow_no_c
   REQUIRE(graph.compile().has_value());
 
   wh::core::run_context context{};
-  auto base = wh::testing::helper::make_base_run_state(
+  auto base = wh::testing::helper::make_invoke_session(
       graph, wh::compose::graph_value{0}, context);
-  wh::compose::detail::invoke_runtime::pregel_run_state pregel_state{
+  wh::compose::detail::invoke_runtime::pregel_runtime pregel_state{
       std::move(base)};
-  pregel_state.initialize_pregel_entry();
+  pregel_state.initialize_entry();
 
   auto worker_id = graph.node_id("worker");
   REQUIRE(worker_id.has_value());
@@ -106,7 +106,7 @@ TEST_CASE("pregel input readiness marks control-free nodes ready when allow_no_c
   REQUIRE(frontier.size() == 1U);
   REQUIRE(frontier.front() == worker_id.value());
 
-  const auto action = pregel_state.take_next_pregel_action(worker_id.value(), 1U);
+  const auto action = pregel_state.take_ready_action(worker_id.value(), 1U);
   REQUIRE(action.action ==
           wh::compose::detail::invoke_runtime::pregel_action::kind::launch);
   REQUIRE(action.node_id == worker_id.value());

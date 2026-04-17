@@ -212,6 +212,7 @@ TEST_CASE("agent tool request mode maps request json to child chat request and "
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   wh::compose::tool_call call{
       .call_id = "call-1",
@@ -253,6 +254,7 @@ TEST_CASE("agent tool message history mode reads projected react state and "
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   wh::core::run_context context{};
 
@@ -288,6 +290,7 @@ TEST_CASE("agent tool message history mode accepts shared history-request payloa
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   wh::core::run_context context{};
   wh::adk::detail::history_request_payload payload{};
@@ -347,6 +350,7 @@ TEST_CASE("agent tool flattens child message substreams without rebuilding a "
                 };
               })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   wh::compose::tool_call call{
       .call_id = "call-stream-1",
@@ -392,6 +396,7 @@ TEST_CASE("agent tool boundary consumes non interrupt controls and fails when "
             return run_scripted_agent_tool(*success_state, request, context);
           })
           .has_value());
+  REQUIRE(filtered.freeze().has_value());
 
   wh::compose::tool_call success_call{
       .call_id = "call-3",
@@ -421,6 +426,7 @@ TEST_CASE("agent tool boundary consumes non interrupt controls and fails when "
                 return run_scripted_agent_tool(*empty_state, request, context);
               })
               .has_value());
+  REQUIRE(empty.freeze().has_value());
 
   wh::compose::tool_call empty_call{
       .call_id = "call-4",
@@ -452,6 +458,7 @@ TEST_CASE("agent tool forwards internal events with prefixed tool run path",
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   wh::compose::tool_call call{
       .call_id = "call-5",
@@ -488,6 +495,7 @@ TEST_CASE("agent tool compose entry reuses same bridge for invoke and stream",
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   auto entry = tool.compose_entry();
   REQUIRE(entry.has_value());
@@ -547,6 +555,7 @@ TEST_CASE("agent tool compose entry stream flattens child message substreams",
                 };
               })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   auto entry = tool.compose_entry();
   REQUIRE(entry.has_value());
@@ -608,6 +617,7 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
                 };
               })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   auto entry = tool.compose_entry();
   REQUIRE(entry.has_value());
@@ -695,6 +705,7 @@ TEST_CASE("agent tool resume reuses bridge checkpoint state without "
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   wh::compose::tool_call call{
       .call_id = "call-resume-1",
@@ -769,6 +780,7 @@ TEST_CASE("agent tool exact resume target fails when bridge checkpoint state "
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(tool.freeze().has_value());
 
   wh::compose::tool_call call{
       .call_id = "call-resume-missing",
@@ -818,6 +830,7 @@ TEST_CASE("agent tool compose tools node projects bridge interrupt context "
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
+  REQUIRE(bridge.freeze().has_value());
   auto entry = bridge.compose_entry();
   REQUIRE(entry.has_value());
 

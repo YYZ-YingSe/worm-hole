@@ -57,13 +57,13 @@ TEST_CASE("compose graph unresolved predecessor stall publishes last completed n
   REQUIRE(invoked.value().output_status.has_error());
   REQUIRE(invoked.value().output_status.error() ==
           wh::core::errc::contract_violation);
-  REQUIRE(invoked.value().report.last_completed_nodes.size() == 1U);
-  REQUIRE(invoked.value().report.last_completed_nodes.front() ==
+  REQUIRE(invoked.value().report.completed_node_keys.size() == 1U);
+  REQUIRE(invoked.value().report.completed_node_keys.front() ==
           wh::compose::graph_start_node_key);
-  REQUIRE(std::find(invoked.value().report.last_completed_nodes.begin(),
-                    invoked.value().report.last_completed_nodes.end(),
+  REQUIRE(std::find(invoked.value().report.completed_node_keys.begin(),
+                    invoked.value().report.completed_node_keys.end(),
                     std::string{wh::compose::graph_end_node_key}) ==
-          invoked.value().report.last_completed_nodes.end());
+          invoked.value().report.completed_node_keys.end());
 }
 
 TEST_CASE("compose graph runtime emits subscribed state message and custom streams",

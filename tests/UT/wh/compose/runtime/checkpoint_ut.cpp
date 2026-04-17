@@ -15,7 +15,8 @@ namespace {
   wh::compose::checkpoint_state state{};
   state.checkpoint_id = std::move(id);
   state.branch = std::move(branch);
-  state.rerun_inputs.emplace("input", wh::compose::graph_value{7});
+  state.runtime.dag = wh::compose::checkpoint_dag_runtime_state{};
+  state.runtime.dag->pending_inputs.entry = wh::compose::graph_value{7};
   return state;
 }
 
@@ -254,19 +255,23 @@ TEST_CASE("checkpoint store surfaces not-found and replacement branches for dire
   REQUIRE(no_pending_restore->checkpoint->checkpoint_id == "state-2");
 }
 
-TEST_CASE("checkpoint store ownerizes borrowed rerun payloads before persistence",
+TEST_CASE("checkpoint store ownerizes borrowed node payloads before persistence",
           "[UT][wh/compose/runtime/checkpoint.hpp][checkpoint_store][ownership][boundary]") {
   std::string request_text = "original-request";
 
   wh::compose::checkpoint_state state{};
   state.checkpoint_id = "cp-owned";
-  state.rerun_inputs.emplace(
-      "tool-node", wh::compose::graph_value{wh::compose::tool_batch{
-                       .calls = std::vector<wh::compose::tool_call>{wh::compose::tool_call{
-                           .call_id = "call-1",
-                           .tool_name = "delegate",
-                           .payload = wh::core::any::ref(request_text),
-                       }}}});
+  state.runtime.dag = wh::compose::checkpoint_dag_runtime_state{};
+  state.runtime.dag->pending_inputs.nodes.push_back(wh::compose::checkpoint_node_input{
+      .node_id = 1U,
+      .key = "tool-node",
+      .input = wh::compose::graph_value{wh::compose::tool_batch{
+          .calls = std::vector<wh::compose::tool_call>{wh::compose::tool_call{
+              .call_id = "call-1",
+              .tool_name = "delegate",
+              .payload = wh::core::any::ref(request_text),
+          }}}},
+  });
 
   wh::compose::checkpoint_store store{};
   REQUIRE(store.save(std::move(state), {.checkpoint_id = "cp-owned"}).has_value());
@@ -275,10 +280,18 @@ TEST_CASE("checkpoint store ownerizes borrowed rerun payloads before persistence
 
   auto loaded = store.load({.checkpoint_id = "cp-owned"});
   REQUIRE(loaded.has_value());
-  auto tool_iter = loaded->rerun_inputs.find("tool-node");
-  REQUIRE(tool_iter != loaded->rerun_inputs.end());
+  REQUIRE(loaded->runtime.dag.has_value());
+  const auto *tool_node = [&]() -> const wh::compose::graph_value * {
+    for (const auto &node_input : loaded->runtime.dag->pending_inputs.nodes) {
+      if (node_input.key == "tool-node") {
+        return std::addressof(node_input.input);
+      }
+    }
+    return nullptr;
+  }();
+  REQUIRE(tool_node != nullptr);
 
-  const auto *batch = wh::core::any_cast<wh::compose::tool_batch>(&tool_iter->second);
+  const auto *batch = wh::core::any_cast<wh::compose::tool_batch>(tool_node);
   REQUIRE(batch != nullptr);
   REQUIRE(batch->calls.size() == 1U);
 

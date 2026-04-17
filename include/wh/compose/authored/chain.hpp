@@ -309,7 +309,8 @@ public:
   [[nodiscard]] auto invoke(wh::core::run_context &context,
                             input_t &&input) const {
     wh::compose::graph_invoke_request request{};
-    request.input = graph_value{std::forward<input_t>(input)};
+    request.input =
+        wh::compose::graph_input::value(std::forward<input_t>(input));
     return wh::core::detail::map_result_sender<wh::core::result<graph_value>>(
         graph_.invoke(context, std::move(request)),
         [](graph_invoke_result invoke_result) {

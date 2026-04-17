@@ -41,12 +41,25 @@ template <typename result_t> struct async_waiter_base {
   async_waiter_base *prev{nullptr};
   const ops_type *ops{nullptr};
   std::optional<result_t> status{};
+  std::atomic<bool> waiting_registered_{false};
 
   auto store_ready(result_t value) noexcept -> void {
     status.emplace(std::move(value));
   }
 
   [[nodiscard]] auto take_ready() -> result_t { return std::move(*status); }
+
+  auto mark_waiting_registered() noexcept -> void {
+    waiting_registered_.store(true, std::memory_order_release);
+  }
+
+  auto clear_waiting_registered() noexcept -> void {
+    waiting_registered_.store(false, std::memory_order_release);
+  }
+
+  [[nodiscard]] auto waiting_registered() const noexcept -> bool {
+    return waiting_registered_.load(std::memory_order_acquire);
+  }
 };
 
 template <typename result_t> struct reader_state {

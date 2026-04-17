@@ -33,12 +33,13 @@ TEST_CASE("research shell public binding executes lead transfer into specialist"
   wh::agent::research authored{"research"};
   REQUIRE(authored.set_lead(std::move(*lead)).has_value());
   REQUIRE(authored.add_specialist(std::move(*specialist)).has_value());
+  REQUIRE(authored.freeze().has_value());
 
-  auto lowered = wh::agent::make_agent(std::move(authored));
+  auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->executable());
 
-  auto graph = lowered->lower_graph();
+  auto graph = lowered->lower();
   REQUIRE(graph.has_value());
   if (!graph->compiled()) {
     REQUIRE(graph->compile().has_value());
@@ -84,12 +85,13 @@ TEST_CASE("swarm shell public binding executes host transfer into peer",
   wh::agent::swarm authored{"swarm"};
   REQUIRE(authored.set_host(std::move(*host)).has_value());
   REQUIRE(authored.add_peer(std::move(*peer)).has_value());
+  REQUIRE(authored.freeze().has_value());
 
-  auto lowered = wh::agent::make_agent(std::move(authored));
+  auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->executable());
 
-  auto graph = lowered->lower_graph();
+  auto graph = lowered->lower();
   REQUIRE(graph.has_value());
   if (!graph->compiled()) {
     REQUIRE(graph->compile().has_value());

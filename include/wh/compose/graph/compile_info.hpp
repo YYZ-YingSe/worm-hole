@@ -56,7 +56,7 @@ struct graph_compile_node_options_info {
   graph_compile_node_observation_info observation{};
   /// Optional display label emitted in introspection events.
   std::string label{};
-  /// Missing-rerun-input autofill contract (`value` or `stream`).
+  /// Missing-pending-input autofill contract (`value` or `stream`).
   std::uint8_t input_contract{0U};
   /// True means node may execute with no control predecessor.
   bool allow_no_control{false};

@@ -149,31 +149,27 @@ TEST_CASE("tools runtime async covers immediate error paths and parallel gate fa
           .async_invoke =
               [&](wh::compose::tool_call call,
                   wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
-            auto sender =
-                stdexec::schedule(pool.get_scheduler()) |
-                stdexec::then([call = std::move(call), &active, &peak] {
-                  const auto now =
-                      active.fetch_add(1, std::memory_order_acq_rel) + 1;
-                  peak.store(std::max(peak.load(std::memory_order_relaxed), now),
-                             std::memory_order_release);
-                  std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                  active.fetch_sub(1, std::memory_order_acq_rel);
-                  return wh::core::result<wh::compose::graph_value>{
-                      wh::compose::graph_value{call.arguments}};
-                });
-            return wh::compose::detail::erase_tools_invoke(std::move(sender));
+            return stdexec::schedule(pool.get_scheduler()) |
+                   stdexec::then([call = std::move(call), &active, &peak] {
+                     const auto now =
+                         active.fetch_add(1, std::memory_order_acq_rel) + 1;
+                     peak.store(std::max(peak.load(std::memory_order_relaxed), now),
+                                std::memory_order_release);
+                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                     active.fetch_sub(1, std::memory_order_acq_rel);
+                     return wh::core::result<wh::compose::graph_value>{
+                         wh::compose::graph_value{call.arguments}};
+                   });
           },
           .async_stream =
               [&](wh::compose::tool_call call,
                   wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-            auto sender =
-                stdexec::schedule(pool.get_scheduler()) |
-                stdexec::then([call = std::move(call)] {
-                  return wh::compose::make_values_stream_reader(
-                      std::vector<wh::compose::graph_value>{
-                          wh::compose::graph_value{call.arguments}});
-                });
-            return wh::compose::detail::erase_tools_stream(std::move(sender));
+            return stdexec::schedule(pool.get_scheduler()) |
+                   stdexec::then([call = std::move(call)] {
+                     return wh::compose::make_values_stream_reader(
+                         std::vector<wh::compose::graph_value>{
+                             wh::compose::graph_value{call.arguments}});
+                   });
           },
       });
 

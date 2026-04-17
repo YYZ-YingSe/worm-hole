@@ -15,7 +15,7 @@
 namespace wh::adk {
 
 /// Human decision kind captured at the ADK protocol boundary.
-enum class interrupt_resolution {
+enum class interrupt_resolution : std::uint8_t {
   /// Resume with the captured interrupt payload unchanged.
   approve = 0U,
   /// Resume with caller-edited replacement payload.

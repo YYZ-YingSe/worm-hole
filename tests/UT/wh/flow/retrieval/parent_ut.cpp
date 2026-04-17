@@ -54,6 +54,12 @@ TEST_CASE("retrieval parent flow loads unique parent documents in child order",
   request.query = "hello";
   wh::core::run_context context{};
 
+  auto unfrozen = stdexec::sync_wait(flow.retrieve(request, context));
+  REQUIRE(unfrozen.has_value());
+  REQUIRE(std::get<0>(*unfrozen).has_error());
+  REQUIRE(std::get<0>(*unfrozen).error() == wh::core::errc::contract_violation);
+
+  REQUIRE(flow.freeze().has_value());
   auto awaited = stdexec::sync_wait(flow.retrieve(request, context));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
@@ -72,6 +78,7 @@ TEST_CASE("retrieval parent flow propagates parent loader failures",
         return wh::core::result<std::vector<wh::schema::document>>::failure(
             wh::core::errc::network_error);
       }};
+  REQUIRE(flow.freeze().has_value());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";

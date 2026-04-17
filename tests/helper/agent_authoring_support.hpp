@@ -99,6 +99,10 @@ namespace wh::testing::helper {
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  }
   return authored;
 }
 
@@ -106,7 +110,11 @@ namespace wh::testing::helper {
     std::string name, std::string description = "assistant")
     -> wh::core::result<wh::agent::agent> {
   auto authored = make_configured_chat(std::move(name), std::move(description));
-  return wh::agent::make_agent(std::move(authored));
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  }
+  return std::move(authored).into_agent();
 }
 
 [[nodiscard]] inline auto make_fixed_output_graph(const std::string &node_name,
@@ -156,14 +164,19 @@ namespace wh::testing::helper {
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  }
   return authored;
 }
 
-[[nodiscard]] inline auto invoke_agent_graph(
-    wh::compose::graph &graph, std::vector<wh::schema::message> messages)
-    -> wh::core::result<wh::agent::agent_output> {
-  wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any{std::move(messages)};
+  [[nodiscard]] inline auto invoke_agent_graph(
+      wh::compose::graph &graph, std::vector<wh::schema::message> messages)
+      -> wh::core::result<wh::agent::agent_output> {
+    wh::compose::graph_invoke_request request{};
+    request.input =
+        wh::compose::graph_input::value(wh::core::any{std::move(messages)});
 
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));

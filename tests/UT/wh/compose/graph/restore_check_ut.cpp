@@ -12,8 +12,14 @@ TEST_CASE("restore check reports shape and checkpoint target mismatches",
 
   wh::compose::checkpoint_state checkpoint{};
   checkpoint.restore_shape = baseline;
-  checkpoint.node_states.push_back({.key = "ghost"});
-  checkpoint.rerun_inputs.insert_or_assign("ghost", wh::compose::graph_value{1});
+  checkpoint.runtime.dag = wh::compose::checkpoint_dag_runtime_state{};
+  checkpoint.runtime.lifecycle.push_back({.key = "ghost"});
+  checkpoint.runtime.dag->pending_inputs.nodes.push_back(
+      wh::compose::checkpoint_node_input{
+      .node_id = 7U,
+      .key = "ghost",
+      .input = wh::compose::graph_value{1},
+  });
   REQUIRE(checkpoint.resume_snapshot
               .upsert("interrupt-1", wh::core::address{}.append("graph").append("ghost"),
                       1)

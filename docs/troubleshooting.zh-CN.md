@@ -5,7 +5,7 @@
 `worm-hole` 的第三方依赖在仓库内维护，先同步子模块：
 
 ```bash
-./build.sh sync-thirdy-party
+./build.sh sync-third-party
 ```
 
 ## 我想把本地状态清干净
@@ -65,7 +65,10 @@ python3 scripts/toolchain.py local clean --all
 - macOS
 - Windows
 - 有实际增益的 debug / release 分片
-- Linux 上的 sanitizer 和 nightly 重型测试任务
+- Linux 上的 sanitizer、coverage 和 nightly stress 任务
+
+仓库的 CodeQL 扫描由 GitHub 默认的 Code Scanning setup 负责，不再走仓库内
+单独维护的一条 workflow。
 
 ## 进一步查看哪里
 

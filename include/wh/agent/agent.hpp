@@ -57,8 +57,8 @@ public:
   /// Freeze hook used by executable authored agents before graph lowering.
   using freeze_hook = wh::core::move_only_function<wh::core::result<void>()>;
 
-  /// Lower hook that materializes one authored agent into one compose graph.
-  using lower_graph_hook =
+  /// Lower hook that materializes one frozen executable agent into one graph.
+  using lower_hook =
       wh::core::move_only_function<wh::core::result<wh::compose::graph>()>;
 
   /// Stores one authored agent name.
@@ -92,7 +92,7 @@ public:
 
   /// Returns true when this authored agent can lower into one compose graph.
   [[nodiscard]] auto executable() const noexcept -> bool {
-    return static_cast<bool>(lower_graph_);
+    return static_cast<bool>(lower_);
   }
 
   /// Replaces the current agent description before freeze.
@@ -270,7 +270,7 @@ public:
   }
 
   /// Installs executable lowering hooks before freeze.
-  auto bind_execution(freeze_hook freeze, lower_graph_hook lower)
+  auto bind_execution(freeze_hook freeze, lower_hook lower)
       -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
@@ -280,21 +280,21 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     freeze_ = std::move(freeze);
-    lower_graph_ = std::move(lower);
+    lower_ = std::move(lower);
     return {};
   }
 
-  /// Lowers this authored agent into one compose graph after freeze.
-  [[nodiscard]] auto lower_graph() -> wh::core::result<wh::compose::graph> {
-    auto frozen = freeze();
-    if (frozen.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(frozen.error());
+  /// Lowers this frozen executable agent into one compose graph.
+  [[nodiscard]] auto lower() const -> wh::core::result<wh::compose::graph> {
+    if (!frozen_) {
+      return wh::core::result<wh::compose::graph>::failure(
+          wh::core::errc::contract_violation);
     }
-    if (!lower_graph_) {
+    if (!lower_) {
       return wh::core::result<wh::compose::graph>::failure(
           wh::core::errc::not_supported);
     }
-    return lower_graph_();
+    return lower_();
   }
 
 private:
@@ -326,7 +326,7 @@ private:
   /// Optional freeze hook owned by executable authored agents.
   freeze_hook freeze_{nullptr};
   /// Optional lowering hook owned by executable authored agents.
-  lower_graph_hook lower_graph_{nullptr};
+  mutable lower_hook lower_{nullptr};
   /// True after topology and transfer rules are frozen.
   bool frozen_{false};
 };

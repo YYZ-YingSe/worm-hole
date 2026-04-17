@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -8,6 +9,9 @@
 
 #include <stdexec/execution.hpp>
 
+#include "helper/manual_scheduler.hpp"
+#include "helper/sender_capture.hpp"
+#include "helper/sender_env.hpp"
 #include "wh/compose/node/detail/tools/call.hpp"
 
 namespace {
@@ -166,17 +170,17 @@ TEST_CASE("tools call helpers erase ready failure replay and direct dispatch pat
           .async_invoke =
               [](wh::compose::tool_call call,
                  wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
-                return wh::compose::detail::erase_tools_invoke(stdexec::just(
+                return stdexec::just(
                     wh::core::result<wh::compose::graph_value>{
-                        wh::compose::graph_value{call.arguments}}));
+                        wh::compose::graph_value{call.arguments}});
               },
           .async_stream =
               [](wh::compose::tool_call call,
                  wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-                return wh::compose::detail::erase_tools_stream(stdexec::just(
+                return stdexec::just(
                     wh::compose::make_values_stream_reader(
                         std::vector<wh::compose::graph_value>{
-                            wh::compose::graph_value{call.arguments}})));
+                            wh::compose::graph_value{call.arguments}}));
               },
       });
   registry.emplace("stream-only", wh::compose::tool_entry{
@@ -305,17 +309,17 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
           .async_invoke =
               [](wh::compose::tool_call call,
                  wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
-                return wh::compose::detail::erase_tools_invoke(stdexec::just(
+                return stdexec::just(
                     wh::core::result<wh::compose::graph_value>{
-                        wh::compose::graph_value{call.arguments}}));
+                        wh::compose::graph_value{call.arguments}});
               },
           .async_stream =
               [](wh::compose::tool_call call,
                  wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-                return wh::compose::detail::erase_tools_stream(stdexec::just(
+                return stdexec::just(
                     wh::compose::make_values_stream_reader(
                         std::vector<wh::compose::graph_value>{
-                            wh::compose::graph_value{call.arguments}})));
+                            wh::compose::graph_value{call.arguments}}));
               },
       });
 
@@ -446,4 +450,108 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
   REQUIRE(async_stream_values.has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&async_stream_values.value().front()) ==
           "payload-before");
+}
+
+TEST_CASE("tools stream sender erasure survives stop-driven completion",
+          "[UT][wh/compose/node/detail/tools/call.hpp][erase_tools_stream][lifecycle][concurrency]") {
+  wh::testing::helper::manual_scheduler_state scheduler_state{};
+  auto sender = wh::compose::detail::erase_tools_stream(
+      stdexec::schedule(
+          wh::testing::helper::manual_scheduler<>{&scheduler_state}) |
+      stdexec::then([]() -> wh::core::result<wh::compose::graph_stream_reader> {
+        return wh::compose::make_values_stream_reader(
+            std::vector<wh::compose::graph_value>{wh::compose::graph_value{1}});
+      }));
+
+  wh::testing::helper::sender_capture<
+      wh::core::result<wh::compose::graph_stream_reader>>
+      capture{};
+  stdexec::inplace_stop_source stop_source{};
+
+  auto operation = stdexec::connect(
+      std::move(sender),
+      wh::testing::helper::sender_capture_receiver{
+          &capture,
+          wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
+                                                  stop_source.get_token()),
+      });
+
+  stdexec::start(operation);
+  REQUIRE(scheduler_state.pending_count() == 1U);
+
+  stop_source.request_stop();
+  REQUIRE(scheduler_state.run_one());
+  REQUIRE(capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::stopped);
+}
+
+TEST_CASE("tools sender erasures preserve outer stopped completion",
+          "[UT][wh/compose/node/detail/tools/call.hpp][erase_tools_invoke][erase_call_completion][erase_stream_completion][lifecycle][concurrency]") {
+  auto expect_stopped = []<typename result_t>(auto &&make_sender) {
+    wh::testing::helper::manual_scheduler_state scheduler_state{};
+    auto sender = make_sender(scheduler_state);
+    wh::testing::helper::sender_capture<result_t> capture{};
+    stdexec::inplace_stop_source stop_source{};
+
+    auto operation = stdexec::connect(
+        std::move(sender),
+        wh::testing::helper::sender_capture_receiver{
+            &capture,
+            wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
+                                                    stop_source.get_token()),
+        });
+
+    stdexec::start(operation);
+    REQUIRE(scheduler_state.pending_count() == 1U);
+    stop_source.request_stop();
+    REQUIRE(scheduler_state.run_one());
+    REQUIRE(capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+    REQUIRE(capture.terminal ==
+            wh::testing::helper::sender_terminal_kind::stopped);
+  };
+
+  expect_stopped.operator()<wh::core::result<wh::compose::graph_value>>(
+      [](wh::testing::helper::manual_scheduler_state &scheduler_state) {
+        return wh::compose::detail::erase_tools_invoke(
+            stdexec::schedule(
+                wh::testing::helper::manual_scheduler<>{&scheduler_state}) |
+            stdexec::then([]() -> wh::core::result<wh::compose::graph_value> {
+              return wh::compose::graph_value{7};
+            }));
+      });
+
+  expect_stopped.operator()<wh::core::result<wh::compose::detail::call_completion>>(
+      [](wh::testing::helper::manual_scheduler_state &scheduler_state) {
+        return wh::compose::detail::erase_call_completion(
+            stdexec::schedule(
+                wh::testing::helper::manual_scheduler<>{&scheduler_state}) |
+            stdexec::then([]() -> wh::core::result<wh::compose::detail::call_completion> {
+              return wh::compose::detail::call_completion{
+                  .index = 0U,
+                  .call = {.call_id = "c", .tool_name = "echo"},
+                  .value = wh::compose::graph_value{1},
+                  .rerun_extra = wh::compose::graph_value{"extra"},
+              };
+            }));
+      });
+
+  expect_stopped.operator()<wh::core::result<wh::compose::detail::stream_completion>>(
+      [](wh::testing::helper::manual_scheduler_state &scheduler_state) {
+        return wh::compose::detail::erase_stream_completion(
+            stdexec::schedule(
+                wh::testing::helper::manual_scheduler<>{&scheduler_state}) |
+            stdexec::then([]() -> wh::core::result<wh::compose::detail::stream_completion> {
+              auto reader = wh::compose::make_values_stream_reader(
+                  std::vector<wh::compose::graph_value>{wh::compose::graph_value{1}});
+              REQUIRE(reader.has_value());
+              return wh::compose::detail::stream_completion{
+                  .index = 0U,
+                  .call = {.call_id = "s", .tool_name = "stream"},
+                  .stream = std::move(reader).value(),
+                  .rerun_extra = wh::compose::graph_value{"extra"},
+                  .context = {},
+              };
+            }));
+      });
 }

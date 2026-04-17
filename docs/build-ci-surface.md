@@ -20,7 +20,7 @@ Actions.
 Typical local flow:
 
 ```bash
-./build.sh sync-thirdy-party
+./build.sh sync-third-party
 ./build.sh configure --preset dev-debug
 ./build.sh build --preset dev-debug --artifacts tests
 ./build.sh test --preset dev-debug --build-first
@@ -37,6 +37,8 @@ Common variants:
 ```
 
 The root wrapper simply forwards to `scripts/toolchain.py local ...`.
+`sync-third-party` is the public command name; the checked-in dependency tree
+still lives under `thirdy_party/` as an internal path.
 
 ## CI Surface
 
@@ -51,14 +53,16 @@ Tracked workflows:
 - `03-deep-quality.yml`
   - clang-tidy, CodeChecker, ASan/UBSan, TSan
 - `04-security-coverage.yml`
-  - CodeQL, dependency review, Trivy, LLVM coverage
+  - dependency review, Trivy, and Linux coverage shards / aggregate
 - `05-nightly-stress.yml`
-  - nightly `ci.nightly` heavy-test shards
+  - Linux `ci.nightly` stress shards
 
 Build/test and sanitizer shards are now planned from the test manifest and a
-build-action budget, rather than hard-coded target counts. Coverage uses the
-dedicated `ci-coverage` preset and the `coverage-monolith` test executable
-layout.
+build-action budget, rather than hard-coded target counts. Coverage now uses
+the same source-layout manifest planning model, with shard-local profile
+collection and a final aggregate gate. CodeQL is provided by GitHub's default
+Code Scanning setup instead of a duplicate repo-local workflow job.
+Tracked workflows currently use a 200 build-action shard budget by default.
 
 Representative CI commands:
 
@@ -69,7 +73,9 @@ python3 scripts/toolchain.py ci build-test --configure-preset ci-linux-debug --b
 python3 scripts/toolchain.py ci clang-tidy --configure-preset ci-static-analysis --shard-count 4 --shard-index 0
 python3 scripts/toolchain.py ci emit-test-matrix --config .github/matrices/sanitizer.json --max-build-actions-per-shard 200 --output /tmp/sanitizer-matrix.json
 python3 scripts/toolchain.py ci sanitizer --configure-preset ci-asan-ubsan --build-preset ci-asan-ubsan --shard-count <resolved-shard-count> --shard-index <resolved-shard-index>
-python3 scripts/toolchain.py ci coverage --configure-preset ci-coverage --coverage-min-lines 0.70
+python3 scripts/toolchain.py ci emit-test-matrix --config .github/matrices/coverage.json --max-build-actions-per-shard 200 --output /tmp/coverage-matrix.json
+python3 scripts/toolchain.py ci coverage-shard --configure-preset ci-coverage --build-preset ci-coverage --shard-count <resolved-shard-count> --shard-index <resolved-shard-index> --artifact-dir /tmp/coverage-artifact-0
+python3 scripts/toolchain.py ci coverage-aggregate --artifact-dir /tmp/coverage-artifacts --coverage-min-lines 0.70
 ```
 
 `<resolved-shard-count>` and `<resolved-shard-index>` come from the planner
@@ -85,6 +91,7 @@ contracts:
 - `.github/actions/setup/**`
 - `scripts/ci/setup/**`
 - `cmake/**`
+- `tools/**`
 
 The deleted legacy layers are intentionally no longer part of the supported
 surface:

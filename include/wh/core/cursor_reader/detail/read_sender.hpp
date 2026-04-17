@@ -1,17 +1,17 @@
 #pragma once
 
-#include <atomic>
 #include <cstddef>
-#include <memory>
+#include <cstdint>
+#include <atomic>
 #include <optional>
 #include <utility>
 
 #include <stdexec/execution.hpp>
 
-#include "wh/core/cursor_reader/detail/completion_bits.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/shared_state.hpp"
 #include "wh/core/stdexec.hpp"
-#include "wh/core/stdexec/manual_lifetime_box.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 
 namespace wh::core::cursor_reader_detail {
 
@@ -34,17 +34,20 @@ struct read_operation final
 
     read_operation *self{nullptr};
 
-    auto set_value() noexcept -> void { self->finish(); }
+    auto set_value() noexcept -> void {
+      self->reset_handoff();
+      self->deliver();
+    }
 
     template <typename error_t>
     auto set_error(error_t &&error) noexcept -> void {
-      stdexec::set_error(std::move(self->receiver_),
-                         wh::core::cursor_reader_detail::to_exception_ptr(
-                             std::forward<error_t>(error)));
+      self->reset_handoff();
+      self->deliver_error(std::forward<error_t>(error));
     }
 
     auto set_stopped() noexcept -> void {
-      stdexec::set_stopped(std::move(self->receiver_));
+      self->reset_handoff();
+      self->deliver_stopped();
     }
 
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
@@ -58,23 +61,27 @@ struct read_operation final
   struct stop_callback {
     read_operation *self{nullptr};
 
-    auto operator()() const noexcept -> void { self->cancel_wait(); }
+    auto operator()() const noexcept -> void {
+      self->stop_requested_.store(true, std::memory_order_release);
+      self->cancel_wait();
+    }
   };
 
-  std::shared_ptr<shared_state_t> state_{};
+  wh::core::detail::intrusive_ptr<shared_state_t> state_{};
   std::size_t reader_index{0U};
   bool released{true};
   receiver_t receiver_;
   scheduler_t scheduler_;
-  wh::core::detail::manual_lifetime_box<handoff_op_t> handoff_{};
-  std::optional<stop_callback_t> stop_callback_{};
+  wh::core::detail::manual_lifetime<handoff_op_t> handoff_op_{};
+  bool handoff_engaged_{false};
+  std::optional<stop_callback_t> on_stop_{};
+  std::atomic<bool> stop_requested_{false};
   bool stopped_{false};
-  completion_bits completion_bits_{};
-  std::atomic<bool> waiting_registered_{false};
+  std::atomic<std::uint8_t> state_bits_{0U};
 
   template <typename receiver_u>
     requires std::constructible_from<receiver_t, receiver_u &&>
-  read_operation(std::shared_ptr<shared_state_t> state,
+  read_operation(wh::core::detail::intrusive_ptr<shared_state_t> state,
                  const std::size_t reader_index_value,
                  const bool released_value, receiver_u &&receiver)
       : state_(std::move(state)), reader_index(reader_index_value),
@@ -84,7 +91,7 @@ struct read_operation final
                 stdexec::get_env(receiver_))) {
     static constexpr typename async_waiter_t::ops_type ops{
         [](async_waiter_t *base) noexcept {
-          static_cast<read_operation *>(base)->complete_deferred();
+          static_cast<read_operation *>(base)->complete_ready();
         }};
     this->ops = &ops;
   }
@@ -93,6 +100,10 @@ struct read_operation final
   auto operator=(const read_operation &) -> read_operation & = delete;
   read_operation(read_operation &&) = delete;
   auto operator=(read_operation &&) -> read_operation & = delete;
+  ~read_operation() {
+    on_stop_.reset();
+    reset_handoff();
+  }
 
   using operation_state_concept = stdexec::operation_state_t;
 
@@ -112,21 +123,31 @@ struct read_operation final
       return;
     }
 
-    auto ticket = state_->prepare_async_read(reader_index, this);
-    if (ticket.ready.has_value()) {
-      this->store_ready(std::move(*ticket.ready));
-      if (!completion_bits_.claim()) {
+    if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
+      try {
+        on_stop_.emplace(stop_token, stop_callback{this});
+      } catch (...) {
+        stdexec::set_error(std::move(receiver_), std::current_exception());
         return;
       }
-      complete_immediate();
+      if (stop_token.stop_requested()) {
+        stop_requested_.store(true, std::memory_order_release);
+      }
+    }
+
+    auto ticket = state_->register_async_waiter(reader_index, this);
+    if (ticket.ready.has_value()) {
+      this->store_ready(std::move(*ticket.ready));
+      if (!claim_completion()) {
+        return;
+      }
+      begin_completion();
       return;
     }
-    waiting_registered_.store(true, std::memory_order_release);
 
-    if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
-      stop_callback_.emplace(stop_token, stop_callback{this});
-      if (stop_token.stop_requested()) {
-        cancel_wait();
+    if (stop_requested_.load(std::memory_order_acquire)) {
+      cancel_wait();
+      if (has_claimed_completion()) {
         return;
       }
     }
@@ -138,57 +159,116 @@ struct read_operation final
   }
 
 private:
+  static constexpr std::uint8_t claimed_bit_ = 0x1U;
+  static constexpr std::uint8_t delivering_bit_ = 0x2U;
+
+  [[nodiscard]] auto has_claimed_completion() const noexcept -> bool {
+    return (state_bits_.load(std::memory_order_acquire) & claimed_bit_) != 0U;
+  }
+
+  [[nodiscard]] auto claim_completion() noexcept -> bool {
+    auto state_bits = state_bits_.load(std::memory_order_acquire);
+    for (;;) {
+      if ((state_bits & claimed_bit_) != 0U) {
+        return false;
+      }
+      const auto updated = static_cast<std::uint8_t>(state_bits | claimed_bit_);
+      if (state_bits_.compare_exchange_weak(state_bits, updated,
+                                            std::memory_order_acq_rel,
+                                            std::memory_order_acquire)) {
+        return true;
+      }
+    }
+  }
+
+  [[nodiscard]] auto start_delivery() noexcept -> bool {
+    return (state_bits_.fetch_or(delivering_bit_, std::memory_order_acq_rel) &
+            delivering_bit_) == 0U;
+  }
+
+  auto release_stop() noexcept -> void { on_stop_.reset(); }
+
+  auto reset_handoff() noexcept -> void {
+    if (!handoff_engaged_) {
+      return;
+    }
+    handoff_op_.destruct();
+    handoff_engaged_ = false;
+  }
+
   auto cancel_wait() noexcept -> void {
-    if (!state_ || !waiting_registered_.load(std::memory_order_acquire) ||
-        completion_bits_.has_claimed()) {
+    if (!state_ || !this->waiting_registered() || has_claimed_completion()) {
       return;
     }
     if (!state_->remove_async_waiter(reader_index, this)) {
       return;
     }
-    waiting_registered_.store(false, std::memory_order_release);
-    if (!completion_bits_.claim()) {
+    if (!claim_completion()) {
       return;
     }
     stopped_ = true;
-    complete_immediate();
+    begin_completion();
   }
 
-  auto complete_deferred() noexcept -> void {
-    waiting_registered_.store(false, std::memory_order_release);
-    if (!completion_bits_.claim()) {
+  auto complete_ready() noexcept -> void {
+    if (!claim_completion()) {
       return;
     }
-    complete_immediate();
+    begin_completion();
   }
 
   [[nodiscard]] auto is_same_scheduler() const noexcept -> bool {
     return wh::core::detail::scheduler_handoff::same_scheduler(scheduler_);
   }
 
-  auto complete_immediate() noexcept -> void {
+  auto begin_completion() noexcept -> void {
     if (is_same_scheduler()) {
-      finish();
+      deliver();
       return;
     }
     try {
-      handoff_.emplace_from(stdexec::connect, stdexec::schedule(scheduler_),
-                            handoff_receiver{this});
-      stdexec::start(handoff_.get());
+      [[maybe_unused]] auto &handoff_op =
+          handoff_op_.construct_with([&]() -> handoff_op_t {
+        return stdexec::connect(stdexec::schedule(scheduler_),
+                                handoff_receiver{this});
+      });
+      handoff_engaged_ = true;
+      stdexec::start(handoff_op_.get());
     } catch (...) {
-      stdexec::set_error(std::move(receiver_), std::current_exception());
+      reset_handoff();
+      deliver_error(std::current_exception());
     }
   }
 
-  auto finish() noexcept -> void {
-    if (!completion_bits_.start_delivery()) {
+  auto deliver() noexcept -> void {
+    if (!start_delivery()) {
       return;
     }
+    release_stop();
     if (stopped_) {
       stdexec::set_stopped(std::move(receiver_));
       return;
     }
     stdexec::set_value(std::move(receiver_), this->take_ready());
+  }
+
+  template <typename error_t> auto deliver_error(error_t &&error) noexcept
+      -> void {
+    if (!start_delivery()) {
+      return;
+    }
+    release_stop();
+    stdexec::set_error(std::move(receiver_),
+                       wh::core::cursor_reader_detail::to_exception_ptr(
+                           std::forward<error_t>(error)));
+  }
+
+  auto deliver_stopped() noexcept -> void {
+    if (!start_delivery()) {
+      return;
+    }
+    release_stop();
+    stdexec::set_stopped(std::move(receiver_));
   }
 };
 
@@ -203,7 +283,7 @@ struct read_sender {
                                      stdexec::set_error_t(std::exception_ptr),
                                      stdexec::set_stopped_t()>;
 
-  std::shared_ptr<shared_state<source_t, policy_t>> state_{};
+  wh::core::detail::intrusive_ptr<shared_state<source_t, policy_t>> state_{};
   std::size_t reader_index{0U};
   bool released{true};
 

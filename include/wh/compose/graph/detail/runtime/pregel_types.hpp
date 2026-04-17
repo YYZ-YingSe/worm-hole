@@ -91,6 +91,31 @@ struct pregel_delivery_store {
     return current_nodes;
   }
 
+  auto restore(const std::size_t node_count,
+               std::vector<pregel_node_inputs> current_values,
+               std::vector<pregel_node_inputs> next_values,
+               std::vector<std::uint32_t> current_frontier,
+               std::vector<std::uint32_t> next_frontier) -> void {
+    if (current_values.size() < node_count) {
+      current_values.resize(node_count);
+    }
+    if (next_values.size() < node_count) {
+      next_values.resize(node_count);
+    }
+    current = std::move(current_values);
+    next = std::move(next_values);
+    current_nodes = std::move(current_frontier);
+    next_nodes = std::move(next_frontier);
+    current_enqueued.reset(node_count, false);
+    next_enqueued.reset(node_count, false);
+    for (const auto node_id : current_nodes) {
+      current_enqueued.set(node_id);
+    }
+    for (const auto node_id : next_nodes) {
+      next_enqueued.set(node_id);
+    }
+  }
+
 private:
   auto mark_current(const std::uint32_t node_id) -> void {
     if (current_enqueued.set_if_unset(node_id)) {

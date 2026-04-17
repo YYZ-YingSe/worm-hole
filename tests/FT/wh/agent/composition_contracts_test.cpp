@@ -62,6 +62,10 @@ namespace {
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  }
   return authored;
 }
 
@@ -166,25 +170,29 @@ TEST_CASE("agent authoring rejects empty child names",
           wh::core::errc::invalid_argument);
 }
 
-TEST_CASE("agent tool build hook freezes bound agent and emits stable schema",
+TEST_CASE("agent tool schema hook emits stable authored schema and freeze requires bound runner",
           "[core][agent][condition]") {
   wh::adk::agent_tool request_tool{"delegate", "delegate request",
                                    wh::agent::agent{"worker"}};
-  REQUIRE(request_tool.freeze().has_value());
   auto request_schema = request_tool.tool_schema();
   REQUIRE(request_schema.name == "delegate");
   REQUIRE(request_schema.parameters.size() == 1U);
   REQUIRE(request_schema.parameters.front().name == "request");
+  auto request_freeze = request_tool.freeze();
+  REQUIRE(request_freeze.has_error());
+  REQUIRE(request_freeze.error() == wh::core::errc::not_found);
 
   wh::adk::agent_tool history_tool{"delegate_history", "delegate history",
                                    wh::agent::agent{"worker"}};
   REQUIRE(history_tool
               .set_input_mode(wh::adk::agent_tool_input_mode::message_history)
               .has_value());
-  REQUIRE(history_tool.freeze().has_value());
   auto history_schema = history_tool.tool_schema();
   REQUIRE(history_schema.raw_parameters_json_schema.find("messages") !=
           std::string::npos);
+  auto history_freeze = history_tool.freeze();
+  REQUIRE(history_freeze.has_error());
+  REQUIRE(history_freeze.error() == wh::core::errc::not_found);
 
   wh::schema::tool_schema_definition custom_schema{};
   custom_schema.parameters.push_back(wh::schema::tool_parameter_schema{
@@ -199,10 +207,12 @@ TEST_CASE("agent tool build hook freezes bound agent and emits stable schema",
               .set_input_mode(wh::adk::agent_tool_input_mode::custom_schema)
               .has_value());
   REQUIRE(custom_tool.set_custom_schema(std::move(custom_schema)).has_value());
-  REQUIRE(custom_tool.freeze().has_value());
   auto resolved = custom_tool.tool_schema();
   REQUIRE(resolved.parameters.size() == 1U);
   REQUIRE(resolved.parameters.front().name == "count");
+  auto custom_freeze = custom_tool.freeze();
+  REQUIRE(custom_freeze.has_error());
+  REQUIRE(custom_freeze.error() == wh::core::errc::not_found);
 }
 
 TEST_CASE("agent tool build hook rejects missing custom schema",
@@ -311,10 +321,10 @@ TEST_CASE("self refine build hook requires explicit revision contracts and lower
   REQUIRE(authored.effective_reviewer().has_value());
   REQUIRE(authored.effective_reviewer().value().get().name() == "worker");
 
-  auto lowered = wh::agent::make_agent(std::move(authored));
+  auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());
   REQUIRE(lowered.value().executable());
-  REQUIRE(lowered.value().lower_graph().has_value());
+  REQUIRE(lowered.value().lower().has_value());
 }
 
 TEST_CASE("reviewer executor build hook freezes explicit contracts and lowers into agent",
@@ -335,9 +345,9 @@ TEST_CASE("reviewer executor build hook freezes explicit contracts and lowers in
               .has_value());
   REQUIRE(authored.freeze().has_value());
 
-  auto lowered = wh::agent::make_agent(std::move(authored));
+  auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());
-  REQUIRE(lowered.value().lower_graph().has_value());
+  REQUIRE(lowered.value().lower().has_value());
 }
 
 TEST_CASE("reflexion build hook keeps optional memory writer explicit",
@@ -387,9 +397,9 @@ TEST_CASE("reflexion build hook keeps optional memory writer explicit",
               .has_value());
   REQUIRE(authored.freeze().has_value());
 
-  auto lowered = wh::agent::make_agent(std::move(authored));
+  auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());
-  REQUIRE(lowered.value().lower_graph().has_value());
+  REQUIRE(lowered.value().lower().has_value());
 }
 
 TEST_CASE("supervisor build hook auto-wires upward return and worker delegation",
@@ -405,7 +415,7 @@ TEST_CASE("supervisor build hook auto-wires upward return and worker delegation"
   REQUIRE_FALSE(authored.supervisor_agent().value().get().allows_transfer_to_child(
       "planner"));
 
-  auto lowered = wh::agent::make_agent(std::move(authored));
+  auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());
   REQUIRE(lowered.value().allows_transfer_to_child("planner"));
   REQUIRE(lowered.value().allows_transfer_to_child("executor"));

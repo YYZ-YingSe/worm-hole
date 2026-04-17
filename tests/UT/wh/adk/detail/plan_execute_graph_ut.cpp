@@ -227,11 +227,12 @@ TEST_CASE("plan execute graph lowers authored shells and exposes executable bind
   auto lowered = wh::adk::detail::plan_execute_graph{configured.value()}.lower();
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->compile().has_value());
+  REQUIRE(configured->freeze().has_value());
 
   auto bound =
       wh::adk::detail::bind_plan_execute_agent(std::move(configured).value());
   REQUIRE(bound.has_value());
-  auto bound_graph = bound->lower_graph();
+  auto bound_graph = bound->lower();
   REQUIRE(bound_graph.has_value());
   REQUIRE(bound_graph->compile().has_value());
 }

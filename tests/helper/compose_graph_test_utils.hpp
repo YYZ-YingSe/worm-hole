@@ -81,11 +81,41 @@ template <typename result_t, stdexec::sender sender_t>
   return detail::nested_graph_test_state::scheduler();
 }
 
+[[nodiscard]] inline auto
+make_graph_request(wh::compose::graph_value input)
+    -> wh::compose::graph_invoke_request {
+  wh::compose::graph_invoke_request request{};
+  if (auto *reader = wh::core::any_cast<wh::compose::graph_stream_reader>(&input);
+      reader != nullptr) {
+    request.input = wh::compose::graph_input::stream(std::move(*reader));
+  } else {
+    request.input = wh::compose::graph_input::value(std::move(input));
+  }
+  return request;
+}
+
 template <typename input_t>
 [[nodiscard]] inline auto make_graph_request(input_t &&input)
     -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{std::forward<input_t>(input)};
+  request.input =
+      wh::compose::graph_input::value(std::forward<input_t>(input));
+  return request;
+}
+
+[[nodiscard]] inline auto
+make_graph_request(wh::compose::graph_input input)
+    -> wh::compose::graph_invoke_request {
+  wh::compose::graph_invoke_request request{};
+  request.input = std::move(input);
+  return request;
+}
+
+[[nodiscard]] inline auto
+make_graph_request(wh::compose::graph_stream_reader input)
+    -> wh::compose::graph_invoke_request {
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::stream(std::move(input));
   return request;
 }
 
@@ -122,29 +152,125 @@ template <typename input_t>
   return request;
 }
 
-inline auto set_checkpoint_start_input(wh::compose::checkpoint_state &state,
+namespace detail {
+
+inline auto mutable_checkpoint_pending_inputs(wh::compose::checkpoint_state &state)
+    -> wh::compose::checkpoint_pending_inputs & {
+  if (state.runtime.dag.has_value() && !state.runtime.pregel.has_value()) {
+    return state.runtime.dag->pending_inputs;
+  }
+  if (state.runtime.pregel.has_value() && !state.runtime.dag.has_value()) {
+    return state.runtime.pregel->pending_inputs;
+  }
+  if (state.runtime.dag.has_value() && state.runtime.pregel.has_value()) {
+    return state.restore_shape.options.mode == wh::compose::graph_runtime_mode::pregel
+               ? state.runtime.pregel->pending_inputs
+               : state.runtime.dag->pending_inputs;
+  }
+  if (state.restore_shape.options.mode == wh::compose::graph_runtime_mode::pregel) {
+    return state.runtime.pregel.has_value()
+               ? state.runtime.pregel->pending_inputs
+               : state.runtime.pregel.emplace().pending_inputs;
+  }
+  return state.runtime.dag.has_value() ? state.runtime.dag->pending_inputs
+                                       : state.runtime.dag.emplace().pending_inputs;
+}
+
+[[nodiscard]] inline auto
+find_checkpoint_pending_inputs(const wh::compose::checkpoint_state &state)
+    -> const wh::compose::checkpoint_pending_inputs * {
+  if (state.runtime.dag.has_value() && !state.runtime.pregel.has_value()) {
+    return std::addressof(state.runtime.dag->pending_inputs);
+  }
+  if (state.runtime.pregel.has_value() && !state.runtime.dag.has_value()) {
+    return std::addressof(state.runtime.pregel->pending_inputs);
+  }
+  if (state.runtime.dag.has_value() && state.runtime.pregel.has_value()) {
+    return state.restore_shape.options.mode == wh::compose::graph_runtime_mode::pregel
+               ? std::addressof(state.runtime.pregel->pending_inputs)
+               : std::addressof(state.runtime.dag->pending_inputs);
+  }
+  if (state.restore_shape.options.mode == wh::compose::graph_runtime_mode::pregel &&
+      state.runtime.pregel.has_value()) {
+    return std::addressof(state.runtime.pregel->pending_inputs);
+  }
+  if (state.runtime.dag.has_value()) {
+    return std::addressof(state.runtime.dag->pending_inputs);
+  }
+  if (state.runtime.pregel.has_value()) {
+    return std::addressof(state.runtime.pregel->pending_inputs);
+  }
+  return nullptr;
+}
+
+} // namespace detail
+
+inline auto set_checkpoint_entry_input(wh::compose::checkpoint_state &state,
                                        const int value) -> void {
-  state.rerun_inputs.insert_or_assign(
-      std::string{wh::compose::graph_start_node_key}, wh::core::any(value));
+  detail::mutable_checkpoint_pending_inputs(state).entry = wh::core::any(value);
 }
 
-inline auto set_checkpoint_start_input(wh::compose::checkpoint_state &state,
+inline auto set_checkpoint_entry_input(wh::compose::checkpoint_state &state,
                                        wh::compose::graph_value value) -> void {
-  state.rerun_inputs.insert_or_assign(
-      std::string{wh::compose::graph_start_node_key}, std::move(value));
+  detail::mutable_checkpoint_pending_inputs(state).entry = std::move(value);
 }
 
-[[nodiscard]] inline auto checkpoint_start_input(
+[[nodiscard]] inline auto find_checkpoint_entry_input(
+    const wh::compose::checkpoint_state &state)
+    -> const wh::compose::graph_value * {
+  const auto *pending = detail::find_checkpoint_pending_inputs(state);
+  if (pending == nullptr || !pending->entry.has_value()) {
+    return nullptr;
+  }
+  return std::addressof(*pending->entry);
+}
+
+[[nodiscard]] inline auto checkpoint_entry_input(
     const wh::compose::checkpoint_state &state) -> wh::core::result<int> {
-  const auto iter = state.rerun_inputs.find(wh::compose::graph_start_node_key);
-  if (iter == state.rerun_inputs.end()) {
+  const auto *payload = find_checkpoint_entry_input(state);
+  if (payload == nullptr) {
     return wh::core::result<int>::failure(wh::core::errc::not_found);
   }
-  if (const auto *typed = wh::core::any_cast<int>(&iter->second);
+  if (const auto *typed = wh::core::any_cast<int>(payload);
       typed != nullptr) {
     return *typed;
   }
   return wh::core::result<int>::failure(wh::core::errc::type_mismatch);
+}
+
+inline auto set_checkpoint_node_input(wh::compose::checkpoint_state &state,
+                                      std::string key,
+                                      wh::compose::graph_value value,
+                                      const std::uint32_t node_id = 0U)
+    -> void {
+  auto &pending = detail::mutable_checkpoint_pending_inputs(state);
+  for (auto &node_input : pending.nodes) {
+    if (node_input.key == key) {
+      node_input.node_id = node_id;
+      node_input.input = std::move(value);
+      return;
+    }
+  }
+  pending.nodes.push_back(wh::compose::checkpoint_node_input{
+      .node_id = node_id,
+      .key = std::move(key),
+      .input = std::move(value),
+  });
+}
+
+[[nodiscard]] inline auto find_checkpoint_node_input(
+    const wh::compose::checkpoint_state &state, const std::string_view key)
+    -> const wh::compose::graph_value * {
+  const auto *pending = detail::find_checkpoint_pending_inputs(state);
+  if (pending == nullptr) {
+    return nullptr;
+  }
+  for (const auto &node_input : pending->nodes) {
+    if (node_input.key == key) {
+      return std::addressof(node_input.input);
+    }
+  }
+  return nullptr;
 }
 
 [[nodiscard]] inline auto invoke_value_sync(
@@ -309,9 +435,26 @@ read_graph_value_cref(const wh::compose::graph_value &value)
     wh::compose::graph_invoke_controls controls = {})
     -> wh::core::result<wh::compose::graph_invoke_result> {
   controls.call = std::move(call_options);
+  auto request =
+      make_graph_request(std::move(input), std::move(controls), services);
 
-  wh::compose::graph_invoke_request request{};
-  request.input = std::move(input);
+  auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
+  if (!waited.has_value()) {
+    return wh::core::result<wh::compose::graph_invoke_result>::failure(
+        wh::core::errc::canceled);
+  }
+  return std::get<0>(std::move(*waited));
+}
+
+[[nodiscard]] inline auto invoke_graph_sync(
+    wh::compose::graph &graph, wh::compose::graph_input input,
+    wh::core::run_context &context,
+    wh::compose::graph_call_options call_options = {},
+    const wh::compose::graph_runtime_services *services = nullptr,
+    wh::compose::graph_invoke_controls controls = {})
+    -> wh::core::result<wh::compose::graph_invoke_result> {
+  controls.call = std::move(call_options);
+  auto request = make_graph_request(std::move(input));
   request.controls = std::move(controls);
   request.services = services;
 
@@ -332,6 +475,16 @@ concept graph_request_invokable = requires(invokable_t &invokable,
 
 [[nodiscard]] inline auto invoke_graph_sync(
     wh::compose::graph &graph, wh::compose::graph_value input,
+    wh::core::run_context &context,
+    wh::compose::graph_invoke_controls controls,
+    const wh::compose::graph_runtime_services *services = nullptr)
+    -> wh::core::result<wh::compose::graph_invoke_result> {
+  return invoke_graph_sync(graph, std::move(input), context, {},
+                           services, std::move(controls));
+}
+
+[[nodiscard]] inline auto invoke_graph_sync(
+    wh::compose::graph &graph, wh::compose::graph_input input,
     wh::core::run_context &context,
     wh::compose::graph_invoke_controls controls,
     const wh::compose::graph_runtime_services *services = nullptr)

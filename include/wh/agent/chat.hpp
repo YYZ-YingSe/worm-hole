@@ -134,10 +134,10 @@ public:
     return output_mode_;
   }
 
-  /// Wraps this authored shell into the common executable agent surface.
+  /// Converts this frozen authored shell into the common executable agent surface.
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
-  /// Freezes the authored shell once.
+  /// Validates authored configuration and freezes this shell once.
   auto freeze() -> wh::core::result<void> {
     if (frozen_) {
       return {};

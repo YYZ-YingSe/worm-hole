@@ -86,6 +86,11 @@ That example:
 - runs a ReAct agent whose model emits a tool call and then answers from the
   tool result
 
+Flow wrappers follow the same authored-surface contract as the rest of the
+project: configure first, call `freeze()`, then execute or wire them into a
+graph node. Agent shells follow the matching public phase path:
+`freeze() -> into_agent() -> lower()` before invocation.
+
 Example build entrypoint:
 
 ```bash
@@ -133,7 +138,7 @@ python3 scripts/toolchain.py --help
 - CMake 3.25+
 - C++20
 - build/test CI across Ubuntu, macOS, and Windows
-- deep analysis, coverage, and nightly heavy-test jobs on Linux
+- deep analysis, coverage, and nightly stress shards on Linux
 
 ## Documentation
 

@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 #include <variant>
 
 #include <stdexec/execution.hpp>
@@ -89,4 +90,32 @@ TEST_CASE("transform stream reader rejects chunks without payload and preserves 
 
   REQUIRE(capture.ready.try_acquire());
   REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::stopped);
+}
+
+TEST_CASE("transform stream async sender keeps state alive after wrapper destruction",
+          "[UT][wh/schema/stream/adapter/transform_stream_reader.hpp][transform_stream_reader::read_async][lifetime][concurrency]") {
+  auto sender = []() {
+    auto reader = wh::schema::stream::make_transform_stream_reader(
+        wh::schema::stream::make_values_stream_reader(
+            std::vector<std::string>{"11"}),
+        [](const std::string &input) -> wh::core::result<int> {
+          return std::stoi(input);
+        });
+    return reader.read_async();
+  }();
+
+  using result_t =
+      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
+  wh::testing::helper::sender_capture<result_t> capture{};
+  auto operation = stdexec::connect(
+      std::move(sender),
+      wh::testing::helper::sender_capture_receiver<result_t>{&capture});
+  stdexec::start(operation);
+
+  REQUIRE(capture.ready.try_acquire());
+  REQUIRE(capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.value.has_value());
+  REQUIRE(capture.value->has_value());
+  REQUIRE(capture.value->value().value == std::optional<int>{11});
 }

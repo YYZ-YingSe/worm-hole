@@ -1,0 +1,10 @@
+[
+  {
+    "name": "coverage",
+    "configure_preset": "ci-coverage",
+    "build_preset": "ci-coverage",
+    "min_shards": 1,
+    "include_labels": ["ci.pr"],
+    "exclude_labels": ["ci.nightly"]
+  }
+]

@@ -26,6 +26,11 @@ TEST_CASE("cursor async waiter state buffers and aliases expose ready bookkeepin
   async_waiter_base<int> waiter{};
   waiter.store_ready(9);
   REQUIRE(waiter.take_ready() == 9);
+  REQUIRE_FALSE(waiter.waiting_registered());
+  waiter.mark_waiting_registered();
+  REQUIRE(waiter.waiting_registered());
+  waiter.clear_waiting_registered();
+  REQUIRE_FALSE(waiter.waiting_registered());
 
   reader_state<int> state{};
   REQUIRE(state.next_sequence == 0U);

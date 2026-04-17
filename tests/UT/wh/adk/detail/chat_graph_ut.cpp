@@ -16,7 +16,8 @@ namespace {
     wh::compose::graph &graph, std::vector<wh::schema::message> messages)
     -> wh::agent::agent_output {
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any{std::move(messages)};
+  request.input =
+      wh::compose::graph_input::value(wh::core::any{std::move(messages)});
 
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
@@ -133,11 +134,13 @@ TEST_CASE("chat graph lowers authored chat shells into executable compose graphs
   REQUIRE(reply != nullptr);
   REQUIRE(*reply == "ok");
 
-  auto bound = wh::adk::detail::bind_chat_agent(
-      wh::testing::helper::make_configured_chat("bound-chat", "assistant"));
+  auto bound_authored = wh::testing::helper::make_configured_chat(
+      "bound-chat", "assistant");
+  REQUIRE(bound_authored.freeze().has_value());
+  auto bound = wh::adk::detail::bind_chat_agent(std::move(bound_authored));
   REQUIRE(bound.has_value());
   REQUIRE(bound->name() == "bound-chat");
-  auto bound_graph = bound->lower_graph();
+  auto bound_graph = bound->lower();
   REQUIRE(bound_graph.has_value());
   REQUIRE(bound_graph->compiled());
 }

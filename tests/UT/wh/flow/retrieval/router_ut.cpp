@@ -69,6 +69,12 @@ TEST_CASE("retrieval router validates registration and executes selected routes"
   wh::retriever::retriever_request request{};
   request.query = "hello";
   wh::core::run_context context{};
+  auto unfrozen = stdexec::sync_wait(router.retrieve(request, context));
+  REQUIRE(unfrozen.has_value());
+  REQUIRE(std::get<0>(*unfrozen).has_error());
+  REQUIRE(std::get<0>(*unfrozen).error() == wh::core::errc::contract_violation);
+
+  REQUIRE(router.freeze().has_value());
   auto awaited = stdexec::sync_wait(router.retrieve(request, context));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
@@ -105,6 +111,7 @@ TEST_CASE("retrieval router succeeds when route policy selects one registered su
   wh::retriever::retriever_request request{};
   request.query = "hello";
   wh::core::run_context context{};
+  REQUIRE(router.freeze().has_value());
   auto waited = stdexec::sync_wait(router.retrieve(request, context));
   REQUIRE(waited.has_value());
   REQUIRE(std::get<0>(*waited).has_value());
@@ -126,6 +133,7 @@ TEST_CASE("retrieval router propagates route and fusion failures",
   REQUIRE(missing_router.add_retriever("left",
                                        retriever_t{routed_retriever_impl{"left"}})
               .has_value());
+  REQUIRE(missing_router.freeze().has_value());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";
@@ -146,6 +154,7 @@ TEST_CASE("retrieval router propagates route and fusion failures",
   REQUIRE(failing_router.add_retriever(
               "left", retriever_t{routed_retriever_impl{"left"}})
               .has_value());
+  REQUIRE(failing_router.freeze().has_value());
   auto failing_waited = stdexec::sync_wait(failing_router.retrieve(request, context));
   REQUIRE(failing_waited.has_value());
   REQUIRE(std::get<0>(*failing_waited).has_error());

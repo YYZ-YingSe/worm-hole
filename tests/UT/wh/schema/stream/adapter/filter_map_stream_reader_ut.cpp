@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 #include <variant>
 
 #include <stdexec/execution.hpp>
@@ -109,4 +110,36 @@ TEST_CASE("filter map stream reader rejects missing borrowed payload and preserv
 
   REQUIRE(capture.ready.try_acquire());
   REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::stopped);
+}
+
+TEST_CASE("filter map stream async sender skips values and keeps state alive after wrapper destruction",
+          "[UT][wh/schema/stream/adapter/filter_map_stream_reader.hpp][filter_map_stream_reader::read_async][lifetime][branch][concurrency]") {
+  auto sender = []() {
+    auto reader = wh::schema::stream::make_filter_map_stream_reader(
+        wh::schema::stream::make_values_stream_reader(
+            std::vector<std::string>{"skip", "7"}),
+        [](const std::string &input)
+            -> wh::core::result<wh::schema::stream::filter_map_step<int>> {
+          if (input == "skip") {
+            return wh::schema::stream::skip;
+          }
+          return std::stoi(input);
+        });
+    return reader.read_async();
+  }();
+
+  using result_t =
+      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
+  wh::testing::helper::sender_capture<result_t> capture{};
+  auto operation = stdexec::connect(
+      std::move(sender),
+      wh::testing::helper::sender_capture_receiver<result_t>{&capture});
+  stdexec::start(operation);
+
+  REQUIRE(capture.ready.try_acquire());
+  REQUIRE(capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.value.has_value());
+  REQUIRE(capture.value->has_value());
+  REQUIRE(capture.value->value().value == std::optional<int>{7});
 }

@@ -14,7 +14,7 @@ TEST_CASE("runtime state merge nested outputs appends streams and preserves firs
 
   invoke_outputs target{};
   target.publish_transition_log = false;
-  target.last_completed_nodes = {"keep"};
+  target.completed_node_keys = {"keep"};
   target.graph_run_error = wh::compose::graph_run_error_detail{
       .phase = compose_error_phase::execute,
       .node = "existing",
@@ -49,7 +49,7 @@ TEST_CASE("runtime state merge nested outputs appends streams and preserves firs
       .channel = "audit",
       .payload = wh::compose::graph_value{7},
   });
-  nested.last_completed_nodes = {"nested"};
+  nested.completed_node_keys = {"nested"};
   nested.node_timeout_error = wh::compose::graph_node_timeout_error_detail{
       .node = "worker",
       .attempt = 1U,
@@ -65,7 +65,7 @@ TEST_CASE("runtime state merge nested outputs appends streams and preserves firs
   merge_nested_outputs(target, std::move(nested));
 
   REQUIRE(target.publish_transition_log);
-  REQUIRE(target.last_completed_nodes == std::vector<std::string>{"keep"});
+  REQUIRE(target.completed_node_keys == std::vector<std::string>{"keep"});
   REQUIRE(target.transition_log.size() == 1U);
   REQUIRE(target.debug_events.size() == 1U);
   REQUIRE(target.runtime_message_events.size() == 1U);

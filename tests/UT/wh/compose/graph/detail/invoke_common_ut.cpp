@@ -17,7 +17,7 @@ TEST_CASE("invoke common trace token formatter keeps stable compact ids",
 }
 
 TEST_CASE("invoke common runtime forwards call options into async node attempts",
-          "[UT][wh/compose/graph/detail/invoke_common.hpp][run_state::bind_node_runtime_call_options][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/invoke_common.hpp][invoke_session::bind_node_runtime_call_options][condition][branch][boundary]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.max_parallel_nodes = 1U;

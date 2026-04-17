@@ -97,6 +97,7 @@ TEST_CASE("flow indexing parent can be used as one async indexer component node"
         }
         return ids;
       }};
+  REQUIRE(parent.freeze().has_value());
 
   wh::compose::graph graph{};
   REQUIRE(graph
@@ -115,7 +116,8 @@ TEST_CASE("flow indexing parent can be used as one async indexer component node"
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(
       graph.invoke(context, wh::compose::graph_invoke_request{
-                                .input = wh::core::any(request)}));
+                                .input = wh::compose::graph_input::value(
+                                    wh::core::any(request))}));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
   auto *response = wh::core::any_cast<wh::indexer::indexer_response>(
@@ -144,6 +146,7 @@ TEST_CASE("flow indexing parent executes direct write path and annotates child d
         }
         return ids;
       }};
+  REQUIRE(parent.freeze().has_value());
 
   wh::indexer::indexer_request request{};
   wh::schema::document parent_document{"parent-doc"};

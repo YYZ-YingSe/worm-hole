@@ -7,6 +7,7 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/core/intrusive_ptr.hpp"
 #include "helper/manual_scheduler.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
@@ -67,7 +68,7 @@ TEST_CASE("read sender returns internal and closed results for null and released
   REQUIRE(missing_capture.value->error() == wh::core::errc::internal_error);
 
   auto stats = std::make_shared<sender_source_stats>();
-  auto state = std::make_shared<
+  auto state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<sender_async_source, policy_t>>(
       sender_async_source{stats}, 1U);
 
@@ -92,7 +93,7 @@ TEST_CASE("read sender honors pre-requested stop before registering waiter",
 
   auto stats = std::make_shared<sender_source_stats>();
   stats->try_results = {std::nullopt};
-  auto state = std::make_shared<
+  auto state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<sender_async_source, policy_t>>(
       sender_async_source{stats}, 1U);
 
@@ -108,14 +109,14 @@ TEST_CASE("read sender honors pre-requested stop before registering waiter",
 }
 
 TEST_CASE("read sender prebuffered ready path schedules handoff delivery on non-matching scheduler",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::complete_immediate][branch]") {
+          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::begin_completion][branch]") {
   auto handoff_stats = std::make_shared<sender_source_stats>();
   handoff_stats->try_results = {std::optional<result_t>{result_t{9}}};
 
   wh::testing::helper::manual_scheduler_state handoff_scheduler_state{};
   scheduler_t handoff_scheduler{&handoff_scheduler_state};
   env_t handoff_env{handoff_scheduler, {}};
-  auto handoff_state = std::make_shared<
+  auto handoff_state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<sender_async_source, policy_t>>(
       sender_async_source{handoff_stats}, 2U);
   auto primed_handoff = handoff_state->try_read_for(1U);
@@ -138,7 +139,7 @@ TEST_CASE("read sender prebuffered ready path schedules handoff delivery on non-
 }
 
 TEST_CASE("read sender pending async path starts pull and hands off final completion",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::complete_deferred][concurrency][branch]") {
+          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::complete_ready][concurrency][branch]") {
   auto stats = std::make_shared<sender_source_stats>();
   stats->try_results = {std::nullopt};
   stats->async_result = result_t{13};
@@ -146,7 +147,7 @@ TEST_CASE("read sender pending async path starts pull and hands off final comple
   wh::testing::helper::manual_scheduler_state scheduler_state{};
   scheduler_t scheduler{&scheduler_state};
   env_t env{scheduler, {}};
-  auto state = std::make_shared<
+  auto state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<sender_async_source, policy_t>>(
       sender_async_source{stats}, 1U);
 
@@ -178,7 +179,7 @@ TEST_CASE("read sender pending async path finishes on first scheduler turn when 
   scheduler_state.same_scheduler = true;
   scheduler_t scheduler{&scheduler_state};
   env_t env{scheduler, {}};
-  auto state = std::make_shared<
+  auto state = wh::core::detail::make_intrusive<
       wh::core::cursor_reader_detail::shared_state<sender_async_source, policy_t>>(
       sender_async_source{stats}, 1U);
 

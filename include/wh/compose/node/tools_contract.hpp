@@ -61,9 +61,8 @@ struct tool_event {
 using tools_invoke_sender = graph_value_sender;
 
 /// Type-erased async stream result boundary used by tools-node runtime.
-using tools_stream_sender = exec::any_receiver_ref<
-    stdexec::completion_signatures<stdexec::set_value_t(wh::core::result<graph_stream_reader>),
-                                   stdexec::set_stopped_t()>>::any_sender<>;
+using tools_stream_sender =
+    wh::core::detail::result_sender<wh::core::result<graph_stream_reader>>;
 
 /// Tool invoke endpoint contract.
 using tool_invoke = wh::core::callback_function<wh::core::result<graph_value>(

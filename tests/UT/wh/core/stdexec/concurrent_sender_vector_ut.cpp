@@ -5,6 +5,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -64,6 +65,7 @@ struct scripted_sender {
   int value{0};
   terminal_mode mode{terminal_mode::value};
   bool async{false};
+  bool observe_stop{false};
   bool throw_on_connect{false};
 
   template <typename receiver_t>
@@ -76,15 +78,16 @@ struct scripted_sender {
     int value{0};
     terminal_mode mode{terminal_mode::value};
     bool async{false};
+    bool observe_stop{false};
     bool engaged{false};
 
     operation(receiver_t receiver_value, std::shared_ptr<sender_probe> probe_value,
               wh::testing::helper::manual_scheduler_state *scheduler_state_value,
               const int value_value, const terminal_mode mode_value,
-              const bool async_value)
+              const bool async_value, const bool observe_stop_value)
         : receiver(std::move(receiver_value)), probe(std::move(probe_value)),
           scheduler_state(scheduler_state_value), value(value_value),
-          mode(mode_value), async(async_value) {}
+          mode(mode_value), async(async_value), observe_stop(observe_stop_value) {}
 
     auto start() & noexcept -> void {
       ++probe->start_calls;
@@ -104,6 +107,11 @@ struct scripted_sender {
       if (engaged) {
         probe->active.fetch_sub(1, std::memory_order_acq_rel);
         engaged = false;
+      }
+      if (observe_stop &&
+          stdexec::get_stop_token(stdexec::get_env(receiver)).stop_requested()) {
+        stdexec::set_stopped(std::move(receiver));
+        return;
       }
       switch (mode) {
       case terminal_mode::value:
@@ -138,7 +146,7 @@ struct scripted_sender {
       throw std::runtime_error{"connect-failure"};
     }
     return operation<receiver_t>{std::move(receiver), std::move(probe),
-                                 scheduler_state, value, mode, async};
+                                 scheduler_state, value, mode, async, observe_stop};
   }
 };
 
@@ -233,42 +241,45 @@ TEST_CASE("concurrent sender vector enforces in-flight budget and normalizes chi
   });
 
   wh::testing::helper::sender_capture<std::vector<result_t>> capture{};
-  auto operation = stdexec::connect(
-      wh::core::detail::make_concurrent_sender_vector<result_t>(
-          std::move(senders), 1U),
-      wh::testing::helper::sender_capture_receiver<std::vector<result_t>>{
-          &capture});
-  stdexec::start(operation);
+  {
+    auto operation = stdexec::connect(
+        wh::core::detail::make_concurrent_sender_vector<result_t>(
+            std::move(senders), 1U),
+        wh::testing::helper::sender_capture_receiver<std::vector<result_t>>{
+            &capture});
+    stdexec::start(operation);
 
-  REQUIRE_FALSE(capture.ready.try_acquire());
-  REQUIRE(scheduler_state.pending_count() == 1U);
-  REQUIRE(probe->max_active.load(std::memory_order_acquire) == 1);
+    REQUIRE_FALSE(capture.ready.try_acquire());
+    REQUIRE(scheduler_state.pending_count() == 1U);
+    REQUIRE(probe->max_active.load(std::memory_order_acquire) == 1);
 
-  REQUIRE(scheduler_state.run_one());
-  REQUIRE_FALSE(capture.ready.try_acquire());
-  REQUIRE(scheduler_state.pending_count() == 1U);
-  REQUIRE(probe->max_active.load(std::memory_order_acquire) == 1);
+    REQUIRE(scheduler_state.run_one());
+    REQUIRE_FALSE(capture.ready.try_acquire());
+    REQUIRE(scheduler_state.pending_count() == 1U);
+    REQUIRE(probe->max_active.load(std::memory_order_acquire) == 1);
 
-  REQUIRE(scheduler_state.run_one());
-  REQUIRE_FALSE(capture.ready.try_acquire());
-  REQUIRE(scheduler_state.pending_count() == 1U);
+    REQUIRE(scheduler_state.run_one());
+    REQUIRE_FALSE(capture.ready.try_acquire());
+    REQUIRE(scheduler_state.pending_count() == 1U);
 
-  REQUIRE(scheduler_state.run_one());
-  REQUIRE_FALSE(capture.ready.try_acquire());
-  REQUIRE(scheduler_state.pending_count() == 1U);
+    REQUIRE(scheduler_state.run_one());
+    REQUIRE_FALSE(capture.ready.try_acquire());
+    REQUIRE(scheduler_state.pending_count() == 1U);
 
-  REQUIRE(scheduler_state.run_one());
-  REQUIRE(capture.ready.try_acquire());
-  REQUIRE(capture.value.has_value());
-  REQUIRE(capture.value->size() == 4U);
-  REQUIRE((*capture.value)[0].has_value());
-  REQUIRE((*capture.value)[0].value() == 1);
-  REQUIRE((*capture.value)[1].has_error());
-  REQUIRE((*capture.value)[1].error() == wh::core::errc::internal_error);
-  REQUIRE((*capture.value)[2].has_error());
-  REQUIRE((*capture.value)[2].error() == wh::core::errc::canceled);
-  REQUIRE((*capture.value)[3].has_error());
-  REQUIRE((*capture.value)[3].error() == wh::core::errc::timeout);
+    REQUIRE(scheduler_state.run_one());
+    REQUIRE(capture.ready.try_acquire());
+    REQUIRE(capture.value.has_value());
+    REQUIRE(capture.value->size() == 4U);
+    REQUIRE((*capture.value)[0].has_value());
+    REQUIRE((*capture.value)[0].value() == 1);
+    REQUIRE((*capture.value)[1].has_error());
+    REQUIRE((*capture.value)[1].error() == wh::core::errc::internal_error);
+    REQUIRE((*capture.value)[2].has_error());
+    REQUIRE((*capture.value)[2].error() == wh::core::errc::canceled);
+    REQUIRE((*capture.value)[3].has_error());
+    REQUIRE((*capture.value)[3].error() == wh::core::errc::timeout);
+    REQUIRE(probe->destroy_calls.load(std::memory_order_acquire) == 0);
+  }
   REQUIRE(probe->destroy_calls.load(std::memory_order_acquire) == 4);
 }
 
@@ -405,4 +416,67 @@ TEST_CASE("concurrent sender vector remains stable across repeated cross-thread 
               iteration * 100 + index);
     }
   }
+}
+
+TEST_CASE("concurrent sender vector collapses long inline chains under a single in-flight slot",
+          "[UT][wh/core/stdexec/concurrent_sender_vector.hpp][concurrent_sender_vector::connect][inline][stress]") {
+  using sender_t = wh::core::detail::ready_sender_t<result_t>;
+
+  std::vector<sender_t> senders{};
+  senders.reserve(2048U);
+  for (int index = 0; index < 2048; ++index) {
+    senders.push_back(wh::core::detail::ready_sender(result_t{index}));
+  }
+
+  auto collected = wh::testing::helper::wait_value_on_test_thread(
+      wh::core::detail::make_concurrent_sender_vector<result_t>(
+          std::move(senders), 1U));
+  REQUIRE(collected.size() == 2048U);
+  for (int index = 0; index < 2048; ++index) {
+    REQUIRE(collected[static_cast<std::size_t>(index)].has_value());
+    REQUIRE(collected[static_cast<std::size_t>(index)].value() == index);
+  }
+}
+
+TEST_CASE("concurrent sender vector propagates outer stop and prevents launching remaining children",
+          "[UT][wh/core/stdexec/concurrent_sender_vector.hpp][concurrent_sender_vector::connect][stop][concurrency]") {
+  wh::testing::helper::manual_scheduler_state scheduler_state{};
+  auto probe = std::make_shared<sender_probe>();
+
+  std::vector<scripted_sender> senders{};
+  for (int index = 0; index < 3; ++index) {
+    senders.push_back(scripted_sender{
+        .probe = probe,
+        .scheduler_state = &scheduler_state,
+        .value = index + 1,
+        .mode = terminal_mode::value,
+        .async = true,
+        .observe_stop = true,
+    });
+  }
+
+  wh::testing::helper::sender_capture<std::vector<result_t>> capture{};
+  std::stop_source stop_source{};
+  auto operation = stdexec::connect(
+      wh::core::detail::make_concurrent_sender_vector<result_t>(
+          std::move(senders), 1U),
+      wh::testing::helper::sender_capture_receiver{
+          &capture,
+          wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
+                                                  stop_source.get_token()),
+      });
+
+  stdexec::start(operation);
+  REQUIRE(scheduler_state.pending_count() == 1U);
+  REQUIRE(probe->start_calls.load(std::memory_order_acquire) == 1);
+
+  stop_source.request_stop();
+
+  REQUIRE(scheduler_state.run_one());
+  REQUIRE(capture.ready.try_acquire());
+  REQUIRE(capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::stopped);
+  REQUIRE_FALSE(capture.value.has_value());
+  REQUIRE(probe->start_calls.load(std::memory_order_acquire) == 1);
+  REQUIRE(scheduler_state.pending_count() == 0U);
 }

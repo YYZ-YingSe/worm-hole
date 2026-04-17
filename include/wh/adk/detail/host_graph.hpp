@@ -572,7 +572,7 @@ inline auto append_visible_history(runtime_state &state,
 
 [[nodiscard]] inline auto lower_member_definition(wh::agent::agent &member)
     -> wh::core::result<host_member_definition> {
-  auto graph = member.lower_graph();
+  auto graph = member.lower();
   if (graph.has_error()) {
     return wh::core::result<host_member_definition>::failure(graph.error());
   }
@@ -872,6 +872,10 @@ template <typename children_t>
 [[nodiscard]] inline auto bind_host_agent(
     wh::agent::agent &root, children_t &children)
     -> wh::core::result<wh::agent::agent> {
+  if (!root.frozen()) {
+    return wh::core::result<wh::agent::agent>::failure(
+        wh::core::errc::contract_violation);
+  }
   auto definition = build_definition(root, children);
   if (definition.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(definition.error());
@@ -892,7 +896,12 @@ template <typename children_t>
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }
-  return std::move(exported).value();
+  auto exported_value = std::move(exported).value();
+  auto exported_frozen = exported_value.freeze();
+  if (exported_frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(exported_frozen.error());
+  }
+  return exported_value;
 }
 
 } // namespace host_graph_detail
@@ -901,9 +910,9 @@ template <typename children_t>
 /// materializing one shared host-mediated compose graph.
 [[nodiscard]] inline auto bind_supervisor_agent(wh::agent::supervisor authored)
     -> wh::core::result<wh::agent::agent> {
-  auto frozen = authored.freeze();
-  if (frozen.has_error()) {
-    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  if (!authored.frozen()) {
+    return wh::core::result<wh::agent::agent>::failure(
+        wh::core::errc::contract_violation);
   }
   auto supervisor = authored.supervisor_agent();
   if (supervisor.has_error()) {
@@ -917,9 +926,9 @@ template <typename children_t>
 /// materializing one host-mediated peer graph.
 [[nodiscard]] inline auto bind_swarm_agent(wh::agent::swarm authored)
     -> wh::core::result<wh::agent::agent> {
-  auto frozen = authored.freeze();
-  if (frozen.has_error()) {
-    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  if (!authored.frozen()) {
+    return wh::core::result<wh::agent::agent>::failure(
+        wh::core::errc::contract_violation);
   }
   auto host = authored.host_agent();
   if (host.has_error()) {
@@ -933,9 +942,9 @@ template <typename children_t>
 /// materializing one lead-and-specialist host graph.
 [[nodiscard]] inline auto bind_research_agent(wh::agent::research authored)
     -> wh::core::result<wh::agent::agent> {
-  auto frozen = authored.freeze();
-  if (frozen.has_error()) {
-    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  if (!authored.frozen()) {
+    return wh::core::result<wh::agent::agent>::failure(
+        wh::core::errc::contract_violation);
   }
   auto lead = authored.lead();
   if (lead.has_error()) {

@@ -60,15 +60,16 @@ TEST_CASE("supervisor host graph executes root transfer into child subgraph",
   wh::agent::supervisor authored{"supervisor"};
   REQUIRE(authored.set_supervisor(std::move(supervisor_agent).value()).has_value());
   REQUIRE(authored.add_worker(std::move(planner_agent).value()).has_value());
+  REQUIRE(authored.freeze().has_value());
 
-  auto lowered = wh::agent::make_agent(std::move(authored));
+  auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());
   REQUIRE(lowered.value().allows_transfer_to_child("planner"));
   auto planner = lowered.value().child("planner");
   REQUIRE(planner.has_value());
   REQUIRE(planner.value().get().allows_transfer_to_parent());
 
-  auto host_graph = lowered.value().lower_graph();
+  auto host_graph = lowered.value().lower();
   REQUIRE(host_graph.has_value());
   auto output = invoke_agent_graph(host_graph.value(), {make_user_message("hello")});
   REQUIRE(output.has_value());

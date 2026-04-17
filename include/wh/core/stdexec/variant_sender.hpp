@@ -11,7 +11,7 @@
 #include <exec/completion_signatures.hpp>
 #include <stdexec/execution.hpp>
 
-#include "wh/core/stdexec/manual_lifetime_box.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 
 namespace wh::core::detail {
 
@@ -49,13 +49,20 @@ template <stdexec::sender... sender_t> class variant_sender {
   template <typename receiver_t, typename... operation_t>
   class operation_state {
     using storage_tuple_t =
-        std::tuple<wh::core::detail::manual_lifetime_box<operation_t>...>;
+        std::tuple<wh::core::detail::manual_lifetime<operation_t>...>;
 
   public:
     template <typename self_t>
     explicit operation_state(self_t &&self, receiver_t receiver) {
       connect_active<0U>(std::forward<self_t>(self), receiver);
     }
+
+    operation_state(const operation_state &) = delete;
+    auto operator=(const operation_state &) -> operation_state & = delete;
+    operation_state(operation_state &&) = delete;
+    auto operator=(operation_state &&) -> operation_state & = delete;
+
+    ~operation_state() { destroy_active<0U>(); }
 
     auto start() & noexcept -> void { start_active<0U>(); }
 
@@ -64,11 +71,13 @@ template <stdexec::sender... sender_t> class variant_sender {
     auto connect_active(self_t &&self, receiver_t &receiver) -> void {
       if constexpr (Index < sizeof...(sender_t)) {
         if (self.index() == Index) {
-          std::get<Index>(operations_)
-              .emplace_from(
-                  stdexec::connect,
-                  std::get<Index + 1U>(std::forward<self_t>(self).senders_),
-                  std::move(receiver));
+          using operation_type = std::tuple_element_t<Index, std::tuple<operation_t...>>;
+          [[maybe_unused]] auto &operation =
+              std::get<Index>(operations_).construct_with([&]() -> operation_type {
+            return stdexec::connect(
+                std::get<Index + 1U>(std::forward<self_t>(self).senders_),
+                std::move(receiver));
+          });
           active_index_ = Index;
           return;
         }
@@ -83,6 +92,17 @@ template <stdexec::sender... sender_t> class variant_sender {
           return;
         }
         start_active<Index + 1U>();
+      }
+    }
+
+    template <std::size_t Index> auto destroy_active() noexcept -> void {
+      if constexpr (Index < sizeof...(sender_t)) {
+        if (active_index_ == Index) {
+          std::get<Index>(operations_).destruct();
+          active_index_ = static_cast<std::size_t>(-1);
+          return;
+        }
+        destroy_active<Index + 1U>();
       }
     }
 

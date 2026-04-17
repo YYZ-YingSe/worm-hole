@@ -373,6 +373,28 @@ public:
     return snapshot_states;
   }
 
+  /// Collects stable node keys whose lifecycle matches `lifecycle`.
+  [[nodiscard]] auto
+  collect_keys(const graph_node_lifecycle_state lifecycle) const
+      -> std::vector<std::string> {
+    std::vector<std::string> keys{};
+    keys.reserve(states_.size());
+    for (std::uint32_t node_id = 0U;
+         node_id < static_cast<std::uint32_t>(states_.size()); ++node_id) {
+      if (states_[node_id].lifecycle != lifecycle) {
+        continue;
+      }
+      keys.emplace_back(keys_[node_id]);
+    }
+    return keys;
+  }
+
+  /// Collects stable node keys for completed lifecycle slots.
+  [[nodiscard]] auto collect_completed_keys() const
+      -> std::vector<std::string> {
+    return collect_keys(graph_node_lifecycle_state::completed);
+  }
+
 private:
   struct state_slot {
     graph_node_lifecycle_state lifecycle{graph_node_lifecycle_state::pending};

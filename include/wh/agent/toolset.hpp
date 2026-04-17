@@ -115,22 +115,17 @@ template <registered_tool_component tool_t>
     entry.async_invoke = wh::compose::tool_async_invoke{
         [tool](wh::compose::tool_call call,
                wh::tool::call_scope scope) -> wh::compose::tools_invoke_sender {
-          auto sender =
-              tool.async_invoke(wh::tool::tool_request{.input_json = std::move(
-                                                           call.arguments)},
-                                scope.run) |
-              stdexec::then([](wh::tool::tool_invoke_result status)
-                                -> wh::core::result<wh::compose::graph_value> {
-                if (status.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      status.error());
-                }
-                return wh::compose::graph_value{std::move(status).value()};
-              });
-          return wh::compose::tools_invoke_sender{
-              wh::core::detail::normalize_result_sender<
-                  wh::core::result<wh::compose::graph_value>>(
-                  std::move(sender))};
+          return tool.async_invoke(
+                     wh::tool::tool_request{.input_json = std::move(call.arguments)},
+                     scope.run) |
+                 stdexec::then([](wh::tool::tool_invoke_result status)
+                                   -> wh::core::result<wh::compose::graph_value> {
+                   if (status.has_error()) {
+                     return wh::core::result<wh::compose::graph_value>::failure(
+                         status.error());
+                   }
+                   return wh::compose::graph_value{std::move(status).value()};
+                 });
         }};
   }
   if constexpr (sync_stream_tool_component<tool_t>) {
@@ -150,25 +145,20 @@ template <registered_tool_component tool_t>
     entry.async_stream = wh::compose::tool_async_stream{
         [tool](wh::compose::tool_call call,
                wh::tool::call_scope scope) -> wh::compose::tools_stream_sender {
-          auto sender =
-              tool.async_stream(wh::tool::tool_request{.input_json = std::move(
-                                                           call.arguments)},
-                                scope.run) |
-              stdexec::then(
-                  [](wh::tool::tool_output_stream_result status)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                    if (status.has_error()) {
-                      return wh::core::
-                          result<wh::compose::graph_stream_reader>::failure(
-                              status.error());
-                    }
-                    return wh::compose::to_graph_stream_reader(
-                        std::move(status).value());
-                  });
-          return wh::compose::tools_stream_sender{
-              wh::core::detail::normalize_result_sender<
-                  wh::core::result<wh::compose::graph_stream_reader>>(
-                  std::move(sender))};
+          return tool.async_stream(
+                     wh::tool::tool_request{.input_json = std::move(call.arguments)},
+                     scope.run) |
+                 stdexec::then(
+                     [](wh::tool::tool_output_stream_result status)
+                         -> wh::core::result<wh::compose::graph_stream_reader> {
+                       if (status.has_error()) {
+                         return wh::core::
+                             result<wh::compose::graph_stream_reader>::failure(
+                                 status.error());
+                       }
+                       return wh::compose::to_graph_stream_reader(
+                           std::move(status).value());
+                     });
         }};
   }
   entry.return_direct = return_direct;

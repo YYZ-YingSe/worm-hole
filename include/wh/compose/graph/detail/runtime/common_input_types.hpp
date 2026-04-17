@@ -17,7 +17,12 @@ namespace wh::compose::detail::input_runtime {
 
 enum class input_edge_status : std::uint8_t { waiting, active, disabled };
 
-enum class runtime_node_state : std::uint8_t { pending, running, executed, skipped };
+enum class dag_node_phase : std::uint8_t {
+  pending,
+  running,
+  executed,
+  skipped
+};
 
 struct input_lane {
   std::uint32_t edge_id{0U};
@@ -63,12 +68,11 @@ struct resolved_input {
       return graph_value{std::move(*owned_reader)};
     }
     if (borrowed_reader != nullptr) {
-      if (auto *merged = borrowed_reader->template target_if<
-                         wh::schema::stream::merge_stream_reader<graph_stream_reader>>();
-          merged != nullptr) {
-        return graph_value{graph_stream_reader{merged->share()}};
+      auto forked = wh::compose::detail::fork_graph_reader(*borrowed_reader);
+      if (forked.has_error()) {
+        return wh::core::result<graph_value>::failure(forked.error());
       }
-      return wh::core::any::ref(*borrowed_reader);
+      return graph_value{std::move(forked).value()};
     }
     if (borrowed_value == nullptr) {
       return {};
@@ -129,26 +133,14 @@ struct value_batch {
   std::vector<value_input> fan_in{};
 };
 
-struct runtime_progress_state {
-  std::vector<runtime_node_state> node_states{};
-
-  auto reset(const std::size_t node_count) -> void {
-    if (node_states.size() < node_count) {
-      node_states.resize(node_count);
-    }
-    std::fill_n(node_states.begin(), node_count, runtime_node_state::pending);
-  }
-};
-
 struct runtime_io_storage {
   std::vector<graph_value> node_values{};
-  std::vector<graph_stream_reader> node_readers{};
   wh::compose::detail::dynamic_bitset output_valid{};
+  std::optional<graph_stream_reader> final_output_reader{};
   std::vector<graph_value> edge_values{};
   wh::compose::detail::dynamic_bitset edge_value_valid{};
   std::vector<graph_stream_reader> edge_readers{};
   wh::compose::detail::dynamic_bitset edge_reader_valid{};
-  wh::compose::detail::dynamic_bitset reader_copy_ready{};
   std::vector<graph_stream_reader> merged_readers{};
   wh::compose::detail::dynamic_bitset merged_reader_valid{};
   std::vector<reader_lane_state> merged_reader_lane_states{};
@@ -157,10 +149,8 @@ struct runtime_io_storage {
     if (node_values.size() < node_count) {
       node_values.resize(node_count);
     }
-    if (node_readers.size() < node_count) {
-      node_readers.resize(node_count);
-    }
     output_valid.reset(node_count, false);
+    final_output_reader.reset();
     if (edge_values.size() < edge_count) {
       edge_values.resize(edge_count);
     }
@@ -171,7 +161,6 @@ struct runtime_io_storage {
     edge_reader_valid.reset(edge_count, false);
     merged_reader_lane_states.resize(edge_count, reader_lane_state::unseen);
     std::fill_n(merged_reader_lane_states.begin(), edge_count, reader_lane_state::unseen);
-    reader_copy_ready.reset(node_count, false);
     if (merged_readers.size() < node_count) {
       merged_readers.resize(node_count);
     }
@@ -183,8 +172,13 @@ struct runtime_io_storage {
     output_valid.set(node_id);
   }
 
-  auto mark_reader_output(const std::uint32_t node_id, graph_stream_reader reader) -> void {
-    node_readers[node_id] = std::move(reader);
+  auto mark_stream_output(const std::uint32_t node_id) -> void {
+    output_valid.set(node_id);
+  }
+
+  auto mark_final_output_reader(const std::uint32_t node_id, graph_stream_reader reader)
+      -> void {
+    final_output_reader.emplace(std::move(reader));
     output_valid.set(node_id);
   }
 };

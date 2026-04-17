@@ -1,4 +1,4 @@
-name: ci-05-nightly-heavy
+name: ci-05-nightly-stress
 
 on:
   schedule:
@@ -9,12 +9,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: nightly-heavy-${{ github.workflow }}-${{ github.ref }}
+  group: nightly-stress-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  heavy-tests:
-    name: heavy-tests (${{ matrix.shard_index }})
+  stress:
+    name: nightly-stress (${{ matrix.shard_index }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -43,7 +43,7 @@ jobs:
       - name: Setup sccache
         uses: ./.github/actions/setup/sccache
 
-      - name: Run heavy nightly shard ${{ matrix.shard_index }}
+      - name: Run nightly stress shard ${{ matrix.shard_index }}
         shell: bash
         run: |
           python_bin="$(command -v python3 || command -v python)"

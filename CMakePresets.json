@@ -123,15 +123,6 @@
       }
     },
     {
-      "name": "ci-codeql",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "WH_WARNINGS_AS_ERRORS": "OFF"
-      }
-    },
-    {
       "name": "ci-asan-ubsan",
       "inherits": "ci-base",
       "cacheVariables": {
@@ -158,7 +149,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping -O0 -g",
-        "WH_TEST_EXECUTABLE_LAYOUT": "coverage-monolith",
+        "WH_TEST_EXECUTABLE_LAYOUT": "source",
         "WH_WARNINGS_AS_ERRORS": "OFF"
       }
     }
@@ -203,10 +194,6 @@
     {
       "name": "ci-static-analysis",
       "configurePreset": "ci-static-analysis"
-    },
-    {
-      "name": "ci-codeql",
-      "configurePreset": "ci-codeql"
     },
     {
       "name": "ci-asan-ubsan",

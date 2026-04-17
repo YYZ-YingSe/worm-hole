@@ -5,14 +5,14 @@
 
 namespace wh::compose {
 inline auto graph::resolve_edge_status_indexed(const indexed_edge &edge,
-                                               const std::vector<node_state> &node_states,
+                                               const std::vector<dag_node_phase> &dag_node_phases,
                                                const std::vector<branch_state> &branch_states) const
     -> edge_status {
-  const auto source_state = node_states[edge.from];
-  if (source_state == node_state::pending || source_state == node_state::running) {
+  const auto source_state = dag_node_phases[edge.from];
+  if (source_state == dag_node_phase::pending || source_state == dag_node_phase::running) {
     return edge_status::waiting;
   }
-  if (source_state == node_state::skipped) {
+  if (source_state == dag_node_phase::skipped) {
     return edge_status::disabled;
   }
 
@@ -37,7 +37,7 @@ inline auto graph::resolve_edge_status_indexed(const indexed_edge &edge,
 }
 
 inline auto graph::classify_node_readiness_indexed(const std::uint32_t node_id,
-                                                   const std::vector<node_state> &node_states,
+                                                   const std::vector<dag_node_phase> &dag_node_phases,
                                                    const std::vector<branch_state> &branch_states,
                                                    const dynamic_bitset &output_valid) const
     -> ready_state {
@@ -48,7 +48,7 @@ inline auto graph::classify_node_readiness_indexed(const std::uint32_t node_id,
   for (const auto edge_id : index.incoming_control(node_id)) {
     ++total_control_edges;
     const auto status =
-        resolve_edge_status_indexed(index.indexed_edges[edge_id], node_states, branch_states);
+        resolve_edge_status_indexed(index.indexed_edges[edge_id], dag_node_phases, branch_states);
     if (status == edge_status::active) {
       ++active_control_edges;
     } else if (status == edge_status::waiting) {
@@ -95,7 +95,7 @@ inline auto graph::classify_node_readiness_indexed(const std::uint32_t node_id,
       node_id != index.end_id) {
     for (const auto edge_id : index.incoming_data(node_id)) {
       const auto &edge = index.indexed_edges[edge_id];
-      const auto status = resolve_edge_status_indexed(edge, node_states, branch_states);
+      const auto status = resolve_edge_status_indexed(edge, dag_node_phases, branch_states);
       if (status == edge_status::waiting) {
         return ready_state::waiting;
       }
@@ -145,11 +145,6 @@ inline auto graph::lower_reader(graph_stream_reader reader, reader_lowering lowe
   }
   return detail::bridge_graph_sender(wh::core::detail::write_sender_scheduler(
       (*lowering.project)(std::move(reader), lowering.limits, context), graph_scheduler));
-}
-
-inline auto graph::needs_reader_copy(const std::uint32_t node_id) const noexcept -> bool {
-  return node_id < core().compiled_execution_index_.plan.outputs.size() &&
-         core().compiled_execution_index_.plan.outputs[node_id].reader_edges.size() > 1U;
 }
 
 inline auto graph::needs_reader_merge(const std::uint32_t node_id) const noexcept -> bool {
@@ -204,6 +199,62 @@ inline auto graph::adapt_edge_output(const indexed_edge &edge, graph_value &sour
   return wh::core::result<graph_value>::failure(wh::core::errc::internal_error);
 }
 
+inline auto graph::plan_value_output_consumers(
+    const std::uint32_t source_node_id,
+    const std::optional<std::vector<std::uint32_t>> &selection) const
+    -> value_output_consumers {
+  const auto selected = [&selection](const std::uint32_t target_id) noexcept {
+    if (!selection.has_value()) {
+      return true;
+    }
+    return std::binary_search(selection->begin(), selection->end(), target_id);
+  };
+
+  value_output_consumers consumers{};
+  const auto outgoing =
+      core().compiled_execution_index_.index.outgoing_data(source_node_id);
+  consumers.value_edges.reserve(outgoing.size());
+  consumers.stream_edges.reserve(outgoing.size());
+  for (const auto edge_id : outgoing) {
+    const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
+    if (edge.no_data || edge.source_output != node_contract::value ||
+        !selected(edge.to)) {
+      continue;
+    }
+    if (edge.target_input == node_contract::value) {
+      consumers.value_edges.push_back(edge_id);
+      continue;
+    }
+    consumers.stream_edges.push_back(edge_id);
+  }
+  consumers.final_output =
+      source_node_id == core().compiled_execution_index_.index.end_id;
+  return consumers;
+}
+
+inline auto graph::lower_value_output_reader(const indexed_edge &edge,
+                                             graph_value value,
+                                             wh::core::run_context &context) const
+    -> wh::core::result<graph_stream_reader> {
+  switch (edge.lowering_kind) {
+  case edge_lowering_kind::value_to_stream:
+    return make_single_value_stream_reader(std::move(value));
+  case edge_lowering_kind::custom:
+    if (!edge.adapter.custom.to_stream.has_value()) {
+      return wh::core::result<graph_stream_reader>::failure(
+          wh::core::errc::contract_violation);
+    }
+    return (*edge.adapter.custom.to_stream)(std::move(value), edge.limits,
+                                            context);
+  case edge_lowering_kind::none:
+  case edge_lowering_kind::stream_to_value:
+    return wh::core::result<graph_stream_reader>::failure(
+        wh::core::errc::contract_violation);
+  }
+  return wh::core::result<graph_stream_reader>::failure(
+      wh::core::errc::internal_error);
+}
+
 inline auto graph::store_node_output(const std::uint32_t node_id, io_storage &io_storage,
                                      graph_value value) const -> wh::core::result<void> {
   const auto *node = core().compiled_execution_index_.index.nodes_by_id[node_id];
@@ -233,7 +284,105 @@ inline auto graph::store_node_output(const std::uint32_t node_id, io_storage &io
   if (reader == nullptr) {
     return wh::core::result<void>::failure(wh::core::errc::contract_violation);
   }
-  io_storage.mark_reader_output(node_id, std::move(*reader));
+  if (node_id != core().compiled_execution_index_.index.end_id) {
+    return wh::core::result<void>::failure(wh::core::errc::not_supported);
+  }
+  io_storage.mark_final_output_reader(node_id, std::move(*reader));
+  return {};
+}
+
+inline auto graph::commit_value_output(
+    const std::uint32_t source_node_id, io_storage &io_storage,
+    graph_value value,
+    const std::optional<std::vector<std::uint32_t>> &selection,
+    wh::core::run_context &context) const -> wh::core::result<void> {
+  const auto *node = core().compiled_execution_index_.index.nodes_by_id[source_node_id];
+  if (node == nullptr || node->meta.output_contract != node_contract::value) {
+    return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+  }
+
+  value_output_consumers consumers =
+      plan_value_output_consumers(source_node_id, selection);
+  std::size_t remaining = consumers.owner_count();
+  std::vector<std::pair<std::uint32_t, graph_value>> staged_values{};
+  std::vector<std::pair<std::uint32_t, graph_stream_reader>> staged_readers{};
+  std::optional<graph_value> final_output{};
+  staged_values.reserve(consumers.value_edges.size());
+  staged_readers.reserve(consumers.stream_edges.size());
+
+  auto next_value = [&]() -> wh::core::result<graph_value> {
+    if (remaining == 0U) {
+      return wh::core::result<graph_value>::failure(
+          wh::core::errc::internal_error);
+    }
+    if (remaining == 1U) {
+      --remaining;
+      return std::move(value);
+    }
+    --remaining;
+    auto cloned = detail::materialize_value_payload(value);
+    if (cloned.has_error()) {
+      const auto code = cloned.error() == wh::core::errc::not_supported
+                            ? wh::core::errc::contract_violation
+                            : cloned.error();
+      return wh::core::result<graph_value>::failure(code);
+    }
+    return std::move(cloned).value();
+  };
+
+  for (const auto edge_id : consumers.value_edges) {
+    auto staged = next_value();
+    if (staged.has_error()) {
+      return wh::core::result<void>::failure(staged.error());
+    }
+    staged_values.emplace_back(edge_id, std::move(staged).value());
+  }
+
+  for (const auto edge_id : consumers.stream_edges) {
+    auto staged = next_value();
+    if (staged.has_error()) {
+      return wh::core::result<void>::failure(staged.error());
+    }
+    const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
+    auto reader =
+        lower_value_output_reader(edge, std::move(staged).value(), context);
+    if (reader.has_error()) {
+      return wh::core::result<void>::failure(reader.error());
+    }
+    staged_readers.emplace_back(edge_id, std::move(reader).value());
+  }
+
+  if (consumers.final_output) {
+    auto staged = next_value();
+    if (staged.has_error()) {
+      return wh::core::result<void>::failure(staged.error());
+    }
+    final_output.emplace(std::move(staged).value());
+  }
+
+  const auto outgoing =
+      core().compiled_execution_index_.index.outgoing_data(source_node_id);
+  for (const auto edge_id : outgoing) {
+    io_storage.edge_value_valid.clear(edge_id);
+    io_storage.edge_reader_valid.clear(edge_id);
+  }
+
+  for (auto &[edge_id, staged] : staged_values) {
+    io_storage.edge_values[edge_id] = std::move(staged);
+    io_storage.edge_value_valid.set(edge_id);
+  }
+
+  for (auto &[edge_id, staged] : staged_readers) {
+    io_storage.edge_readers[edge_id] = std::move(staged);
+    io_storage.edge_reader_valid.set(edge_id);
+  }
+
+  if (final_output.has_value()) {
+    io_storage.final_output_reader.reset();
+    io_storage.node_values[source_node_id] = std::move(*final_output);
+  }
+
+  io_storage.output_valid.set(source_node_id);
   return {};
 }
 
@@ -244,13 +393,25 @@ inline auto graph::view_node_output(const std::uint32_t node_id, io_storage &io_
     return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
   }
   if (node->meta.output_contract == node_contract::value) {
+    if (node_id != core().compiled_execution_index_.index.end_id) {
+      return wh::core::result<graph_value>::failure(
+          wh::core::errc::contract_violation);
+    }
     auto &value = io_storage.node_values[node_id];
     if (value.copyable()) {
       return graph_value{value};
     }
     return value.as_ref();
   }
-  return wh::core::any::ref(io_storage.node_readers[node_id]);
+  if (node_id != core().compiled_execution_index_.index.end_id ||
+      !io_storage.final_output_reader.has_value()) {
+    return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
+  }
+  auto forked = detail::fork_graph_reader(*io_storage.final_output_reader);
+  if (forked.has_error()) {
+    return wh::core::result<graph_value>::failure(forked.error());
+  }
+  return graph_value{std::move(forked).value()};
 }
 
 inline auto graph::take_node_output(const std::uint32_t node_id, io_storage &io_storage) const
@@ -260,9 +421,85 @@ inline auto graph::take_node_output(const std::uint32_t node_id, io_storage &io_
     return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
   }
   if (node->meta.output_contract == node_contract::value) {
+    if (node_id != core().compiled_execution_index_.index.end_id) {
+      return wh::core::result<graph_value>::failure(
+          wh::core::errc::contract_violation);
+    }
     return std::move(io_storage.node_values[node_id]);
   }
-  return graph_value{std::move(io_storage.node_readers[node_id])};
+  if (node_id != core().compiled_execution_index_.index.end_id ||
+      !io_storage.final_output_reader.has_value()) {
+    return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
+  }
+  auto reader = std::move(*io_storage.final_output_reader);
+  io_storage.final_output_reader.reset();
+  return graph_value{std::move(reader)};
+}
+
+inline auto graph::commit_stream_output(
+    const std::uint32_t source_node_id, io_storage &io_storage, graph_stream_reader reader,
+    const std::optional<std::vector<std::uint32_t>> &selection) const
+    -> wh::core::result<void> {
+  const auto selected = [&selection](const std::uint32_t target_id) noexcept {
+    if (!selection.has_value()) {
+      return true;
+    }
+    return std::binary_search(selection->begin(), selection->end(), target_id);
+  };
+
+  std::vector<std::uint32_t> consumer_edges{};
+  const auto outgoing = core().compiled_execution_index_.index.outgoing_data(source_node_id);
+  consumer_edges.reserve(outgoing.size());
+  for (const auto edge_id : outgoing) {
+    io_storage.edge_value_valid.clear(edge_id);
+    io_storage.edge_reader_valid.clear(edge_id);
+
+    const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
+    if (edge.no_data || edge.source_output != node_contract::stream || !selected(edge.to)) {
+      continue;
+    }
+    consumer_edges.push_back(edge_id);
+  }
+
+  const bool needs_boundary_output =
+      source_node_id == core().compiled_execution_index_.index.end_id;
+  const auto consumer_count =
+      consumer_edges.size() + static_cast<std::size_t>(needs_boundary_output);
+
+  io_storage.mark_stream_output(source_node_id);
+  if (consumer_count == 0U) {
+    return {};
+  }
+
+  if (consumer_count == 1U) {
+    if (needs_boundary_output) {
+      io_storage.final_output_reader.emplace(std::move(reader));
+      return {};
+    }
+    io_storage.edge_readers[consumer_edges.front()] = std::move(reader);
+    io_storage.edge_reader_valid.set(consumer_edges.front());
+    return {};
+  }
+
+  auto copied = detail::copy_graph_readers(std::move(reader), consumer_count);
+  if (copied.has_error()) {
+    return wh::core::result<void>::failure(copied.error());
+  }
+
+  auto readers = std::move(copied).value();
+  if (readers.size() != consumer_count) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+  }
+
+  std::size_t reader_index = 0U;
+  for (const auto edge_id : consumer_edges) {
+    io_storage.edge_readers[edge_id] = std::move(readers[reader_index++]);
+    io_storage.edge_reader_valid.set(edge_id);
+  }
+  if (needs_boundary_output) {
+    io_storage.final_output_reader.emplace(std::move(readers[reader_index]));
+  }
+  return {};
 }
 
 inline auto graph::resolve_edge_value(const std::uint32_t edge_id, io_storage &io_storage,
@@ -285,8 +522,9 @@ inline auto graph::resolve_edge_value(const std::uint32_t edge_id, io_storage &i
   }
 
   if (edge.source_output == node_contract::value) {
-    if (edge.lowering_kind == edge_lowering_kind::none) {
-      return std::addressof(io_storage.node_values[edge.from]);
+    if (edge.lowering_kind == edge_lowering_kind::none &&
+        io_storage.edge_value_valid.test(edge_id)) {
+      return std::addressof(io_storage.edge_values[edge_id]);
     }
     return wh::core::result<graph_value *>::failure(wh::core::errc::contract_violation);
   }
@@ -294,7 +532,7 @@ inline auto graph::resolve_edge_value(const std::uint32_t edge_id, io_storage &i
   if (edge.lowering_kind != edge_lowering_kind::custom) {
     return wh::core::result<graph_value *>::failure(wh::core::errc::contract_violation);
   }
-  auto reader = take_edge_reader(edge_id, io_storage, context);
+  auto reader = take_edge_reader(edge_id, io_storage);
   if (reader.has_error()) {
     return wh::core::result<graph_value *>::failure(reader.error());
   }
@@ -308,40 +546,7 @@ inline auto graph::resolve_edge_value(const std::uint32_t edge_id, io_storage &i
   return std::addressof(io_storage.edge_values[edge_id]);
 }
 
-inline auto graph::prepare_reader_copies(const std::uint32_t source_node_id,
-                                         io_storage &io_storage) const -> wh::core::result<void> {
-  if (!needs_reader_copy(source_node_id) || io_storage.reader_copy_ready.test(source_node_id)) {
-    return {};
-  }
-
-  if (!io_storage.output_valid.test(source_node_id)) {
-    return wh::core::result<void>::failure(wh::core::errc::not_found);
-  }
-  auto &source_reader = io_storage.node_readers[source_node_id];
-  const auto &reader_edges =
-      core().compiled_execution_index_.plan.outputs[source_node_id].reader_edges;
-  auto copied_readers =
-      detail::copy_graph_readers(std::move(source_reader), reader_edges.size() + 1U);
-  if (copied_readers.has_error()) {
-    return wh::core::result<void>::failure(copied_readers.error());
-  }
-  auto readers = std::move(copied_readers).value();
-  if (readers.size() != reader_edges.size() + 1U) {
-    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
-  }
-
-  source_reader = std::move(readers.front());
-  for (std::size_t index = 0U; index < reader_edges.size(); ++index) {
-    const auto edge_id = reader_edges[index];
-    io_storage.edge_readers[edge_id] = std::move(readers[index + 1U]);
-    io_storage.edge_reader_valid.set(edge_id);
-  }
-  io_storage.reader_copy_ready.set(source_node_id);
-  return {};
-}
-
-inline auto graph::resolve_edge_reader(const std::uint32_t edge_id, io_storage &io_storage,
-                                       wh::core::run_context &context) const
+inline auto graph::resolve_edge_reader(const std::uint32_t edge_id, io_storage &io_storage) const
     -> wh::core::result<graph_stream_reader *> {
   if (edge_id >= core().compiled_execution_index_.index.indexed_edges.size() ||
       edge_id >= io_storage.edge_readers.size()) {
@@ -363,39 +568,20 @@ inline auto graph::resolve_edge_reader(const std::uint32_t edge_id, io_storage &
     if (edge.lowering_kind != edge_lowering_kind::none) {
       return wh::core::result<graph_stream_reader *>::failure(wh::core::errc::contract_violation);
     }
-    if (needs_reader_copy(edge.from)) {
-      auto prepared = prepare_reader_copies(edge.from, io_storage);
-      if (prepared.has_error()) {
-        return wh::core::result<graph_stream_reader *>::failure(prepared.error());
-      }
-      if (!io_storage.edge_reader_valid.test(edge_id)) {
-        return wh::core::result<graph_stream_reader *>::failure(wh::core::errc::not_found);
-      }
-      return std::addressof(io_storage.edge_readers[edge_id]);
+    if (!io_storage.edge_reader_valid.test(edge_id)) {
+      return wh::core::result<graph_stream_reader *>::failure(wh::core::errc::not_found);
     }
-    return std::addressof(io_storage.node_readers[edge.from]);
+    return std::addressof(io_storage.edge_readers[edge_id]);
   }
 
-  if (edge.lowering_kind != edge_lowering_kind::value_to_stream &&
-      edge.lowering_kind != edge_lowering_kind::custom) {
-    return wh::core::result<graph_stream_reader *>::failure(wh::core::errc::contract_violation);
+  if (io_storage.edge_reader_valid.test(edge_id)) {
+    return std::addressof(io_storage.edge_readers[edge_id]);
   }
-
-  auto adapted = adapt_edge_output(edge, io_storage.node_values[edge.from], context);
-  if (adapted.has_error()) {
-    return wh::core::result<graph_stream_reader *>::failure(adapted.error());
-  }
-  auto *reader = wh::core::any_cast<graph_stream_reader>(&adapted.value());
-  if (reader == nullptr) {
-    return wh::core::result<graph_stream_reader *>::failure(wh::core::errc::type_mismatch);
-  }
-  io_storage.edge_readers[edge_id] = std::move(*reader);
-  io_storage.edge_reader_valid.set(edge_id);
-  return std::addressof(io_storage.edge_readers[edge_id]);
+  return wh::core::result<graph_stream_reader *>::failure(
+      wh::core::errc::contract_violation);
 }
 
-inline auto graph::take_edge_reader(const std::uint32_t edge_id, io_storage &io_storage,
-                                    wh::core::run_context &context) const
+inline auto graph::take_edge_reader(const std::uint32_t edge_id, io_storage &io_storage) const
     -> wh::core::result<graph_stream_reader> {
   if (edge_id >= core().compiled_execution_index_.index.indexed_edges.size()) {
     return wh::core::result<graph_stream_reader>::failure(wh::core::errc::not_found);
@@ -403,23 +589,16 @@ inline auto graph::take_edge_reader(const std::uint32_t edge_id, io_storage &io_
 
   const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
   if (edge.source_output == node_contract::stream) {
-    if (needs_reader_copy(edge.from)) {
-      auto prepared = prepare_reader_copies(edge.from, io_storage);
-      if (prepared.has_error()) {
-        return wh::core::result<graph_stream_reader>::failure(prepared.error());
-      }
-
-      if (!io_storage.edge_reader_valid.test(edge_id)) {
-        return wh::core::result<graph_stream_reader>::failure(wh::core::errc::not_found);
-      }
-      auto reader = std::move(io_storage.edge_readers[edge_id]);
-      io_storage.edge_reader_valid.clear(edge_id);
-      return reader;
+    auto resolved = resolve_edge_reader(edge_id, io_storage);
+    if (resolved.has_error()) {
+      return wh::core::result<graph_stream_reader>::failure(resolved.error());
     }
-    return std::move(io_storage.node_readers[edge.from]);
+    auto reader = std::move(*resolved.value());
+    io_storage.edge_reader_valid.clear(edge_id);
+    return reader;
   }
 
-  auto resolved = resolve_edge_reader(edge_id, io_storage, context);
+  auto resolved = resolve_edge_reader(edge_id, io_storage);
   if (resolved.has_error()) {
     return wh::core::result<graph_stream_reader>::failure(resolved.error());
   }
@@ -450,8 +629,7 @@ inline auto graph::merged_reader(const std::uint32_t node_id, io_storage &io_sto
 }
 
 inline auto graph::update_merged_reader(const std::uint32_t node_id, io_storage &io_storage,
-                                        const std::vector<input_lane> &lanes,
-                                        wh::core::run_context &context) const
+                                        const std::vector<input_lane> &lanes) const
     -> wh::core::result<void> {
   if (!needs_reader_merge(node_id)) {
     return {};
@@ -480,7 +658,7 @@ inline auto graph::update_merged_reader(const std::uint32_t node_id, io_storage 
 
     const auto &source_key = core().compiled_execution_index_.index.id_to_key[lane.source_id];
     if (lane.status == edge_status::active) {
-      auto attached_reader = take_edge_reader(lane.edge_id, io_storage, context);
+      auto attached_reader = take_edge_reader(lane.edge_id, io_storage);
       if (attached_reader.has_error()) {
         return wh::core::result<void>::failure(attached_reader.error());
       }
@@ -502,21 +680,20 @@ inline auto graph::update_merged_reader(const std::uint32_t node_id, io_storage 
 }
 
 inline auto graph::refresh_merged_reader(const std::uint32_t node_id, io_storage &io_storage,
-                                         const std::vector<node_state> &node_states,
-                                         const std::vector<branch_state> &branch_states,
-                                         wh::core::run_context &context) const
+                                         const std::vector<dag_node_phase> &dag_node_phases,
+                                         const std::vector<branch_state> &branch_states) const
     -> wh::core::result<void> {
   const auto lanes =
-      collect_input_lanes(node_id, node_states, branch_states, io_storage.output_valid);
-  return update_merged_reader(node_id, io_storage, lanes, context);
+      collect_input_lanes(node_id, dag_node_phases, branch_states, io_storage.output_valid);
+  return update_merged_reader(node_id, io_storage, lanes);
 }
 
 inline auto graph::build_reader_input(const compiled_node &node, const std::uint32_t node_id,
-                                      io_storage &io_storage, const std::vector<input_lane> &lanes,
-                                      wh::core::run_context &context) const
+                                      io_storage &io_storage,
+                                      const std::vector<input_lane> &lanes) const
     -> wh::core::result<resolved_input> {
   if (needs_reader_merge(node_id)) {
-    auto synced = update_merged_reader(node_id, io_storage, lanes, context);
+    auto synced = update_merged_reader(node_id, io_storage, lanes);
     if (synced.has_error()) {
       return wh::core::result<resolved_input>::failure(synced.error());
     }
@@ -529,7 +706,7 @@ inline auto graph::build_reader_input(const compiled_node &node, const std::uint
       continue;
     }
 
-    auto reader = take_edge_reader(lane.edge_id, io_storage, context);
+    auto reader = take_edge_reader(lane.edge_id, io_storage);
     if (reader.has_error()) {
       return wh::core::result<resolved_input>::failure(reader.error());
     }
@@ -625,9 +802,8 @@ inline auto graph::finish_value_input(const compiled_node &node, value_batch bat
 
 inline auto graph::refresh_source_readers(const std::uint32_t source_node_id,
                                           io_storage &io_storage,
-                                          const std::vector<node_state> &node_states,
-                                          const std::vector<branch_state> &branch_states,
-                                          wh::core::run_context &context) const
+                                          const std::vector<dag_node_phase> &dag_node_phases,
+                                          const std::vector<branch_state> &branch_states) const
     -> wh::core::result<void> {
   for (const auto edge_id :
        core().compiled_execution_index_.plan.outputs[source_node_id].reader_edges) {
@@ -636,7 +812,7 @@ inline auto graph::refresh_source_readers(const std::uint32_t source_node_id,
       continue;
     }
     auto refreshed =
-        refresh_merged_reader(target_id, io_storage, node_states, branch_states, context);
+        refresh_merged_reader(target_id, io_storage, dag_node_phases, branch_states);
     if (refreshed.has_error()) {
       return refreshed;
     }
@@ -645,7 +821,7 @@ inline auto graph::refresh_source_readers(const std::uint32_t source_node_id,
 }
 
 inline auto graph::collect_input_lanes(const std::uint32_t node_id,
-                                       const std::vector<node_state> &node_states,
+                                       const std::vector<dag_node_phase> &dag_node_phases,
                                        const std::vector<branch_state> &branch_states,
                                        const dynamic_bitset &output_valid) const
     -> std::vector<input_lane> {
@@ -654,7 +830,7 @@ inline auto graph::collect_input_lanes(const std::uint32_t node_id,
   lanes.reserve(incoming.size());
   for (const auto edge_id : incoming) {
     const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
-    const auto status = resolve_edge_status_indexed(edge, node_states, branch_states);
+    const auto status = resolve_edge_status_indexed(edge, dag_node_phases, branch_states);
     lanes.push_back(input_lane{
         .edge_id = edge_id,
         .source_id = edge.from,
@@ -668,7 +844,7 @@ inline auto graph::collect_input_lanes(const std::uint32_t node_id,
 inline auto graph::build_missing_input(const compiled_node &node) const
     -> wh::core::result<resolved_input> {
   if (node.meta.options.allow_no_data) {
-    auto missing = make_missing_rerun_input_default(node.meta.input_contract);
+    auto missing = make_missing_pending_input_default(node.meta.input_contract);
     if (missing.has_error()) {
       return wh::core::result<resolved_input>::failure(missing.error());
     }
@@ -703,7 +879,7 @@ inline auto graph::own_input(graph_value value, const node_contract contract)
 
 inline auto
 graph::build_node_input(const std::uint32_t node_id, io_storage &io_storage,
-                        const std::vector<node_state> &node_states,
+                        const std::vector<dag_node_phase> &dag_node_phases,
                         const std::vector<branch_state> &branch_states,
                         [[maybe_unused]] graph_value &scratch, wh::core::run_context &context,
                         [[maybe_unused]] const detail::runtime_state::invoke_config &config) const
@@ -714,15 +890,15 @@ graph::build_node_input(const std::uint32_t node_id, io_storage &io_storage,
   }
 
   const auto lanes =
-      collect_input_lanes(node_id, node_states, branch_states, io_storage.output_valid);
+      collect_input_lanes(node_id, dag_node_phases, branch_states, io_storage.output_valid);
   if (node->meta.input_contract == node_contract::stream) {
-    return build_reader_input(*node, node_id, io_storage, lanes, context);
+    return build_reader_input(*node, node_id, io_storage, lanes);
   }
   return build_value_input(*node, io_storage, lanes, context);
 }
 
 inline auto graph::build_node_input_sender(
-    const std::uint32_t node_id, io_storage &io_storage, const std::vector<node_state> &node_states,
+    const std::uint32_t node_id, io_storage &io_storage, const std::vector<dag_node_phase> &dag_node_phases,
     const std::vector<branch_state> &branch_states, wh::core::run_context &context,
     node_frame *frame, const detail::runtime_state::invoke_config &config,
     const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const -> graph_sender {
@@ -739,7 +915,7 @@ inline auto graph::build_node_input_sender(
        &context](wh::core::result<resolved_input> resolved) -> wh::core::result<graph_value> {
     if (resolved.has_error() && resolved.error() == wh::core::errc::not_found &&
         context.resume_info.has_value()) {
-      auto fallback = resolve_missing_rerun_input(node->meta.input_contract);
+      auto fallback = resolve_missing_pending_input(node->meta.input_contract);
       if (fallback.has_error()) {
         return wh::core::result<graph_value>::failure(fallback.error());
       }
@@ -762,7 +938,7 @@ inline auto graph::build_node_input_sender(
   if (node->meta.input_contract == node_contract::stream) {
     graph_value scratch{};
     auto resolved =
-        build_node_input(node_id, io_storage, node_states, branch_states, scratch, context, config);
+        build_node_input(node_id, io_storage, dag_node_phases, branch_states, scratch, context, config);
     auto finalized = finalize_input(std::move(resolved));
     if (finalized.has_error()) {
       return detail::failure_graph_sender(finalized.error());
@@ -771,7 +947,7 @@ inline auto graph::build_node_input_sender(
   }
 
   const auto lanes =
-      collect_input_lanes(node_id, node_states, branch_states, io_storage.output_valid);
+      collect_input_lanes(node_id, dag_node_phases, branch_states, io_storage.output_valid);
   const bool preserve_stream_pre =
       frame != nullptr && detail::state_runtime::has_stream_phase(
                               frame->state_handlers, detail::state_runtime::state_phase::pre);
@@ -789,7 +965,7 @@ inline auto graph::build_node_input_sender(
       const auto edge_id = active_edges.front();
       const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
       if (needs_reader_lowering(edge)) {
-        auto reader = take_edge_reader(edge_id, io_storage, context);
+        auto reader = take_edge_reader(edge_id, io_storage);
         if (reader.has_error()) {
           return detail::failure_graph_sender(reader.error());
         }
@@ -881,11 +1057,11 @@ inline auto graph::build_node_input_sender(
   std::vector<graph_sender> senders{};
   senders.reserve(stage.edge_ids.size());
   for (const auto edge_id : stage.edge_ids) {
-    auto reader = take_edge_reader(edge_id, io_storage, context);
+    const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
+    auto reader = take_edge_reader(edge_id, io_storage);
     if (reader.has_error()) {
       return detail::failure_graph_sender(reader.error());
     }
-    const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
     auto lowering = make_reader_lowering(edge);
     if (lowering.has_error()) {
       return detail::failure_graph_sender(lowering.error());

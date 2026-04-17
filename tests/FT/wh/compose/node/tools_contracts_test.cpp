@@ -404,27 +404,23 @@ TEST_CASE("compose async tools node executes non-sequential mode and preserves o
                       [&worker_pool, &active, &max_active](
                           wh::compose::tool_call call, wh::tool::call_scope)
                           -> wh::compose::tools_invoke_sender {
-                    return wh::compose::tools_invoke_sender{
-                        wh::core::detail::normalize_result_sender<
-                            wh::core::result<wh::compose::graph_value>>(
-                            stdexec::starts_on(
-                                worker_pool.get_scheduler(),
-                                stdexec::just(std::move(call.arguments)) |
-                                    stdexec::then(
-                                        [&active, &max_active](std::string value)
-                                            -> wh::core::result<wh::compose::graph_value> {
-                                          const auto running =
-                                              active.fetch_add(1) + 1;
-                                          auto previous = max_active.load();
-                                          while (previous < running &&
-                                                 !max_active.compare_exchange_weak(
-                                                     previous, running)) {
-                                          }
-                                          std::this_thread::sleep_for(
-                                              std::chrono::milliseconds{20});
-                                          active.fetch_sub(1);
-                                          return wh::core::any(std::move(value));
-                                        })))};
+                    return stdexec::starts_on(
+                        worker_pool.get_scheduler(),
+                        stdexec::just(std::move(call.arguments)) |
+                            stdexec::then(
+                                [&active, &max_active](std::string value)
+                                    -> wh::core::result<wh::compose::graph_value> {
+                                  const auto running = active.fetch_add(1) + 1;
+                                  auto previous = max_active.load();
+                                  while (previous < running &&
+                                         !max_active.compare_exchange_weak(
+                                             previous, running)) {
+                                  }
+                                  std::this_thread::sleep_for(
+                                      std::chrono::milliseconds{20});
+                                  active.fetch_sub(1);
+                                  return wh::core::any(std::move(value));
+                                }));
                   }});
   auto node = wh::compose::make_tools_node<
       wh::compose::node_contract::value, wh::compose::node_contract::value,
@@ -480,27 +476,23 @@ TEST_CASE("compose async tools node honors runtime parallel gate override",
                       [&worker_pool, &active, &max_active](
                           wh::compose::tool_call call, wh::tool::call_scope)
                           -> wh::compose::tools_invoke_sender {
-                    return wh::compose::tools_invoke_sender{
-                        wh::core::detail::normalize_result_sender<
-                            wh::core::result<wh::compose::graph_value>>(
-                            stdexec::starts_on(
-                                worker_pool.get_scheduler(),
-                                stdexec::just(std::move(call.arguments)) |
-                                    stdexec::then(
-                                        [&active, &max_active](std::string value)
-                                            -> wh::core::result<wh::compose::graph_value> {
-                                          const auto running =
-                                              active.fetch_add(1) + 1;
-                                          auto previous = max_active.load();
-                                          while (previous < running &&
-                                                 !max_active.compare_exchange_weak(
-                                                     previous, running)) {
-                                          }
-                                          std::this_thread::sleep_for(
-                                              std::chrono::milliseconds{20});
-                                          active.fetch_sub(1);
-                                          return wh::core::any(std::move(value));
-                                        })))};
+                    return stdexec::starts_on(
+                        worker_pool.get_scheduler(),
+                        stdexec::just(std::move(call.arguments)) |
+                            stdexec::then(
+                                [&active, &max_active](std::string value)
+                                    -> wh::core::result<wh::compose::graph_value> {
+                                  const auto running = active.fetch_add(1) + 1;
+                                  auto previous = max_active.load();
+                                  while (previous < running &&
+                                         !max_active.compare_exchange_weak(
+                                             previous, running)) {
+                                  }
+                                  std::this_thread::sleep_for(
+                                      std::chrono::milliseconds{20});
+                                  active.fetch_sub(1);
+                                  return wh::core::any(std::move(value));
+                                }));
                   }});
   auto node = wh::compose::make_tools_node<
       wh::compose::node_contract::value, wh::compose::node_contract::value,
