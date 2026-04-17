@@ -401,7 +401,7 @@ protected:
       if (executed.has_error()) {
         return wh::core::result<void>::failure(executed.error());
       }
-      this->finish(
+      this->enter_terminal(
           wh::core::result<graph_value>::failure(wh::core::errc::canceled));
       return {};
     }
@@ -428,14 +428,14 @@ protected:
     }
 
     if (this->stop_requested()) {
-      this->finish(
+      this->enter_terminal(
           wh::core::result<graph_value>::failure(wh::core::errc::canceled));
       return false;
     }
 
     auto boundary_interrupt = session().check_external_interrupt_boundary();
     if (boundary_interrupt.has_error()) {
-      this->finish(
+      this->enter_terminal(
           wh::core::result<graph_value>::failure(boundary_interrupt.error()));
       return false;
     }
@@ -446,7 +446,7 @@ protected:
     if (this->active_child_count() == 0U) {
       auto started = launch_freeze_stage();
       if (started.has_error()) {
-        this->finish(wh::core::result<graph_value>::failure(started.error()));
+        this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
       }
     }
     return false;
@@ -460,11 +460,11 @@ protected:
       session().request_freeze(true);
       auto started = launch_freeze_stage();
       if (started.has_error()) {
-        this->finish(wh::core::result<graph_value>::failure(started.error()));
+        this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
       }
       return;
     }
-    this->finish(state_->finish());
+    this->enter_terminal(state_->finish());
   }
 
   std::optional<state_t> state_{};

@@ -163,12 +163,12 @@ public:
           continue;
         }
         if (action.kind == ready_action_kind::terminal_error) {
-          this->finish(wh::core::result<graph_value>::failure(action.error));
+          this->enter_terminal(wh::core::result<graph_value>::failure(action.error));
           break;
         }
         auto started = this->launch_input_stage(action.attempt);
         if (started.has_error()) {
-          this->finish(wh::core::result<graph_value>::failure(started.error()));
+          this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
           break;
         }
       }

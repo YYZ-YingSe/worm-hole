@@ -26,7 +26,8 @@ protected:
                                                        graph_scheduler_t>;
 
   // Protocol invariants:
-  // 1. finish()/override_terminal() are the only ways to enter terminal mode.
+  // 1. enter_terminal()/override_terminal() are the only ways to enter terminal
+  //    mode.
   // 2. After terminal mode starts, derived runtimes may only drain and quiesce.
   // 3. Outer receiver completion is emitted from complete() only.
   // 4. count_ tracks outstanding async callbacks/ops that can still publish
@@ -69,8 +70,7 @@ protected:
       }
       auto *base_ptr = base;
       base_ptr->count_.fetch_add(1U, std::memory_order_relaxed);
-      base_ptr->stop_requested_.store(true, std::memory_order_release);
-      base_ptr->request_resume();
+      base_ptr->publish_stop_request();
       base_ptr->arrive();
     }
   };
@@ -114,8 +114,7 @@ protected:
   private:
     auto complete(wh::core::result<graph_value> result) noexcept -> void {
       auto *base_ptr = base;
-      base_ptr->enqueue_completion(attempt, std::move(result));
-      base_ptr->request_resume();
+      base_ptr->publish_completion(attempt, std::move(result));
       base_ptr->arrive();
     }
   };
@@ -129,7 +128,7 @@ protected:
     auto set_value() && noexcept -> void {
       if (base != nullptr) {
         auto *base_ptr = base;
-        base_ptr->request_resume();
+        base_ptr->signal_resume_edge();
         base_ptr->arrive();
       }
     }
@@ -137,7 +136,7 @@ protected:
     auto set_stopped() && noexcept -> void {
       if (base != nullptr) {
         auto *base_ptr = base;
-        base_ptr->request_resume();
+        base_ptr->signal_resume_edge();
         base_ptr->arrive();
       }
     }
@@ -147,10 +146,8 @@ protected:
         return;
       }
       auto *base_ptr = base;
-      base_ptr->publish_terminal_override(
-          wh::core::result<graph_value>::failure(invoke_join_base::map_async_error(
-              std::forward<error_t>(error))));
-      base_ptr->request_resume();
+      base_ptr->publish_terminal_override(wh::core::result<graph_value>::failure(
+          invoke_join_base::map_async_error(std::forward<error_t>(error))));
       base_ptr->arrive();
     }
 
@@ -229,7 +226,7 @@ public:
 
   auto start() & noexcept -> void {
     bind_outer_stop();
-    request_resume();
+    signal_resume_edge();
     arrive();
   }
 
@@ -262,8 +259,14 @@ protected:
     }
   }
 
-  auto request_resume() noexcept -> void {
+  auto schedule_resume_turn() noexcept -> void {
     resume_turn_.request(this);
+  }
+
+  auto signal_resume_edge() noexcept -> void {
+    if (!resume_edge_.exchange(true, std::memory_order_acq_rel)) {
+      schedule_resume_turn();
+    }
   }
 
   [[nodiscard]] auto completed() const noexcept -> bool {
@@ -315,9 +318,8 @@ protected:
     return terminal_status_.has_value();
   }
 
-  auto finish(wh::core::result<graph_value> status) noexcept -> void {
+  auto enter_terminal(wh::core::result<graph_value> status) noexcept -> void {
     set_terminal(std::move(status));
-    request_resume();
     maybe_complete();
   }
 
@@ -331,6 +333,7 @@ protected:
   }
 
   auto resume_turn_run() noexcept -> void {
+    resume_edge_.store(false, std::memory_order_release);
     drain_terminal_override();
     derived().resume();
     maybe_complete();
@@ -385,7 +388,7 @@ protected:
 
       auto settled = settle_fn(attempt, std::move(result));
       if (settled.has_error()) {
-        finish(wh::core::result<graph_value>::failure(settled.error()));
+        enter_terminal(wh::core::result<graph_value>::failure(settled.error()));
       }
     });
   }
@@ -467,6 +470,17 @@ private:
     --active_child_count_;
   }
 
+  auto publish_stop_request() noexcept -> void {
+    if (completed()) {
+      return;
+    }
+    const bool first_stop =
+        !stop_requested_.exchange(true, std::memory_order_acq_rel);
+    if (first_stop) {
+      signal_resume_edge();
+    }
+  }
+
   auto publish_terminal_override(wh::core::result<graph_value> status) noexcept
       -> void {
     if (completed()) {
@@ -475,6 +489,7 @@ private:
     wh_invariant(!terminal_override_ready());
     terminal_override_.emplace(std::move(status));
     terminal_override_ready_.store(true, std::memory_order_release);
+    signal_resume_edge();
   }
 
   [[nodiscard]] auto terminal_override_ready() const noexcept -> bool {
@@ -528,7 +543,7 @@ private:
     stdexec::set_value(std::move(receiver_), std::move(status));
   }
 
-  auto enqueue_completion(const attempt_id attempt,
+  auto publish_completion(const attempt_id attempt,
                           wh::core::result<graph_value> &&result) noexcept
       -> void {
     wh_precondition(attempt.has_value());
@@ -541,6 +556,7 @@ private:
 #else
     ready_children_.publish(attempt.slot);
 #endif
+    signal_resume_edge();
   }
 
 protected:
@@ -561,6 +577,7 @@ protected:
   std::atomic<std::size_t> count_{1U};
   std::atomic<bool> completed_{false};
   std::atomic<bool> stop_requested_{false};
+  std::atomic<bool> resume_edge_{false};
   std::optional<wh::core::result<graph_value>> terminal_override_{};
   std::atomic<bool> terminal_override_ready_{false};
   std::optional<wh::core::result<graph_value>> terminal_status_{};

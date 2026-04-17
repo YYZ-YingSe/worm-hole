@@ -198,7 +198,7 @@ public:
       if (this->state().superstep_active() && prepared_actions_.empty()) {
         auto prepared = prepare_superstep(false);
         if (prepared.has_error()) {
-          this->finish(
+          this->enter_terminal(
               wh::core::result<graph_value>::failure(prepared.error()));
           break;
         }
@@ -212,7 +212,7 @@ public:
         }
         auto begun = prepare_superstep(true);
         if (begun.has_error()) {
-          this->finish(wh::core::result<graph_value>::failure(begun.error()));
+          this->enter_terminal(wh::core::result<graph_value>::failure(begun.error()));
           break;
         }
       }
@@ -224,7 +224,7 @@ public:
         auto started = start_prepared_action(
             std::move(prepared_actions_[prepared_head_++]));
         if (started.has_error()) {
-          this->finish(wh::core::result<graph_value>::failure(started.error()));
+          this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
           break;
         }
       }
