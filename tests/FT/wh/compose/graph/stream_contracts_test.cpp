@@ -497,15 +497,13 @@ TEST_CASE("tools event stream async read preserves stopped and remains readable 
   stream_inputs.push_back(
       wh::compose::detail::stream_completion{
           .index = 0U,
-          .call_id = "call-1",
-          .stream = wh::compose::detail::make_tool_event_stream_reader(
-              std::move(source),
+          .call =
               wh::compose::tool_call{
                   .call_id = "call-1",
                   .tool_name = "echo",
                   .arguments = "payload",
               },
-              wh::compose::detail::make_tool_after_chain(options), {}),
+          .stream = std::move(source),
           .rerun_extra = {}});
   auto output = wh::compose::detail::build_stream_output(
       state, std::move(stream_inputs));

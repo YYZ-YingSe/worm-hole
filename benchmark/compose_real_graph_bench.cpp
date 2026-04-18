@@ -31,6 +31,12 @@ namespace {
 using invoke_status = wh::core::result<wh::compose::graph_invoke_result>;
 using pool_scheduler = decltype(std::declval<exec::static_thread_pool &>().get_scheduler());
 
+[[nodiscard]] auto inline_sync_options()
+    -> wh::compose::graph_add_node_options {
+  return wh::compose::graph_add_node_options{
+      .sync_dispatch = wh::compose::sync_dispatch::inline_control};
+}
+
 struct bench_profile {
   std::size_t stream_items{8U};
   std::size_t documents{4U};
@@ -207,32 +213,21 @@ public:
                                 wh::core::errc::invalid_argument);
                           }
 
-                          auto [writer, reader] =
-                              wh::schema::stream::make_pipe_stream<wh::schema::message>(
-                                  effective_stream_items(profile));
+                          const auto count = effective_stream_items(profile);
+                          std::vector<wh::schema::message> chunks{};
+                          chunks.reserve(count);
                           const auto prompt = std::string{
                               first_text_part(moved_request.messages.back())};
-                          for (std::size_t index = 0U;
-                               index < effective_stream_items(profile); ++index) {
+                          for (std::size_t index = 0U; index < count; ++index) {
                             wh::schema::message chunk{};
                             chunk.role = wh::schema::message_role::assistant;
                             chunk.parts.emplace_back(wh::schema::text_part{
                                 prompt + "#" + std::to_string(index)});
-                            auto wrote = writer.try_write(std::move(chunk));
-                            if (wrote.has_error()) {
-                              return wh::core::result<
-                                  wh::model::chat_message_stream_reader>::failure(
-                                  wrote.error());
-                            }
-                          }
-                          auto closed = writer.close();
-                          if (closed.has_error()) {
-                            return wh::core::result<
-                                wh::model::chat_message_stream_reader>::failure(
-                                closed.error());
+                            chunks.push_back(std::move(chunk));
                           }
                           return wh::model::chat_message_stream_reader{
-                              std::move(reader)};
+                              wh::schema::stream::make_values_stream_reader(
+                                  std::move(chunks))};
                         }));
   }
 
@@ -333,22 +328,14 @@ public:
 
   [[nodiscard]] auto stream(const wh::tool::tool_request &request) const
       -> wh::core::result<wh::tool::tool_output_stream_reader> {
-    auto [writer, reader] =
-        wh::schema::stream::make_pipe_stream<std::string>(effective_stream_items(profile_));
-    for (std::size_t index = 0U; index < effective_stream_items(profile_); ++index) {
-      auto wrote =
-          writer.try_write(request.input_json + ":tool:" + std::to_string(index));
-      if (wrote.has_error()) {
-        return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-            wrote.error());
-      }
+    const auto count = effective_stream_items(profile_);
+    std::vector<std::string> chunks{};
+    chunks.reserve(count);
+    for (std::size_t index = 0U; index < count; ++index) {
+      chunks.push_back(request.input_json + ":tool:" + std::to_string(index));
     }
-    auto closed = writer.close();
-    if (closed.has_error()) {
-      return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-          closed.error());
-    }
-    return wh::tool::tool_output_stream_reader{std::move(reader)};
+    return wh::tool::tool_output_stream_reader{
+        wh::schema::stream::make_values_stream_reader(std::move(chunks))};
   }
 
 private:
@@ -502,7 +489,8 @@ private:
               value.error());
         }
         return wh::compose::graph_value{value.value().get() * 2};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -587,7 +575,8 @@ private:
         wh::prompt::prompt_render_request request{};
         request.context.emplace("topic", wh::prompt::template_value{seed.value().get()});
         return wh::compose::graph_value{std::move(request)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -613,7 +602,8 @@ private:
         wh::model::chat_request request{};
         request.messages = messages.value().get();
         return wh::compose::graph_value{std::move(request)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -638,7 +628,8 @@ private:
         }
         return wh::compose::graph_value{static_cast<std::int64_t>(
             first_text_part(response.value().get().message).size())};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -655,7 +646,8 @@ private:
         wh::model::chat_request request{};
         request.messages.push_back(make_user_message(seed.value().get()));
         return wh::compose::graph_value{std::move(request)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -718,7 +710,8 @@ private:
         request.source_kind = wh::document::document_source_kind::content;
         request.source = seed.value().get();
         return wh::compose::graph_value{std::move(request)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -765,7 +758,8 @@ private:
           request.inputs.push_back(document_value.content());
         }
         return wh::compose::graph_value{std::move(request)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -800,7 +794,8 @@ private:
         }
         return wh::compose::graph_value{static_cast<std::int64_t>(
             embeddings.value().get().size())};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -819,7 +814,8 @@ private:
         request.index = "bench";
         request.sub_index = "bench";
         return wh::compose::graph_value{std::move(request)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -846,7 +842,8 @@ private:
         request.documents = documents.value().get();
         request.embedding = {1.0, 2.0, 3.0};
         return wh::compose::graph_value{std::move(request)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -871,7 +868,8 @@ private:
         }
         return wh::compose::graph_value{static_cast<std::int64_t>(
             response.value().get().success_count)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -887,7 +885,8 @@ private:
         }
         return wh::compose::graph_value{
             wh::tool::tool_request{.input_json = seed.value().get()}};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -937,7 +936,8 @@ private:
         }
         return wh::compose::graph_value{
             make_tool_batch(seed.value().get(), profile)};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -969,7 +969,8 @@ private:
           total += static_cast<std::int64_t>(text.value().get().size());
         }
         return wh::compose::graph_value{total};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -1114,7 +1115,8 @@ private:
             aligned_subgraph.value() + invoke.value() + stream.value() +
             embedding.value() + indexer.value() + tool_component.value() +
             tools_sync.value() + tools_async.value()};
-      });
+      },
+      inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }

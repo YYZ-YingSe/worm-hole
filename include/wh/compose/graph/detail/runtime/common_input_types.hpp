@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/types.hpp"
 #include "wh/core/any.hpp"
+#include "wh/core/small_vector.hpp"
 
 namespace wh::compose::detail::input_runtime {
 
@@ -30,6 +32,9 @@ struct input_lane {
   input_edge_status status{input_edge_status::disabled};
   bool output_ready{false};
 };
+
+using input_lane_vector = wh::core::small_vector<input_lane, 8U>;
+using input_lane_span = std::span<const input_lane>;
 
 enum class reader_lane_state : std::uint8_t { unseen = 0U, attached, disabled };
 

@@ -39,8 +39,17 @@ namespace detail {
 /// merge state.
 [[nodiscard]] inline auto fork_graph_reader(graph_stream_reader &reader)
     -> wh::core::result<graph_stream_reader> {
-  if (auto *merged =
-          reader.template target_if<wh::schema::stream::merge_stream_reader<graph_stream_reader>>();
+  using static_merge_t = wh::schema::stream::merge_stream_reader<
+      graph_stream_reader, wh::schema::stream::merge_topology_mode::static_attached>;
+  using dynamic_merge_t = wh::schema::stream::merge_stream_reader<
+      graph_stream_reader, wh::schema::stream::merge_topology_mode::dynamic_injection>;
+
+  if (auto *merged = reader.template target_if<static_merge_t>();
+      merged != nullptr) {
+    return graph_stream_reader{merged->share()};
+  }
+
+  if (auto *merged = reader.template target_if<dynamic_merge_t>();
       merged != nullptr) {
     return graph_stream_reader{merged->share()};
   }

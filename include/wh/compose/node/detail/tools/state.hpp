@@ -132,8 +132,9 @@ struct call_completion {
 
 struct stream_completion {
   std::size_t index{0U};
-  std::string call_id{};
+  tool_call call{};
   graph_stream_reader stream{};
+  std::optional<wh::core::run_context> after_context{};
   graph_value rerun_extra{};
 };
 

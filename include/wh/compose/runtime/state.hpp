@@ -83,7 +83,9 @@ struct graph_state_cause {
   /// Scheduler step index inside the run.
   std::size_t step{0U};
   /// Stable node key that caused this transition.
-  std::string node_key{};
+  /// Held as a view into storage that outlives the cause (compiled graph index
+  /// or long-lived node metadata). Callers MUST NOT pass temporaries.
+  std::string_view node_key{};
 };
 
 /// Transition kind used by state audit/replay diagnostics.

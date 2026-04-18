@@ -346,6 +346,8 @@ private:
   using dag_ready_state = detail::graph_core::dag_ready_state;
   using pregel_ready_state = detail::graph_core::pregel_ready_state;
   using input_lane = detail::graph_core::input_lane;
+  using input_lane_vector = detail::input_runtime::input_lane_vector;
+  using input_lane_span = detail::input_runtime::input_lane_span;
   using dag_branch_state = detail::graph_core::dag_branch_state;
   using reader_lane_state = detail::graph_core::reader_lane_state;
   using reader_lowering = detail::graph_core::reader_lowering;
@@ -659,7 +661,7 @@ private:
       const std::uint32_t node_id,
       const std::vector<dag_node_phase> &dag_node_phases,
       const std::vector<branch_state> &branch_states,
-      const dynamic_bitset &output_valid) const -> std::vector<input_lane>;
+      const dynamic_bitset &output_valid) const -> input_lane_vector;
 
   [[nodiscard]] auto build_missing_input(const compiled_node &node) const
       -> wh::core::result<resolved_input>;
@@ -691,7 +693,7 @@ private:
 
   auto update_merged_reader(
       const std::uint32_t node_id, io_storage &io_storage,
-      const std::vector<input_lane> &lanes) const -> wh::core::result<void>;
+      input_lane_span lanes) const -> wh::core::result<void>;
 
   auto refresh_merged_reader(
       const std::uint32_t node_id, io_storage &io_storage,
@@ -701,12 +703,12 @@ private:
 
   [[nodiscard]] auto build_reader_input(
       const compiled_node &node, const std::uint32_t node_id,
-      io_storage &io_storage, const std::vector<input_lane> &lanes) const
+      io_storage &io_storage, input_lane_span lanes) const
       -> wh::core::result<resolved_input>;
 
   [[nodiscard]] auto build_value_input(
       const compiled_node &node, io_storage &io_storage,
-      const std::vector<input_lane> &lanes,
+      input_lane_span lanes,
       wh::core::run_context &context) const
       -> wh::core::result<resolved_input>;
 

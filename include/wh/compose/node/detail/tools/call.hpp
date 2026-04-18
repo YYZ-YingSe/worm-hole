@@ -101,12 +101,17 @@ clone_call_context(const wh::core::run_context &context)
 }
 
 [[nodiscard]] inline auto
-wrap_tool_stream(const tools_state &state, tool_call call,
-                 graph_stream_reader stream,
-                 std::optional<wh::core::run_context> context = std::nullopt)
-    -> graph_stream_reader {
-  return make_tool_event_stream_reader(std::move(stream), std::move(call),
-                                       state.afters, std::move(context));
+make_stream_completion(const std::size_t index, tool_call call,
+                       graph_stream_reader stream, graph_value rerun_extra,
+                       std::optional<wh::core::run_context> after_context = std::nullopt)
+    -> stream_completion {
+  return stream_completion{
+      .index = index,
+      .call = std::move(call),
+      .stream = std::move(stream),
+      .after_context = std::move(after_context),
+      .rerun_extra = std::move(rerun_extra),
+  };
 }
 
 [[nodiscard]] inline auto call_value(const tools_state &state,
@@ -263,28 +268,19 @@ wrap_tool_stream(const tools_state &state, tool_call call,
     if (replayed.has_error()) {
       return wh::core::result<stream_completion>::failure(replayed.error());
     }
-    auto call_id = call.call_id;
     if (!has_tool_afters(state.afters)) {
-      return stream_completion{
-          .index = index,
-          .call_id = std::move(call_id),
-          .stream = wrap_tool_stream(state, std::move(call),
-                                     std::move(replayed).value()),
-          .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-      };
+      return make_stream_completion(
+          index, std::move(call), std::move(replayed).value(),
+          wh::core::any(std::string{plan.call->arguments}));
     }
     auto call_context = clone_call_context(context);
     if (call_context.has_error()) {
       return wh::core::result<stream_completion>::failure(call_context.error());
     }
-    return stream_completion{
-        .index = index,
-        .call_id = std::move(call_id),
-        .stream = wrap_tool_stream(state, std::move(call),
-                                   std::move(replayed).value(),
-                                   std::move(call_context).value()),
-        .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-    };
+    return make_stream_completion(
+        index, std::move(call), std::move(replayed).value(),
+        wh::core::any(std::string{plan.call->arguments}),
+        std::move(call_context).value());
   }
 
   auto call_context = clone_call_context(context);
@@ -315,18 +311,16 @@ wrap_tool_stream(const tools_state &state, tool_call call,
     return wh::core::result<stream_completion>::failure(merged.error());
   }
 
-  auto call_id = call.call_id;
-  return stream_completion{
-      .index = index,
-      .call_id = std::move(call_id),
-      .stream = has_tool_afters(state.afters)
-                    ? wrap_tool_stream(state, std::move(call),
-                                       std::move(streamed).value(),
-                                       std::move(call_context).value())
-                    : wrap_tool_stream(state, std::move(call),
-                                       std::move(streamed).value()),
-      .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-  };
+  if (!has_tool_afters(state.afters)) {
+    return make_stream_completion(
+        index, std::move(call), std::move(streamed).value(),
+        wh::core::any(std::string{plan.call->arguments}));
+  }
+
+  return make_stream_completion(
+      index, std::move(call), std::move(streamed).value(),
+      wh::core::any(std::string{plan.call->arguments}),
+      std::move(call_context).value());
 }
 
 [[nodiscard]] inline auto start_call(const tools_state &state,
@@ -429,16 +423,11 @@ wrap_tool_stream(const tools_state &state, tool_call call,
                             wh::core::result<stream_completion>>(
           replayed.error());
     }
-    auto call_id = call.call_id;
     if (!has_tool_afters(state.afters)) {
       return ready_sender<stream_completion_sender>(
-          wh::core::result<stream_completion>{stream_completion{
-              .index = index,
-              .call_id = std::move(call_id),
-              .stream = wrap_tool_stream(state, std::move(call),
-                                         std::move(replayed).value()),
-              .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-          }});
+          wh::core::result<stream_completion>{make_stream_completion(
+              index, std::move(call), std::move(replayed).value(),
+              wh::core::any(std::string{plan.call->arguments}))});
     }
     auto cloned_context = clone_call_context(base_context);
     if (cloned_context.has_error()) {
@@ -447,14 +436,10 @@ wrap_tool_stream(const tools_state &state, tool_call call,
           cloned_context.error());
     }
     return ready_sender<stream_completion_sender>(
-        wh::core::result<stream_completion>{stream_completion{
-            .index = index,
-            .call_id = std::move(call_id),
-            .stream = wrap_tool_stream(state, std::move(call),
-                                       std::move(replayed).value(),
-                                       std::move(cloned_context).value()),
-            .rerun_extra = wh::core::any(std::string{plan.call->arguments}),
-        }});
+        wh::core::result<stream_completion>{make_stream_completion(
+            index, std::move(call), std::move(replayed).value(),
+            wh::core::any(std::string{plan.call->arguments}),
+            std::move(cloned_context).value())});
   }
 
   auto cloned_context = clone_call_context(base_context);
@@ -471,12 +456,10 @@ wrap_tool_stream(const tools_state &state, tool_call call,
   }
 
   auto stream = start_stream(state, tool_call{call}, scope);
-  auto call_id = call.call_id;
   if (!has_tool_afters(state.afters)) {
     return erase_stream_completion(
         std::move(stream) |
-        stdexec::then([afters = state.afters, call = std::move(call), index,
-                       call_id = std::move(call_id),
+        stdexec::then([call = std::move(call), index,
                        rerun_extra = wh::core::any(
                            std::string{plan.call->arguments})](
                           wh::core::result<graph_stream_reader> status) mutable
@@ -484,12 +467,9 @@ wrap_tool_stream(const tools_state &state, tool_call call,
           if (status.has_error()) {
             return wh::core::result<stream_completion>::failure(status.error());
           }
-          return stream_completion{
-              .index = index,
-              .call_id = std::move(call_id),
-              .stream = make_tool_event_stream_reader(
-                  std::move(status).value(), std::move(call), std::move(afters)),
-              .rerun_extra = std::move(rerun_extra)};
+          return make_stream_completion(index, std::move(call),
+                                        std::move(status).value(),
+                                        std::move(rerun_extra));
         }));
   }
 
@@ -497,8 +477,7 @@ wrap_tool_stream(const tools_state &state, tool_call call,
       std::make_unique<wh::core::run_context>(std::move(call_context));
   return erase_stream_completion(
       std::move(stream) |
-      stdexec::then([afters = state.afters, call = std::move(call), index,
-                     call_id = std::move(call_id),
+      stdexec::then([call = std::move(call), index,
                      call_context = std::move(call_context_ptr),
                      rerun_extra =
                          wh::core::any(std::string{plan.call->arguments})](
@@ -507,13 +486,10 @@ wrap_tool_stream(const tools_state &state, tool_call call,
         if (status.has_error()) {
           return wh::core::result<stream_completion>::failure(status.error());
         }
-        return stream_completion{.index = index,
-                                 .call_id = std::move(call_id),
-                                 .stream = make_tool_event_stream_reader(
-                                     std::move(status).value(), std::move(call),
-                                     std::move(afters),
-                                     std::move(*call_context)),
-                                 .rerun_extra = std::move(rerun_extra)};
+        return make_stream_completion(index, std::move(call),
+                                      std::move(status).value(),
+                                      std::move(rerun_extra),
+                                      std::move(*call_context));
       }));
 }
 

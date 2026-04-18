@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "wh/compose/node/detail/tools/state.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 
 namespace wh::compose {
 namespace detail {
@@ -42,16 +43,24 @@ build_value_output(tools_state &state, std::vector<call_completion> results)
 build_stream_output(tools_state &state, std::vector<stream_completion> results)
     -> wh::core::result<graph_value> {
   auto &rerun = state.rerun();
+  std::vector<tool_event_reader_detail::tool_event_binding> bindings{};
   std::vector<wh::schema::stream::named_stream_reader<graph_stream_reader>>
       lanes{};
+  bindings.reserve(results.size());
   lanes.reserve(results.size());
   for (auto &result : results) {
-    rerun.extra.insert_or_assign(result.call_id, std::move(result.rerun_extra));
-    lanes.push_back({std::move(result.call_id), std::move(result.stream),
-                     false});
+    auto lane_source = result.call.call_id;
+    rerun.extra.insert_or_assign(lane_source, std::move(result.rerun_extra));
+    bindings.push_back(tool_event_reader_detail::tool_event_binding{
+        .call = std::move(result.call),
+        .context = std::move(result.after_context),
+    });
+    lanes.push_back({std::move(lane_source), std::move(result.stream), false});
   }
 
-  return wh::core::any(detail::make_graph_merge_reader(std::move(lanes)));
+  auto merged = detail::make_graph_merge_reader(std::move(lanes));
+  return wh::core::any(make_tools_output_stream_reader(
+      std::move(merged), state.afters, std::move(bindings)));
 }
 
 } // namespace detail

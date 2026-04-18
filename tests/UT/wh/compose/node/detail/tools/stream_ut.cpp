@@ -9,7 +9,6 @@
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
 #include "wh/compose/node/detail/tools/output.hpp"
-#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 
 namespace {
 
@@ -64,16 +63,14 @@ TEST_CASE("tools stream output maps per-call streams through final tool events a
   wrapped_inputs.push_back(
       wh::compose::detail::stream_completion{
           .index = 0U,
-          .call_id = "call-1",
-          .stream = wh::compose::detail::make_tool_event_stream_reader(
-              std::move(source),
+          .call =
               wh::compose::tool_call{
                   .call_id = "call-1",
                   .tool_name = "echo",
                   .arguments = "payload",
               },
-              wh::compose::detail::make_tool_after_chain(options),
-              wh::core::run_context{}),
+          .stream = std::move(source),
+          .after_context = wh::core::run_context{},
           .rerun_extra = {}});
   auto wrapped =
       materialize_stream_output(options, std::move(wrapped_inputs));
@@ -119,7 +116,7 @@ TEST_CASE("tools stream output maps per-call streams through final tool events a
   REQUIRE(eof.has_value());
   REQUIRE(eof.value().eof);
 
-  REQUIRE_FALSE(wrapped.value().is_closed());
+  REQUIRE(wrapped.value().is_closed());
   REQUIRE(wrapped.value().is_source_closed());
   wrapped.value().set_automatic_close({});
   REQUIRE(wrapped.value().close().has_value());
@@ -146,11 +143,9 @@ TEST_CASE("tools stream async sender keeps transformed stream state alive after 
     sender_inputs.push_back(
         wh::compose::detail::stream_completion{
             .index = 0U,
-            .call_id = "call-1",
-            .stream = wh::compose::detail::make_tool_event_stream_reader(
-                std::move(source), {.call_id = "call-1", .tool_name = "echo"},
-                wh::compose::detail::make_tool_after_chain(options),
-                wh::core::run_context{}),
+            .call = {.call_id = "call-1", .tool_name = "echo"},
+            .stream = std::move(source),
+            .after_context = wh::core::run_context{},
             .rerun_extra = {}});
     auto wrapped =
         materialize_stream_output(options, std::move(sender_inputs));
@@ -206,11 +201,9 @@ TEST_CASE("tools stream output surfaces after-middleware failures as terminal er
   std::vector<wh::compose::detail::stream_completion> ok_inputs{};
   ok_inputs.push_back(wh::compose::detail::stream_completion{
       .index = 0U,
-      .call_id = "call",
-      .stream = wh::compose::detail::make_tool_event_stream_reader(
-          std::move(reader_ok), {.call_id = "call", .tool_name = "tool"},
-          wh::compose::detail::make_tool_after_chain(ok_options),
-          wh::core::run_context{}),
+      .call = {.call_id = "call", .tool_name = "tool"},
+      .stream = std::move(reader_ok),
+      .after_context = wh::core::run_context{},
       .rerun_extra = {}});
   auto ok_reader =
       materialize_stream_output(ok_options, std::move(ok_inputs));
@@ -242,11 +235,9 @@ TEST_CASE("tools stream output surfaces after-middleware failures as terminal er
   std::vector<wh::compose::detail::stream_completion> error_inputs{};
   error_inputs.push_back(wh::compose::detail::stream_completion{
       .index = 0U,
-      .call_id = "call",
-      .stream = wh::compose::detail::make_tool_event_stream_reader(
-          std::move(reader_error), {.call_id = "call", .tool_name = "tool"},
-          wh::compose::detail::make_tool_after_chain(error_options),
-          wh::core::run_context{}),
+      .call = {.call_id = "call", .tool_name = "tool"},
+      .stream = std::move(reader_error),
+      .after_context = wh::core::run_context{},
       .rerun_extra = {}});
   auto error_reader =
       materialize_stream_output(error_options, std::move(error_inputs));

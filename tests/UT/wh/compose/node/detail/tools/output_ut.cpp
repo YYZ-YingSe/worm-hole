@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "wh/compose/node/detail/tools/output.hpp"
-#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 
 namespace {
 
@@ -129,25 +128,19 @@ TEST_CASE("build_stream_output merges per-call streams and applies after middlew
 
   std::vector<wh::compose::detail::stream_completion> completions{};
   completions.push_back({.index = 0U,
-                         .call_id = "a",
-                         .stream = wh::compose::detail::make_tool_event_stream_reader(
-                             wh::compose::make_values_stream_reader(
-                                 make_graph_values({1}))
-                                 .value(),
-                             {.call_id = "a", .tool_name = "alpha"},
-                             wh::compose::detail::make_tool_after_chain(options),
-                             wh::core::run_context{}),
+                         .call = {.call_id = "a", .tool_name = "alpha"},
+                         .stream = wh::compose::make_values_stream_reader(
+                             make_graph_values({1}))
+                                       .value(),
+                         .after_context = wh::core::run_context{},
                          .rerun_extra = wh::compose::graph_value{
                              std::string{"extra-a"}}});
   completions.push_back({.index = 1U,
-                         .call_id = "b",
-                         .stream = wh::compose::detail::make_tool_event_stream_reader(
-                             wh::compose::make_values_stream_reader(
-                                 make_graph_values({2}))
-                                 .value(),
-                             {.call_id = "b", .tool_name = "beta"},
-                             wh::compose::detail::make_tool_after_chain(options),
-                             wh::core::run_context{}),
+                         .call = {.call_id = "b", .tool_name = "beta"},
+                         .stream = wh::compose::make_values_stream_reader(
+                             make_graph_values({2}))
+                                       .value(),
+                         .after_context = wh::core::run_context{},
                          .rerun_extra = wh::compose::graph_value{
                              std::string{"extra-b"}}});
 

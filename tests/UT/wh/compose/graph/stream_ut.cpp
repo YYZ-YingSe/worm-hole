@@ -11,6 +11,13 @@
 
 namespace {
 
+using graph_static_merge_t = wh::schema::stream::merge_stream_reader<
+    wh::compose::graph_stream_reader,
+    wh::schema::stream::merge_topology_mode::static_attached>;
+using graph_dynamic_merge_t = wh::schema::stream::merge_stream_reader<
+    wh::compose::graph_stream_reader,
+    wh::schema::stream::merge_topology_mode::dynamic_injection>;
+
 [[nodiscard]] auto extract_int(const wh::compose::graph_value &value) -> int {
   const auto *typed = wh::core::any_cast<int>(&value);
   REQUIRE(typed != nullptr);
@@ -101,12 +108,8 @@ TEST_CASE("fork_graph_reader preserves the source reader and returns a sibling r
 
   auto merged_sibling = wh::compose::detail::fork_graph_reader(merged);
   REQUIRE(merged_sibling.has_value());
-  REQUIRE(merged.template target_if<
-              wh::schema::stream::merge_stream_reader<wh::compose::graph_stream_reader>>() !=
-          nullptr);
-  REQUIRE(merged_sibling.value().template target_if<
-              wh::schema::stream::merge_stream_reader<wh::compose::graph_stream_reader>>() !=
-          nullptr);
+  REQUIRE(merged.template target_if<graph_static_merge_t>() != nullptr);
+  REQUIRE(merged_sibling.value().template target_if<graph_static_merge_t>() != nullptr);
 
   auto merged_values =
       wh::compose::collect_graph_stream_reader(std::move(merged_sibling).value());
@@ -140,6 +143,7 @@ TEST_CASE("make_graph_merge_reader merges named readers and builds dynamic sourc
 
   auto topology_shell =
       wh::compose::detail::make_graph_merge_reader(std::vector<std::string>{"left", "right"});
+  REQUIRE(topology_shell.template target_if<graph_dynamic_merge_t>() != nullptr);
   REQUIRE(topology_shell.close().has_value());
 }
 

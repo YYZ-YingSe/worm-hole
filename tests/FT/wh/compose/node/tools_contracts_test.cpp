@@ -15,6 +15,7 @@
 #include "helper/component_contract_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/node.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
 #include "wh/schema/tool.hpp"
 
 namespace {
@@ -28,6 +29,8 @@ using wh::testing::helper::make_test_node_runtime;
 using wh::testing::helper::make_tool_batch;
 using wh::testing::helper::read_graph_value;
 using wh::testing::helper::sync_tool_invoke_impl;
+
+using tools_output_reader_t = wh::compose::detail::tools_output_stream_reader;
 
 } // namespace
 
@@ -656,6 +659,7 @@ TEST_CASE("compose tools stream middleware keeps per-call state on merged output
   auto output_stream =
       read_graph_value<wh::compose::graph_stream_reader>(std::move(status).value());
   REQUIRE(output_stream.has_value());
+  REQUIRE(output_stream.value().template target_if<tools_output_reader_t>() != nullptr);
   auto events = collect_tool_events(std::move(output_stream).value());
   REQUIRE(events.has_value());
   REQUIRE(events.value().size() == 4U);

@@ -629,7 +629,7 @@ inline auto graph::merged_reader(const std::uint32_t node_id, io_storage &io_sto
 }
 
 inline auto graph::update_merged_reader(const std::uint32_t node_id, io_storage &io_storage,
-                                        const std::vector<input_lane> &lanes) const
+                                        input_lane_span lanes) const
     -> wh::core::result<void> {
   if (!needs_reader_merge(node_id)) {
     return {};
@@ -641,7 +641,9 @@ inline auto graph::update_merged_reader(const std::uint32_t node_id, io_storage 
   }
   auto *shell =
       merged.value()
-          ->template target_if<wh::schema::stream::merge_stream_reader<graph_stream_reader>>();
+          ->template target_if<wh::schema::stream::merge_stream_reader<
+              graph_stream_reader,
+              wh::schema::stream::merge_topology_mode::dynamic_injection>>();
   if (shell == nullptr) {
     return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
   }
@@ -690,7 +692,7 @@ inline auto graph::refresh_merged_reader(const std::uint32_t node_id, io_storage
 
 inline auto graph::build_reader_input(const compiled_node &node, const std::uint32_t node_id,
                                       io_storage &io_storage,
-                                      const std::vector<input_lane> &lanes) const
+                                      input_lane_span lanes) const
     -> wh::core::result<resolved_input> {
   if (needs_reader_merge(node_id)) {
     auto synced = update_merged_reader(node_id, io_storage, lanes);
@@ -717,7 +719,7 @@ inline auto graph::build_reader_input(const compiled_node &node, const std::uint
 }
 
 inline auto graph::build_value_input(const compiled_node &node, io_storage &io_storage,
-                                     const std::vector<input_lane> &lanes,
+                                     input_lane_span lanes,
                                      wh::core::run_context &context) const
     -> wh::core::result<resolved_input> {
   value_batch batch{
@@ -824,8 +826,8 @@ inline auto graph::collect_input_lanes(const std::uint32_t node_id,
                                        const std::vector<dag_node_phase> &dag_node_phases,
                                        const std::vector<branch_state> &branch_states,
                                        const dynamic_bitset &output_valid) const
-    -> std::vector<input_lane> {
-  std::vector<input_lane> lanes{};
+    -> input_lane_vector {
+  input_lane_vector lanes{};
   const auto incoming = core().compiled_execution_index_.index.incoming_data(node_id);
   lanes.reserve(incoming.size());
   for (const auto edge_id : incoming) {

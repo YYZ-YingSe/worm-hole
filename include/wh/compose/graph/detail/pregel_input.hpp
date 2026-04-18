@@ -152,7 +152,7 @@ inline auto graph::build_pregel_node_input_sender(
     return std::move(materialized).value();
   };
 
-  std::vector<input_lane> lanes{};
+  input_lane_vector lanes{};
   lanes.reserve(inputs.data_edges.size());
   for (const auto edge_id : inputs.data_edges) {
     const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];

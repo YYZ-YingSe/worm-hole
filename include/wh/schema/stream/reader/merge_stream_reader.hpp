@@ -34,6 +34,11 @@
 
 namespace wh::schema::stream {
 
+enum class merge_topology_mode : std::uint8_t {
+  static_attached = 0U,
+  dynamic_injection,
+};
+
 /// One named input lane for merge-stream polling.
 template <stream_reader reader_t> struct named_stream_reader {
   using value_type = typename reader_t::value_type;
@@ -53,6 +58,7 @@ named_stream_reader(source_t, reader_t, bool = false)
     -> named_stream_reader<std::remove_cvref_t<reader_t>>;
 
 #include "wh/schema/stream/reader/detail/dynamic_topology_registry.hpp"
+#include "wh/schema/stream/reader/detail/static_topology_registry.hpp"
 
 namespace detail {
 
@@ -98,9 +104,11 @@ template <stream_reader reader_t>
 } // namespace detail
 
 /// Merges multiple named readers into one interleaved output stream.
-template <stream_reader reader_t>
+template <stream_reader reader_t,
+          merge_topology_mode topology_mode = merge_topology_mode::dynamic_injection>
 class merge_stream_reader final
-    : public stream_base<merge_stream_reader<reader_t>, typename reader_t::value_type> {
+    : public stream_base<merge_stream_reader<reader_t, topology_mode>,
+                         typename reader_t::value_type> {
 public:
   using value_type = typename reader_t::value_type;
   using lane_type = named_stream_reader<reader_t>;
@@ -118,7 +126,14 @@ public:
   };
 
 private:
-  using topology_registry_t = detail::dynamic_topology_registry<reader_t>;
+  static constexpr auto topology_mode_v = topology_mode;
+  static constexpr bool supports_dynamic_injection =
+      topology_mode_v == merge_topology_mode::dynamic_injection;
+
+  using topology_registry_t =
+      std::conditional_t<supports_dynamic_injection,
+                         detail::dynamic_topology_registry<reader_t>,
+                         detail::static_topology_registry<reader_t>>;
   using topology_sync_waiter = typename topology_registry_t::sync_waiter_type;
   using topology_async_waiter = typename topology_registry_t::async_waiter_type;
   using round_resolution = typename topology_registry_t::round_resolution;
@@ -573,6 +588,7 @@ private:
         : blocking_read_(*this), topology_(std::move(readers)) {}
 
     explicit runtime(std::vector<lane_source_type> &&sources)
+      requires(supports_dynamic_injection)
         : blocking_read_(*this), topology_(std::move(sources)) {}
 
     [[nodiscard]] auto uses_fixed_poll_path() const noexcept -> bool {
@@ -639,11 +655,15 @@ private:
       topology_.set_automatic_close(options);
     }
 
-    auto attach(std::string_view source, reader_t reader) -> wh::core::result<void> {
+    auto attach(std::string_view source, reader_t reader) -> wh::core::result<void>
+      requires(supports_dynamic_injection)
+    {
       return topology_.attach(source, std::move(reader));
     }
 
-    auto disable(std::string_view source) -> wh::core::result<void> {
+    auto disable(std::string_view source) -> wh::core::result<void>
+      requires(supports_dynamic_injection)
+    {
       return topology_.disable(source);
     }
 
@@ -1347,6 +1367,7 @@ public:
       : state_(wh::core::detail::make_intrusive<runtime>(std::move(readers))) {}
 
   explicit merge_stream_reader(std::vector<lane_source_type> &&sources)
+    requires(supports_dynamic_injection)
       : state_(wh::core::detail::make_intrusive<runtime>(std::move(sources))) {}
 
   merge_stream_reader(const merge_stream_reader &) = delete;
@@ -1412,7 +1433,9 @@ public:
   }
 
   /// Attaches one concrete reader to a pre-registered pending lane.
-  auto attach(std::string_view source, reader_t reader) -> wh::core::result<void> {
+  auto attach(std::string_view source, reader_t reader) -> wh::core::result<void>
+    requires(supports_dynamic_injection)
+  {
     if (!state_) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
@@ -1420,7 +1443,9 @@ public:
   }
 
   /// Disables one pre-registered pending lane.
-  auto disable(std::string_view source) -> wh::core::result<void> {
+  auto disable(std::string_view source) -> wh::core::result<void>
+    requires(supports_dynamic_injection)
+  {
     if (!state_) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
@@ -1445,23 +1470,25 @@ private:
 template <stream_reader reader_t>
 [[nodiscard]] inline auto
 make_merge_stream_reader(std::vector<named_stream_reader<reader_t>> &&readers)
-    -> merge_stream_reader<reader_t> {
+    -> merge_stream_reader<reader_t, merge_topology_mode::static_attached> {
   detail::sort_named_stream_readers(readers);
-  return merge_stream_reader<reader_t>{std::move(readers)};
+  return merge_stream_reader<reader_t, merge_topology_mode::static_attached>{
+      std::move(readers)};
 }
 
 /// Builds a live merged stream shell from pending lane source names.
 template <stream_reader reader_t>
 [[nodiscard]] inline auto make_merge_stream_reader(std::vector<std::string> &&sources)
-    -> merge_stream_reader<reader_t> {
+    -> merge_stream_reader<reader_t, merge_topology_mode::dynamic_injection> {
   std::ranges::sort(sources);
-  return merge_stream_reader<reader_t>{std::move(sources)};
+  return merge_stream_reader<reader_t, merge_topology_mode::dynamic_injection>{
+      std::move(sources)};
 }
 
 /// Builds a merged stream from anonymous readers named by index.
 template <stream_reader reader_t>
 [[nodiscard]] inline auto make_merge_stream_reader(std::vector<reader_t> &&readers)
-    -> merge_stream_reader<reader_t> {
+    -> merge_stream_reader<reader_t, merge_topology_mode::static_attached> {
   return make_merge_stream_reader(detail::make_named_stream_readers(std::move(readers)));
 }
 

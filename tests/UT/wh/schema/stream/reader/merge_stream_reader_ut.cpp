@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <concepts>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <exec/static_thread_pool.hpp>
@@ -88,6 +90,20 @@ template <typename value_t, typename env_t> struct single_completion_receiver {
   [[nodiscard]] auto get_env() const noexcept -> env_t { return env; }
 };
 
+template <typename merge_t, typename reader_t>
+concept merge_supports_attach = requires(merge_t reader, reader_t lane) {
+  {
+    reader.attach("lane", std::move(lane))
+  } -> std::same_as<wh::core::result<void>>;
+};
+
+template <typename merge_t>
+concept merge_supports_disable = requires(merge_t reader) {
+  {
+    reader.disable("lane")
+  } -> std::same_as<wh::core::result<void>>;
+};
+
 } // namespace
 
 TEST_CASE("merge stream reader detail helpers sort and label lanes deterministically",
@@ -116,6 +132,36 @@ TEST_CASE("merge stream reader detail helpers sort and label lanes deterministic
   REQUIRE(named.size() == 2U);
   REQUIRE(named[0].source == "0");
   REQUIRE(named[1].source == "1");
+}
+
+TEST_CASE("merge stream reader factories select static or dynamic topology surfaces",
+          "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][type][boundary]") {
+  using reader_t = wh::schema::stream::pipe_stream_reader<int>;
+  using static_merge_t = decltype(wh::schema::stream::make_merge_stream_reader(
+      std::vector<wh::schema::stream::named_stream_reader<reader_t>>{}));
+  using vector_merge_t = decltype(
+      wh::schema::stream::make_merge_stream_reader(std::vector<reader_t>{}));
+  using dynamic_merge_t = decltype(
+      wh::schema::stream::make_merge_stream_reader<reader_t>(
+          std::vector<std::string>{}));
+
+  STATIC_REQUIRE(std::same_as<
+                 static_merge_t,
+                 wh::schema::stream::merge_stream_reader<
+                     reader_t,
+                     wh::schema::stream::merge_topology_mode::static_attached>>);
+  STATIC_REQUIRE(std::same_as<vector_merge_t, static_merge_t>);
+  STATIC_REQUIRE(std::same_as<
+                 dynamic_merge_t,
+                 wh::schema::stream::merge_stream_reader<
+                     reader_t,
+                     wh::schema::stream::merge_topology_mode::dynamic_injection>>);
+
+  STATIC_REQUIRE(!std::constructible_from<static_merge_t, std::vector<std::string>>);
+  STATIC_REQUIRE(merge_supports_attach<dynamic_merge_t, reader_t>);
+  STATIC_REQUIRE(merge_supports_disable<dynamic_merge_t>);
+  STATIC_REQUIRE_FALSE(merge_supports_attach<static_merge_t, reader_t>);
+  STATIC_REQUIRE_FALSE(merge_supports_disable<static_merge_t>);
 }
 
 TEST_CASE("merge stream reader covers fixed dynamic attach disable share and source eof branches",
