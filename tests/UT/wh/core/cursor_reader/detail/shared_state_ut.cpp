@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -35,7 +36,10 @@ struct scripted_async_source {
 
   [[nodiscard]] auto try_read() -> std::optional<result_t> {
     if (stats->try_index < stats->try_results.size()) {
-      return stats->try_results[stats->try_index++];
+      auto &slot = stats->try_results[stats->try_index++];
+      auto next = std::move(slot);
+      slot.reset();
+      return next;
     }
     return std::nullopt;
   }
@@ -58,6 +62,68 @@ struct async_probe_waiter : wh::core::cursor_reader_detail::async_waiter_base<re
           static_cast<async_probe_waiter *>(base)->completed = true;
         }};
     this->ops = &ops;
+  }
+};
+
+struct tracked_result_probe {
+  static inline std::atomic<int> live_count{0};
+
+  int value{0};
+
+  tracked_result_probe() noexcept {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  explicit tracked_result_probe(const int next) noexcept : value(next) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  tracked_result_probe(const tracked_result_probe &other) noexcept
+      : value(other.value) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  tracked_result_probe(tracked_result_probe &&other) noexcept
+      : value(other.value) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  auto operator=(const tracked_result_probe &) -> tracked_result_probe & = default;
+  auto operator=(tracked_result_probe &&) noexcept -> tracked_result_probe & = default;
+  ~tracked_result_probe() {
+    live_count.fetch_sub(1, std::memory_order_relaxed);
+  }
+};
+
+using tracked_result_t = wh::core::result<tracked_result_probe>;
+
+struct tracked_source_stats {
+  std::vector<std::optional<tracked_result_t>> try_results{};
+  std::size_t try_index{0U};
+  int close_calls{0};
+};
+
+struct tracked_async_source {
+  std::shared_ptr<tracked_source_stats> stats{};
+
+  [[nodiscard]] auto read() -> tracked_result_t {
+    return tracked_result_t::failure(wh::core::errc::not_found);
+  }
+
+  [[nodiscard]] auto try_read() -> std::optional<tracked_result_t> {
+    if (stats->try_index < stats->try_results.size()) {
+      auto &slot = stats->try_results[stats->try_index++];
+      auto next = std::move(slot);
+      slot.reset();
+      return next;
+    }
+    return std::nullopt;
+  }
+
+  [[nodiscard]] auto read_async() {
+    return stdexec::just(
+        tracked_result_t::failure(wh::core::errc::not_found));
+  }
+
+  [[nodiscard]] auto close() -> wh::core::result<void> {
+    ++stats->close_calls;
+    return {};
   }
 };
 
@@ -158,4 +224,34 @@ TEST_CASE("shared state read_for uses blocking leader path and respects automati
   REQUIRE(closed_ticket.ready->error() == wh::core::errc::channel_closed);
   REQUIRE_FALSE(closed_ticket.start_pull);
   REQUIRE_FALSE(waiter.waiting_registered());
+}
+
+TEST_CASE("shared state destroys retained unread results on scope exit",
+          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::~shared_state][lifetime][regression]") {
+  using tracked_policy_t =
+      wh::core::cursor_reader_detail::default_policy<tracked_async_source>;
+  tracked_result_probe::live_count.store(0, std::memory_order_release);
+
+  auto stats = std::make_shared<tracked_source_stats>();
+  stats->try_results = {
+      std::optional<tracked_result_t>{tracked_result_t{tracked_result_probe{5}}}};
+
+  {
+    auto state = wh::core::detail::make_intrusive<
+        wh::core::cursor_reader_detail::shared_state<tracked_async_source,
+                                                     tracked_policy_t>>(
+        tracked_async_source{stats}, 2U);
+
+    {
+      auto first = state->try_read_for(0U);
+      REQUIRE(first.has_value());
+      REQUIRE(first->has_value());
+      REQUIRE(first->value().value == 5);
+    }
+
+    REQUIRE(tracked_result_probe::live_count.load(std::memory_order_acquire) >=
+            1);
+  }
+
+  REQUIRE(tracked_result_probe::live_count.load(std::memory_order_acquire) == 0);
 }

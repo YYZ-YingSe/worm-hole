@@ -28,25 +28,42 @@ TEST_CASE("retained ring storage constructs indexes reserves and moves retained 
 
   wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> storage{2U};
   REQUIRE(storage.capacity() == 2U);
+  REQUIRE(storage.empty());
+  REQUIRE(storage.front_sequence() == 0U);
+  REQUIRE(storage.end_sequence() == 0U);
 
-  storage.construct_at_sequence(0U, 7);
-  storage.construct_at_sequence(1U, 9);
+  storage.emplace_back(7);
+  storage.emplace_back(9);
+  REQUIRE(storage.size() == 2U);
+  REQUIRE(storage.front_sequence() == 0U);
+  REQUIRE(storage.end_sequence() == 2U);
   REQUIRE(storage.value_at_sequence(0U).value == 7);
   REQUIRE(storage.value_at_sequence(1U).value == 9);
 
-  storage.reserve(4U, 0U, 2U);
+  storage.reserve(4U);
   REQUIRE(storage.capacity() == 4U);
+  REQUIRE(storage.size() == 2U);
+  REQUIRE(storage.front_sequence() == 0U);
+  REQUIRE(storage.end_sequence() == 2U);
   REQUIRE(storage.value_at_sequence(0U).value == 7);
   REQUIRE(storage.value_at_sequence(1U).value == 9);
 
   auto moved = std::move(storage);
   REQUIRE(moved.capacity() == 4U);
+  REQUIRE(moved.size() == 2U);
+  REQUIRE(moved.front_sequence() == 0U);
+  REQUIRE(moved.end_sequence() == 2U);
   REQUIRE(storage.capacity() == 0U);
   REQUIRE(moved.value_at_sequence(0U).value == 7);
   REQUIRE(moved.value_at_sequence(1U).value == 9);
 
-  moved.destroy_at_sequence(0U);
-  moved.destroy_at_sequence(1U);
+  moved.destroy_front();
+  REQUIRE(moved.front_sequence() == 1U);
+  REQUIRE(moved.end_sequence() == 2U);
+  moved.destroy_front();
+  REQUIRE(moved.empty());
+  REQUIRE(moved.front_sequence() == 2U);
+  REQUIRE(moved.end_sequence() == 2U);
   REQUIRE(retained_probe::live_count == 0);
 }
 
@@ -55,17 +72,34 @@ TEST_CASE("retained ring storage ignores no-op reserve requests and supports mov
   retained_probe::live_count = 0;
 
   wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> storage{1U};
-  storage.construct_at_sequence(2U, 5);
-  storage.reserve(1U, 2U, 3U);
+  storage.emplace_back(5);
+  storage.reserve(1U);
   REQUIRE(storage.capacity() == 1U);
-  REQUIRE(storage.value_at_sequence(2U).value == 5);
+  REQUIRE(storage.value_at_sequence(0U).value == 5);
 
   wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> moved{0U};
   moved = std::move(storage);
   REQUIRE(moved.capacity() == 1U);
   REQUIRE(storage.capacity() == 0U);
-  REQUIRE(moved.value_at_sequence(2U).value == 5);
+  REQUIRE(moved.value_at_sequence(0U).value == 5);
 
-  moved.destroy_at_sequence(2U);
+  moved.destroy_front();
+  REQUIRE(retained_probe::live_count == 0);
+}
+
+TEST_CASE("retained ring storage destroys remaining live slots on scope exit",
+          "[UT][wh/core/cursor_reader/detail/retained_ring_storage.hpp][retained_ring_storage::~retained_ring_storage][lifetime][regression]") {
+  retained_probe::live_count = 0;
+
+  {
+    wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> storage{4U};
+    storage.emplace_back(17);
+    storage.emplace_back(23);
+
+    REQUIRE(retained_probe::live_count == 2);
+    REQUIRE(storage.value_at_sequence(0U).value == 17);
+    REQUIRE(storage.value_at_sequence(1U).value == 23);
+  }
+
   REQUIRE(retained_probe::live_count == 0);
 }

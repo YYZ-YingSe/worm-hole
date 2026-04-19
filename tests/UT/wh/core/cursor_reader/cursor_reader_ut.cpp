@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <optional>
 #include <stop_token>
@@ -50,6 +51,30 @@ struct cursor_read_receiver {
   [[nodiscard]] auto get_env() const noexcept
       -> cursor_read_receiver_env<scheduler_t> {
     return env;
+  }
+};
+
+struct retained_cursor_probe {
+  static inline std::atomic<int> live_count{0};
+
+  int value{0};
+
+  retained_cursor_probe() noexcept { live_count.fetch_add(1, std::memory_order_relaxed); }
+  explicit retained_cursor_probe(const int next) noexcept : value(next) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  retained_cursor_probe(const retained_cursor_probe &other) noexcept
+      : value(other.value) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  retained_cursor_probe(retained_cursor_probe &&other) noexcept
+      : value(other.value) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  auto operator=(const retained_cursor_probe &) -> retained_cursor_probe & = default;
+  auto operator=(retained_cursor_probe &&) noexcept -> retained_cursor_probe & = default;
+  ~retained_cursor_probe() {
+    live_count.fetch_sub(1, std::memory_order_relaxed);
   }
 };
 
@@ -170,4 +195,30 @@ TEST_CASE("cursor reader close reports not found after release",
   REQUIRE(cursors.front().close().error() == wh::core::errc::not_found);
 
   REQUIRE(writer.close().has_value());
+}
+
+TEST_CASE("cursor reader destroys retained unread values when all cursors leave scope",
+          "[UT][wh/core/cursor_reader/cursor_reader.hpp][make_readers][lifetime][regression]") {
+  retained_cursor_probe::live_count.store(0, std::memory_order_release);
+
+  {
+    auto [writer, source] =
+        wh::schema::stream::make_pipe_stream<retained_cursor_probe>(2U);
+    REQUIRE(writer.try_write(retained_cursor_probe{17}).has_value());
+    REQUIRE(writer.close().has_value());
+
+    auto cursors = wh::core::make_cursor_readers(std::move(source), 2U);
+    REQUIRE(cursors.size() == 2U);
+
+    auto first = cursors[0].read();
+    REQUIRE(first.has_value());
+    REQUIRE(first.value().value.has_value());
+    REQUIRE(first.value().value->value == 17);
+
+    // Leave the sibling cursor unread so the retained slot must be released
+    // during shared-state teardown rather than normal reclamation.
+    REQUIRE(retained_cursor_probe::live_count.load(std::memory_order_acquire) >= 1);
+  }
+
+  REQUIRE(retained_cursor_probe::live_count.load(std::memory_order_acquire) == 0);
 }

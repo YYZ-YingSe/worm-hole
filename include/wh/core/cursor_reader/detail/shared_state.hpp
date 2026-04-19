@@ -62,7 +62,7 @@ public:
         open_reader_count_(reader_count) {
     policy_t::set_automatic_close(source_, automatic_close_);
     for (auto &reader : readers_) {
-      reader.next_sequence = base_sequence_;
+      reader.next_sequence = write_sequence_locked();
       increment_sequence_count_locked(reader.next_sequence);
     }
   }
@@ -93,7 +93,7 @@ public:
     std::scoped_lock lock(lock_);
     const auto &reader = readers_[reader_index];
     return reader.closed || (pull_state_ == pull_state::terminal &&
-                             reader.next_sequence >= write_sequence_);
+                             reader.next_sequence >= write_sequence_locked());
   }
 
   auto close_reader(const std::size_t reader_index) noexcept -> void {
@@ -443,8 +443,7 @@ private:
     {
       std::scoped_lock lock(lock_);
       ensure_capacity_locked();
-      slots_.construct_at_sequence(write_sequence_, status);
-      ++write_sequence_;
+      slots_.emplace_back(std::move(status));
       if (terminal) {
         source_closed_ = true;
         close_requested_ = false;
@@ -505,7 +504,7 @@ private:
 
   [[nodiscard]] auto consume_local_locked(reader_state_t &reader)
       -> std::optional<result_type> {
-    if (reader.closed || reader.next_sequence >= write_sequence_) {
+    if (reader.closed || reader.next_sequence >= write_sequence_locked()) {
       return std::nullopt;
     }
 
@@ -519,7 +518,7 @@ private:
   }
 
   auto ensure_capacity_locked() -> void {
-    if ((write_sequence_ - base_sequence_) < capacity_) {
+    if (slots_.size() < capacity_) {
       return;
     }
     grow_locked(std::max<std::size_t>(capacity_ * 2U, capacity_ + 1U));
@@ -528,23 +527,24 @@ private:
   auto grow_locked(const std::size_t new_capacity) -> void {
     sequence_count_buffer next_counts{};
     next_counts.resize(new_capacity + 1U, 0U);
-    for (auto sequence = base_sequence_; sequence <= write_sequence_;
+    const auto base_sequence = base_sequence_locked();
+    const auto write_sequence = write_sequence_locked();
+    for (auto sequence = base_sequence; sequence <= write_sequence;
          ++sequence) {
-      next_counts[static_cast<std::size_t>(sequence - base_sequence_)] =
+      next_counts[static_cast<std::size_t>(sequence - base_sequence)] =
           sequence_count_at_locked(sequence);
     }
-    slots_.reserve(new_capacity, base_sequence_, write_sequence_);
+    slots_.reserve(new_capacity);
     reader_counts_ = std::move(next_counts);
     reader_counts_base_ = 0U;
     capacity_ = new_capacity;
   }
 
   auto reclaim_prefix_locked() noexcept -> void {
-    while (base_sequence_ < write_sequence_ &&
-           sequence_count_at_locked(base_sequence_) == 0U) {
-      slots_.destroy_at_sequence(base_sequence_);
-      clear_sequence_count_locked(base_sequence_);
-      ++base_sequence_;
+    while (!slots_.empty() &&
+           sequence_count_at_locked(slots_.front_sequence()) == 0U) {
+      clear_sequence_count_locked(slots_.front_sequence());
+      slots_.destroy_front();
       advance_counts_base_locked();
     }
   }
@@ -554,7 +554,7 @@ private:
       -> std::size_t {
     const auto span = capacity_ + 1U;
     return static_cast<std::size_t>(
-        (reader_counts_base_ + (sequence - base_sequence_)) % span);
+        (reader_counts_base_ + (sequence - base_sequence_locked())) % span);
   }
 
   [[nodiscard]] auto
@@ -586,6 +586,14 @@ private:
     reader_counts_base_ = (reader_counts_base_ + 1U) % span;
   }
 
+  [[nodiscard]] auto base_sequence_locked() const noexcept -> std::uint64_t {
+    return slots_.front_sequence();
+  }
+
+  [[nodiscard]] auto write_sequence_locked() const noexcept -> std::uint64_t {
+    return slots_.end_sequence();
+  }
+
   static auto notify_sync_waiters(const sync_ready_buffer_t &ready_waiters)
       -> void {
     for (auto *waiter : ready_waiters) {
@@ -603,8 +611,6 @@ private:
   storage_type slots_;
   sequence_count_buffer reader_counts_{};
   std::size_t capacity_{0U};
-  std::uint64_t base_sequence_{0U};
-  std::uint64_t write_sequence_{0U};
   std::size_t reader_counts_base_{0U};
   pull_state pull_state_{pull_state::idle};
   bool close_requested_{false};
