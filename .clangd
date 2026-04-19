@@ -3,6 +3,14 @@ CompileFlags:
 
 ---
 If:
+  PathMatch: ^(tests|benchmark|thirdy_party)/.*\.(h|hpp|c|cc|cpp)$
+Diagnostics:
+  ClangTidy:
+    Remove:
+      - "*"
+
+---
+If:
   PathMatch: ^include/wh/.*\.(h|hpp)$
 CompileFlags:
   Add:
@@ -12,6 +20,18 @@ CompileFlags:
     - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/rapidjson/include
     - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/dependencies/nlohmann_json/include
     - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/minja/include
+---
+If:
+  PathMatch: ^benchmark/.*\.(cc|cpp)$
+CompileFlags:
+  Add:
+    - -std=c++20
+    - -I/Users/wepie/WePlay_/worm-hole/include
+    - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/stdexec/include
+    - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/rapidjson/include
+    - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/dependencies/nlohmann_json/include
+    - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/minja/include
+    - -I/Users/wepie/WePlay_/worm-hole/thirdy_party/benchmark/include
 ---
 If:
   PathMatch: ^example/.*\.(cc|cpp)$
