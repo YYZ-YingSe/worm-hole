@@ -484,6 +484,8 @@ TEST_CASE("compose graph explicit invoke schedulers split control and work execu
   REQUIRE(graph.add_exit_edge("sync_control").has_value());
   REQUIRE(graph.compile().has_value());
 
+  // Resume targets must outlive the worker scheduler because the worker thread
+  // can still enqueue continuations onto them during teardown.
   exec::static_thread_pool control_pool{1U};
   exec::static_thread_pool work_pool{1U};
   exec::static_thread_pool launch_pool{1U};
@@ -563,10 +565,11 @@ TEST_CASE("compose graph keeps async node internal resume on work scheduler",
   std::optional<std::thread::id> worker_thread{};
   std::optional<std::thread::id> resumed_thread{};
   std::optional<std::thread::id> downstream_thread{};
-
+  exec::static_thread_pool control_pool{1U};
+  exec::static_thread_pool work_pool{1U};
+  exec::static_thread_pool launch_pool{1U};
+  exec::static_thread_pool completion_pool{1U};
   exec::static_thread_pool worker_pool{1U};
-  const auto worker_scheduler_thread =
-      scheduler_thread_id(worker_pool.get_scheduler());
 
   REQUIRE(graph
               .add_lambda<wh::compose::node_contract::value,
@@ -619,15 +622,13 @@ TEST_CASE("compose graph keeps async node internal resume on work scheduler",
   REQUIRE(graph.add_exit_edge("downstream").has_value());
   REQUIRE(graph.compile().has_value());
 
-  exec::static_thread_pool control_pool{1U};
-  exec::static_thread_pool work_pool{1U};
-  exec::static_thread_pool launch_pool{1U};
-  exec::static_thread_pool completion_pool{1U};
   const auto control_thread = scheduler_thread_id(control_pool.get_scheduler());
   const auto work_thread = scheduler_thread_id(work_pool.get_scheduler());
   const auto launch_thread = scheduler_thread_id(launch_pool.get_scheduler());
   const auto completion_thread =
       scheduler_thread_id(completion_pool.get_scheduler());
+  const auto worker_scheduler_thread =
+      scheduler_thread_id(worker_pool.get_scheduler());
   REQUIRE(launch_thread != completion_thread);
   REQUIRE(control_thread != completion_thread);
   REQUIRE(control_thread != launch_thread);

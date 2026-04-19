@@ -170,8 +170,10 @@ TEST_CASE("component wrapper keeps worker completion when resume mode is unchang
     }
   };
 
-  exec::static_thread_pool caller_pool{1U};
+  // The worker scheduler must outlive the caller pool because caller-side
+  // teardown can still enqueue work onto the worker scheduler.
   exec::static_thread_pool worker_pool{1U};
+  exec::static_thread_pool caller_pool{1U};
   auto worker_thread = std::make_shared<std::thread::id>();
   wh::prompt::chat_template<worker_prompt_impl,
                             wh::core::resume_mode::unchanged>
