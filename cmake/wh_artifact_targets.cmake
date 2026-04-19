@@ -1,5 +1,6 @@
 include_guard(GLOBAL)
 
+include(wh_release_optimizations)
 include(wh_support_targets)
 include(wh_source_targets)
 
@@ -63,6 +64,7 @@ function(wh_ensure_catch2_amalgamated_target)
   target_include_directories("${WH_TARGET_CATCH2_AMALGAMATED}"
                              PUBLIC "${WH_CATCH2_DIR}/src"
                                     "${PROJECT_BINARY_DIR}/generated-includes")
+  wh_apply_release_optimizations("${WH_TARGET_CATCH2_AMALGAMATED}")
 endfunction()
 
 function(wh_register_project_artifact group target_name)
@@ -111,6 +113,8 @@ function(wh_setup_example_support_target)
 endfunction()
 
 function(wh_setup_benchmark_support_target)
-  wh_define_support_target("${WH_TARGET_BENCHMARK_SUPPORT}"
-                           LINK_LIBRARIES wh::core benchmark::benchmark_main)
+  set(benchmark_support_link_libraries wh::core benchmark::benchmark_main)
+  wh_define_support_target(
+    "${WH_TARGET_BENCHMARK_SUPPORT}"
+    LINK_LIBRARIES ${benchmark_support_link_libraries})
 endfunction()

@@ -491,12 +491,16 @@ inline auto detail::invoke_runtime::invoke_session::make_async_timed_node_sender
 inline auto detail::invoke_runtime::invoke_session::run_sync_node_execution(
     const compiled_node &node, graph_value &input_value,
     wh::core::run_context &context, const graph_call_scope &bound_call_options,
-    invoke_session *state, attempt_slot &slot)
+    invoke_session *state, attempt_slot &slot,
+    const bool apply_timeout_after_execution)
     -> wh::core::result<graph_value> {
   bind_node_runtime_call_options(slot, bound_call_options, state);
   const auto attempt_start = std::chrono::steady_clock::now();
   auto executed =
       run_compiled_sync_node(node, input_value, context, slot.node_runtime);
+  if (!apply_timeout_after_execution) {
+    return executed;
+  }
   return apply_node_timeout(state->invoke_state().outputs, slot, attempt_start,
                             std::move(executed));
 }
@@ -511,7 +515,7 @@ inline auto detail::invoke_runtime::invoke_session::make_sync_node_attempt_sende
                                &bound_call_options, state, &slot]() mutable {
                   return run_sync_node_execution(
                       node, input_value, context, bound_call_options, state,
-                      slot);
+                      slot, false);
                 });
   return make_async_timed_node_sender(std::move(sender),
                                       state->invoke_state().outputs, slot,

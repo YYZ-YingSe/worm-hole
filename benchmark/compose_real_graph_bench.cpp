@@ -1196,6 +1196,22 @@ auto invoke_once(const wh::compose::graph &graph, const pool_scheduler &schedule
   co_return co_await graph.invoke(context, std::move(request));
 }
 
+auto invoke_once(const wh::compose::graph &graph,
+                 const pool_scheduler &launch_scheduler,
+                 const pool_scheduler &control_scheduler,
+                 const pool_scheduler &work_scheduler, std::string seed)
+    -> exec::task<invoke_status> {
+  co_await stdexec::schedule(launch_scheduler);
+  wh::core::run_context context{};
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::value(std::move(seed));
+  wh::compose::graph_invoke_schedulers schedulers{};
+  schedulers.set_control_scheduler(control_scheduler)
+      .set_work_scheduler(work_scheduler);
+  co_return co_await graph.invoke(context, std::move(request),
+                                  std::move(schedulers));
+}
+
 auto invoke_many(const wh::compose::graph &graph, const pool_scheduler &scheduler,
                  const std::size_t request_count, const std::size_t inflight)
     -> exec::task<std::vector<invoke_status>> {
@@ -1204,6 +1220,23 @@ auto invoke_many(const wh::compose::graph &graph, const pool_scheduler &schedule
   for (std::size_t index = 0U; index < request_count; ++index) {
     senders.push_back(
         invoke_once(graph, scheduler, "seed-" + std::to_string(index)));
+  }
+  co_return co_await wh::core::detail::make_concurrent_sender_vector<invoke_status>(
+      std::move(senders), inflight);
+}
+
+auto invoke_many(const wh::compose::graph &graph,
+                 const pool_scheduler &launch_scheduler,
+                 const pool_scheduler &control_scheduler,
+                 const pool_scheduler &work_scheduler,
+                 const std::size_t request_count, const std::size_t inflight)
+    -> exec::task<std::vector<invoke_status>> {
+  std::vector<exec::task<invoke_status>> senders{};
+  senders.reserve(request_count);
+  for (std::size_t index = 0U; index < request_count; ++index) {
+    senders.push_back(invoke_once(graph, launch_scheduler, control_scheduler,
+                                  work_scheduler,
+                                  "seed-" + std::to_string(index)));
   }
   co_return co_await wh::core::detail::make_concurrent_sender_vector<invoke_status>(
       std::move(senders), inflight);
@@ -1251,12 +1284,8 @@ auto invoke_many(const wh::compose::graph &graph, const pool_scheduler &schedule
   return label;
 }
 
-[[nodiscard]] auto go_default_worker_hint() -> int {
-  const auto concurrency = std::thread::hardware_concurrency();
-  if (concurrency == 0U) {
-    return 4;
-  }
-  return static_cast<int>(std::max(2U, concurrency));
+[[nodiscard]] auto max_worker_threads_hint() -> int {
+  return static_cast<int>(std::thread::hardware_concurrency());
 }
 
 auto BM_compose_real_graph_compile(benchmark::State &state) -> void {
@@ -1344,13 +1373,113 @@ auto BM_compose_real_graph_invoke(benchmark::State &state) -> void {
                           static_cast<int64_t>(request_count));
 }
 
+auto BM_compose_real_graph_invoke_fixed_budget_split(benchmark::State &state)
+    -> void {
+  const auto detected_threads = std::thread::hardware_concurrency();
+  if (detected_threads == 0U) {
+    state.SkipWithError("std::thread::hardware_concurrency returned 0");
+    return;
+  }
+
+  bench_case config{};
+  config.mode = parse_mode(state.range(0));
+  config.worker_threads = static_cast<std::size_t>(detected_threads);
+  config.inflight = static_cast<std::size_t>(
+      std::max<std::int64_t>(state.range(1), 1));
+  config.profile.stream_items = static_cast<std::size_t>(
+      std::max<std::int64_t>(state.range(2), 1));
+  config.profile.documents =
+      std::max<std::size_t>(config.profile.stream_items / 2U, 4U);
+  config.profile.tool_calls =
+      std::max<std::size_t>(config.profile.stream_items / 4U, 2U);
+
+  const auto total_threads = config.worker_threads;
+  const auto capped_control_threads = std::max<std::size_t>(1U, total_threads / 2U);
+  const auto work_threads = total_threads - capped_control_threads;
+  auto label = case_label(config);
+  label += "/tb";
+  label += std::to_string(total_threads);
+  label += "/c";
+  label += std::to_string(capped_control_threads);
+  label += "/w";
+  label += std::to_string(work_threads);
+  state.SetLabel(label);
+
+  const auto request_count = std::max<std::size_t>(config.inflight * 2U, 1U);
+
+  exec::static_thread_pool control_pool{
+      static_cast<std::uint32_t>(capped_control_threads)};
+  exec::static_thread_pool work_pool{
+      static_cast<std::uint32_t>(work_threads)};
+  auto graph = build_real_graph(config, work_pool.get_scheduler());
+  if (graph.has_error()) {
+    state.SkipWithError(error_text("build_real_graph", graph.error()).c_str());
+    return;
+  }
+  auto compiled = graph.value().compile();
+  if (compiled.has_error()) {
+    state.SkipWithError(error_text("graph.compile", compiled.error()).c_str());
+    return;
+  }
+
+  for (auto _ : state) {
+    auto waited = stdexec::sync_wait(invoke_many(
+        graph.value(), control_pool.get_scheduler(), control_pool.get_scheduler(),
+        work_pool.get_scheduler(), request_count, config.inflight));
+    if (!waited.has_value()) {
+      state.SkipWithError("invoke_many stopped");
+      return;
+    }
+
+    const auto &results = std::get<0>(waited.value());
+    std::int64_t aggregate = 0;
+    for (const auto &status : results) {
+      if (status.has_error()) {
+        state.SkipWithError(error_text("graph.invoke", status.error()).c_str());
+        return;
+      }
+      if (status.value().output_status.has_error()) {
+        std::string detail =
+            error_text("graph.output", status.value().output_status.error());
+        const auto report_detail = report_text(status.value().report);
+        if (!report_detail.empty()) {
+          detail += " ";
+          detail += report_detail;
+        }
+        state.SkipWithError(detail.c_str());
+        return;
+      }
+      const auto &output_value = status.value().output_status.value();
+      auto output = any_cref<std::int64_t>(output_value);
+      if (output.has_error()) {
+        std::string detail = error_text("graph.output_cast", output.error());
+        detail += " actual=";
+        detail += output_value.type().name();
+        state.SkipWithError(detail.c_str());
+        return;
+      }
+      aggregate += output.value().get();
+    }
+
+    benchmark::DoNotOptimize(aggregate);
+    benchmark::ClobberMemory();
+  }
+
+  state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) *
+                          static_cast<int64_t>(request_count));
+}
+
 auto apply_compile_cases(benchmark::Benchmark *bench) -> void {
   bench->Args({0});
   bench->Args({1});
 }
 
 auto apply_invoke_cases(benchmark::Benchmark *bench) -> void {
-  std::vector<int> workers_list{2, 4, go_default_worker_hint()};
+  std::vector<int> workers_list{2, 4};
+  if (const auto detected_threads = max_worker_threads_hint();
+      detected_threads > 0) {
+    workers_list.push_back(detected_threads);
+  }
   std::sort(workers_list.begin(), workers_list.end());
   workers_list.erase(std::unique(workers_list.begin(), workers_list.end()),
                      workers_list.end());
@@ -1366,10 +1495,22 @@ auto apply_invoke_cases(benchmark::Benchmark *bench) -> void {
   }
 }
 
+auto apply_fixed_budget_split_cases(benchmark::Benchmark *bench) -> void {
+  for (const int mode : {0, 1}) {
+    for (const int stream_items : {4, 32}) {
+      bench->Args({mode, 16, stream_items});
+    }
+  }
+}
+
 BENCHMARK(BM_compose_real_graph_compile)->Apply(apply_compile_cases);
 
 BENCHMARK(BM_compose_real_graph_invoke)
     ->Apply(apply_invoke_cases)
+    ->UseRealTime();
+
+BENCHMARK(BM_compose_real_graph_invoke_fixed_budget_split)
+    ->Apply(apply_fixed_budget_split_cases)
     ->UseRealTime();
 
 } // namespace

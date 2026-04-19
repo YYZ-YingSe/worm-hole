@@ -58,6 +58,9 @@ function(wh_setup_third_party)
   wh_require_git_locked_dir("${WH_RAPIDJSON_DIR}" "rapidjson")
   wh_require_git_locked_dir("${WH_MINJA_DIR}" "minja")
   wh_require_git_locked_dir("${WH_NLOHMANN_JSON_DIR}" "nlohmann_json")
+  if(WH_EXPERIMENT_MIMALLOC)
+    wh_require_git_locked_dir("${WH_MIMALLOC_DIR}" "mimalloc")
+  endif()
 
   if(BUILD_TESTING AND WH_BUILD_TESTING)
     wh_require_git_locked_dir("${WH_CATCH2_DIR}" "catch2")
@@ -87,6 +90,12 @@ function(wh_setup_third_party)
       "${WH_BENCHMARK_DIR}/include/benchmark/benchmark.h"
       "benchmark header"
       "sync thirdy_party submodules or pass -DWH_BENCHMARK_DIR=<path>")
+  endif()
+  if(WH_EXPERIMENT_MIMALLOC)
+    wh_require_source_header(
+      "${WH_MIMALLOC_DIR}/include/mimalloc.h"
+      "mimalloc header"
+      "sync thirdy_party submodules or pass -DWH_MIMALLOC_DIR=<path>")
   endif()
 
   wh_add_interface_include_library(
@@ -121,5 +130,19 @@ function(wh_setup_third_party)
     set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
     add_subdirectory("${WH_BENCHMARK_DIR}"
                      "${PROJECT_BINARY_DIR}/thirdy_party/benchmark")
+  endif()
+
+  if(WH_EXPERIMENT_MIMALLOC AND NOT TARGET mimalloc)
+    set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(MI_BUILD_SHARED ON CACHE BOOL "" FORCE)
+    set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
+    set(MI_BUILD_STATIC OFF CACHE BOOL "" FORCE)
+    set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
+    if(APPLE)
+      set(MI_OSX_INTERPOSE ON CACHE BOOL "" FORCE)
+      set(MI_OSX_ZONE ON CACHE BOOL "" FORCE)
+    endif()
+    add_subdirectory("${WH_MIMALLOC_DIR}"
+                     "${PROJECT_BINARY_DIR}/thirdy_party/mimalloc")
   endif()
 endfunction()

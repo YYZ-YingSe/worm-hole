@@ -218,7 +218,9 @@ concept passthrough_node_factory_available = requires {
 
 static_assert(graph_invoke_sender_connectable<
               graph_invoke_receiver<inline_scheduler_env>>);
-static_assert(!graph_invoke_sender_connectable<
+// graph::invoke no longer requires a receiver launch scheduler at connect
+// time. Missing schedulers are rejected when the operation starts.
+static_assert(graph_invoke_sender_connectable<
               graph_invoke_receiver<no_scheduler_env>>);
 static_assert(graph_stream_read_sender_connectable<
               graph_stream_read_receiver<inline_scheduler_env>>);

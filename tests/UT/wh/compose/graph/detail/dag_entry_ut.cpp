@@ -47,6 +47,7 @@ TEST_CASE("dag entry initialization drains to a single ready worker on the ident
       context,
       wh::compose::graph_call_options{},
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   base.invoke_state().start_entry_selection =
       std::vector<std::uint32_t>{worker_id.value()};

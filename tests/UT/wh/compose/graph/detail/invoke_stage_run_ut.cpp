@@ -87,6 +87,44 @@ TEST_CASE("invoke stage run honors node timeout overrides when settling executio
           std::chrono::milliseconds{5});
 }
 
+TEST_CASE("invoke stage run preserves timeout overrides for inline-control sync nodes",
+          "[UT][wh/compose/graph/detail/invoke_stage_run.hpp][invoke_stage_run::launch_node_stage][inline_control][timeout]") {
+  wh::compose::graph_compile_options options{};
+  options.mode = wh::compose::graph_runtime_mode::dag;
+  options.node_timeout = std::chrono::milliseconds{50};
+  wh::compose::graph graph{std::move(options)};
+
+  wh::compose::graph_add_node_options node_options{};
+  node_options.sync_dispatch = wh::compose::sync_dispatch::inline_control;
+  node_options.timeout_override = std::chrono::milliseconds{5};
+  REQUIRE(graph
+              .add_lambda(
+                  "slow_inline",
+                  [](wh::compose::graph_value &input, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+                    return std::move(input);
+                  },
+                  std::move(node_options))
+              .has_value());
+  REQUIRE(graph.add_entry_edge("slow_inline").has_value());
+  REQUIRE(graph.add_exit_edge("slow_inline").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  wh::core::run_context context{};
+  auto invoked =
+      wh::testing::helper::invoke_graph_sync(graph, wh::compose::graph_value{1},
+                                             context);
+  REQUIRE(invoked.has_value());
+  REQUIRE(invoked->output_status.has_error());
+  REQUIRE(invoked->output_status.error() == wh::core::errc::timeout);
+  REQUIRE(invoked->report.node_timeout_error.has_value());
+  REQUIRE(invoked->report.node_timeout_error->node == "slow_inline");
+  REQUIRE(invoked->report.node_timeout_error->timeout ==
+          std::chrono::milliseconds{5});
+}
+
 TEST_CASE("invoke stage run restores retained stream input before retrying a consumed node",
           "[UT][wh/compose/graph/detail/invoke_stage_run.hpp][invoke_stage_run::launch_node_from_retained_input][retry][stream]") {
   wh::compose::graph_compile_options options{};

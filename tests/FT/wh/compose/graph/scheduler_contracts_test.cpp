@@ -41,6 +41,44 @@ struct graph_test_receiver_state {
   std::optional<wh::core::result<wh::compose::graph_invoke_result>> status{};
 };
 
+struct no_scheduler_graph_receiver {
+  using receiver_concept = stdexec::receiver_t;
+
+  struct env {
+    [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept
+        -> stdexec::never_stop_token {
+      return {};
+    }
+  };
+
+  std::shared_ptr<graph_test_receiver_state> state{};
+
+  auto set_value(wh::core::result<wh::compose::graph_invoke_result> status) && noexcept
+      -> void {
+    std::lock_guard lock{state->mutex};
+    ++state->value_count;
+    state->status.emplace(std::move(status));
+    state->done = true;
+    state->cv.notify_all();
+  }
+
+  auto set_error(std::exception_ptr) && noexcept -> void {
+    std::lock_guard lock{state->mutex};
+    ++state->error_count;
+    state->done = true;
+    state->cv.notify_all();
+  }
+
+  auto set_stopped() && noexcept -> void {
+    std::lock_guard lock{state->mutex};
+    ++state->stopped_count;
+    state->done = true;
+    state->cv.notify_all();
+  }
+
+  [[nodiscard]] auto get_env() const noexcept -> env { return {}; }
+};
+
 template <typename launch_scheduler_t, typename completion_scheduler_t,
           typename stop_token_t = stdexec::never_stop_token>
 struct graph_scheduler_receiver {
@@ -227,6 +265,37 @@ TEST_CASE("compose graph runtime binds launch scheduler instead of completion sc
   REQUIRE(node_thread.has_value());
   REQUIRE(*node_thread == launch_thread);
   REQUIRE(*node_thread != completion_thread);
+}
+
+TEST_CASE("compose graph invoke without scheduler connects and fails at start",
+          "[core][compose][graph][scheduler][contract]") {
+  wh::compose::graph graph{};
+  REQUIRE(graph
+              .add_lambda(
+                  "passthrough",
+                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    return input;
+                  })
+              .has_value());
+  REQUIRE(graph.add_entry_edge("passthrough").has_value());
+  REQUIRE(graph.add_exit_edge("passthrough").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  wh::core::run_context context{};
+  auto receiver_state = std::make_shared<graph_test_receiver_state>();
+  auto op = stdexec::connect(graph.invoke(context, make_graph_request(wh::core::any(1))),
+                             no_scheduler_graph_receiver{.state = receiver_state});
+  stdexec::start(op);
+
+  REQUIRE(wait_for_graph_receiver(receiver_state));
+  REQUIRE(receiver_state->value_count == 1);
+  REQUIRE(receiver_state->error_count == 0);
+  REQUIRE(receiver_state->stopped_count == 0);
+  REQUIRE(receiver_state->status.has_value());
+  REQUIRE(receiver_state->status->has_error());
+  REQUIRE(receiver_state->status->error() == wh::core::errc::contract_violation);
 }
 
 TEST_CASE("scheduler selectors separate launch and completion semantics",

@@ -62,6 +62,7 @@ TEST_CASE("pregel loop still launches re-enqueued nodes after a prior lifecycle 
       context,
       wh::compose::graph_call_options{},
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   base.mark_completed(worker_id.value());
   wh::compose::detail::invoke_runtime::pregel_runtime pregel_state{

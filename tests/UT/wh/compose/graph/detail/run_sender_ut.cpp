@@ -70,6 +70,7 @@ TEST_CASE("graph run sender aliases preserve owned call options when rebinding m
       dag_context,
       std::move(dag_call_options),
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   wh::compose::detail::invoke_runtime::dag_runtime dag_state{
       std::move(dag_session)};
@@ -98,6 +99,7 @@ TEST_CASE("graph run sender aliases preserve owned call options when rebinding m
       wh::compose::graph_value{19},
       pregel_context,
       std::move(pregel_call_options),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   wh::compose::detail::invoke_runtime::pregel_runtime pregel_state{

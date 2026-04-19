@@ -48,6 +48,7 @@ TEST_CASE("pregel entry initialization leaves a single seeded worker frontier on
       context,
       wh::compose::graph_call_options{},
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   base.invoke_state().start_entry_selection =
       std::vector<std::uint32_t>{worker_id.value()};

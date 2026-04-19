@@ -1,5 +1,13 @@
 include_guard(GLOBAL)
 
+include(wh_release_optimizations)
+
+function(wh_link_global_allocator_if_requested target_name)
+  if(WH_EXPERIMENT_MIMALLOC)
+    target_link_libraries("${target_name}" PRIVATE mimalloc)
+  endif()
+endfunction()
+
 function(wh_normalize_target_token out_var value)
   string(MAKE_C_IDENTIFIER "${value}" normalized)
   string(REGEX REPLACE "_+" "_" normalized "${normalized}")
@@ -42,6 +50,7 @@ function(wh_add_single_source_executable out_var)
                         "${ARG_SOURCE_FILE}")
 
   add_executable("${target_name}" "${ARG_SOURCE_FILE}")
+  wh_link_global_allocator_if_requested("${target_name}")
   if(ARG_LINK_LIBRARIES)
     target_link_libraries("${target_name}" PRIVATE ${ARG_LINK_LIBRARIES})
   endif()
@@ -49,6 +58,7 @@ function(wh_add_single_source_executable out_var)
     target_include_directories("${target_name}" PRIVATE
                                ${ARG_INCLUDE_DIRECTORIES})
   endif()
+  wh_apply_release_optimizations("${target_name}")
 
   set("${out_var}" "${target_name}" PARENT_SCOPE)
 endfunction()

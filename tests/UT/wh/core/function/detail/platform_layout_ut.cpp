@@ -80,14 +80,14 @@ template <typename run_t> auto make_async_wrapper(run_t &&run) {
              wh::compose::graph_value &input, wh::core::run_context &context,
              const wh::compose::node_runtime &runtime) -> wh::compose::graph_sender {
     auto sender = stored.value(input, context, runtime);
-    if (runtime.graph_scheduler() == nullptr) {
+    if (runtime.work_scheduler() == nullptr) {
       return wh::compose::detail::failure_graph_sender(wh::core::errc::contract_violation);
     }
     if constexpr (std::same_as<std::remove_cvref_t<decltype(sender)>, wh::compose::graph_sender>) {
       return wh::compose::detail::bridge_graph_sender(std::move(sender));
     }
     return wh::compose::detail::bridge_graph_sender(
-        wh::core::detail::write_sender_scheduler(std::move(sender), *runtime.graph_scheduler()));
+        wh::core::detail::write_sender_scheduler(std::move(sender), *runtime.work_scheduler()));
   };
 }
 

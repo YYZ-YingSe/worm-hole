@@ -838,8 +838,8 @@ auto ensure_test_nested_runtime(
             .start = &test_nested_graph_state::invoke,
         });
   }
-  if (runtime.graph_scheduler() == nullptr) {
-    runtime.set_graph_scheduler(
+  if (runtime.control_scheduler() == nullptr) {
+    runtime.set_control_scheduler(
         std::addressof(test_nested_graph_state::scheduler()));
   }
 }

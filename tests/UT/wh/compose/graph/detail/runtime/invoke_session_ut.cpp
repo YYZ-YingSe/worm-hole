@@ -65,6 +65,7 @@ TEST_CASE("runtime invoke_session preserves bound trace context after move-time 
       context,
       std::move(call_options),
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   REQUIRE(state.invoke_state().bound_call_scope.trace().has_value());
   REQUIRE(state.invoke_state().bound_call_scope.trace()->trace_id == "trace-id");
@@ -93,6 +94,7 @@ TEST_CASE("runtime invoke_session captures initialization failures from invalid 
       wh::compose::graph_value{4},
       context,
       std::move(call_options),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
 

@@ -53,6 +53,7 @@ TEST_CASE("dag loop returns continue scan when dequeued work is no longer pendin
       context,
       wh::compose::graph_call_options{},
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   wh::compose::detail::invoke_runtime::dag_runtime dag_state{std::move(base)};
   dag_state.initialize_entry();
@@ -81,6 +82,7 @@ TEST_CASE("dag loop reports terminal timeout when the step budget is exceeded",
       wh::compose::graph_value{12},
       context,
       wh::compose::graph_call_options{},
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   base.invoke_state().step_budget = 0U;

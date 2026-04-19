@@ -282,7 +282,8 @@ protected:
   run_sync_node_execution(const compiled_node &node, graph_value &input_value,
                           wh::core::run_context &context,
                           const graph_call_scope &bound_call_options,
-                          invoke_session *state, attempt_slot &slot)
+                          invoke_session *state, attempt_slot &slot,
+                          const bool apply_timeout_after_execution = true)
       -> wh::core::result<graph_value>;
 
   [[nodiscard]] static auto make_sync_node_attempt_sender(

@@ -61,6 +61,7 @@ TEST_CASE("start dag run short-circuits immediate failures discovered during ini
       context,
       std::move(call_options),
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
   };
   REQUIRE(state.init_error_.has_value());
   REQUIRE(*state.init_error_ == wh::core::errc::not_found);

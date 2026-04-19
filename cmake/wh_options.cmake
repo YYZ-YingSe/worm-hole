@@ -7,7 +7,15 @@ option(WH_BUILD_FT "Build worm-hole functional tests" ON)
 option(WH_BUILD_ANALYSIS "Build worm-hole static-analysis drivers" OFF)
 option(WH_BUILD_EXAMPLES "Build curated worm-hole examples" OFF)
 option(WH_BUILD_BENCHMARKS "Build worm-hole benchmark executables" OFF)
+option(WH_EXPERIMENT_MIMALLOC
+       "Link worm-hole executable artifacts against vendored mimalloc for allocator experiments"
+       OFF)
 option(WH_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
+option(WH_ENABLE_RELEASE_IPO
+       "Enable interprocedural optimization for Release targets" ON)
+option(WH_ENABLE_RELEASE_DEAD_STRIP
+       "Enable platform-safe dead-stripping or section garbage collection for Release targets"
+       ON)
 option(WH_REQUIRE_GIT_LOCKED_THIRDY_PARTY
        "Require git-locked thirdy_party deps" ON)
 
@@ -55,6 +63,10 @@ set(WH_BENCHMARK_DIR
     "${WH_THIRDY_PARTY_DIRECT_DIR}/benchmark"
     CACHE PATH
     "benchmark source directory")
+set(WH_MIMALLOC_DIR
+    "${WH_THIRDY_PARTY_DIRECT_DIR}/mimalloc"
+    CACHE PATH
+    "mimalloc source directory")
 set(WH_MINJA_DIR
     "${WH_THIRDY_PARTY_DIRECT_DIR}/minja"
     CACHE PATH
