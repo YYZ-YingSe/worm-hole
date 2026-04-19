@@ -146,7 +146,7 @@ template <typename range_t>
     -> values_stream_reader<std::remove_cvref_t<range_t>> {
   using stored_range_t = std::remove_cvref_t<range_t>;
   return values_stream_reader<stored_range_t>{
-      stored_range_t{std::forward<range_t>(values)}};
+      stored_range_t(std::forward<range_t>(values))};
 }
 
 } // namespace wh::schema::stream

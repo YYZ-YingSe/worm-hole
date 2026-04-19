@@ -612,12 +612,17 @@ def run_test_entries(
                 text=True,
                 timeout=timeout_seconds,
             )
+        except FileNotFoundError as error:
+            fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
+        except OSError as error:
+            fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
         except subprocess.TimeoutExpired:
             fail("test-shard", f"target {entry.target} timed out after {timeout_seconds}s", code=124)
 
         elapsed = time.monotonic() - start
         print_step("test-shard", f"DONE {entry.target} elapsed={elapsed:.2f}s")
         if completed.returncode != 0:
+            print_step("test-shard", f"FAIL {entry.target} exited with {completed.returncode}")
             raise SystemExit(completed.returncode)
 
     print_step("test-shard", f"PASS {len(entries)} test targets")

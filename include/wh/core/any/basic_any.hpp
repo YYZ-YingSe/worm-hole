@@ -144,26 +144,26 @@ inline constexpr bool has_custom_any_owned_v =
     has_any_owned_copy<value_t> || has_any_owned_move<value_t>;
 
 template <typename value_t>
-[[nodiscard]] inline auto copy_into_owned_value(const value_t &value) -> wh::core::result<value_t> {
+  [[nodiscard]] inline auto copy_into_owned_value(const value_t &value) -> wh::core::result<value_t> {
   if constexpr (has_any_owned_copy<value_t>) {
     return any_owned_traits<value_t>::into_owned(value);
   } else if constexpr (std::copy_constructible<value_t>) {
-    return value_t{value};
+    return value_t(value);
   } else {
     return wh::core::result<value_t>::failure(wh::core::errc::not_supported);
   }
 }
 
 template <typename value_t>
-[[nodiscard]] inline auto into_owned_value(value_t &value) -> wh::core::result<value_t> {
+  [[nodiscard]] inline auto into_owned_value(value_t &value) -> wh::core::result<value_t> {
   if constexpr (has_any_owned_move<value_t>) {
     return any_owned_traits<value_t>::into_owned(std::move(value));
   } else if constexpr (std::move_constructible<value_t>) {
-    return value_t{std::move(value)};
+    return value_t(std::move(value));
   } else if constexpr (has_any_owned_copy<value_t>) {
     return any_owned_traits<value_t>::into_owned(std::as_const(value));
   } else if constexpr (std::copy_constructible<value_t>) {
-    return value_t{value};
+    return value_t(value);
   } else {
     return wh::core::result<value_t>::failure(wh::core::errc::not_supported);
   }
@@ -240,10 +240,10 @@ private:
     static auto copy_construct(const basic_any &source, basic_any &target) -> void {
       if constexpr (std::copy_constructible<value_t>) {
         if constexpr (fits_inline_v<value_t>) {
-          ::new (static_cast<void *>(target.storage_.buffer)) value_t{*const_ptr(source)};
+          ::new (static_cast<void *>(target.storage_.buffer)) value_t(*const_ptr(source));
           target.policy_ = any_policy::inline_owner;
         } else {
-          target.storage_.ptr = new value_t{*const_ptr(source)};
+          target.storage_.ptr = new value_t(*const_ptr(source));
           target.policy_ = any_policy::heap_owner;
         }
       }
@@ -252,7 +252,7 @@ private:
     static auto move_construct(basic_any &source, basic_any &target) noexcept -> void {
       if constexpr (fits_inline_v<value_t>) {
         auto *typed = inline_ptr(source);
-        ::new (static_cast<void *>(target.storage_.buffer)) value_t{std::move(*typed)};
+        ::new (static_cast<void *>(target.storage_.buffer)) value_t(std::move(*typed));
         if constexpr (!std::is_trivially_destructible_v<value_t>) {
           typed->~value_t();
         }

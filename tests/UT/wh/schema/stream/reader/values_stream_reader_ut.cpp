@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "helper/test_thread_wait.hpp"
+#include "wh/core/any.hpp"
 #include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 TEST_CASE("values stream reader factories and range concept cover empty single and generic range cases",
@@ -82,4 +83,25 @@ TEST_CASE("values stream reader move close and async paths preserve cursor and c
   auto closed_read = close_reader.read();
   REQUIRE(closed_read.has_value());
   REQUIRE(closed_read.value().is_terminal_eof());
+}
+
+TEST_CASE("values stream reader preserves vector<any> elements instead of wrapping the whole range",
+          "[UT][wh/schema/stream/reader/values_stream_reader.hpp][make_values_stream_reader][any][boundary]") {
+  std::vector<wh::core::any> values{};
+  values.emplace_back(7);
+  values.emplace_back(8);
+
+  auto reader = wh::schema::stream::make_values_stream_reader(std::move(values));
+  auto first = reader.read();
+  auto second = reader.read();
+  auto eof = reader.read();
+
+  REQUIRE(first.has_value());
+  REQUIRE(second.has_value());
+  REQUIRE(eof.has_value());
+  REQUIRE(first.value().value.has_value());
+  REQUIRE(second.value().value.has_value());
+  REQUIRE(eof.value().is_terminal_eof());
+  REQUIRE(*wh::core::any_cast<int>(&*first.value().value) == 7);
+  REQUIRE(*wh::core::any_cast<int>(&*second.value().value) == 8);
 }

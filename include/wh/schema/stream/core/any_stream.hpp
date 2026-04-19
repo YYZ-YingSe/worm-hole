@@ -605,7 +605,7 @@ struct any_stream_writer_model {
     } else if constexpr (std::copy_constructible<value_t>) {
       wh::core::result<value_t> copied{};
       try {
-        copied = value_t{value};
+        copied = value_t(value);
       } catch (...) {
         return wh::core::result<void>::failure(
             wh::core::map_current_exception());
@@ -1026,7 +1026,7 @@ public:
     wh::core::result<value_t> prepared{};
     if constexpr (std::copy_constructible<value_t>) {
       try {
-        prepared = value_t{value};
+        prepared = value_t(value);
       } catch (...) {
         prepared = wh::core::result<value_t>::failure(
             wh::core::map_current_exception());
@@ -1057,7 +1057,7 @@ public:
     wh::core::result<value_t> prepared{};
     if constexpr (std::copy_constructible<value_t>) {
       try {
-        prepared = value_t{value};
+        prepared = value_t(value);
       } catch (...) {
         prepared = wh::core::result<value_t>::failure(
             wh::core::map_current_exception());

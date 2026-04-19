@@ -63,7 +63,7 @@ function(wh_apply_release_optimizations target_name)
   elseif(MSVC)
     target_link_options("${target_name}" PRIVATE
                         "$<$<CONFIG:Release>:/OPT:REF>")
-  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU" AND NOT WIN32)
     target_link_options("${target_name}" PRIVATE
                         "$<$<CONFIG:Release>:LINKER:--gc-sections>")
   endif()
