@@ -502,14 +502,6 @@ private:
           reinterpret_cast<handoff_op_t *>(handoff_op_storage_));
     }
 
-    auto reset_handoff_op() noexcept -> void {
-      if (!handoff_op_constructed_) {
-        return;
-      }
-      handoff_op_ptr()->~handoff_op_t();
-      handoff_op_constructed_ = false;
-    }
-
     void construct_handoff_op() noexcept {
       ::new (static_cast<void *>(handoff_op_storage_))
           handoff_op_t(stdexec::connect(stdexec::schedule(scheduler),
@@ -528,21 +520,16 @@ private:
 
       push_operation *self{nullptr};
 
-      auto set_value() noexcept -> void {
-        self->reset_handoff_op();
-        self->complete();
-      }
+      auto set_value() noexcept -> void { self->complete(); }
 
       template <typename error_t>
       auto set_error(error_t &&error) noexcept -> void {
-        self->reset_handoff_op();
         stdexec::set_error(
             std::move(self->receiver),
             detail::to_exception_ptr(std::forward<error_t>(error)));
       }
 
       auto set_stopped() noexcept -> void {
-        self->reset_handoff_op();
         stdexec::set_stopped(std::move(self->receiver));
       }
 
@@ -604,7 +591,11 @@ private:
     push_operation(push_operation &&) = delete;
     auto operator=(push_operation &&) -> push_operation & = delete;
 
-    ~push_operation() { reset_handoff_op(); }
+    ~push_operation() {
+      if (handoff_op_constructed_) {
+        handoff_op_ptr()->~handoff_op_t();
+      }
+    }
 
     [[nodiscard]] auto is_same_scheduler() const noexcept -> bool {
       return wh::core::detail::scheduler_handoff::same_scheduler(scheduler);
@@ -811,14 +802,6 @@ private:
           reinterpret_cast<handoff_op_t *>(handoff_op_storage_));
     }
 
-    auto reset_handoff_op() noexcept -> void {
-      if (!handoff_op_constructed_) {
-        return;
-      }
-      handoff_op_ptr()->~handoff_op_t();
-      handoff_op_constructed_ = false;
-    }
-
     void construct_handoff_op() noexcept {
       ::new (static_cast<void *>(handoff_op_storage_))
           handoff_op_t(stdexec::connect(stdexec::schedule(scheduler),
@@ -837,21 +820,16 @@ private:
 
       pop_operation *self{nullptr};
 
-      auto set_value() noexcept -> void {
-        self->reset_handoff_op();
-        self->complete();
-      }
+      auto set_value() noexcept -> void { self->complete(); }
 
       template <typename error_t>
       auto set_error(error_t &&error) noexcept -> void {
-        self->reset_handoff_op();
         stdexec::set_error(
             std::move(self->receiver),
             detail::to_exception_ptr(std::forward<error_t>(error)));
       }
 
       auto set_stopped() noexcept -> void {
-        self->reset_handoff_op();
         stdexec::set_stopped(std::move(self->receiver));
       }
 
@@ -909,7 +887,11 @@ private:
     pop_operation(pop_operation &&) = delete;
     auto operator=(pop_operation &&) -> pop_operation & = delete;
 
-    ~pop_operation() { reset_handoff_op(); }
+    ~pop_operation() {
+      if (handoff_op_constructed_) {
+        handoff_op_ptr()->~handoff_op_t();
+      }
+    }
 
     [[nodiscard]] auto is_same_scheduler() const noexcept -> bool {
       return wh::core::detail::scheduler_handoff::same_scheduler(scheduler);
