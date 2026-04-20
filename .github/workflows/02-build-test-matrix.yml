@@ -1,12 +1,12 @@
 name: ci-02-build-test-matrix
 
 on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature
   workflow_dispatch:
-    inputs:
-      lane_filter:
-        description: "Comma-separated lane names to run; use 'all' to run the full matrix."
-        required: false
-        default: "windows-release"
 
 permissions:
   contents: read
@@ -47,12 +47,6 @@ jobs:
             --config .github/matrices/build-test.json \
             --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
             --output "$matrix_path"
-          lane_filter="${{ inputs.lane_filter }}"
-          if [ -n "${lane_filter}" ] && [ "${lane_filter}" != "all" ]; then
-            filtered_path="${RUNNER_TEMP}/build-test-matrix.filtered.json"
-            "$python_bin" -c 'import json, sys; from pathlib import Path; src, dst, raw_filter = sys.argv[1:]; wanted = {item.strip() for item in raw_filter.split(",") if item.strip()}; payload = json.loads(Path(src).read_text(encoding="utf-8")); payload["include"] = [item for item in payload.get("include", []) if str(item.get("name")) in wanted]; assert payload["include"], f"lane_filter selected no matrix entries: {sorted(wanted)}"; Path(dst).write_text(json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8")' "$matrix_path" "$filtered_path" "$lane_filter"
-            matrix_path="${filtered_path}"
-          fi
           echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
 
   build-test:
@@ -85,29 +79,18 @@ jobs:
         run: |
           $dumpRoot = Join-Path $env:RUNNER_TEMP "wer-localdumps"
           $artifactRoot = Join-Path $env:RUNNER_TEMP "windows-diagnostics"
-          $procdumpRoot = Join-Path $env:RUNNER_TEMP "procdump"
-          $procdumpZip = Join-Path $env:RUNNER_TEMP "procdump.zip"
           New-Item -ItemType Directory -Force -Path $dumpRoot | Out-Null
           New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
-          New-Item -ItemType Directory -Force -Path $procdumpRoot | Out-Null
 
-          Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Procdump.zip" -OutFile $procdumpZip
-          Expand-Archive -Path $procdumpZip -DestinationPath $procdumpRoot -Force
-          $procdumpExe = Join-Path $procdumpRoot "procdump64.exe"
-          if (-not (Test-Path $procdumpExe)) {
-            $procdumpExe = Join-Path $procdumpRoot "procdump.exe"
-          }
-          if (-not (Test-Path $procdumpExe)) {
-            throw "ProcDump executable not found under $procdumpRoot"
-          }
-          "WH_PROCDUMP_EXE=$procdumpExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          & $procdumpExe -accepteula -ma -i $dumpRoot *>&1 |
-            Out-File -FilePath (Join-Path $artifactRoot "procdump-install.txt") -Encoding utf8
+          $werRoot = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
+          New-Item -Path $werRoot -Force | Out-Null
+          New-ItemProperty -Path $werRoot -Name DumpFolder -Value $dumpRoot -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $werRoot -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $werRoot -Name DumpCount -Value 20 -PropertyType DWord -Force | Out-Null
 
           @(
             "dump_root=$dumpRoot"
             "artifact_root=$artifactRoot"
-            "procdump_exe=$procdumpExe"
             "matrix_name=${{ matrix.name }}"
             "shard_index=${{ matrix.shard_index }}"
             "shard_count=${{ matrix.shard_count }}"
@@ -162,10 +145,6 @@ jobs:
             Sort-Object TimeCreated |
             Format-List TimeCreated, ProviderName, Id, LevelDisplayName, Message |
             Out-File -FilePath $eventLog -Encoding utf8
-          if ((Get-Item $eventLog).Length -eq 0) {
-            "No matching Application Error or Windows Error Reporting events found." |
-              Out-File -FilePath $eventLog -Encoding utf8
-          }
 
           $dumpListing = Join-Path $artifactRoot "dump-files.txt"
           if (Test-Path $dumpRoot) {
@@ -173,25 +152,8 @@ jobs:
               Select-Object FullName, Length, LastWriteTimeUtc |
               Format-Table -AutoSize |
               Out-File -FilePath $dumpListing -Encoding utf8
-            if ((Get-Item $dumpListing).Length -eq 0) {
-              "Dump directory exists but contains no dump files: $dumpRoot" |
-                Out-File -FilePath $dumpListing -Encoding utf8
-            }
           } else {
             "No dump directory found: $dumpRoot" | Out-File -FilePath $dumpListing -Encoding utf8
-          }
-
-      - name: Disable Windows crash diagnostics
-        if: always() && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $artifactRoot = Join-Path $env:RUNNER_TEMP "windows-diagnostics"
-          if ($env:WH_PROCDUMP_EXE -and (Test-Path $env:WH_PROCDUMP_EXE)) {
-            & $env:WH_PROCDUMP_EXE -accepteula -u *>&1 |
-              Out-File -FilePath (Join-Path $artifactRoot "procdump-uninstall.txt") -Encoding utf8
-          } else {
-            "ProcDump executable not available during cleanup." |
-              Out-File -FilePath (Join-Path $artifactRoot "procdump-uninstall.txt") -Encoding utf8
           }
 
       - name: Upload Windows diagnostics
