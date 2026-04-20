@@ -73,10 +73,51 @@ jobs:
       - name: Setup sccache
         uses: ./.github/actions/setup/sccache
 
+      - name: Enable Windows crash diagnostics
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dumpRoot = Join-Path $env:RUNNER_TEMP "wer-localdumps"
+          $artifactRoot = Join-Path $env:RUNNER_TEMP "windows-diagnostics"
+          New-Item -ItemType Directory -Force -Path $dumpRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+          $werRoot = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
+          New-Item -Path $werRoot -Force | Out-Null
+          New-ItemProperty -Path $werRoot -Name DumpFolder -Value $dumpRoot -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $werRoot -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $werRoot -Name DumpCount -Value 20 -PropertyType DWord -Force | Out-Null
+
+          @(
+            "dump_root=$dumpRoot"
+            "artifact_root=$artifactRoot"
+            "matrix_name=${{ matrix.name }}"
+            "shard_index=${{ matrix.shard_index }}"
+            "shard_count=${{ matrix.shard_count }}"
+            "configure_preset=${{ matrix.configure_preset }}"
+            "build_preset=${{ matrix.build_preset }}"
+          ) | Out-File -FilePath (Join-Path $artifactRoot "diagnostics-context.txt") -Encoding utf8
+
       - name: Build and test
         shell: bash
         run: |
           python_bin="$(command -v python3 || command -v python)"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            set -x
+            log_root="${RUNNER_TEMP}/windows-diagnostics"
+            mkdir -p "${log_root}"
+            log_file="${log_root}/build-test-${{ matrix.name }}-shard-${{ matrix.shard_index }}.log"
+            "$python_bin" scripts/toolchain.py ci build-test \
+              --configure-preset "${{ matrix.configure_preset }}" \
+              --build-preset "${{ matrix.build_preset }}" \
+              --shard-count "${{ matrix.shard_count }}" \
+              --shard-index "${{ matrix.shard_index }}" \
+              --include-label ci.pr \
+              --exclude-label ci.nightly \
+              2>&1 | tee "${log_file}"
+            exit "${PIPESTATUS[0]}"
+          fi
+
           "$python_bin" scripts/toolchain.py ci build-test \
             --configure-preset "${{ matrix.configure_preset }}" \
             --build-preset "${{ matrix.build_preset }}" \
@@ -84,3 +125,44 @@ jobs:
             --shard-index "${{ matrix.shard_index }}" \
             --include-label ci.pr \
             --exclude-label ci.nightly
+
+      - name: Collect Windows diagnostics
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $artifactRoot = Join-Path $env:RUNNER_TEMP "windows-diagnostics"
+          $dumpRoot = Join-Path $env:RUNNER_TEMP "wer-localdumps"
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+          $eventLog = Join-Path $artifactRoot "application-error-events.txt"
+          Get-WinEvent -FilterHashtable @{
+            LogName = "Application"
+            StartTime = (Get-Date).AddHours(-2)
+          } -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.ProviderName -in @("Application Error", "Windows Error Reporting")
+            } |
+            Sort-Object TimeCreated |
+            Format-List TimeCreated, ProviderName, Id, LevelDisplayName, Message |
+            Out-File -FilePath $eventLog -Encoding utf8
+
+          $dumpListing = Join-Path $artifactRoot "dump-files.txt"
+          if (Test-Path $dumpRoot) {
+            Get-ChildItem -Path $dumpRoot -Recurse -Force |
+              Select-Object FullName, Length, LastWriteTimeUtc |
+              Format-Table -AutoSize |
+              Out-File -FilePath $dumpListing -Encoding utf8
+          } else {
+            "No dump directory found: $dumpRoot" | Out-File -FilePath $dumpListing -Encoding utf8
+          }
+
+      - name: Upload Windows diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-diagnostics-${{ matrix.name }}-${{ matrix.shard_index }}
+          path: |
+            ${{ runner.temp }}/windows-diagnostics
+            ${{ runner.temp }}/wer-localdumps
+          if-no-files-found: warn
+          retention-days: 7
