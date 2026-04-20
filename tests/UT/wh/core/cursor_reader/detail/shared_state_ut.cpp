@@ -226,6 +226,56 @@ TEST_CASE("shared state read_for uses blocking leader path and respects automati
   REQUIRE_FALSE(waiter.waiting_registered());
 }
 
+TEST_CASE("shared state preserves lagging readers when retained storage grows after prefix reclaim",
+          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::try_read_for][lifetime][regression]") {
+  using policy_t =
+      wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
+  auto stats = std::make_shared<source_stats>();
+  stats->try_results = {
+      std::optional<result_t>{result_t{0}},
+      std::optional<result_t>{result_t{1}},
+      std::optional<result_t>{result_t{2}},
+      std::optional<result_t>{result_t{3}},
+      std::optional<result_t>{result_t{4}},
+      std::optional<result_t>{result_t{5}},
+  };
+
+  auto state = wh::core::detail::make_intrusive<
+      wh::core::cursor_reader_detail::shared_state<scripted_async_source, policy_t>>(
+      scripted_async_source{stats}, 2U);
+
+  auto reader0_value0 = state->try_read_for(0U);
+  auto reader1_value0 = state->try_read_for(1U);
+  auto reader0_value1 = state->try_read_for(0U);
+  auto reader0_value2 = state->try_read_for(0U);
+  auto reader0_value3 = state->try_read_for(0U);
+  auto reader0_value4 = state->try_read_for(0U);
+  auto reader0_value5 = state->try_read_for(0U);
+
+  REQUIRE(reader0_value0.has_value());
+  REQUIRE(reader1_value0.has_value());
+  REQUIRE(reader0_value1.has_value());
+  REQUIRE(reader0_value2.has_value());
+  REQUIRE(reader0_value3.has_value());
+  REQUIRE(reader0_value4.has_value());
+  REQUIRE(reader0_value5.has_value());
+  REQUIRE(reader0_value0->value() == 0);
+  REQUIRE(reader1_value0->value() == 0);
+  REQUIRE(reader0_value1->value() == 1);
+  REQUIRE(reader0_value2->value() == 2);
+  REQUIRE(reader0_value3->value() == 3);
+  REQUIRE(reader0_value4->value() == 4);
+  REQUIRE(reader0_value5->value() == 5);
+
+  for (int expected = 1; expected <= 5; ++expected) {
+    auto lagging = state->try_read_for(1U);
+    REQUIRE(lagging.has_value());
+    REQUIRE(lagging->has_value());
+    REQUIRE(lagging->value() == expected);
+  }
+  REQUIRE(stats->try_index == 6U);
+}
+
 TEST_CASE("shared state destroys retained unread results on scope exit",
           "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::~shared_state][lifetime][regression]") {
   using tracked_policy_t =

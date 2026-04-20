@@ -87,6 +87,44 @@ TEST_CASE("retained ring storage ignores no-op reserve requests and supports mov
   REQUIRE(retained_probe::live_count == 0);
 }
 
+TEST_CASE("retained ring storage reserve preserves live sequences after prefix reclaim",
+          "[UT][wh/core/cursor_reader/detail/retained_ring_storage.hpp][retained_ring_storage::reserve][lifetime][regression]") {
+  retained_probe::live_count = 0;
+
+  wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> storage{4U};
+  storage.emplace_back(10);
+  storage.emplace_back(11);
+  storage.emplace_back(12);
+  storage.emplace_back(13);
+
+  storage.destroy_front();
+  storage.destroy_front();
+  REQUIRE(storage.front_sequence() == 2U);
+  REQUIRE(storage.end_sequence() == 4U);
+
+  storage.emplace_back(14);
+  storage.emplace_back(15);
+  REQUIRE(storage.front_sequence() == 2U);
+  REQUIRE(storage.end_sequence() == 6U);
+
+  storage.reserve(8U);
+  REQUIRE(storage.capacity() == 8U);
+  REQUIRE(storage.size() == 4U);
+  REQUIRE(storage.front_sequence() == 2U);
+  REQUIRE(storage.end_sequence() == 6U);
+  REQUIRE(storage.value_at_sequence(2U).value == 12);
+  REQUIRE(storage.value_at_sequence(3U).value == 13);
+  REQUIRE(storage.value_at_sequence(4U).value == 14);
+  REQUIRE(storage.value_at_sequence(5U).value == 15);
+
+  storage.destroy_front();
+  storage.destroy_front();
+  storage.destroy_front();
+  storage.destroy_front();
+  REQUIRE(storage.empty());
+  REQUIRE(retained_probe::live_count == 0);
+}
+
 TEST_CASE("retained ring storage destroys remaining live slots on scope exit",
           "[UT][wh/core/cursor_reader/detail/retained_ring_storage.hpp][retained_ring_storage::~retained_ring_storage][lifetime][regression]") {
   retained_probe::live_count = 0;

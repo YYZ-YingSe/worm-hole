@@ -111,11 +111,13 @@ public:
       throw;
     }
 
+    const auto preserved_head_sequence = head_sequence_;
     destroy_all();
     storage_ = new_storage;
     capacity_ = new_capacity;
     size_ = constructed;
     head_ = 0U;
+    head_sequence_ = preserved_head_sequence;
   }
 
   template <typename... args_t>
