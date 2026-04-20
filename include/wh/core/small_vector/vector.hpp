@@ -1721,7 +1721,21 @@ public:
   using interface_type = small_vector_base<value_t, allocator_t, options_t>;
   using impl_type =
       small_vector_impl<value_t, inline_capacity, allocator_t, options_t>;
-  using allocator_type = allocator_t;
+  // Re-export the concrete container aliases so dependent code does not hit
+  // ambiguity through both base classes under GCC.
+  using value_type = typename impl_type::value_type;
+  using allocator_type = typename impl_type::allocator_type;
+  using options_type = typename impl_type::options_type;
+  using size_type = typename impl_type::size_type;
+  using difference_type = typename impl_type::difference_type;
+  using pointer = typename impl_type::pointer;
+  using const_pointer = typename impl_type::const_pointer;
+  using reference = typename impl_type::reference;
+  using const_reference = typename impl_type::const_reference;
+  using iterator = typename impl_type::iterator;
+  using const_iterator = typename impl_type::const_iterator;
+  using reverse_iterator = typename impl_type::reverse_iterator;
+  using const_reverse_iterator = typename impl_type::const_reverse_iterator;
 
   using impl_type::impl_type;
   using impl_type::operator=;
