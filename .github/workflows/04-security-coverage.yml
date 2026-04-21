@@ -83,46 +83,18 @@ jobs:
     if: github.event_name != 'pull_request'
     name: coverage (${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets, ~${{ matrix.estimated_build_actions }} actions)
     needs: plan-coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix: ${{ fromJson(needs.plan-coverage.outputs.matrix) }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Prepare CI job
-        uses: ./.github/actions/prepare/job
-        with:
-          install_profile: coverage
-
-      - name: Setup sccache
-        uses: ./.github/actions/setup/sccache
-
-      - name: Run coverage shard ${{ matrix.shard_index }}
-        shell: bash
-        run: |
-          python_bin="$(command -v python3 || command -v python)"
-          artifact_dir="${RUNNER_TEMP}/coverage-artifact-${{ matrix.shard_index }}"
-          "$python_bin" scripts/toolchain.py ci coverage-shard \
-            --configure-preset "${{ matrix.configure_preset }}" \
-            --build-preset "${{ matrix.build_preset }}" \
-            --shard-count "${{ matrix.shard_count }}" \
-            --shard-index "${{ matrix.shard_index }}" \
-            --artifact-dir "$artifact_dir"
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-artifact-${{ matrix.shard_index }}
-          path: ${{ runner.temp }}/coverage-artifact-${{ matrix.shard_index }}
-          if-no-files-found: error
-          retention-days: 1
+    uses: ./.github/workflows/reusable-coverage-shard.yml
+    with:
+      runner_os: ubuntu-latest
+      configure_preset: ${{ matrix.configure_preset }}
+      build_preset: ${{ matrix.build_preset }}
+      shard_count: ${{ matrix.shard_count }}
+      shard_index: ${{ matrix.shard_index }}
+      timeout_minutes: 45
 
   coverage-aggregate:
     if: github.event_name != 'pull_request'
@@ -130,35 +102,8 @@ jobs:
     needs:
       - plan-coverage
       - coverage-shard
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Prepare CI job
-        uses: ./.github/actions/prepare/job
-        with:
-          install_profile: coverage
-
-      - name: Setup sccache
-        uses: ./.github/actions/setup/sccache
-
-      - name: Download coverage artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: coverage-artifact-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/coverage-artifacts
-
-      - name: Run coverage gate
-        shell: bash
-        run: |
-          python_bin="$(command -v python3 || command -v python)"
-          "$python_bin" scripts/toolchain.py ci coverage-aggregate \
-            --artifact-dir "${RUNNER_TEMP}/coverage-artifacts" \
-            --coverage-min-lines 0.70
+    uses: ./.github/workflows/reusable-coverage-aggregate.yml
+    with:
+      runner_os: ubuntu-latest
+      coverage_min_lines: 0.70
+      timeout_minutes: 45

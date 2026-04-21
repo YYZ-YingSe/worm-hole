@@ -168,12 +168,12 @@ TEST_CASE("compose graph trigger mode controls readiness policy",
                 -> wh::core::result<wh::compose::graph_value> {
               if (auto merged = read_any<wh::compose::graph_value_map>(input);
                   merged.has_value()) {
-                auto left = read_any<int>(merged.value().at("left"));
-                if (left.has_error()) {
+                auto left_value = read_any<int>(merged.value().at("left"));
+                if (left_value.has_error()) {
                   return wh::core::result<wh::compose::graph_value>::failure(
-                      left.error());
+                      left_value.error());
                 }
-                return wh::core::any(left.value() + 1);
+                return wh::core::any(left_value.value() + 1);
               }
               auto typed = read_any<int>(input);
               if (typed.has_error()) {
@@ -301,29 +301,28 @@ TEST_CASE("compose graph allow-partial preserves static value fan-in shape",
   REQUIRE(graph.add_lambda(make_int_add_node("right", 20)).has_value());
 
   std::size_t merged_count = 0U;
-  REQUIRE(graph
-              .add_lambda(
-                  "join",
-                  [&merged_count](const wh::compose::graph_value &input,
-                                  wh::core::run_context &,
-                                  const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    auto typed = read_any<wh::compose::graph_value_map>(input);
-                    if (typed.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          typed.error());
-                    }
-                    merged_count = typed.value().size();
-                    REQUIRE(typed.value().contains("left"));
-                    REQUIRE(!typed.value().contains("right"));
-                    auto left = read_any<int>(typed.value().at("left"));
-                    if (left.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          left.error());
-                    }
-                    return wh::core::any(left.value() + 1);
-                  })
-              .has_value());
+  auto add_join = graph.add_lambda(
+      "join",
+      [&merged_count](const wh::compose::graph_value &input,
+                      wh::core::run_context &,
+                      const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_value> {
+        auto typed = read_any<wh::compose::graph_value_map>(input);
+        if (typed.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(
+              typed.error());
+        }
+        merged_count = typed.value().size();
+        REQUIRE(typed.value().contains("left"));
+        REQUIRE(!typed.value().contains("right"));
+        auto left = read_any<int>(typed.value().at("left"));
+        if (left.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(
+              left.error());
+        }
+        return wh::core::any(left.value() + 1);
+      });
+  REQUIRE(add_join.has_value());
 
   REQUIRE(graph.add_entry_edge("route").has_value());
   REQUIRE(graph.add_edge("left", "join").has_value());

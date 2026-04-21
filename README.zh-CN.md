@@ -111,6 +111,12 @@ target_link_libraries(my_app PRIVATE wh::core)
 ./build.sh test --preset dev-debug --build-first
 ```
 
+如果你要先把编辑器和 clangd 的语法分析环境一次性准备好，直接执行：
+
+```bash
+./build.sh editor
+```
+
 常用变体：
 
 ```bash
@@ -118,6 +124,8 @@ target_link_libraries(my_app PRIVATE wh::core)
 ./build.sh test --preset dev-debug --build-first --suite FT
 ./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
 ./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
+./build.sh configure --preset dev-clang-release
+./build.sh configure --preset dev-gcc-release
 ```
 
 如果是自动化或 CI 场景，统一编排入口是：

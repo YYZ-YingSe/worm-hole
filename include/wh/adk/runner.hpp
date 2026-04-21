@@ -56,8 +56,7 @@ using agent_run_result = wh::core::result<agent_run_output>;
 [[nodiscard]] inline auto prefix_agent_event(agent_event event,
                                              const run_path &prefix)
     -> agent_event {
-  event.metadata.run_path =
-      append_run_path_prefix(prefix, event.metadata.run_path);
+  event.metadata.path = append_run_path_prefix(prefix, event.metadata.path);
   return event;
 }
 

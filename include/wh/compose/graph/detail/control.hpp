@@ -216,14 +216,14 @@ graph::is_node_designated(const std::uint32_t node_id,
   if (!has_active_designation(call_options)) {
     return true;
   }
-  const auto node_path = make_node_designation_path(node_id);
+  const auto designation_path = make_node_designation_path(node_id);
   if (is_graph_node_designated(
           call_options,
           core().compiled_execution_index_.index.id_to_key[node_id],
-          node_path)) {
+          designation_path)) {
     return true;
   }
-  return has_descendant_designation_target(call_options, node_path);
+  return has_descendant_designation_target(call_options, designation_path);
 }
 
 inline auto graph::emit_debug_stream_event(

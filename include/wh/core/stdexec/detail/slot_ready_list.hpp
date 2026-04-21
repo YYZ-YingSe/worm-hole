@@ -2,12 +2,14 @@
 // operation states.
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <utility>
 
 #include "wh/core/compiler.hpp"
@@ -29,6 +31,10 @@ public:
   auto operator=(slot_ready_list &&) -> slot_ready_list & = delete;
 
   auto reset(const std::size_t size) -> void {
+    if (size > max_slot_capacity()) {
+      throw std::length_error{
+          "slot_ready_list size exceeds supported uint32_t slot capacity"};
+    }
     slots_ = size == 0U ? nullptr : std::make_unique<slot[]>(size);
     size_ = size;
     head_.store(no_slot, std::memory_order_relaxed);
@@ -36,14 +42,14 @@ public:
 
   auto publish(const std::uint32_t slot_id) noexcept -> bool {
     wh_precondition(slot_id < size_);
-    auto &slot = slots_[slot_id];
-    if (slot.queued.exchange(true, std::memory_order_acq_rel)) {
+    auto &slot_state = slots_[slot_id];
+    if (slot_state.queued.exchange(true, std::memory_order_acq_rel)) {
       return false;
     }
 
     auto head = head_.load(std::memory_order_acquire);
     do {
-      slot.next = head;
+      slot_state.next = head;
     } while (!head_.compare_exchange_weak(head, slot_id,
                                           std::memory_order_release,
                                           std::memory_order_acquire));
@@ -55,10 +61,10 @@ public:
     while (head != no_slot) {
       const auto slot_id = head;
       wh_invariant(slot_id < size_);
-      auto &slot = slots_[slot_id];
-      head = slot.next;
-      slot.next = no_slot;
-      slot.queued.store(false, std::memory_order_release);
+      auto &slot_state = slots_[slot_id];
+      head = slot_state.next;
+      slot_state.next = no_slot;
+      slot_state.queued.store(false, std::memory_order_release);
       std::invoke(std::forward<fn_t>(fn), slot_id);
     }
   }
@@ -72,6 +78,15 @@ private:
     std::atomic<bool> queued{false};
     std::uint32_t next{no_slot};
   };
+
+  [[nodiscard]] static constexpr auto max_slot_capacity() noexcept
+      -> std::size_t {
+    return std::min(
+        static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()),
+        static_cast<std::size_t>(
+            std::numeric_limits<std::ptrdiff_t>::max() /
+            static_cast<std::ptrdiff_t>(sizeof(slot))));
+  }
 
   std::unique_ptr<slot[]> slots_{};
   std::size_t size_{0U};

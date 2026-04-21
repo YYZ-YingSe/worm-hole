@@ -8,6 +8,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include <stdexec/execution.hpp>
 
@@ -242,6 +243,8 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
 
   struct stop_callback;
   struct handoff_receiver;
+  struct handoff_value_tag {};
+  struct handoff_stopped_tag {};
 
   using handoff_op_t =
       stdexec::connect_result_t<stdexec::schedule_result_t<scheduler_t>,
@@ -249,6 +252,8 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
   using completion_bits_t = wh::sync::detail::completion_bits;
   using stop_callback_t =
       stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
+  using handoff_completion_t =
+      std::variant<handoff_value_tag, handoff_stopped_tag>;
 
   async_mutex *mutex{nullptr};
   receiver_t receiver;
@@ -259,15 +264,38 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
   // Avoids connect(schedule(scheduler), ...) cost on the fast path.
   alignas(handoff_op_t) std::byte handoff_storage_[sizeof(handoff_op_t)];
   bool handoff_constructed_{false};
+  std::optional<handoff_completion_t> handoff_completion_{};
+  std::atomic<bool> handoff_completion_ready_{false};
+  std::atomic<bool> handoff_start_returned_{true};
 
   auto *handoff_ptr() noexcept {
     return std::launder(reinterpret_cast<handoff_op_t *>(handoff_storage_));
   }
 
-  void construct_handoff() noexcept {
+  auto reset_handoff() noexcept -> void {
+    if (!handoff_constructed_) {
+      return;
+    }
+    handoff_ptr()->~handoff_op_t();
+    handoff_constructed_ = false;
+  }
+
+  void construct_handoff() {
     ::new (static_cast<void *>(handoff_storage_)) handoff_op_t(
         stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this}));
     handoff_constructed_ = true;
+  }
+
+  [[nodiscard]] auto ensure_handoff() noexcept -> bool {
+    if (is_same_scheduler() || handoff_constructed_) {
+      return true;
+    }
+    try {
+      construct_handoff();
+      return true;
+    } catch (...) {
+      return false;
+    }
   }
 
   struct stop_callback {
@@ -280,14 +308,18 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
 
     lock_operation *self{nullptr};
 
-    auto set_value() noexcept -> void { self->complete(); }
+    auto set_value() noexcept -> void {
+      self->publish_handoff_completion(handoff_completion_t{handoff_value_tag{}});
+    }
 
     template <typename error_t> auto set_error(error_t &&) noexcept -> void {
-      stdexec::set_stopped(std::move(self->receiver));
+      self->publish_handoff_completion(
+          handoff_completion_t{handoff_stopped_tag{}});
     }
 
     auto set_stopped() noexcept -> void {
-      stdexec::set_stopped(std::move(self->receiver));
+      self->publish_handoff_completion(
+          handoff_completion_t{handoff_stopped_tag{}});
     }
 
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
@@ -307,9 +339,7 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
   }
 
   ~lock_operation() {
-    if (handoff_constructed_) {
-      handoff_ptr()->~handoff_op_t();
-    }
+    reset_handoff();
   }
 
   lock_operation(const lock_operation &) = delete;
@@ -325,6 +355,39 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
     return wh::core::detail::scheduler_handoff::same_scheduler(scheduler);
   }
 
+  auto release_acquired_lock() noexcept -> void {
+    if (!this->acquired || mutex == nullptr) {
+      return;
+    }
+    lock_guard guard{mutex};
+    guard.unlock();
+    this->acquired = false;
+  }
+
+  auto publish_handoff_completion(handoff_completion_t completion) noexcept
+      -> void {
+    wh_invariant(
+        !handoff_completion_ready_.load(std::memory_order_acquire));
+    handoff_completion_.emplace(std::move(completion));
+    handoff_completion_ready_.store(true, std::memory_order_release);
+    if (handoff_start_returned_.load(std::memory_order_acquire)) {
+      drain_handoff_completion();
+    }
+  }
+
+  auto drain_handoff_completion() noexcept -> void {
+    if (!handoff_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+      return;
+    }
+    auto completion = std::move(*handoff_completion_);
+    handoff_completion_.reset();
+    reset_handoff();
+    if (std::holds_alternative<handoff_stopped_tag>(completion)) {
+      release_acquired_lock();
+    }
+    complete();
+  }
+
   auto complete_ready() noexcept -> void {
     const auto state_bits = completion_bits_.mark_ready();
     if (completion_bits_t::is_claimed(state_bits)) {
@@ -334,8 +397,20 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
       complete();
       return;
     }
-    construct_handoff();
-    stdexec::start(*handoff_ptr());
+    wh_invariant(handoff_constructed_);
+    try {
+      handoff_start_returned_.store(false, std::memory_order_release);
+      stdexec::start(*handoff_ptr());
+      handoff_start_returned_.store(true, std::memory_order_release);
+      if (handoff_completion_ready_.load(std::memory_order_acquire)) {
+        drain_handoff_completion();
+      }
+    } catch (...) {
+      handoff_start_returned_.store(true, std::memory_order_release);
+      reset_handoff();
+      release_acquired_lock();
+      complete();
+    }
   }
 
   auto complete() noexcept -> void {
@@ -358,6 +433,11 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
     }
     // Need scheduler handoff — fall back to normal path.
     this->acquired = true;
+    if (!ensure_handoff()) {
+      release_acquired_lock();
+      stdexec::set_stopped(std::move(receiver));
+      return;
+    }
     complete_ready();
   }
 
@@ -373,9 +453,37 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
     complete_ready();
   }
 
+  auto prepare_wait(const stop_token_t &stop_token) noexcept -> bool {
+    if (!ensure_handoff()) {
+      stdexec::set_stopped(std::move(receiver));
+      return false;
+    }
+    if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
+      if (!stop_callback_.has_value()) {
+        try {
+          stop_callback_.emplace(stop_token, stop_callback{this});
+        } catch (...) {
+          this->acquired = false;
+          complete_ready();
+          return false;
+        }
+      }
+      if (stop_token.stop_requested()) {
+        this->acquired = false;
+        complete_ready();
+        return false;
+      }
+    }
+    return true;
+  }
+
   auto start() noexcept -> void {
     auto stop_token = stdexec::get_stop_token(stdexec::get_env(receiver));
     if (stop_token.stop_requested()) {
+      if (!is_same_scheduler() && !ensure_handoff()) {
+        stdexec::set_stopped(std::move(receiver));
+        return;
+      }
       this->acquired = false;
       complete_ready();
       return;
@@ -402,20 +510,21 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
       }
     }
 
+    if (!prepare_wait(stop_token)) {
+      return;
+    }
+
     // Enqueue returned false means lock was acquired during enqueue.
     const bool pending = mutex->enqueue(*this);
     if (!pending) {
+      stop_callback_.reset();
       complete_sync();
       return;
     }
 
-    // Slow path: waiter is enqueued. Register stop callback for cancellation.
     if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
-      if (!has_claimed()) {
-        stop_callback_.emplace(stop_token, stop_callback{this});
-        if (stop_token.stop_requested()) {
-          cancel_wait();
-        }
+      if (stop_token.stop_requested()) {
+        cancel_wait();
       }
     }
   }

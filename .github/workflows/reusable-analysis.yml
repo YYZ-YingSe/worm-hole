@@ -1,0 +1,102 @@
+name: reusable-analysis
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        required: true
+        type: string
+      runner_os:
+        required: false
+        type: string
+        default: ubuntu-latest
+      configure_preset:
+        required: true
+        type: string
+      install_profile:
+        required: false
+        type: string
+        default: analysis
+      shard_count:
+        required: false
+        type: number
+        default: 1
+      shard_index:
+        required: false
+        type: number
+        default: 0
+      timeout_minutes:
+        required: false
+        type: number
+        default: 60
+      setup_codechecker:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ${{ inputs.runner_os }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: ${{ inputs.install_profile }}
+          setup_codechecker: ${{ inputs.setup_codechecker && 'true' || 'false' }}
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
+      - name: Select clang toolchain
+        shell: bash
+        run: bash "${{ github.workspace }}/scripts/ci/setup/select_clang_tidy_toolchain.sh"
+
+      - name: Run analysis lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_bin="$(command -v python3 || command -v python)"
+          args=(
+            "$python_bin" scripts/toolchain.py ci "${{ inputs.mode }}"
+            --configure-preset "${{ inputs.configure_preset }}"
+          )
+          if [[ "${{ inputs.mode }}" == "clang-tidy" ]]; then
+            args+=(--shard-count "${{ inputs.shard_count }}" --shard-index "${{ inputs.shard_index }}")
+          fi
+          "${args[@]}" 2>&1 | tee "${RUNNER_TEMP}/analysis.log"
+
+      - name: Collect diagnostics
+        if: always()
+        shell: bash
+        run: |
+          artifact_dir="${RUNNER_TEMP}/analysis-diagnostics"
+          build_dir="build/${{ inputs.configure_preset }}"
+          mkdir -p "$artifact_dir"
+          cp -f "${RUNNER_TEMP}/analysis.log" "$artifact_dir/" 2>/dev/null || true
+          if [[ -d "$build_dir" ]]; then
+            cp -f "$build_dir/CMakeCache.txt" "$artifact_dir/" 2>/dev/null || true
+            cp -f "$build_dir/compile_commands.json" "$artifact_dir/" 2>/dev/null || true
+            cp -f "$build_dir/compile_commands.codechecker.json" "$artifact_dir/" 2>/dev/null || true
+            cp -rf "$build_dir/codechecker-reports" "$artifact_dir/" 2>/dev/null || true
+            cp -f "$build_dir/codechecker-reports.json" "$artifact_dir/" 2>/dev/null || true
+          fi
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ inputs.mode }}-${{ inputs.shard_index }}
+          path: ${{ runner.temp }}/analysis-diagnostics
+          if-no-files-found: error
+          retention-days: 5

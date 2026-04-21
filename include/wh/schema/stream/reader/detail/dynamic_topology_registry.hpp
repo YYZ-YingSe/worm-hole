@@ -421,6 +421,9 @@ private:
   [[nodiscard]] static auto build_lanes(std::vector<lane_type> &&readers)
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
+    static_cast<void>(validate_indexed_capacity<>(
+        readers.size(),
+        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(readers.size());
     for (auto &reader : readers) {
       lanes.push_back(lane_state{
@@ -437,6 +440,9 @@ private:
   build_pending_lanes(const std::vector<lane_source_type> &sources)
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
+    static_cast<void>(validate_indexed_capacity<>(
+        sources.size(),
+        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(sources.size());
     for (const auto &source : sources) {
       lanes.push_back(lane_state{
@@ -452,6 +458,9 @@ private:
   build_pending_lanes(std::vector<lane_source_type> &&sources)
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
+    static_cast<void>(validate_indexed_capacity<>(
+        sources.size(),
+        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(sources.size());
     for (auto &source : sources) {
       lanes.push_back(lane_state{

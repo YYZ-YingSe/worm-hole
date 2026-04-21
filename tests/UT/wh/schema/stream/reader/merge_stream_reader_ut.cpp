@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <concepts>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -162,6 +163,41 @@ TEST_CASE("merge stream reader factories select static or dynamic topology surfa
   STATIC_REQUIRE(merge_supports_disable<dynamic_merge_t>);
   STATIC_REQUIRE_FALSE(merge_supports_attach<static_merge_t, reader_t>);
   STATIC_REQUIRE_FALSE(merge_supports_disable<static_merge_t>);
+}
+
+TEST_CASE("merge stream reader detail validates uint32 slot and array capacity limits",
+          "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][detail][boundary]") {
+  struct probe_slot {
+    std::uint64_t words[2]{};
+  };
+
+  const auto indexed_limit =
+      wh::schema::stream::detail::indexed_capacity_limit<>();
+  REQUIRE(wh::schema::stream::detail::validate_indexed_capacity<>(
+              indexed_limit,
+              "merge_stream_reader lane count exceeds uint32_t slot capacity") ==
+          indexed_limit);
+  if (indexed_limit < std::numeric_limits<std::size_t>::max()) {
+    REQUIRE_THROWS_AS(
+        wh::schema::stream::detail::validate_indexed_capacity<>(
+            indexed_limit + 1U,
+            "merge_stream_reader lane count exceeds uint32_t slot capacity"),
+        std::length_error);
+  }
+
+  const auto slot_limit =
+      wh::schema::stream::detail::slot_array_capacity_limit<probe_slot>();
+  REQUIRE(wh::schema::stream::detail::validate_slot_array_capacity<probe_slot>(
+              slot_limit,
+              "merge_stream_reader round tracker slot count exceeds supported capacity") ==
+          slot_limit);
+  if (slot_limit < std::numeric_limits<std::size_t>::max()) {
+    REQUIRE_THROWS_AS(
+        wh::schema::stream::detail::validate_slot_array_capacity<probe_slot>(
+            slot_limit + 1U,
+            "merge_stream_reader round tracker slot count exceeds supported capacity"),
+        std::length_error);
+  }
 }
 
 TEST_CASE("merge stream reader covers fixed dynamic attach disable share and source eof branches",

@@ -10,6 +10,9 @@ option(WH_BUILD_BENCHMARKS "Build worm-hole benchmark executables" OFF)
 option(WH_EXPERIMENT_MIMALLOC
        "Link worm-hole executable artifacts against vendored mimalloc for allocator experiments"
        OFF)
+option(WH_ENABLE_THIRD_PARTY_HEADER_WRAPPERS
+       "Generate wrapper include roots so vendored third-party headers stay first while remaining warning-isolated"
+       ON)
 option(WH_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
 option(WH_ENABLE_RELEASE_IPO
        "Enable interprocedural optimization for Release targets" ON)
@@ -80,3 +83,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(WH_BUILD_PROFILE
+    "debug"
+    CACHE STRING
+    "Logical worm-hole build profile. Supported values: debug, release, asan-ubsan, tsan, coverage, analysis")
+set_property(CACHE WH_BUILD_PROFILE PROPERTY STRINGS debug release asan-ubsan
+                                                   tsan coverage analysis)

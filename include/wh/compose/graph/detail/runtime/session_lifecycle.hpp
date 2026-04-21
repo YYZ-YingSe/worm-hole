@@ -254,16 +254,16 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
   } else {
     invoke.config.state_handlers =
         invoke.services != nullptr ? invoke.services->state_handlers : nullptr;
-    invoke.config.checkpoint_store = invoke.services != nullptr
-                                         ? invoke.services->checkpoint.store
-                                         : nullptr;
-    invoke.config.checkpoint_backend = invoke.services != nullptr
-                                           ? invoke.services->checkpoint.backend
-                                           : nullptr;
-    invoke.config.checkpoint_stream_codecs =
+    invoke.config.checkpoint_store_ptr = invoke.services != nullptr
+                                             ? invoke.services->checkpoint.store
+                                             : nullptr;
+    invoke.config.checkpoint_backend_ptr = invoke.services != nullptr
+                                               ? invoke.services->checkpoint.backend
+                                               : nullptr;
+    invoke.config.checkpoint_stream_codecs_ptr =
         invoke.services != nullptr ? invoke.services->checkpoint.stream_codecs
                                    : nullptr;
-    invoke.config.checkpoint_serializer =
+    invoke.config.checkpoint_serializer_ptr =
         invoke.services != nullptr ? invoke.services->checkpoint.serializer
                                    : nullptr;
     invoke.config.checkpoint_load = invoke.controls.checkpoint.load;
@@ -322,8 +322,8 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
     return;
   }
   const bool has_checkpoint_backend =
-      invoke.config.checkpoint_store != nullptr ||
-      invoke.config.checkpoint_backend != nullptr;
+      invoke.config.checkpoint_store_ptr != nullptr ||
+      invoke.config.checkpoint_backend_ptr != nullptr;
   invoke.retain_inputs =
       has_checkpoint_backend || context_.resume_info.has_value() ||
       invoke.config.interrupt_pre_hook || invoke.config.interrupt_post_hook ||
@@ -456,16 +456,16 @@ detail::invoke_runtime::invoke_session::release_attempt(const attempt_id attempt
   if (!attempt.has_value() || attempt.slot >= attempt_slots_.size()) {
     return;
   }
-  auto &attempt_slot = attempt_slots_[attempt.slot];
-  attempt_slot.node_local_scope.release(node_local_process_states_);
-  attempt_slot = detail::invoke_runtime::attempt_slot{};
+  auto &slot_state = attempt_slots_[attempt.slot];
+  slot_state.node_local_scope.release(node_local_process_states_);
+  slot_state = detail::invoke_runtime::attempt_slot{};
 }
 
 inline auto detail::invoke_runtime::invoke_session::release_attempts() noexcept
     -> void {
-  for (auto &attempt_slot : attempt_slots_) {
-    attempt_slot.node_local_scope.release(node_local_process_states_);
-    attempt_slot = detail::invoke_runtime::attempt_slot{};
+  for (auto &slot_state : attempt_slots_) {
+    slot_state.node_local_scope.release(node_local_process_states_);
+    slot_state = detail::invoke_runtime::attempt_slot{};
   }
 }
 

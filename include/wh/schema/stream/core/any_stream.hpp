@@ -901,31 +901,40 @@ public:
 
     operation(any_stream_reader<value_t, storage_size> *reader,
               receiver_t receiver) noexcept
-        : borrowed_(reader), bridge_(std::move(receiver)),
-          child_receiver_{std::addressof(bridge_)} {}
+        : borrowed_(reader), receiver_(std::move(receiver)) {}
 
     operation(any_stream_reader<value_t, storage_size> &&reader,
               receiver_t receiver) noexcept
-        : owned_(std::move(reader)), bridge_(std::move(receiver)),
-          child_receiver_{std::addressof(bridge_)} {}
+        : owned_(std::move(reader)), receiver_(std::move(receiver)) {}
 
     auto start() & noexcept -> void {
       auto *reader = active_reader();
       if (reader == nullptr || !reader->has_value()) {
-        bridge_.set_value(detail::make_reader_not_found<value_t>());
+        stdexec::set_value(std::move(receiver_),
+                           detail::make_reader_not_found<value_t>());
         return;
       }
-      if (!bridge_.bind_outer_stop()) {
-        bridge_.set_stopped();
+
+      try {
+        bridge_.emplace(receiver_);
+      } catch (...) {
+        stdexec::set_error(std::move(receiver_), std::current_exception());
         return;
       }
+
+      if (bridge_->stop_requested()) {
+        bridge_->set_stopped();
+        return;
+      }
+
+      child_receiver_.bridge = std::addressof(*bridge_);
       try {
         auto child = reader->vtable_->connect_read_async(
             reader->object_ptr(), receiver_ref_t{child_receiver_});
         child_ = std::move(child);
         child_.start();
       } catch (...) {
-        bridge_.set_error(std::current_exception());
+        bridge_->set_error(std::current_exception());
       }
     }
 
@@ -940,7 +949,8 @@ public:
 
     any_stream_reader<value_t, storage_size> *borrowed_{nullptr};
     std::optional<any_stream_reader<value_t, storage_size>> owned_{};
-    bridge_t bridge_;
+    receiver_t receiver_;
+    std::optional<bridge_t> bridge_{};
     child_receiver child_receiver_{};
     typename detail::any_stream_reader_vtable<
         value_t, storage_size>::op_handle_t child_{};
@@ -1203,30 +1213,40 @@ public:
     operation(any_stream_writer<value_t, storage_size> *writer,
               wh::core::result<value_t> prepared, receiver_t receiver) noexcept
         : borrowed_(writer), prepared_(std::move(prepared)),
-          bridge_(std::move(receiver)),
-          child_receiver_{std::addressof(bridge_)} {}
+          receiver_(std::move(receiver)) {}
 
     operation(any_stream_writer<value_t, storage_size> &&writer,
               wh::core::result<value_t> prepared, receiver_t receiver)
         : owned_(std::move(writer)), prepared_(std::move(prepared)),
-          bridge_(std::move(receiver)),
-          child_receiver_{std::addressof(bridge_)} {}
+          receiver_(std::move(receiver)) {}
 
     auto start() & noexcept -> void {
       auto *writer = active_writer();
       if (writer == nullptr || !writer->has_value()) {
-        bridge_.set_value(
+        stdexec::set_value(
+            std::move(receiver_),
             wh::core::result<void>::failure(wh::core::errc::not_found));
         return;
       }
       if (prepared_.has_error()) {
-        bridge_.set_value(wh::core::result<void>::failure(prepared_.error()));
+        stdexec::set_value(std::move(receiver_),
+                           wh::core::result<void>::failure(prepared_.error()));
         return;
       }
-      if (!bridge_.bind_outer_stop()) {
-        bridge_.set_stopped();
+
+      try {
+        bridge_.emplace(receiver_);
+      } catch (...) {
+        stdexec::set_error(std::move(receiver_), std::current_exception());
         return;
       }
+
+      if (bridge_->stop_requested()) {
+        bridge_->set_stopped();
+        return;
+      }
+
+      child_receiver_.bridge = std::addressof(*bridge_);
       try {
         auto child = writer->vtable_->connect_write_async(
             writer->object_ptr(), std::move(prepared_).value(),
@@ -1234,7 +1254,7 @@ public:
         child_ = std::move(child);
         child_.start();
       } catch (...) {
-        bridge_.set_error(std::current_exception());
+        bridge_->set_error(std::current_exception());
       }
     }
 
@@ -1250,7 +1270,8 @@ public:
     any_stream_writer<value_t, storage_size> *borrowed_{nullptr};
     std::optional<any_stream_writer<value_t, storage_size>> owned_{};
     wh::core::result<value_t> prepared_{};
-    bridge_t bridge_;
+    receiver_t receiver_;
+    std::optional<bridge_t> bridge_{};
     child_receiver child_receiver_{};
     typename detail::any_stream_writer_vtable<
         value_t, storage_size>::op_handle_t child_{};

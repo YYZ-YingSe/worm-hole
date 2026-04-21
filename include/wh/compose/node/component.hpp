@@ -1291,30 +1291,31 @@ template <component_kind Kind, node_contract From, node_contract To,
       component_payload{
           .kind = Kind,
           .lower = [component = stored_component_t{std::forward<component_t>(component)}](
-                       std::string key,
-                       graph_add_node_options options) mutable -> wh::core::result<compiled_node> {
+                       std::string lowered_key,
+                       graph_add_node_options lowered_options) mutable
+              -> wh::core::result<compiled_node> {
             if constexpr (Exec == node_exec_mode::sync) {
               return make_compiled_sync_node(
                   node_kind::component, default_exec_origin(node_kind::component), From, To,
-                  std::move(key),
+                  std::move(lowered_key),
                   [component = std::move(component)](
                       graph_value &input, wh::core::run_context &context,
                       const node_runtime &runtime) -> wh::core::result<graph_value> {
                     return detail::bind_explicit_component<Kind, From, To>(component, input,
                                                                            context, runtime);
                   },
-                  std::move(options));
+                  std::move(lowered_options));
             } else {
               return make_compiled_async_node(
                   node_kind::component, default_exec_origin(node_kind::component), From, To,
-                  std::move(key),
+                  std::move(lowered_key),
                   [component = std::move(component)](graph_value &input,
                                                      wh::core::run_context &context,
                                                      const node_runtime &runtime) -> graph_sender {
                     return detail::bind_explicit_component_async<Kind, From, To>(component, input,
                                                                                  context, runtime);
                   },
-                  std::move(options));
+                  std::move(lowered_options));
             }
           }},
       std::move(node_options)};
@@ -1349,12 +1350,13 @@ template <component_kind Kind, node_contract From, node_contract To, typename re
       component_payload{
           .kind = Kind,
           .lower = [component = stored_component_t{std::forward<component_t>(component)}](
-                       std::string key,
-                       graph_add_node_options options) mutable -> wh::core::result<compiled_node> {
+                       std::string lowered_key,
+                       graph_add_node_options lowered_options) mutable
+              -> wh::core::result<compiled_node> {
             if constexpr (Exec == node_exec_mode::sync) {
               return make_compiled_sync_node(
                   node_kind::component, default_exec_origin(node_kind::component), From, To,
-                  std::move(key),
+                  std::move(lowered_key),
                   [component = std::move(component)](
                       graph_value &input, wh::core::run_context &context,
                       const node_runtime &runtime) -> wh::core::result<graph_value> {
@@ -1362,11 +1364,11 @@ template <component_kind Kind, node_contract From, node_contract To, typename re
                         Kind, From, To, stored_component_t, request_t, response_t>(
                         component, input, context, runtime);
                   },
-                  std::move(options));
+                  std::move(lowered_options));
             } else {
               return make_compiled_async_node(
                   node_kind::component, default_exec_origin(node_kind::component), From, To,
-                  std::move(key),
+                  std::move(lowered_key),
                   [component = std::move(component)](graph_value &input,
                                                      wh::core::run_context &context,
                                                      const node_runtime &runtime) -> graph_sender {
@@ -1374,7 +1376,7 @@ template <component_kind Kind, node_contract From, node_contract To, typename re
                         Kind, From, To, stored_component_t, request_t, response_t>(
                         component, input, context, runtime);
                   },
-                  std::move(options));
+                  std::move(lowered_options));
             }
           }},
       std::move(node_options)};

@@ -1,6 +1,7 @@
 include_guard(GLOBAL)
 
 include(wh_atomic_runtime)
+include(wh_module_policy)
 
 function(wh_setup_core_target)
   if(TARGET wh_core)
@@ -8,6 +9,7 @@ function(wh_setup_core_target)
   endif()
 
   wh_setup_atomic_runtime_target()
+  wh_setup_module_policy_targets()
 
   add_library(wh_core INTERFACE)
   add_library(wh::core ALIAS wh_core)
@@ -22,49 +24,9 @@ function(wh_setup_core_target)
   target_link_libraries(
     wh_core
     INTERFACE
-      STDEXEC::stdexec
-      rapidjson::rapidjson
-      nlohmann_json::nlohmann_json
-      minja::minja
-      wh_atomic_runtime)
-
-  if(WIN32)
-    target_compile_definitions(wh_core INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
-  endif()
-
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      target_compile_options(
-        wh_core
-        INTERFACE
-          --system-header-prefix=stdexec/
-          --system-header-prefix=exec/
-          --system-header-prefix=rapidjson/
-          --system-header-prefix=minja/
-          --system-header-prefix=nlohmann/)
-    endif()
-
-    target_compile_options(
-      wh_core
-      INTERFACE
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Wconversion
-        -Wshadow
-        -Wnon-virtual-dtor
-        -Wold-style-cast)
-
-    if(WH_WARNINGS_AS_ERRORS)
-      target_compile_options(wh_core INTERFACE -Werror)
-    endif()
-  elseif(MSVC)
-    target_compile_options(wh_core INTERFACE /W4)
-
-    if(WH_WARNINGS_AS_ERRORS)
-      target_compile_options(wh_core INTERFACE /WX)
-    endif()
-  endif()
+      wh::third_party_headers
+      wh_atomic_runtime
+      wh::module_policy_core)
 
   install(DIRECTORY include/ DESTINATION include)
   install(DIRECTORY "${WH_STDEXEC_DIR}/include/"
@@ -78,10 +40,22 @@ function(wh_setup_core_target)
   install(
     TARGETS wh_atomic_runtime
             wh_core
+            wh_third_party_headers
             wh_stdexec
             wh_rapidjson
             wh_nlohmann_json
             wh_minja
+            wh_compiler_policy_platform
+            wh_warning_policy_project
+            wh_warning_policy_werror
+            wh_warning_policy_strict
+            wh_external_headers_policy
+            wh_allocator_policy_runtime
+            wh_module_policy_core
+            wh_module_policy_tests
+            wh_module_policy_examples
+            wh_module_policy_benchmarks
+            wh_module_policy_analysis
     EXPORT worm_hole_targets)
   install(
     EXPORT worm_hole_targets

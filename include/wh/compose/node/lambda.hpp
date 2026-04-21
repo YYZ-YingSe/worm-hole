@@ -191,8 +191,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     if constexpr (Exec == node_exec_mode::sync &&
                   value_lambda<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](graph_value &input,
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](graph_value &input,
                                                 wh::core::run_context &context,
                                                 const node_runtime &runtime)
                        -> wh::core::result<graph_value> {
@@ -208,8 +208,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     } else if constexpr (Exec == node_exec_mode::async &&
                          value_sender<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](
                        graph_value &input, wh::core::run_context &context,
                        const node_runtime &runtime) mutable -> graph_sender {
               return bind_value_sender(
@@ -224,8 +224,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     } else if constexpr (Exec == node_exec_mode::sync &&
                          map_lambda<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](graph_value &input,
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](graph_value &input,
                                                 wh::core::run_context &context,
                                                 const node_runtime &runtime)
                        -> wh::core::result<graph_value> {
@@ -248,8 +248,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     } else if constexpr (Exec == node_exec_mode::async &&
                          map_sender<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](
                        graph_value &input, wh::core::run_context &context,
                        const node_runtime &runtime) mutable -> graph_sender {
               return bind_value_sender(
@@ -284,8 +284,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     if constexpr (Exec == node_exec_mode::sync &&
                   value_stream_lambda<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](graph_value &input,
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](graph_value &input,
                                                 wh::core::run_context &context,
                                                 const node_runtime &runtime)
                        -> wh::core::result<graph_value> {
@@ -302,8 +302,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     } else if constexpr (Exec == node_exec_mode::async &&
                          value_stream_sender<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](
                        graph_value &input, wh::core::run_context &context,
                        const node_runtime &runtime) mutable -> graph_sender {
               return bind_value_sender(
@@ -336,8 +336,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     if constexpr (Exec == node_exec_mode::sync &&
                   stream_value_lambda<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](graph_value &input,
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](graph_value &input,
                                                 wh::core::run_context &context,
                                                 const node_runtime &runtime)
                        -> wh::core::result<graph_value> {
@@ -359,8 +359,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     } else if constexpr (Exec == node_exec_mode::async &&
                          stream_value_sender<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](
                        graph_value &input, wh::core::run_context &context,
                        const node_runtime &runtime) mutable -> graph_sender {
               return bind_reader_sender(
@@ -384,8 +384,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     if constexpr (Exec == node_exec_mode::sync &&
                   stream_stream_lambda<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](graph_value &input,
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](graph_value &input,
                                                 wh::core::run_context &context,
                                                 const node_runtime &runtime)
                        -> wh::core::result<graph_value> {
@@ -408,8 +408,8 @@ template <node_exec_mode Exec, node_contract From, node_contract To,
     } else if constexpr (Exec == node_exec_mode::async &&
                          stream_stream_sender<stored_lambda_t>) {
       return make_lambda_payload_from_runner<Exec, From, To>(
-          std::forward<lambda_t>(lambda), [](stored_lambda_t lambda) {
-            return [lambda = std::move(lambda)](
+          std::forward<lambda_t>(lambda), [](stored_lambda_t stored_lambda) {
+            return [lambda = std::move(stored_lambda)](
                        graph_value &input, wh::core::run_context &context,
                        const node_runtime &runtime) mutable -> graph_sender {
               return bind_reader_sender(

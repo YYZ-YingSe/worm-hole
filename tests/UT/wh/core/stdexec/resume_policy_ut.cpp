@@ -66,8 +66,8 @@ TEST_CASE("resume policy defer_resume_sender reads scheduler only in restore mod
   const scheduler_t &scheduler_ref = scheduler;
   auto restore_sender =
       wh::core::detail::defer_resume_sender<resume_mode::restore>(
-          [](scheduler_t scheduler) {
-            return stdexec::schedule(scheduler) |
+          [](scheduler_t restore_scheduler) {
+            return stdexec::schedule(restore_scheduler) |
                    stdexec::then([] { return 11; });
           });
   auto wrapped_sender = wh::core::detail::write_sender_scheduler(

@@ -62,7 +62,7 @@ TEST_CASE("adk custom event transport preserves payload and metadata",
   auto event = wh::adk::make_custom_event(
       "business.custom", wh::core::any{9},
       wh::adk::event_metadata{
-          .run_path = wh::adk::run_path{{"root", "agent"}},
+          .path = wh::adk::run_path{{"root", "agent"}},
           .agent_name = "planner",
       });
 
@@ -79,6 +79,6 @@ TEST_CASE("adk custom event transport preserves payload and metadata",
   REQUIRE(typed != nullptr);
   REQUIRE(*typed == 9);
   REQUIRE(next.value().value->metadata.agent_name == "planner");
-  REQUIRE(next.value().value->metadata.run_path ==
+  REQUIRE(next.value().value->metadata.path ==
           wh::adk::run_path{{"root", "agent"}});
 }

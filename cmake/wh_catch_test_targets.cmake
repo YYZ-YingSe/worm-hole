@@ -355,7 +355,6 @@ function(wh_add_catch_test_bundle out_var)
   endif()
 
   add_executable("${ARG_TARGET_NAME}" ${ARG_SOURCES})
-  wh_link_global_allocator_if_requested("${ARG_TARGET_NAME}")
   if(ARG_LINK_LIBRARIES)
     target_link_libraries("${ARG_TARGET_NAME}" PRIVATE ${ARG_LINK_LIBRARIES})
   endif()
@@ -363,7 +362,7 @@ function(wh_add_catch_test_bundle out_var)
     target_include_directories("${ARG_TARGET_NAME}" PRIVATE
                                ${ARG_INCLUDE_DIRECTORIES})
   endif()
-  wh_apply_release_optimizations("${ARG_TARGET_NAME}")
+  wh_apply_target_build_policies("${ARG_TARGET_NAME}")
 
   catch_discover_tests(
     "${ARG_TARGET_NAME}"

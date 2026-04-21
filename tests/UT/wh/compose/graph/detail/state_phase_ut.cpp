@@ -48,19 +48,17 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
         *typed *= 2;
         return {};
       });
-  REQUIRE(value_graph
-              .add_lambda(
-                  wh::compose::make_lambda_node(
-                      "worker",
-                      [](wh::compose::graph_value &value, wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto *typed = wh::core::any_cast<int>(&value);
-                        REQUIRE(typed != nullptr);
-                        return wh::compose::graph_value{*typed + 3};
-                      },
-                      value_options))
-              .has_value());
+  auto add_value_worker = value_graph.add_lambda(wh::compose::make_lambda_node(
+      "worker",
+      [](wh::compose::graph_value &current_value, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_value> {
+        auto *typed = wh::core::any_cast<int>(&current_value);
+        REQUIRE(typed != nullptr);
+        return wh::compose::graph_value{*typed + 3};
+      },
+      value_options));
+  REQUIRE(add_value_worker.has_value());
   REQUIRE(value_graph.add_entry_edge("worker").has_value());
   REQUIRE(value_graph.add_exit_edge("worker").has_value());
   REQUIRE(value_graph.compile().has_value());
@@ -68,9 +66,9 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
   auto value_status = await_value(value_graph, wh::compose::graph_value{4});
   REQUIRE(value_status.has_value());
   REQUIRE(value_status->has_value());
-  auto *value = wh::core::any_cast<int>(&value_status.value());
-  REQUIRE(value != nullptr);
-  REQUIRE(*value == 16);
+  auto *output_value = wh::core::any_cast<int>(&value_status.value());
+  REQUIRE(output_value != nullptr);
+  REQUIRE(*output_value == 16);
 
   wh::compose::graph stream_graph{
       wh::compose::graph_boundary{
@@ -87,21 +85,19 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
         typed->append("!");
         return {};
       });
-  REQUIRE(stream_graph
-              .add_lambda(wh::compose::make_lambda_node<
-                          wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
-                  "streamer",
-                  [](wh::compose::graph_value &value, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                    auto *typed = wh::core::any_cast<int>(&value);
-                    REQUIRE(typed != nullptr);
-                    return wh::compose::make_single_value_stream_reader(
-                        std::to_string(*typed));
-                  },
-                  stream_options))
-              .has_value());
+  auto add_streamer = stream_graph.add_lambda(wh::compose::make_lambda_node<
+      wh::compose::node_contract::value, wh::compose::node_contract::stream>(
+      "streamer",
+      [](wh::compose::graph_value &current_value, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_stream_reader> {
+        auto *typed = wh::core::any_cast<int>(&current_value);
+        REQUIRE(typed != nullptr);
+        return wh::compose::make_single_value_stream_reader(
+            std::to_string(*typed));
+      },
+      stream_options));
+  REQUIRE(add_streamer.has_value());
   REQUIRE(stream_graph.add_entry_edge("streamer").has_value());
   REQUIRE(stream_graph.add_exit_edge("streamer").has_value());
   REQUIRE(stream_graph.compile().has_value());
@@ -131,16 +127,15 @@ TEST_CASE("state phase helpers surface handler failures through invoke output st
         return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       });
 
-  REQUIRE(graph
-              .add_lambda(wh::compose::make_lambda_node(
-                  "worker",
-                  [](wh::compose::graph_value &value, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    return std::move(value);
-                  },
-                  options))
-              .has_value());
+  auto add_failure_worker = graph.add_lambda(wh::compose::make_lambda_node(
+      "worker",
+      [](wh::compose::graph_value &current_value, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_value> {
+        return std::move(current_value);
+      },
+      options));
+  REQUIRE(add_failure_worker.has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
   REQUIRE(graph.compile().has_value());

@@ -391,8 +391,8 @@ make_stream_completion(const std::size_t index, tool_call call,
               return wh::core::result<call_completion>::failure(status.error());
             }
             auto value = std::move(status).value();
-            auto scope = make_scope(call, *call_context);
-            auto after = run_after(afters, call, value, scope);
+            auto after_scope = make_scope(call, *call_context);
+            auto after = run_after(afters, call, value, after_scope);
             if (after.has_error()) {
               return wh::core::result<call_completion>::failure(after.error());
             }

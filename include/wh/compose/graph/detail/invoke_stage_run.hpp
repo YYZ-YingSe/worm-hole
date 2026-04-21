@@ -78,7 +78,7 @@ protected:
     const auto attempt = session().control_attempt_id();
     session().release_attempt(attempt);
     auto &attempt_slot = session().slot(attempt);
-    attempt_slot.stage = stage::freeze;
+    attempt_slot.current_stage = stage::freeze;
     attempt_slot.node_id = attempt.slot;
     return this->start_child(
         static_cast<derived_t &>(*this).build_freeze_sender(
@@ -383,7 +383,7 @@ protected:
   auto settle_async(const attempt_id attempt,
                     wh::core::result<graph_value> &&executed)
       -> wh::core::result<void> {
-    const auto current_stage = session().slot(attempt).stage;
+    const auto current_stage = session().slot(attempt).current_stage;
     if (current_stage == stage::input) {
       return settle_input(attempt, std::move(executed));
     }

@@ -6,6 +6,7 @@
 #include <exception>
 #include <exec/trampoline_scheduler.hpp>
 #include <memory>
+#include <new>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -15,8 +16,6 @@
 #include "wh/core/stdexec/counting_scope.hpp"
 #include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"
 #include "wh/core/stdexec/detail/slot_ready_list.hpp"
-#include "wh/core/stdexec/manual_lifetime.hpp"
-
 namespace wh::compose {
 
 template <typename receiver_t, typename derived_t, typename graph_scheduler_t>
@@ -173,9 +172,8 @@ protected:
     ~child_state() { reset(); }
 
     auto emplace(associated_sender_t sender, child_receiver receiver) -> void {
-      [[maybe_unused]] auto &operation = op_.construct_with([&]() {
-        return stdexec::connect(std::move(sender), std::move(receiver));
-      });
+      ::new (static_cast<void *>(op()))
+          child_op_t(stdexec::connect(std::move(sender), std::move(receiver)));
       engaged_ = true;
     }
 
@@ -183,13 +181,21 @@ protected:
       if (!engaged_) {
         return;
       }
-      op_.destruct();
+      op()->~child_op_t();
       engaged_ = false;
     }
 
-    [[nodiscard]] auto get() noexcept -> child_op_t & { return op_.get(); }
+    [[nodiscard]] auto get() noexcept -> child_op_t & { return *op(); }
 
-    wh::core::detail::manual_lifetime<child_op_t> op_{};
+    [[nodiscard]] auto op() noexcept -> child_op_t * {
+      return std::launder(reinterpret_cast<child_op_t *>(op_storage_));
+    }
+
+    [[nodiscard]] auto op() const noexcept -> const child_op_t * {
+      return std::launder(reinterpret_cast<const child_op_t *>(op_storage_));
+    }
+
+    alignas(child_op_t) std::byte op_storage_[sizeof(child_op_t)];
     std::optional<wh::core::result<graph_value>> completion{};
     bool engaged_{false};
   };
@@ -448,12 +454,11 @@ private:
     }
 
     try {
-      [[maybe_unused]] auto &join_op = join_op_.construct_with([&]() -> join_op_t {
-        return stdexec::connect(scope_.join(), child_join_receiver{this});
-      });
+      ::new (static_cast<void *>(join_op()))
+          join_op_t(stdexec::connect(scope_.join(), child_join_receiver{this}));
       join_op_engaged_ = true;
       count_.fetch_add(1U, std::memory_order_relaxed);
-      stdexec::start(join_op_.get());
+      stdexec::start(*join_op());
       return {};
     } catch (...) {
       return wh::core::result<void>::failure(
@@ -518,11 +523,19 @@ private:
     ready_children_.reset(0U);
     active_child_count_ = 0U;
     if (join_op_engaged_) {
-      join_op_.destruct();
+      join_op()->~join_op_t();
       join_op_engaged_ = false;
     }
     child_states_.reset();
     child_state_count_ = 0U;
+  }
+
+  [[nodiscard]] auto join_op() noexcept -> join_op_t * {
+    return std::launder(reinterpret_cast<join_op_t *>(join_op_storage_));
+  }
+
+  [[nodiscard]] auto join_op() const noexcept -> const join_op_t * {
+    return std::launder(reinterpret_cast<const join_op_t *>(join_op_storage_));
   }
 
   auto release_runtime_state() noexcept -> void {
@@ -568,7 +581,7 @@ protected:
   std::size_t child_state_count_{0U};
   wh::core::detail::slot_ready_list ready_children_{};
   std::size_t active_child_count_{0U};
-  wh::core::detail::manual_lifetime<join_op_t> join_op_{};
+  alignas(join_op_t) std::byte join_op_storage_[sizeof(join_op_t)];
   bool join_op_engaged_{false};
   graph_scheduler_t graph_scheduler_;
   stdexec::inplace_stop_source child_stop_source_{};

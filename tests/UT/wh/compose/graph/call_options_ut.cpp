@@ -96,10 +96,10 @@ TEST_CASE("graph call options resolve debug emission interrupt policy and compon
 TEST_CASE("graph call options freeze external interrupt policy once and dispatch matching debug observers",
           "[UT][wh/compose/graph/call_options.hpp][freeze_external_interrupt_policy][branch][boundary]") {
   wh::compose::graph_external_interrupt_policy_latch latch{};
-  const auto &first = wh::compose::freeze_external_interrupt_policy(
+  auto first = wh::compose::freeze_external_interrupt_policy(
       latch, wh::compose::graph_external_interrupt_policy{
                  .timeout = std::chrono::milliseconds{5}});
-  const auto &second = wh::compose::freeze_external_interrupt_policy(
+  auto second = wh::compose::freeze_external_interrupt_policy(
       latch, wh::compose::graph_external_interrupt_policy{
                  .timeout = std::chrono::milliseconds{99}});
   REQUIRE(first.timeout == std::optional<std::chrono::milliseconds>{

@@ -1,0 +1,84 @@
+name: reusable-coverage-shard
+
+on:
+  workflow_call:
+    inputs:
+      runner_os:
+        required: false
+        type: string
+        default: ubuntu-latest
+      configure_preset:
+        required: true
+        type: string
+      build_preset:
+        required: false
+        type: string
+        default: ""
+      shard_count:
+        required: true
+        type: number
+      shard_index:
+        required: true
+        type: number
+      timeout_minutes:
+        required: false
+        type: number
+        default: 45
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-shard:
+    runs-on: ${{ inputs.runner_os }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: coverage
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
+      - name: Run coverage shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_bin="$(command -v python3 || command -v python)"
+          artifact_dir="${RUNNER_TEMP}/coverage-artifact-${{ inputs.shard_index }}"
+          args=(
+            "$python_bin" scripts/toolchain.py ci coverage-shard
+            --configure-preset "${{ inputs.configure_preset }}"
+            --shard-count "${{ inputs.shard_count }}"
+            --shard-index "${{ inputs.shard_index }}"
+            --artifact-dir "$artifact_dir"
+          )
+          if [[ -n "${{ inputs.build_preset }}" ]]; then
+            args+=(--build-preset "${{ inputs.build_preset }}")
+          fi
+          "${args[@]}" 2>&1 | tee "${RUNNER_TEMP}/coverage.log"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-artifact-${{ inputs.shard_index }}
+          path: ${{ runner.temp }}/coverage-artifact-${{ inputs.shard_index }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload shard diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-coverage-${{ inputs.shard_index }}
+          path: ${{ runner.temp }}/coverage.log
+          if-no-files-found: error
+          retention-days: 5

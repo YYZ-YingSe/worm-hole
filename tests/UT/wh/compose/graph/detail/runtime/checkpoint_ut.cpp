@@ -16,7 +16,7 @@ TEST_CASE("runtime checkpoint helpers resolve serializers backends and validatio
   REQUIRE(serializer.value() != nullptr);
 
   wh::compose::checkpoint_serializer invalid_serializer{};
-  config.checkpoint_serializer = &invalid_serializer;
+  config.checkpoint_serializer_ptr = &invalid_serializer;
   auto invalid = resolve_serializer(config);
   REQUIRE(invalid.has_error());
   REQUIRE(invalid.error() == wh::core::errc::invalid_argument);
@@ -24,8 +24,8 @@ TEST_CASE("runtime checkpoint helpers resolve serializers backends and validatio
   wh::compose::checkpoint_store store{};
   wh::compose::checkpoint_backend backend{};
   config = {};
-  config.checkpoint_store = &store;
-  config.checkpoint_backend = &backend;
+  config.checkpoint_store_ptr = &store;
+  config.checkpoint_backend_ptr = &backend;
   auto resolved_backend = resolve_runtime_backend(config);
   REQUIRE(resolved_backend.has_error());
   REQUIRE(resolved_backend.error() == wh::core::errc::invalid_argument);

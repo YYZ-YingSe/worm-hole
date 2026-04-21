@@ -5,6 +5,7 @@
 #include <atomic>
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include <stdexec/execution.hpp>
 
@@ -27,6 +28,11 @@ struct read_operation final
       wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>;
   using stop_token_t = stdexec::stop_token_of_t<stdexec::env_of_t<receiver_t>>;
   using handoff_sender_t = stdexec::schedule_result_t<scheduler_t>;
+  struct handoff_value_tag {};
+  struct handoff_stopped_tag {};
+  using handoff_completion_t =
+      std::variant<handoff_value_tag, std::exception_ptr,
+                   handoff_stopped_tag>;
 
   struct stop_callback;
   struct handoff_receiver {
@@ -35,19 +41,20 @@ struct read_operation final
     read_operation *self{nullptr};
 
     auto set_value() noexcept -> void {
-      self->reset_handoff();
-      self->deliver();
+      self->publish_handoff_completion(handoff_completion_t{
+          handoff_value_tag{}});
     }
 
     template <typename error_t>
     auto set_error(error_t &&error) noexcept -> void {
-      self->reset_handoff();
-      self->deliver_error(std::forward<error_t>(error));
+      self->publish_handoff_completion(handoff_completion_t{
+          wh::core::cursor_reader_detail::to_exception_ptr(
+              std::forward<error_t>(error))});
     }
 
     auto set_stopped() noexcept -> void {
-      self->reset_handoff();
-      self->deliver_stopped();
+      self->publish_handoff_completion(handoff_completion_t{
+          handoff_stopped_tag{}});
     }
 
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
@@ -72,12 +79,19 @@ struct read_operation final
   bool released{true};
   receiver_t receiver_;
   scheduler_t scheduler_;
-  wh::core::detail::manual_lifetime<handoff_op_t> handoff_op_{};
+  wh::core::detail::manual_storage<sizeof(handoff_op_t), alignof(handoff_op_t)>
+      handoff_op_{};
   bool handoff_engaged_{false};
-  std::optional<stop_callback_t> on_stop_{};
+  wh::core::detail::manual_storage<sizeof(stop_callback_t),
+                                   alignof(stop_callback_t)>
+      on_stop_{};
+  bool on_stop_engaged_{false};
   std::atomic<bool> stop_requested_{false};
   bool stopped_{false};
   std::atomic<std::uint8_t> state_bits_{0U};
+  std::optional<handoff_completion_t> handoff_completion_{};
+  std::atomic<bool> handoff_completion_ready_{false};
+  std::atomic<bool> handoff_start_returned_{true};
 
   template <typename receiver_u>
     requires std::constructible_from<receiver_t, receiver_u &&>
@@ -101,7 +115,7 @@ struct read_operation final
   read_operation(read_operation &&) = delete;
   auto operator=(read_operation &&) -> read_operation & = delete;
   ~read_operation() {
-    on_stop_.reset();
+    reset_stop_callback();
     reset_handoff();
   }
 
@@ -125,7 +139,10 @@ struct read_operation final
 
     if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
       try {
-        on_stop_.emplace(stop_token, stop_callback{this});
+        [[maybe_unused]] auto &callback =
+            on_stop_.template construct<stop_callback_t>(stop_token,
+                                                         stop_callback{this});
+        on_stop_engaged_ = true;
       } catch (...) {
         stdexec::set_error(std::move(receiver_), std::current_exception());
         return;
@@ -186,13 +203,21 @@ private:
             delivering_bit_) == 0U;
   }
 
-  auto release_stop() noexcept -> void { on_stop_.reset(); }
+  auto reset_stop_callback() noexcept -> void {
+    if (!on_stop_engaged_) {
+      return;
+    }
+    on_stop_.template destruct<stop_callback_t>();
+    on_stop_engaged_ = false;
+  }
+
+  auto release_stop() noexcept -> void { reset_stop_callback(); }
 
   auto reset_handoff() noexcept -> void {
     if (!handoff_engaged_) {
       return;
     }
-    handoff_op_.destruct();
+    handoff_op_.template destruct<handoff_op_t>();
     handoff_engaged_ = false;
   }
 
@@ -228,16 +253,52 @@ private:
     }
     try {
       [[maybe_unused]] auto &handoff_op =
-          handoff_op_.construct_with([&]() -> handoff_op_t {
+          handoff_op_.template construct_with<handoff_op_t>([&]() -> handoff_op_t {
         return stdexec::connect(stdexec::schedule(scheduler_),
                                 handoff_receiver{this});
       });
       handoff_engaged_ = true;
-      stdexec::start(handoff_op_.get());
+      handoff_start_returned_.store(false, std::memory_order_release);
+      stdexec::start(handoff_op_.template get<handoff_op_t>());
+      handoff_start_returned_.store(true, std::memory_order_release);
+      if (handoff_completion_ready_.load(std::memory_order_acquire)) {
+        drain_handoff_completion();
+      }
     } catch (...) {
+      handoff_start_returned_.store(true, std::memory_order_release);
       reset_handoff();
       deliver_error(std::current_exception());
     }
+  }
+
+  auto publish_handoff_completion(handoff_completion_t completion) noexcept
+      -> void {
+    wh_invariant(
+        !handoff_completion_ready_.load(std::memory_order_acquire));
+    handoff_completion_.emplace(std::move(completion));
+    handoff_completion_ready_.store(true, std::memory_order_release);
+    if (handoff_start_returned_.load(std::memory_order_acquire)) {
+      drain_handoff_completion();
+    }
+  }
+
+  auto drain_handoff_completion() noexcept -> void {
+    if (!handoff_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+      return;
+    }
+    auto completion = std::move(*handoff_completion_);
+    handoff_completion_.reset();
+    reset_handoff();
+
+    if (std::holds_alternative<handoff_value_tag>(completion)) {
+      deliver();
+      return;
+    }
+    if (std::holds_alternative<std::exception_ptr>(completion)) {
+      deliver_error(std::move(std::get<std::exception_ptr>(completion)));
+      return;
+    }
+    deliver_stopped();
   }
 
   auto deliver() noexcept -> void {

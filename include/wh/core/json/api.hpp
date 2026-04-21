@@ -16,7 +16,7 @@
 namespace wh::core {
 
 /// Returns the unified JSON kind for a RapidJSON value.
-[[nodiscard]] inline constexpr auto json_kind(const json_value &value) noexcept
+[[nodiscard]] inline auto json_kind(const json_value &value) noexcept
     -> json_value_kind {
   if (value.IsNull()) {
     return json_value_kind::null_value;

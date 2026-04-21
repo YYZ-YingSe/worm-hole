@@ -118,6 +118,12 @@ The repository now exposes one preset-driven local surface:
 ./build.sh test --preset dev-debug --build-first
 ```
 
+For editor and clangd support, configure the dedicated full-surface preset once:
+
+```bash
+./build.sh editor
+```
+
 Common variants:
 
 ```bash
@@ -125,6 +131,8 @@ Common variants:
 ./build.sh test --preset dev-debug --build-first --suite FT
 ./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
 ./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
+./build.sh configure --preset dev-clang-release
+./build.sh configure --preset dev-gcc-release
 ```
 
 For machine-oriented automation, the canonical orchestrator is:

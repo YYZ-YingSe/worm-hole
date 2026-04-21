@@ -2350,9 +2350,9 @@ struct node_case_info {
                         [](wh::compose::tool_call call, wh::tool::call_scope)
                             -> wh::compose::tools_invoke_sender {
                       return stdexec::just(std::move(call.arguments)) |
-                             stdexec::then([](std::string value)
+                             stdexec::then([](std::string text)
                                                -> wh::core::result<wh::compose::graph_value> {
-                               return wh::core::any(std::string{"async:"} + value);
+                               return wh::core::any(std::string{"async:"} + text);
                              });
                     }});
     return make_single_node_graph(wh::compose::make_tools_node<
@@ -2370,10 +2370,10 @@ struct node_case_info {
                         [](wh::compose::tool_call call, wh::tool::call_scope)
                             -> wh::compose::tools_stream_sender {
                       return stdexec::just(std::move(call.arguments)) |
-                             stdexec::then([](std::string value)
+                             stdexec::then([](std::string text)
                                                -> wh::core::result<wh::compose::graph_stream_reader> {
                                return make_string_graph_stream(
-                                   {value + ":a", value + ":b"});
+                                   {text + ":a", text + ":b"});
                              });
                     }});
     return make_single_node_graph(wh::compose::make_tools_node<
@@ -3228,11 +3228,11 @@ enum class lowering_style : std::uint8_t {
         output_contract_of(from) == wh::compose::node_contract::stream;
     const auto target_stream =
         input_contract_of(to) == wh::compose::node_contract::stream;
-    auto options =
+    auto edge_options =
         style == lowering_style::builtin
             ? make_builtin_bridge_options(source_stream, target_stream)
             : make_custom_bridge_options(source_stream, target_stream);
-    if (!options.has_value()) {
+    if (!edge_options.has_value()) {
       auto edge = graph.add_edge(std::string{from}, std::string{to});
       if (edge.has_error()) {
         return wh::core::result<void>::failure(edge.error());
@@ -3241,7 +3241,7 @@ enum class lowering_style : std::uint8_t {
     }
 
     auto edge = graph.add_edge(std::string{from}, std::string{to},
-                               std::move(*options));
+                               std::move(*edge_options));
     if (edge.has_error()) {
       return wh::core::result<void>::failure(edge.error());
     }
@@ -6245,11 +6245,14 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
         auto persisted = store.load(
             wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
         REQUIRE(persisted.has_value());
-        REQUIRE(
+        auto persisted_start =
             checkpoint_pending_input(persisted.value(),
-                                   wh::compose::graph_start_node_key)
-                .value() == 12);
-        REQUIRE(checkpoint_pending_input(persisted.value(), "tail").value() == 12);
+                                     wh::compose::graph_start_node_key);
+        auto persisted_tail = checkpoint_pending_input(persisted.value(), "tail");
+        REQUIRE(persisted_start.has_value());
+        REQUIRE(persisted_start.value() == 12);
+        REQUIRE(persisted_tail.has_value());
+        REQUIRE(persisted_tail.value() == 12);
 
         wh::compose::graph_invoke_controls resume_controls{};
         resume_controls.checkpoint.load =

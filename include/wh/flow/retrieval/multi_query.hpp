@@ -303,9 +303,10 @@ template <typename fusion_t>
 template <retriever_component retriever_t, query_rewriter rewrite_t,
           multi_query_fusion fusion_t>
 struct authored_state {
-  authored_state(retriever_t retriever, rewrite_t rewriter, fusion_t fusion) noexcept
-      : retriever(std::move(retriever)), rewriter(std::move(rewriter)),
-        fusion(std::move(fusion)) {}
+  authored_state(retriever_t retriever_value, rewrite_t rewriter_value,
+                 fusion_t fusion_value) noexcept
+      : retriever(std::move(retriever_value)),
+        rewriter(std::move(rewriter_value)), fusion(std::move(fusion_value)) {}
 
   retriever_t retriever;
   rewrite_t rewriter;
@@ -316,10 +317,12 @@ struct authored_state {
 template <retriever_component retriever_t, query_rewriter rewrite_t,
           multi_query_fusion fusion_t>
 struct runtime_state {
-  runtime_state(retriever_t retriever, rewrite_t rewriter, fusion_t fusion,
-                const std::size_t max_queries) noexcept
-      : retriever(std::move(retriever)), rewriter(std::move(rewriter)),
-        fusion(std::move(fusion)), max_queries(max_queries) {}
+  runtime_state(retriever_t retriever_value, rewrite_t rewriter_value,
+                fusion_t fusion_value,
+                const std::size_t max_queries_value) noexcept
+      : retriever(std::move(retriever_value)),
+        rewriter(std::move(rewriter_value)), fusion(std::move(fusion_value)),
+        max_queries(max_queries_value) {}
 
   retriever_t retriever;
   rewrite_t rewriter;

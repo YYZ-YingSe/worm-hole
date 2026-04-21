@@ -345,7 +345,7 @@ begin_deterministic_transfer(deterministic_transfer_state &state,
 inline auto record_parent_visible_event(deterministic_transfer_state &state,
                                         const agent_event &event)
     -> wh::core::result<void> {
-  if (!(event.metadata.run_path == state.exact_run_path)) {
+  if (!(event.metadata.path == state.exact_run_path)) {
     return {};
   }
   if (const auto *control = std::get_if<control_action>(&event.payload);

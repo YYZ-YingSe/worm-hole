@@ -46,6 +46,18 @@ Those are now explicit CMake defines passed through the toolchain entrypoint:
 ./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
 ```
 
+## My editor or clangd shows missing headers
+
+Configure the dedicated full-surface editor preset once:
+
+```bash
+./build.sh editor
+```
+
+That preset enables tests, examples, and benchmarks together so the compile
+database covers headers such as `catch2/catch_test_macros.hpp` and
+`benchmark/benchmark.h`.
+
 ## A local compiler is blocked by warnings-as-errors
 
 For local investigation only, reconfigure with warnings-as-errors disabled:

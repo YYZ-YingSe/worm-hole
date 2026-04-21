@@ -28,13 +28,13 @@ struct invoke_config {
   /// Optional state-handler registry injected by caller.
   const graph_state_handler_registry *state_handlers{nullptr};
   /// Optional checkpoint store injected by caller.
-  checkpoint_store *checkpoint_store{nullptr};
+  checkpoint_store *checkpoint_store_ptr{nullptr};
   /// Optional checkpoint backend injected by caller.
-  checkpoint_backend *checkpoint_backend{nullptr};
+  checkpoint_backend *checkpoint_backend_ptr{nullptr};
   /// Optional stream conversion registry used by checkpoint save/load.
-  const checkpoint_stream_codecs *checkpoint_stream_codecs{nullptr};
+  const checkpoint_stream_codecs *checkpoint_stream_codecs_ptr{nullptr};
   /// Optional serializer pair used by checkpoint save/load.
-  const checkpoint_serializer *checkpoint_serializer{nullptr};
+  const checkpoint_serializer *checkpoint_serializer_ptr{nullptr};
   /// Optional restore/load options for this invoke.
   std::optional<checkpoint_load_options> checkpoint_load{};
   /// Optional persist/save options for this invoke.

@@ -43,6 +43,22 @@ TEST_CASE("manual_lifetime constructs and destructs values explicitly",
   REQUIRE(tracked_value::destroyed == 1);
 }
 
+TEST_CASE("manual_storage constructs and destructs typed values explicitly",
+          "[UT][wh/core/stdexec/manual_lifetime.hpp][manual_storage::construct][manual_storage::destruct]") {
+  tracked_value::constructed = 0;
+  tracked_value::destroyed = 0;
+
+  wh::core::detail::manual_storage<sizeof(tracked_value), alignof(tracked_value)>
+      storage{};
+  auto &value = storage.construct<tracked_value>(29);
+  REQUIRE(value.value == 29);
+  REQUIRE(tracked_value::constructed == 1);
+  REQUIRE(tracked_value::destroyed == 0);
+
+  storage.destruct<tracked_value>();
+  REQUIRE(tracked_value::destroyed == 1);
+}
+
 TEST_CASE("manual_lifetime construct_with preserves exact value type",
           "[UT][wh/core/stdexec/manual_lifetime.hpp][manual_lifetime::construct_with][branch]") {
   tracked_value::constructed = 0;
@@ -71,6 +87,22 @@ TEST_CASE("manual_lifetime construct_from forwards factory arguments",
 
   storage.destruct();
   REQUIRE(tracked_value::destroyed == 1);
+}
+
+TEST_CASE("manual_storage construct_with preserves exact value type",
+          "[UT][wh/core/stdexec/manual_lifetime.hpp][manual_storage::construct_with][branch]") {
+  tracked_value::constructed = 0;
+  tracked_value::destroyed = 0;
+
+  wh::core::detail::manual_storage<sizeof(tracked_value), alignof(tracked_value)>
+      storage{};
+  auto &value =
+      storage.construct_with<tracked_value>([]() noexcept { return tracked_value{31}; });
+  REQUIRE(value.value == 31);
+  REQUIRE(tracked_value::constructed >= 1);
+
+  storage.destruct<tracked_value>();
+  REQUIRE(tracked_value::destroyed >= 1);
 }
 
 TEST_CASE("manual_lifetime get on rvalue moves out the stored value",

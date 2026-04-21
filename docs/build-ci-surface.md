@@ -21,6 +21,7 @@ Typical local flow:
 
 ```bash
 ./build.sh sync-third-party
+./build.sh editor
 ./build.sh configure --preset dev-debug
 ./build.sh build --preset dev-debug --artifacts tests
 ./build.sh test --preset dev-debug --build-first
@@ -34,6 +35,8 @@ Common variants:
 ./build.sh test --preset dev-debug --build-first --suite FT
 ./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
 ./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
+./build.sh configure --preset dev-clang-release
+./build.sh configure --preset dev-gcc-release
 ```
 
 The root wrapper simply forwards to `scripts/toolchain.py local ...`.
@@ -44,25 +47,39 @@ still lives under `thirdy_party/` as an internal path.
 
 GitHub Actions now call `scripts/toolchain.py ci ...` directly.
 
-Tracked workflows:
+Tracked trigger workflows:
 
 - `01-pr-fast-gates.yml`
-  - actionlint, gitleaks, shellcheck, clang-format
+  - thin PR/manual trigger for fast gates
 - `02-build-test-matrix.yml`
-  - cross-platform build/test shards for `ci.pr`
+  - thin matrix trigger for cross-platform `ci.pr` build/test shards
 - `03-deep-quality.yml`
-  - clang-tidy, CodeChecker, ASan/UBSan, TSan
+  - thin trigger for clang-tidy, CodeChecker, ASan/UBSan, TSan
 - `04-security-coverage.yml`
-  - dependency review, Trivy, and Linux coverage shards / aggregate
+  - thin trigger for dependency review, Trivy, and Linux coverage shards / aggregate
 - `05-nightly-stress.yml`
-  - Linux `ci.nightly` stress shards
+  - thin trigger for Linux `ci.nightly` stress shards
+- `06-manual-debug.yml`
+  - manual debug lane with explicit runner, preset, shard, and label inputs
+
+Tracked reusable workflows:
+
+- `reusable-fast-gates.yml`
+- `reusable-build-test.yml`
+- `reusable-analysis.yml`
+- `reusable-coverage-shard.yml`
+- `reusable-coverage-aggregate.yml`
 
 Build/test and sanitizer shards are now planned from the test manifest and a
 build-action budget, rather than hard-coded target counts. Coverage now uses
 the same source-layout manifest planning model, with shard-local profile
-collection and a final aggregate gate. CodeQL is provided by GitHub's default
-Code Scanning setup instead of a duplicate repo-local workflow job.
-Tracked workflows currently use a 200 build-action shard budget by default.
+collection and a final aggregate gate. CI execution bodies are now centralized
+in reusable workflows so checkout, environment setup, compiler cache, and
+diagnostic artifact handling are no longer copy-pasted across each trigger
+workflow. CodeQL is provided by GitHub's default Code Scanning setup instead
+of a duplicate repo-local workflow job. Tracked workflows currently use a 200
+build-action shard budget by default, and matrix jobs now set explicit
+`max-parallel` limits to avoid flooding runners.
 
 Representative CI commands:
 

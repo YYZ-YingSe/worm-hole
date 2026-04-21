@@ -324,10 +324,10 @@ public:
         case child_kind::none:
           return;
         case child_kind::event:
-          event_child_op_.destruct();
+          event_child_op_.template destruct<event_child_op_t>();
           break;
         case child_kind::message:
-          message_child_op_.destruct();
+          message_child_op_.template destruct<message_child_op_t>();
           break;
         }
         child_kind_ = child_kind::none;
@@ -380,13 +380,14 @@ public:
       [[nodiscard]] auto start_event_child() noexcept -> bool {
         try {
           [[maybe_unused]] auto &child_op =
-              event_child_op_.construct_with([&]() -> event_child_op_t {
+              event_child_op_.template construct_with<event_child_op_t>(
+                  [&]() -> event_child_op_t {
             return stdexec::connect(owner_->reader_.read_async(),
                                     child_receiver{this, env_});
           });
           child_kind_ = child_kind::event;
           count_.fetch_add(1U, std::memory_order_relaxed);
-          stdexec::start(event_child_op_.get());
+          stdexec::start(event_child_op_.template get<event_child_op_t>());
           return false;
         } catch (...) {
           destroy_child();
@@ -398,13 +399,14 @@ public:
       [[nodiscard]] auto start_message_child() noexcept -> bool {
         try {
           [[maybe_unused]] auto &child_op =
-              message_child_op_.construct_with([&]() -> message_child_op_t {
+              message_child_op_.template construct_with<message_child_op_t>(
+                  [&]() -> message_child_op_t {
             return stdexec::connect(owner_->active_message_reader_->read_async(),
                                     child_receiver{this, env_});
           });
           child_kind_ = child_kind::message;
           count_.fetch_add(1U, std::memory_order_relaxed);
-          stdexec::start(message_child_op_.get());
+          stdexec::start(message_child_op_.template get<message_child_op_t>());
           return false;
         } catch (...) {
           destroy_child();
@@ -482,8 +484,12 @@ public:
       receiver_t receiver_;
       receiver_env_t env_{};
       resume_scheduler_t scheduler_{};
-      wh::core::detail::manual_lifetime<event_child_op_t> event_child_op_{};
-      wh::core::detail::manual_lifetime<message_child_op_t> message_child_op_{};
+      wh::core::detail::manual_storage<sizeof(event_child_op_t),
+                                       alignof(event_child_op_t)>
+          event_child_op_{};
+      wh::core::detail::manual_storage<sizeof(message_child_op_t),
+                                       alignof(message_child_op_t)>
+          message_child_op_{};
       std::optional<child_completion_t> child_completion_{};
       std::optional<final_completion> terminal_{};
       std::atomic<std::size_t> count_{1U};

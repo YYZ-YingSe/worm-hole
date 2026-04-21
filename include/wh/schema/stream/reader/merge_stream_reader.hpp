@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -57,10 +58,53 @@ template <typename source_t, typename reader_t>
 named_stream_reader(source_t, reader_t, bool = false)
     -> named_stream_reader<std::remove_cvref_t<reader_t>>;
 
-#include "wh/schema/stream/reader/detail/dynamic_topology_registry.hpp"
-#include "wh/schema/stream/reader/detail/static_topology_registry.hpp"
-
 namespace detail {
+
+template <typename index_t = std::uint32_t>
+[[nodiscard]] inline constexpr auto indexed_capacity_limit() noexcept
+    -> std::size_t {
+  return static_cast<std::size_t>(std::numeric_limits<index_t>::max());
+}
+
+template <typename slot_t, typename index_t = std::uint32_t>
+[[nodiscard]] inline constexpr auto slot_array_capacity_limit() noexcept
+    -> std::size_t {
+  return std::min(
+      indexed_capacity_limit<index_t>(),
+      static_cast<std::size_t>(
+          std::numeric_limits<std::ptrdiff_t>::max() /
+          static_cast<std::ptrdiff_t>(sizeof(slot_t))));
+}
+
+template <typename index_t = std::uint32_t>
+[[nodiscard]] inline auto validate_indexed_capacity(const std::size_t count,
+                                                    const char *context)
+    -> std::size_t {
+  if (count > indexed_capacity_limit<index_t>()) {
+    throw std::length_error{context};
+  }
+  return count;
+}
+
+template <typename slot_t, typename index_t = std::uint32_t>
+[[nodiscard]] inline auto validate_slot_array_capacity(
+    const std::size_t count, const char *context) -> std::size_t {
+  if (count > slot_array_capacity_limit<slot_t, index_t>()) {
+    throw std::length_error{context};
+  }
+  return count;
+}
+
+template <typename slot_t, typename index_t = std::uint32_t>
+[[nodiscard]] inline auto allocate_slot_array(const std::size_t count,
+                                              const char *context)
+    -> std::unique_ptr<slot_t[]> {
+  if (count == 0U) {
+    return {};
+  }
+  return std::make_unique<slot_t[]>(
+      validate_slot_array_capacity<slot_t, index_t>(count, context));
+}
 
 template <typename error_t>
 [[nodiscard]] inline auto map_merge_async_error(error_t &&error) noexcept -> wh::core::error_code {
@@ -93,6 +137,9 @@ template <stream_reader reader_t>
 [[nodiscard]] inline auto make_named_stream_readers(std::vector<reader_t> &&readers)
     -> std::vector<named_stream_reader<reader_t>> {
   std::vector<named_stream_reader<reader_t>> named_readers{};
+  static_cast<void>(validate_indexed_capacity<>(
+      readers.size(),
+      "merge_stream_reader lane count exceeds uint32_t slot capacity"));
   named_readers.reserve(readers.size());
   for (std::size_t index = 0U; index < readers.size(); ++index) {
     named_readers.push_back(
@@ -102,6 +149,9 @@ template <stream_reader reader_t>
 }
 
 } // namespace detail
+
+#include "wh/schema/stream/reader/detail/dynamic_topology_registry.hpp"
+#include "wh/schema/stream/reader/detail/static_topology_registry.hpp"
 
 /// Merges multiple named readers into one interleaved output stream.
 template <stream_reader reader_t,
@@ -156,7 +206,8 @@ private:
 
       template <typename factory_t> auto emplace(factory_t &&factory) -> void {
         [[maybe_unused]] auto &operation =
-            op_.construct_with(std::forward<factory_t>(factory));
+            op_.template construct_with<child_op_t>(
+                std::forward<factory_t>(factory));
         engaged_ = true;
       }
 
@@ -164,11 +215,12 @@ private:
         if (!engaged_) {
           return;
         }
-        op_.destruct();
+        op_.template destruct<child_op_t>();
         engaged_ = false;
       }
 
-      wh::core::detail::manual_lifetime<child_op_t> op_{};
+      wh::core::detail::manual_storage<sizeof(child_op_t), alignof(child_op_t)>
+          op_{};
       std::optional<completion_t> completion{};
       bool engaged_{false};
     };
@@ -177,7 +229,9 @@ private:
     child_slots() = default;
 
     explicit child_slots(const std::size_t size)
-        : slots_(size == 0U ? nullptr : std::make_unique<slot[]>(size)),
+        : slots_(detail::allocate_slot_array<slot>(
+              size,
+              "merge_stream_reader child slot count exceeds supported capacity")),
           size_(size) {}
 
     child_slots(const child_slots &) = delete;
@@ -192,19 +246,19 @@ private:
                before_start_t &&before_start = nullptr)
         -> wh::core::result<void> {
       wh_precondition(slot_id < size_);
-      auto &slot = slots_[slot_id];
-      wh_invariant(!slot.engaged_);
+      auto &child_slot = slots_[slot_id];
+      wh_invariant(!child_slot.engaged_);
 
       try {
-        slot.emplace(std::forward<factory_t>(factory));
+        child_slot.emplace(std::forward<factory_t>(factory));
         if constexpr (!std::same_as<std::remove_cvref_t<before_start_t>,
                                     std::nullptr_t>) {
           std::forward<before_start_t>(before_start)();
         }
-        stdexec::start(slot.op_.get());
+        stdexec::start(child_slot.op_.template get<child_op_t>());
         return {};
       } catch (...) {
-        slot.reset();
+        child_slot.reset();
         return wh::core::result<void>::failure(wh::core::map_current_exception());
       }
     }
@@ -222,11 +276,11 @@ private:
     auto store_completion(const std::uint32_t slot_id, completion_t completion) noexcept
         -> bool {
       wh_precondition(slot_id < size_);
-      auto &slot = slots_[slot_id];
-      if (slot.completion.has_value()) {
+      auto &child_slot = slots_[slot_id];
+      if (child_slot.completion.has_value()) {
         return false;
       }
-      slot.completion.emplace(std::move(completion));
+      child_slot.completion.emplace(std::move(completion));
       return true;
     }
 
@@ -235,12 +289,12 @@ private:
       auto &drain_fn = fn;
       ready.drain([&](const std::uint32_t slot_id) {
         wh_precondition(slot_id < size_);
-        auto &slot = slots_[slot_id];
-        if (!slot.completion.has_value()) {
+        auto &child_slot = slots_[slot_id];
+        if (!child_slot.completion.has_value()) {
           return;
         }
-        auto completion = std::move(*slot.completion);
-        slot.completion.reset();
+        auto completion = std::move(*child_slot.completion);
+        child_slot.completion.reset();
         drain_fn(slot_id, std::move(completion));
       });
     }
@@ -254,7 +308,9 @@ private:
   public:
     auto reset(const std::size_t count) -> void {
       if (count > capacity_) {
-        slots_ = std::make_unique<slot[]>(count);
+        slots_ = detail::allocate_slot_array<slot>(
+            count,
+            "merge_stream_reader round tracker slot count exceeds supported capacity");
         capacity_ = count;
       }
       for (std::size_t index = 0U; index < count; ++index) {
@@ -998,11 +1054,12 @@ private:
 
     [[nodiscard]] auto active_round() noexcept -> round_state & {
       wh_invariant(round_engaged_);
-      return round_.get();
+      return round_.template get<round_state>();
     }
 
     auto construct_round() -> void {
-      [[maybe_unused]] auto &round = round_.construct(lane_capacity_);
+      [[maybe_unused]] auto &round =
+          round_.template construct<round_state>(lane_capacity_);
       round_engaged_ = true;
     }
 
@@ -1010,8 +1067,8 @@ private:
       if (!round_engaged_) {
         return;
       }
-      round_.get().children.destroy_all();
-      round_.destruct();
+      round_.template get<round_state>().children.destroy_all();
+      round_.template destruct<round_state>();
       round_engaged_ = false;
     }
 
@@ -1310,7 +1367,8 @@ private:
     receiver_env_t env_{};
     resume_scheduler_t scheduler_;
     std::size_t lane_capacity_{0U};
-    wh::core::detail::manual_lifetime<round_state> round_{};
+    wh::core::detail::manual_storage<sizeof(round_state), alignof(round_state)>
+        round_{};
     bool round_engaged_{false};
     wh::core::detail::scheduled_resume_turn<read_operation, resume_scheduler_t>
         resume_turn_;

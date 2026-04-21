@@ -59,13 +59,13 @@ TEST_CASE("agent tool impl detail constants runtime access and metadata helpers 
   auto default_metadata = wh::adk::detail::default_tool_metadata(runtime.value(), snapshot);
   REQUIRE(default_metadata.agent_name == "worker");
   REQUIRE(default_metadata.tool_name == "delegate");
-  REQUIRE(default_metadata.run_path.to_string("/") == "tool/delegate/call-1/agent/worker");
+  REQUIRE(default_metadata.path.to_string("/") == "tool/delegate/call-1/agent/worker");
 
   wh::adk::event_metadata child_metadata{};
-  child_metadata.run_path = wh::adk::run_path{{"agent", "leaf"}};
+  child_metadata.path = wh::adk::run_path{{"agent", "leaf"}};
   auto normalized = wh::adk::detail::normalize_child_metadata(runtime.value(), snapshot,
                                                               std::move(child_metadata));
-  REQUIRE(normalized.run_path.to_string("/") == "tool/delegate/call-1/agent/leaf");
+  REQUIRE(normalized.path.to_string("/") == "tool/delegate/call-1/agent/leaf");
   REQUIRE(normalized.agent_name == "worker");
   REQUIRE(normalized.tool_name == "delegate");
 }

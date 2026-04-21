@@ -95,7 +95,7 @@ TEST_CASE("invoke stage run preserves timeout overrides for inline-control sync 
   wh::compose::graph graph{std::move(options)};
 
   wh::compose::graph_add_node_options node_options{};
-  node_options.sync_dispatch = wh::compose::sync_dispatch::inline_control;
+  node_options.dispatch = wh::compose::sync_dispatch::inline_control;
   node_options.timeout_override = std::chrono::milliseconds{5};
   REQUIRE(graph
               .add_lambda(
@@ -137,37 +137,33 @@ TEST_CASE("invoke stage run restores retained stream input before retrying a con
   wh::compose::graph graph{std::move(options)};
 
   int attempts = 0;
-  REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
-                  "worker",
-                  [&attempts](wh::compose::graph_stream_reader input,
-                              wh::core::run_context &,
-                              const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    auto chunks =
-                        wh::compose::collect_graph_stream_reader(std::move(input));
-                    if (chunks.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          chunks.error());
-                    }
-                    ++attempts;
-                    if (attempts == 1) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          wh::core::errc::unavailable);
-                    }
-                    REQUIRE(chunks->size() == 1U);
-                    auto typed =
-                        wh::testing::helper::read_graph_value<std::string>(
-                            chunks->front());
-                    if (typed.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          typed.error());
-                    }
-                    return wh::compose::graph_value{
-                        typed.value() + "-replayed"};
-                  })
-              .has_value());
+  auto add_worker = graph.add_lambda<wh::compose::node_contract::stream,
+                                     wh::compose::node_contract::value>(
+      "worker",
+      [&attempts](wh::compose::graph_stream_reader input,
+                  wh::core::run_context &,
+                  const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_value> {
+        auto chunks = wh::compose::collect_graph_stream_reader(std::move(input));
+        if (chunks.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(
+              chunks.error());
+        }
+        ++attempts;
+        if (attempts == 1) {
+          return wh::core::result<wh::compose::graph_value>::failure(
+              wh::core::errc::unavailable);
+        }
+        REQUIRE(chunks->size() == 1U);
+        auto typed = wh::testing::helper::read_graph_value<std::string>(
+            chunks->front());
+        if (typed.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(
+              typed.error());
+        }
+        return wh::compose::graph_value{typed.value() + "-replayed"};
+      });
+  REQUIRE(add_worker.has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
   REQUIRE(graph.compile().has_value());

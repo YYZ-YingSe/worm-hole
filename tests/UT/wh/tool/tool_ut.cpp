@@ -3,6 +3,7 @@
 #include <chrono>
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -200,6 +201,54 @@ struct inline_retry_impl {
         .max_depth = max_depth,
         .fail_before_success = fail_before_success,
     };
+  }
+};
+
+struct attempt_lifetime_probe_state {
+  std::atomic<bool> child_destroyed{false};
+  std::atomic<bool> child_destroyed_before_start_return{false};
+};
+
+struct attempt_lifetime_probe_sender {
+  using sender_concept = stdexec::sender_t;
+  using completion_signatures =
+      stdexec::completion_signatures<stdexec::set_value_t(wh::tool::tool_invoke_result)>;
+
+  template <typename receiver_t> struct operation {
+    using operation_state_concept = stdexec::operation_state_t;
+
+    receiver_t receiver;
+    std::shared_ptr<attempt_lifetime_probe_state> state;
+
+    ~operation() {
+      state->child_destroyed.store(true, std::memory_order_release);
+    }
+
+    auto start() & noexcept -> void {
+      auto keep_alive = state;
+      stdexec::set_value(std::move(receiver),
+                         wh::tool::tool_invoke_result{std::string{"ok"}});
+      if (keep_alive->child_destroyed.load(std::memory_order_acquire)) {
+        keep_alive->child_destroyed_before_start_return.store(
+            true, std::memory_order_release);
+      }
+    }
+  };
+
+  template <typename receiver_t>
+  auto connect(receiver_t receiver) const -> operation<receiver_t> {
+    return operation<receiver_t>{std::move(receiver), state};
+  }
+
+  std::shared_ptr<attempt_lifetime_probe_state> state;
+};
+
+struct attempt_lifetime_probe_impl {
+  std::shared_ptr<attempt_lifetime_probe_state> state{
+      std::make_shared<attempt_lifetime_probe_state>()};
+
+  [[nodiscard]] auto invoke_sender(wh::tool::tool_request) const {
+    return attempt_lifetime_probe_sender{state};
   }
 };
 
@@ -534,6 +583,26 @@ TEST_CASE("tool async invoke retries without recursive inline child starts",
   REQUIRE(result.value() == "ok");
   REQUIRE(attempts.load(std::memory_order_relaxed) == fail_before_success + 1);
   REQUIRE(max_depth.load(std::memory_order_relaxed) <= 16);
+}
+
+TEST_CASE("tool async invoke keeps inline child operation alive until child start returns",
+          "[UT][wh/tool/tool.hpp][tool::async_invoke][lifetime][regression]") {
+  wh::schema::tool_schema_definition schema{};
+  schema.name = "attempt-lifetime";
+
+  attempt_lifetime_probe_impl impl{};
+  wh::tool::tool probe_tool{schema, impl};
+
+  wh::core::run_context context{};
+  auto result = wh::testing::helper::wait_value_on_test_thread(
+      probe_tool.async_invoke(wh::tool::tool_request{"{}", {}}, context));
+
+  REQUIRE(result.has_value());
+  REQUIRE(result.value() == "ok");
+  REQUIRE(impl.state->child_destroyed.load(std::memory_order_acquire));
+  REQUIRE_FALSE(
+      impl.state->child_destroyed_before_start_return.load(
+          std::memory_order_acquire));
 }
 
 TEST_CASE(

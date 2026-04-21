@@ -23,10 +23,10 @@ template <TimingChecker timing_checker_t, typename name_t = std::string>
   requires std::constructible_from<std::string, name_t &&>
 /// Creates callback config from timing checker and optional debug name.
 [[nodiscard]] inline auto
-make_callback_config(timing_checker_t &&timing_checker, name_t &&name = {})
+make_callback_config(timing_checker_t &&checker, name_t &&name = {})
     -> callback_config {
   return wh::internal::make_callback_config(
-      std::forward<timing_checker_t>(timing_checker),
+      std::forward<timing_checker_t>(checker),
       std::forward<name_t>(name));
 }
 

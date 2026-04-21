@@ -120,7 +120,7 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
   for (const auto &text : message_texts) {
     wh::adk::event_metadata metadata{};
     if (state.add_child_metadata) {
-      metadata.run_path = wh::adk::run_path{{"agent", "leaf"}};
+      metadata.path = wh::adk::run_path{{"agent", "leaf"}};
       metadata.agent_name = "leaf";
     }
     events.push_back(wh::adk::make_message_event(make_assistant_message(text),
@@ -139,7 +139,7 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
             .interrupt_id = "interrupt-1",
         },
         wh::adk::event_metadata{
-            .run_path = wh::adk::run_path{{"agent", "leaf"}},
+            .path = wh::adk::run_path{{"agent", "leaf"}},
             .agent_name = "leaf",
         }));
   }
@@ -312,7 +312,7 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
   auto event_reader = std::move(request_result).value().events;
   auto events = collect_events(event_reader);
   REQUIRE(events.size() == 1U);
-  REQUIRE(events.front().metadata.run_path.to_string("/") ==
+  REQUIRE(events.front().metadata.path.to_string("/") ==
           "tool/delegate/call-1/agent/worker");
 
   wh::adk::agent_tool history_tool{"delegate_history", "delegate history",
@@ -373,25 +373,24 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
           wh::adk::agent_message_stream_reader{std::move(message_reader)});
   wh::adk::agent_tool live_tool{"delegate_live", "delegate live",
                                 wh::agent::agent{"worker"}};
-  REQUIRE(live_tool
-              .bind_runner([child_reader](const wh::adk::run_request &request,
-                                          wh::core::run_context &)
-                               -> wh::adk::agent_run_result {
-                REQUIRE(message_text(request.messages.front()) == "live please");
-                std::vector<wh::adk::agent_event> live_events{};
-                live_events.push_back(wh::adk::make_message_event(
-                    std::move(**child_reader),
-                    wh::adk::event_metadata{
-                        .run_path = wh::adk::run_path{{"agent", "worker"}},
-                    }));
-                child_reader->reset();
-                return wh::adk::agent_run_output{
-                    .events = wh::adk::agent_event_stream_reader{
-                        wh::schema::stream::make_values_stream_reader(
-                            std::move(live_events))},
-                };
-              })
-              .has_value());
+  auto bind_live_runner = live_tool.bind_runner(
+      [child_reader](const wh::adk::run_request &request, wh::core::run_context &)
+          -> wh::adk::agent_run_result {
+        REQUIRE(message_text(request.messages.front()) == "live please");
+        std::vector<wh::adk::agent_event> live_events{};
+        live_events.push_back(wh::adk::make_message_event(
+            std::move(**child_reader),
+            wh::adk::event_metadata{
+                .path = wh::adk::run_path{{"agent", "worker"}},
+            }));
+        child_reader->reset();
+        return wh::adk::agent_run_output{
+            .events = wh::adk::agent_event_stream_reader{
+                wh::schema::stream::make_values_stream_reader(
+                    std::move(live_events))},
+        };
+      });
+  REQUIRE(bind_live_runner.has_value());
   auto unfrozen_live_entry = live_tool.compose_entry();
   REQUIRE(unfrozen_live_entry.has_error());
   REQUIRE(unfrozen_live_entry.error() == wh::core::errc::contract_violation);

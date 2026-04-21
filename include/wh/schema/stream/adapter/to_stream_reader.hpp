@@ -72,16 +72,16 @@ public:
     requires detail::async_stream_reader<reader_t>
   {
     using input_result_t = stream_result<chunk_type>;
-    auto state = state_;
-    return state->reader.read_async() |
+    auto shared_state = state_;
+    return shared_state->reader.read_async() |
            stdexec::then([](auto status) {
              return input_result_t{std::move(status)};
            }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);
            }) |
-           stdexec::then([state = std::move(state)](input_result_t next) {
-             return map_read_chunk(state, std::move(next));
+           stdexec::then([shared_state = std::move(shared_state)](input_result_t next) {
+             return map_read_chunk(shared_state, std::move(next));
            });
   }
 

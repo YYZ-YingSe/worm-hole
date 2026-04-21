@@ -82,8 +82,8 @@ TEST_CASE("runtime state carriers default initialize caches scopes and invoke co
           "[UT][wh/compose/graph/detail/runtime/state.hpp][invoke_config][boundary]") {
   wh::compose::detail::runtime_state::invoke_config config{};
   REQUIRE(config.state_handlers == nullptr);
-  REQUIRE(config.checkpoint_store == nullptr);
-  REQUIRE(config.checkpoint_backend == nullptr);
+  REQUIRE(config.checkpoint_store_ptr == nullptr);
+  REQUIRE(config.checkpoint_backend_ptr == nullptr);
   REQUIRE_FALSE(config.checkpoint_load.has_value());
   REQUIRE_FALSE(config.checkpoint_save.has_value());
   REQUIRE(config.reinterrupt_unmatched);

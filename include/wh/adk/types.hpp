@@ -79,7 +79,7 @@ struct error_event {
 /// Extra metadata attached to every ADK event.
 struct event_metadata {
   /// Stable run-path snapshot for this event.
-  run_path run_path{};
+  run_path path{};
   /// Agent name that emitted the event.
   std::string agent_name{};
   /// Tool name associated with the event, if any.
@@ -222,7 +222,7 @@ template <> struct any_owned_traits<wh::adk::event_metadata> {
       return wh::core::result<wh::adk::event_metadata>::failure(attributes.error());
     }
     return wh::adk::event_metadata{
-        .run_path = value.run_path,
+        .path = value.path,
         .agent_name = value.agent_name,
         .tool_name = value.tool_name,
         .attributes = std::move(attributes).value(),
@@ -236,7 +236,7 @@ template <> struct any_owned_traits<wh::adk::event_metadata> {
       return wh::core::result<wh::adk::event_metadata>::failure(attributes.error());
     }
     return wh::adk::event_metadata{
-        .run_path = std::move(value.run_path),
+        .path = std::move(value.path),
         .agent_name = std::move(value.agent_name),
         .tool_name = std::move(value.tool_name),
         .attributes = std::move(attributes).value(),

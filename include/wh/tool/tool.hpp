@@ -12,6 +12,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include <exec/trampoline_scheduler.hpp>
 #include <stdexec/execution.hpp>
@@ -551,6 +552,8 @@ class tool_attempt_loop_sender {
       stopped,
     };
 
+    struct stopped_tag {};
+
     struct stop_callback {
       operation *op{nullptr};
 
@@ -564,15 +567,16 @@ class tool_attempt_loop_sender {
       receiver_env_t env_{};
 
       auto set_value(result_t status) && noexcept -> void {
-        op->finish_attempt(std::move(status));
+        op->publish_child_completion(std::move(status));
       }
 
       template <typename error_t> auto set_error(error_t &&) && noexcept -> void {
-        op->finish_attempt(result_t::failure(wh::core::errc::internal_error));
+        op->publish_child_completion(
+            result_t::failure(wh::core::errc::internal_error));
       }
 
       auto set_stopped() && noexcept -> void {
-        op->finish_stopped();
+        op->publish_child_completion(stopped_tag{});
       }
 
       [[nodiscard]] auto get_env() const noexcept { return env_; }
@@ -582,6 +586,7 @@ class tool_attempt_loop_sender {
     using adapted_child_sender_t =
         decltype(stdexec::write_env(std::declval<child_sender_t>(), std::declval<stop_token_env_t>()));
     using child_op_t = stdexec::connect_result_t<adapted_child_sender_t, child_receiver>;
+    using child_completion_t = std::variant<result_t, stopped_tag>;
     using stop_callback_t = stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
 
   public:
@@ -604,6 +609,8 @@ class tool_attempt_loop_sender {
       on_stop_.reset();
       resume_turn_.destroy();
       cleanup_current_attempt();
+      child_completion_.reset();
+      child_completion_ready_.store(false, std::memory_order_release);
     }
 
     auto start() & noexcept -> void {
@@ -636,7 +643,7 @@ class tool_attempt_loop_sender {
   private:
     auto cleanup_current_attempt() noexcept -> void {
       if (attempt_op_engaged_) {
-        attempt_op_.destruct();
+        attempt_op_.template destruct<child_op_t>();
         attempt_op_engaged_ = false;
       }
     }
@@ -674,35 +681,24 @@ class tool_attempt_loop_sender {
       const auto state = state_.load(std::memory_order_acquire);
       if (state == control_state::stopped) {
         return !child_active_.load(std::memory_order_acquire) &&
+               !child_completion_ready_.load(std::memory_order_acquire) &&
                !resume_turn_.running();
       }
       return terminal_ready_.load(std::memory_order_acquire) &&
              !child_active_.load(std::memory_order_acquire) &&
+             !child_completion_ready_.load(std::memory_order_acquire) &&
              !resume_turn_.running();
     }
 
-    auto finish_attempt(result_t status) noexcept -> void {
-      bool resume = false;
-      if (state_.load(std::memory_order_acquire) == control_state::started) {
-        const auto terminal =
-            consume_tool_attempt_result(run_state_.value(), std::move(status));
-        terminal_ready_.store(terminal, std::memory_order_release);
-        resume = !terminal &&
-                 state_.load(std::memory_order_acquire) == control_state::started;
+    auto publish_child_completion(child_completion_t completion) noexcept -> void {
+      if (completed()) {
+        return;
       }
-      cleanup_current_attempt();
-      child_active_.store(false, std::memory_order_release);
-
-      if (resume) {
-        request_resume();
-      }
-      arrive();
-    }
-
-    auto finish_stopped() noexcept -> void {
-      cleanup_current_attempt();
-      mark_stopped();
-      child_active_.store(false, std::memory_order_release);
+      wh_invariant(
+          !child_completion_ready_.load(std::memory_order_acquire));
+      child_completion_.emplace(std::move(completion));
+      child_completion_ready_.store(true, std::memory_order_release);
+      request_resume();
       arrive();
     }
 
@@ -730,42 +726,66 @@ class tool_attempt_loop_sender {
     }
 
     auto resume_turn_run() noexcept -> void {
-      if (state_.load(std::memory_order_acquire) != control_state::started ||
-          terminal_ready_.load(std::memory_order_acquire) ||
-          child_active_.load(std::memory_order_acquire) || run_state_.has_error()) {
-        return;
-      }
+      while (!completed()) {
+        if (child_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+          wh_invariant(child_completion_.has_value());
+          auto completion = std::move(*child_completion_);
+          child_completion_.reset();
+          cleanup_current_attempt();
+          child_active_.store(false, std::memory_order_release);
 
-      auto &run_state = run_state_.value();
-      if (run_state.next_attempt >= run_state.max_attempts) {
-        terminal_ready_.store(true, std::memory_order_release);
-        return;
-      }
+          if (std::holds_alternative<stopped_tag>(completion)) {
+            mark_stopped();
+            continue;
+          }
 
-      ++run_state.next_attempt;
-      try {
-        auto attempt_sender = std::invoke(make_attempt_, run_state);
-        [[maybe_unused]] auto &attempt_op =
-            attempt_op_.construct_with([&]() -> child_op_t {
-          return stdexec::connect(stdexec::write_env(
-                                      std::move(attempt_sender),
-                                      stdexec::prop{stdexec::get_stop_token,
-                                                    stop_source_.get_token()}),
-                                  child_receiver{this, receiver_env_});
-        });
-        attempt_op_engaged_ = true;
-        count_.fetch_add(1U, std::memory_order_relaxed);
-        child_active_.store(true, std::memory_order_release);
-        stdexec::start(attempt_op_.get());
-      } catch (...) {
-        cleanup_current_attempt();
-        terminal_ready_.store(
-            consume_tool_attempt_result(
-                run_state, result_t::failure(wh::core::errc::internal_error)),
-            std::memory_order_release);
-        if (!terminal_ready_.load(std::memory_order_acquire) &&
-            state_.load(std::memory_order_acquire) == control_state::started) {
-          request_resume();
+          if (state_.load(std::memory_order_acquire) != control_state::started) {
+            continue;
+          }
+
+          const auto terminal = consume_tool_attempt_result(
+              run_state_.value(), std::move(std::get<result_t>(completion)));
+          terminal_ready_.store(terminal, std::memory_order_release);
+          continue;
+        }
+
+        if (state_.load(std::memory_order_acquire) != control_state::started ||
+            terminal_ready_.load(std::memory_order_acquire) ||
+            child_active_.load(std::memory_order_acquire) ||
+            run_state_.has_error()) {
+          return;
+        }
+
+        auto &run_state = run_state_.value();
+        if (run_state.next_attempt >= run_state.max_attempts) {
+          terminal_ready_.store(true, std::memory_order_release);
+          return;
+        }
+
+        ++run_state.next_attempt;
+        try {
+          auto attempt_sender = std::invoke(make_attempt_, run_state);
+          [[maybe_unused]] auto &attempt_op =
+              attempt_op_.template construct_with<child_op_t>([&]() -> child_op_t {
+            return stdexec::connect(stdexec::write_env(
+                                        std::move(attempt_sender),
+                                        stdexec::prop{stdexec::get_stop_token,
+                                                      stop_source_.get_token()}),
+                                    child_receiver{this, receiver_env_});
+          });
+          attempt_op_engaged_ = true;
+          count_.fetch_add(1U, std::memory_order_relaxed);
+          child_active_.store(true, std::memory_order_release);
+          stdexec::start(attempt_op_.template get<child_op_t>());
+          return;
+        } catch (...) {
+          cleanup_current_attempt();
+          child_active_.store(false, std::memory_order_release);
+          terminal_ready_.store(
+              consume_tool_attempt_result(
+                  run_state, result_t::failure(wh::core::errc::internal_error)),
+              std::memory_order_release);
+          continue;
         }
       }
     }
@@ -815,13 +835,16 @@ class tool_attempt_loop_sender {
     receiver_env_t receiver_env_{};
     wh::core::result<state_t> run_state_;
     make_attempt_t make_attempt_;
-    wh::core::detail::manual_lifetime<child_op_t> attempt_op_{};
+    wh::core::detail::manual_storage<sizeof(child_op_t), alignof(child_op_t)>
+        attempt_op_{};
     std::optional<stop_callback_t> on_stop_{};
     stdexec::inplace_stop_source stop_source_{};
+    std::optional<child_completion_t> child_completion_{};
     bool attempt_op_engaged_{false};
     std::atomic<std::size_t> count_{1U};
     std::atomic<control_state> state_{control_state::started};
     std::atomic<bool> child_active_{false};
+    std::atomic<bool> child_completion_ready_{false};
     std::atomic<bool> completed_{false};
     std::atomic<bool> terminal_ready_{false};
     wh::core::detail::scheduled_resume_turn<operation, exec::trampoline_scheduler>

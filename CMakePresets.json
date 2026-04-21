@@ -17,9 +17,153 @@
         "WH_BUILD_TESTING": "ON",
         "WH_BUILD_EXAMPLES": "OFF",
         "WH_BUILD_BENCHMARKS": "OFF",
+        "WH_ENABLE_THIRD_PARTY_HEADER_WRAPPERS": "ON",
         "WH_REQUIRE_GIT_LOCKED_THIRDY_PARTY": "ON",
         "WH_THIRDY_PARTY_DIR": "${sourceDir}/thirdy_party"
       }
+    },
+    {
+      "name": "artifacts-runtime",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "WH_BUILD_TESTING": "ON",
+        "WH_BUILD_ANALYSIS": "OFF",
+        "WH_BUILD_EXAMPLES": "OFF",
+        "WH_BUILD_BENCHMARKS": "OFF"
+      }
+    },
+    {
+      "name": "artifacts-editor",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "WH_BUILD_TESTING": "ON",
+        "WH_BUILD_ANALYSIS": "OFF",
+        "WH_BUILD_EXAMPLES": "ON",
+        "WH_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    {
+      "name": "artifacts-analysis",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF",
+        "WH_BUILD_TESTING": "OFF",
+        "WH_BUILD_ANALYSIS": "ON",
+        "WH_BUILD_EXAMPLES": "OFF",
+        "WH_BUILD_BENCHMARKS": "OFF"
+      }
+    },
+    {
+      "name": "allocator-none",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "WH_EXPERIMENT_MIMALLOC": "OFF"
+      }
+    },
+    {
+      "name": "allocator-mimalloc",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "WH_EXPERIMENT_MIMALLOC": "ON"
+      }
+    },
+    {
+      "name": "profile-debug",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "WH_BUILD_PROFILE": "debug"
+      }
+    },
+    {
+      "name": "profile-release",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "WH_BUILD_PROFILE": "release"
+      }
+    },
+    {
+      "name": "profile-asan-ubsan",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "WH_BUILD_PROFILE": "asan-ubsan",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "profile-tsan",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "WH_BUILD_PROFILE": "tsan",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "profile-coverage",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "WH_BUILD_PROFILE": "coverage",
+        "WH_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "feature-analysis",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "WH_BUILD_PROFILE": "analysis"
+      }
+    },
+    {
+      "name": "compiler-host",
+      "hidden": true,
+      "inherits": "base"
+    },
+    {
+      "name": "compiler-llvm-clang",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/llvm-clang.cmake"
+    },
+    {
+      "name": "compiler-path-clang",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/path-clang.cmake"
+    },
+    {
+      "name": "compiler-gcc",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/gcc.cmake"
+    },
+    {
+      "name": "compiler-apple-clang",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/apple-clang.cmake"
+    },
+    {
+      "name": "compiler-msvc-cl",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/msvc-cl.cmake"
     },
     {
       "name": "dev-base",
@@ -31,127 +175,91 @@
     },
     {
       "name": "dev-debug",
-      "inherits": "dev-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-debug", "compiler-host", "dev-base"]
     },
     {
       "name": "dev-release",
-      "inherits": "dev-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-release", "compiler-host", "dev-base"]
+    },
+    {
+      "name": "dev-release-mimalloc",
+      "inherits": ["artifacts-runtime", "allocator-mimalloc", "profile-release", "compiler-host", "dev-base"]
+    },
+    {
+      "name": "dev-editor",
+      "inherits": ["artifacts-editor", "allocator-none", "profile-debug", "compiler-host", "dev-base"]
+    },
+    {
+      "name": "dev-clang-debug",
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-debug", "compiler-llvm-clang", "dev-base"]
+    },
+    {
+      "name": "dev-clang-release",
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-release", "compiler-llvm-clang", "dev-base"]
+    },
+    {
+      "name": "dev-gcc-release",
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-release", "compiler-gcc", "dev-base"]
+    },
+    {
+      "name": "dev-apple-clang-release",
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-release", "compiler-apple-clang", "dev-base"]
     },
     {
       "name": "dev-asan-ubsan",
-      "inherits": "dev-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g",
-        "WH_WARNINGS_AS_ERRORS": "OFF"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-asan-ubsan", "compiler-host", "dev-base"]
     },
     {
       "name": "dev-tsan",
-      "inherits": "dev-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -O1 -g",
-        "WH_WARNINGS_AS_ERRORS": "OFF"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-tsan", "compiler-host", "dev-base"]
     },
     {
       "name": "dev-coverage",
-      "inherits": "dev-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping -O0 -g",
-        "WH_WARNINGS_AS_ERRORS": "OFF"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-coverage", "compiler-host", "dev-base"]
     },
     {
       "name": "ci-base",
       "hidden": true,
-      "inherits": "base"
+      "inherits": "base",
+      "cacheVariables": {
+        "WH_WARNINGS_AS_ERRORS": "ON",
+        "WH_TEST_EXECUTABLE_LAYOUT": "source"
+      }
     },
     {
       "name": "ci-linux-debug",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "WH_WARNINGS_AS_ERRORS": "ON"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-debug", "compiler-llvm-clang", "ci-base"]
     },
     {
       "name": "ci-linux-release",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "WH_WARNINGS_AS_ERRORS": "ON"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-release", "compiler-llvm-clang", "ci-base"]
     },
     {
       "name": "ci-macos-release",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "WH_WARNINGS_AS_ERRORS": "ON"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-release", "compiler-apple-clang", "ci-base"]
     },
     {
       "name": "ci-windows-release",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "WH_WARNINGS_AS_ERRORS": "ON"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-release", "compiler-path-clang", "ci-base"]
     },
     {
       "name": "ci-static-analysis",
-      "inherits": "ci-base",
+      "inherits": ["artifacts-analysis", "allocator-none", "feature-analysis", "profile-debug", "compiler-llvm-clang", "ci-base"],
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "WH_BUILD_ANALYSIS": "ON",
-        "WH_BUILD_TESTING": "OFF",
         "WH_WARNINGS_AS_ERRORS": "OFF"
       }
     },
     {
       "name": "ci-asan-ubsan",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g",
-        "WH_WARNINGS_AS_ERRORS": "OFF"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-asan-ubsan", "compiler-llvm-clang", "ci-base"]
     },
     {
       "name": "ci-tsan",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -O1 -g",
-        "WH_WARNINGS_AS_ERRORS": "OFF"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-tsan", "compiler-llvm-clang", "ci-base"]
     },
     {
       "name": "ci-coverage",
-      "inherits": "ci-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping -O0 -g",
-        "WH_TEST_EXECUTABLE_LAYOUT": "source",
-        "WH_WARNINGS_AS_ERRORS": "OFF"
-      }
+      "inherits": ["artifacts-runtime", "allocator-none", "profile-coverage", "compiler-llvm-clang", "ci-base"]
     }
   ],
   "buildPresets": [
@@ -162,6 +270,30 @@
     {
       "name": "dev-release",
       "configurePreset": "dev-release"
+    },
+    {
+      "name": "dev-release-mimalloc",
+      "configurePreset": "dev-release-mimalloc"
+    },
+    {
+      "name": "dev-editor",
+      "configurePreset": "dev-editor"
+    },
+    {
+      "name": "dev-clang-debug",
+      "configurePreset": "dev-clang-debug"
+    },
+    {
+      "name": "dev-clang-release",
+      "configurePreset": "dev-clang-release"
+    },
+    {
+      "name": "dev-gcc-release",
+      "configurePreset": "dev-gcc-release"
+    },
+    {
+      "name": "dev-apple-clang-release",
+      "configurePreset": "dev-apple-clang-release"
     },
     {
       "name": "dev-asan-ubsan",

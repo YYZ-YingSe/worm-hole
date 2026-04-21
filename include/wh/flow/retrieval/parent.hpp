@@ -113,18 +113,20 @@ template <detail::parent::retriever_component retriever_t,
           detail::parent::parent_loader parent_loader_t>
 class parent {
   struct authored_state {
-    authored_state(retriever_t child_retriever, parent_loader_t parent_loader) noexcept
-        : child_retriever(std::move(child_retriever)),
-          parent_loader(std::move(parent_loader)) {}
+    authored_state(retriever_t child_retriever_value,
+                   parent_loader_t parent_loader_value) noexcept
+        : child_retriever(std::move(child_retriever_value)),
+          parent_loader(std::move(parent_loader_value)) {}
 
     retriever_t child_retriever;
     parent_loader_t parent_loader;
   };
 
   struct runtime_state {
-    runtime_state(retriever_t child_retriever, parent_loader_t parent_loader) noexcept
-        : child_retriever(std::move(child_retriever)),
-          parent_loader(std::move(parent_loader)) {}
+    runtime_state(retriever_t child_retriever_value,
+                  parent_loader_t parent_loader_value) noexcept
+        : child_retriever(std::move(child_retriever_value)),
+          parent_loader(std::move(parent_loader_value)) {}
 
     retriever_t child_retriever;
     parent_loader_t parent_loader;

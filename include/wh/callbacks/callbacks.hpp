@@ -84,16 +84,16 @@ template <typename payload_t>
 /// Emits one callback event through a detached callback sink.
 inline auto emit(const callback_sink &sink, const stage current_stage,
                  const payload_t &payload, const run_info &info) -> void {
-  const auto *manager = sink.manager_ptr();
-  if (manager == nullptr) {
+  const auto *sink_manager = sink.manager_ptr();
+  if (sink_manager == nullptr) {
     return;
   }
   if (sink.metadata.has_value()) {
-    manager->dispatch(current_stage, make_event_view(payload),
-                      apply_callback_run_metadata(info, *sink.metadata));
+    sink_manager->dispatch(current_stage, make_event_view(payload),
+                           apply_callback_run_metadata(info, *sink.metadata));
     return;
   }
-  manager->dispatch(current_stage, make_event_view(payload), info);
+  sink_manager->dispatch(current_stage, make_event_view(payload), info);
 }
 
 template <typename options_t>

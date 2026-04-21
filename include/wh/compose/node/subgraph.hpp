@@ -96,8 +96,8 @@ template <typename key_t, typename graph_t,
       },
       subgraph_payload{
           .lower = [child = stored_graph_t{std::forward<graph_t>(graph)},
-                    boundary](std::string key,
-                              graph_add_node_options options) mutable
+                    boundary](std::string lowered_key,
+                              graph_add_node_options lowered_options) mutable
               -> wh::core::result<compiled_node> {
             auto lowered_child = detail::materialize_subgraph(std::move(child));
             if (!lowered_child.compiled()) {
@@ -108,7 +108,7 @@ template <typename key_t, typename graph_t,
               }
             }
             return detail::make_subgraph_compiled_node(
-                std::move(key), std::move(options), boundary,
+                std::move(lowered_key), std::move(lowered_options), boundary,
                 std::move(lowered_child));
           }},
       std::move(node_options)};

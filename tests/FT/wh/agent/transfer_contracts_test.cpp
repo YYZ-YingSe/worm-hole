@@ -23,7 +23,7 @@ namespace {
     -> wh::adk::agent_event {
   return wh::adk::make_message_event(
       std::move(message),
-      wh::adk::event_metadata{.run_path = path, .agent_name = "planner"});
+      wh::adk::event_metadata{.path = path, .agent_name = "planner"});
 }
 
 } // namespace
@@ -145,7 +145,7 @@ TEST_CASE("deterministic transfer records only exact-path non-interrupt message 
                      .kind = wh::adk::control_action_kind::interrupt,
                  },
                  wh::adk::event_metadata{
-                     .run_path = wh::core::address{{"root", "planner"}},
+                     .path = wh::core::address{{"root", "planner"}},
                      .agent_name = "planner",
                  }));
   REQUIRE(interrupt.has_value());

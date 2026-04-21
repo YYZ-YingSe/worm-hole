@@ -463,7 +463,7 @@ TEST_CASE("compose graph explicit invoke schedulers split control and work execu
               .has_value());
 
   wh::compose::graph_add_node_options inline_control{};
-  inline_control.sync_dispatch = wh::compose::sync_dispatch::inline_control;
+  inline_control.dispatch = wh::compose::sync_dispatch::inline_control;
   REQUIRE(graph
               .add_lambda(
                   "sync_control",
@@ -614,7 +614,7 @@ TEST_CASE("compose graph keeps async node internal resume on work scheduler",
                             return input;
                           },
                   wh::compose::graph_add_node_options{
-                      .sync_dispatch =
+                      .dispatch =
                           wh::compose::sync_dispatch::inline_control})
               .has_value());
   REQUIRE(graph.add_entry_edge("restore").has_value());

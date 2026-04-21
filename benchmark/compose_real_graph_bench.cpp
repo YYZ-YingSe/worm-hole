@@ -34,7 +34,7 @@ using pool_scheduler = decltype(std::declval<exec::static_thread_pool &>().get_s
 [[nodiscard]] auto inline_sync_options()
     -> wh::compose::graph_add_node_options {
   return wh::compose::graph_add_node_options{
-      .sync_dispatch = wh::compose::sync_dispatch::inline_control};
+      .dispatch = wh::compose::sync_dispatch::inline_control};
 }
 
 struct bench_profile {
@@ -1086,20 +1086,21 @@ private:
           return wh::core::result<wh::compose::graph_value>::failure(
               stream.error());
         }
-        auto embedding = read_named_int(map, "embedding_summary");
-        if (embedding.has_error()) {
+        auto embedding_summary = read_named_int(map, "embedding_summary");
+        if (embedding_summary.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(
-              embedding.error());
+              embedding_summary.error());
         }
-        auto indexer = read_named_int(map, "indexer_summary");
-        if (indexer.has_error()) {
+        auto indexer_summary = read_named_int(map, "indexer_summary");
+        if (indexer_summary.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(
-              indexer.error());
+              indexer_summary.error());
         }
-        auto tool_component = read_named_int(map, "tool_component_pad_2");
-        if (tool_component.has_error()) {
+        auto tool_component_summary =
+            read_named_int(map, "tool_component_pad_2");
+        if (tool_component_summary.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(
-              tool_component.error());
+              tool_component_summary.error());
         }
         auto tools_sync = read_named_int(map, "tools_sync_pad_2");
         if (tools_sync.has_error()) {
@@ -1113,7 +1114,8 @@ private:
         }
         return wh::compose::graph_value{
             aligned_subgraph.value() + invoke.value() + stream.value() +
-            embedding.value() + indexer.value() + tool_component.value() +
+            embedding_summary.value() + indexer_summary.value() +
+            tool_component_summary.value() +
             tools_sync.value() + tools_async.value()};
       },
       inline_sync_options());

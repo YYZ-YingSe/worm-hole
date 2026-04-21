@@ -280,6 +280,9 @@ private:
   [[nodiscard]] static auto build_lanes(std::vector<lane_type> &&readers)
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
+    static_cast<void>(validate_indexed_capacity<>(
+        readers.size(),
+        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(readers.size());
     for (auto &reader : readers) {
       lanes.push_back(lane_state{

@@ -19,49 +19,49 @@ detail::invoke_runtime::invoke_session::make_input_attempt(
 
   const auto attempt = attempt_id{node_id};
   release_attempt(attempt);
-  auto &attempt_slot = slot(attempt);
-  attempt_slot.stage = invoke_stage::input;
-  attempt_slot.node_id = node_id;
-  attempt_slot.cause = graph_state_cause{
+  auto &slot_state = slot(attempt);
+  slot_state.current_stage = invoke_stage::input;
+  slot_state.node_id = node_id;
+  slot_state.cause = graph_state_cause{
       .run_id = invoke_state().run_id,
       .step = step,
       .node_key = index.id_to_key[node_id],
   };
-  attempt_slot.node = node;
+  slot_state.node = node;
   if (node_id < cache_state().resolved_state_handlers.size()) {
-    attempt_slot.state_handlers = cache_state().resolved_state_handlers[node_id];
+    slot_state.state_handlers = cache_state().resolved_state_handlers[node_id];
   }
   return attempt;
 }
 
 inline auto detail::invoke_runtime::invoke_session::store_attempt_input(
     const attempt_id attempt, graph_value input) -> wh::core::result<void> {
-  auto &attempt_slot = slot(attempt);
-  if (attempt_slot.node == nullptr) {
+  auto &slot_state = slot(attempt);
+  if (slot_state.node == nullptr) {
     return wh::core::result<void>::failure(wh::core::errc::not_found);
   }
-  if (!attempt_slot.input.has_value()) {
-    attempt_slot.input.emplace();
+  if (!slot_state.input.has_value()) {
+    slot_state.input.emplace();
   }
-  attempt_slot.input->payload.emplace(std::move(input));
+  slot_state.input->payload.emplace(std::move(input));
   return {};
 }
 
 inline auto detail::invoke_runtime::invoke_session::begin_state_pre(
     const attempt_id attempt) -> wh::core::result<state_step> {
-  auto &attempt_slot = slot(attempt);
+  auto &slot_state = slot(attempt);
   auto &invoke = invoke_state();
-  if (attempt_slot.node == nullptr) {
+  if (slot_state.node == nullptr) {
     return wh::core::result<state_step>::failure(wh::core::errc::not_found);
   }
-  if (!attempt_slot.input.has_value() ||
-      !attempt_slot.input->payload.has_value()) {
+  if (!slot_state.input.has_value() ||
+      !slot_state.input->payload.has_value()) {
     return wh::core::result<state_step>::failure(wh::core::errc::not_found);
   }
-  auto &input = *attempt_slot.input->payload;
+  auto &input = *slot_state.input->payload;
 
-  const auto &current_node_key = node_key(attempt_slot.node_id);
-  auto resume_interrupt = evaluate_resume_match(attempt_slot.node_id);
+  const auto &current_node_key = node_key(slot_state.node_id);
+  auto resume_interrupt = evaluate_resume_match(slot_state.node_id);
   if (resume_interrupt.has_error()) {
     return wh::core::result<state_step>::failure(resume_interrupt.error());
   }
@@ -69,9 +69,9 @@ inline auto detail::invoke_runtime::invoke_session::begin_state_pre(
     context_.interrupt_info = wh::compose::to_interrupt_context(
         std::move(resume_interrupt.value().value()));
     emit_debug(graph_debug_stream_event::decision_kind::interrupt_hit,
-               attempt_slot.node_id, attempt_slot.cause.step);
-    pending_inputs_.store_input(attempt_slot.node_id, std::move(input));
-    attempt_slot.input->payload.reset();
+               slot_state.node_id, slot_state.cause.step);
+    pending_inputs_.store_input(slot_state.node_id, std::move(input));
+    slot_state.input->payload.reset();
     request_freeze(false);
     return wh::core::result<state_step>::failure(wh::core::errc::canceled);
   }
@@ -85,16 +85,16 @@ inline auto detail::invoke_runtime::invoke_session::begin_state_pre(
     context_.interrupt_info = wh::compose::to_interrupt_context(
         std::move(pre_interrupt.value().value()));
     emit_debug(graph_debug_stream_event::decision_kind::interrupt_hit,
-               attempt_slot.node_id, attempt_slot.cause.step);
-    pending_inputs_.store_input(attempt_slot.node_id, std::move(input));
-    attempt_slot.input->payload.reset();
+               slot_state.node_id, slot_state.cause.step);
+    pending_inputs_.store_input(slot_state.node_id, std::move(input));
+    slot_state.input->payload.reset();
     request_freeze(false);
     return wh::core::result<state_step>::failure(wh::core::errc::canceled);
   }
 
   auto node_local_state =
       detail::process_runtime::acquire_node_local_process_state(
-          node_local_process_states_, attempt_slot.node_id, process_state_);
+          node_local_process_states_, slot_state.node_id, process_state_);
   if (node_local_state.has_error()) {
     return wh::core::result<state_step>::failure(node_local_state.error());
   }
@@ -121,29 +121,29 @@ inline auto detail::invoke_runtime::invoke_session::begin_state_pre(
     return wh::core::result<state_step>::failure(node_local_ref.error());
   }
 
-  attempt_slot.node_scope.path = runtime_node_path(attempt_slot.node_id);
-  attempt_slot.node_scope.local_process_state =
+  slot_state.node_scope.path = runtime_node_path(slot_state.node_id);
+  slot_state.node_scope.local_process_state =
       std::addressof(node_local_ref.value().get());
 
   const auto skip_pre_state_handlers =
       restore_skip_pre_handlers_ &&
-      pending_inputs_.restored_node(attempt_slot.node_id);
+      pending_inputs_.restored_node(slot_state.node_id);
   if (!skip_pre_state_handlers) {
     if (detail::state_runtime::needs_async_phase(
-            attempt_slot.state_handlers, input,
+            slot_state.state_handlers, input,
             detail::state_runtime::state_phase::pre)) {
       auto async_input = std::move(input);
-      attempt_slot.input->payload.reset();
+      slot_state.input->payload.reset();
       auto sender = owner_->apply_state_phase_async(
-          context_, attempt_slot.state_handlers,
+          context_, slot_state.state_handlers,
           detail::state_runtime::state_phase::pre, current_node_key,
-          attempt_slot.cause, node_local_ref.value().get(),
+          slot_state.cause, node_local_ref.value().get(),
           std::move(async_input),
-          attempt_slot.node_scope.path, invoke.outputs,
+          slot_state.node_scope.path, invoke.outputs,
           *invoke.work_scheduler);
-      attempt_slot.stage = invoke_stage::pre_state;
+      slot_state.current_stage = invoke_stage::pre_state;
       node_local_guard.dismiss();
-      attempt_slot.node_local_scope = std::move(node_local_scope);
+      slot_state.node_local_scope = std::move(node_local_scope);
       return state_step{
           .attempt = attempt,
           .sender = std::move(sender),
@@ -151,21 +151,21 @@ inline auto detail::invoke_runtime::invoke_session::begin_state_pre(
     }
 
     auto pre_state = owner_->apply_state_phase(
-        context_, attempt_slot.state_handlers,
+        context_, slot_state.state_handlers,
         detail::state_runtime::state_phase::pre, current_node_key,
-        attempt_slot.cause, node_local_ref.value().get(), input,
-        attempt_slot.node_scope.path, invoke.outputs);
+        slot_state.cause, node_local_ref.value().get(), input,
+        slot_state.node_scope.path, invoke.outputs);
     if (pre_state.has_error()) {
-      owner_->publish_node_run_error(invoke.outputs, attempt_slot.node_scope.path,
-                                     attempt_slot.node_id, pre_state.error(),
+      owner_->publish_node_run_error(invoke.outputs, slot_state.node_scope.path,
+                                     slot_state.node_id, pre_state.error(),
                                      "node pre-state handler failed");
-      state_table_.update(attempt_slot.node_id,
+      state_table_.update(slot_state.node_id,
                           graph_node_lifecycle_state::failed, 1U,
                           pre_state.error());
-      append_transition(attempt_slot.node_id,
+      append_transition(slot_state.node_id,
                         graph_state_transition_event{
                             .kind = graph_state_transition_kind::node_fail,
-                            .cause = attempt_slot.cause,
+                            .cause = slot_state.cause,
                             .lifecycle = graph_node_lifecycle_state::failed,
                         });
       return wh::core::result<state_step>::failure(pre_state.error());
@@ -173,7 +173,7 @@ inline auto detail::invoke_runtime::invoke_session::begin_state_pre(
   }
 
   node_local_guard.dismiss();
-  attempt_slot.node_local_scope = std::move(node_local_scope);
+  slot_state.node_local_scope = std::move(node_local_scope);
   return state_step{
       .attempt = attempt,
       .sender = std::nullopt,
@@ -182,13 +182,13 @@ inline auto detail::invoke_runtime::invoke_session::begin_state_pre(
 
 inline auto detail::invoke_runtime::invoke_session::prepare_execution_input(
     const attempt_id attempt) -> wh::core::result<state_step> {
-  auto &attempt_slot = slot(attempt);
-  if (!attempt_slot.input.has_value()) {
+  auto &slot_state = slot(attempt);
+  if (!slot_state.input.has_value()) {
     return wh::core::result<state_step>::failure(wh::core::errc::not_found);
   }
-  auto &attempt_input = *attempt_slot.input;
-  if (!attempt_input.lowering.has_value()) {
-    if (!attempt_input.payload.has_value()) {
+  auto &input_state = *slot_state.input;
+  if (!input_state.lowering.has_value()) {
+    if (!input_state.payload.has_value()) {
       return wh::core::result<state_step>::failure(wh::core::errc::not_found);
     }
     return state_step{
@@ -196,20 +196,20 @@ inline auto detail::invoke_runtime::invoke_session::prepare_execution_input(
         .sender = std::nullopt,
     };
   }
-  if (!attempt_input.payload.has_value()) {
+  if (!input_state.payload.has_value()) {
     return wh::core::result<state_step>::failure(wh::core::errc::not_found);
   }
 
-  auto input = std::move(*attempt_input.payload);
-  attempt_input.payload.reset();
+  auto input = std::move(*input_state.payload);
+  input_state.payload.reset();
   auto *reader = wh::core::any_cast<graph_stream_reader>(&input);
   if (reader == nullptr) {
     return wh::core::result<state_step>::failure(wh::core::errc::type_mismatch);
   }
 
-  auto lowering = std::move(*attempt_input.lowering);
-  attempt_input.lowering.reset();
-  attempt_slot.stage = invoke_stage::prepare;
+  auto lowering = std::move(*input_state.lowering);
+  input_state.lowering.reset();
+  slot_state.current_stage = invoke_stage::prepare;
   return state_step{
       .attempt = attempt,
       .sender = owner_->lower_reader(std::move(*reader), std::move(lowering),
@@ -218,38 +218,38 @@ inline auto detail::invoke_runtime::invoke_session::prepare_execution_input(
 }
 
 inline auto detail::invoke_runtime::invoke_session::should_retain_input(
-    const attempt_slot &attempt_slot) const noexcept -> bool {
-  return invoke_state().retain_inputs || attempt_slot.retry_budget > 0U;
+    const attempt_slot &slot_state) const noexcept -> bool {
+  return invoke_state().retain_inputs || slot_state.retry_budget > 0U;
 }
 
 inline auto detail::invoke_runtime::invoke_session::finalize_node_attempt(
     const attempt_id attempt) -> wh::core::result<void> {
-  auto &attempt_slot = slot(attempt);
-  if (!attempt_slot.input.has_value() ||
-      !attempt_slot.input->payload.has_value()) {
+  auto &slot_state = slot(attempt);
+  if (!slot_state.input.has_value() ||
+      !slot_state.input->payload.has_value()) {
     return wh::core::result<void>::failure(wh::core::errc::not_found);
   }
-  auto &input = *attempt_slot.input->payload;
-  state_table_.update(attempt_slot.node_id,
+  auto &input = *slot_state.input->payload;
+  state_table_.update(slot_state.node_id,
                       graph_node_lifecycle_state::running, 0U,
                       std::nullopt);
-  append_transition(attempt_slot.node_id,
+  append_transition(slot_state.node_id,
                     graph_state_transition_event{
                         .kind = graph_state_transition_kind::node_enter,
-                        .cause = attempt_slot.cause,
+                        .cause = slot_state.cause,
                         .lifecycle = graph_node_lifecycle_state::running,
                     });
 
   const auto node_retry_budget =
-      owner_->resolve_node_retry_budget(attempt_slot.node_id);
+      owner_->resolve_node_retry_budget(slot_state.node_id);
   const auto node_timeout_budget =
-      owner_->resolve_node_timeout_budget(attempt_slot.node_id);
+      owner_->resolve_node_timeout_budget(slot_state.node_id);
   const auto effective_parallel_gate = std::min(
       max_parallel_nodes(),
-      owner_->resolve_node_parallel_gate(attempt_slot.node_id));
+      owner_->resolve_node_parallel_gate(slot_state.node_id));
   if (effective_parallel_gate == 0U) {
-    const auto node_id = attempt_slot.node_id;
-    const auto cause = attempt_slot.cause;
+    const auto node_id = slot_state.node_id;
+    const auto cause = slot_state.cause;
     release_attempt(attempt);
     state_table_.update(node_id, graph_node_lifecycle_state::failed, 1U,
                         wh::core::errc::contract_violation);
@@ -262,12 +262,12 @@ inline auto detail::invoke_runtime::invoke_session::finalize_node_attempt(
     return wh::core::result<void>::failure(wh::core::errc::contract_violation);
   }
 
-  attempt_slot.stage = invoke_stage::node;
-  attempt_slot.retry_budget = node_retry_budget;
-  attempt_slot.timeout_budget = node_timeout_budget;
-  if (should_retain_input(attempt_slot)) {
+  slot_state.current_stage = invoke_stage::node;
+  slot_state.retry_budget = node_retry_budget;
+  slot_state.timeout_budget = node_timeout_budget;
+  if (should_retain_input(slot_state)) {
     auto retained_input =
-        attempt_slot.node->meta.input_contract == node_contract::stream
+        slot_state.node->meta.input_contract == node_contract::stream
             ? detail::fork_graph_reader_payload(input)
             : fork_graph_value(input);
     if (retained_input.has_error()) {
@@ -275,8 +275,8 @@ inline auto detail::invoke_runtime::invoke_session::finalize_node_attempt(
           retained_input.error() == wh::core::errc::not_supported
               ? wh::core::errc::contract_violation
               : retained_input.error();
-      const auto node_id = attempt_slot.node_id;
-      const auto cause = attempt_slot.cause;
+      const auto node_id = slot_state.node_id;
+      const auto cause = slot_state.cause;
       release_attempt(attempt);
       state_table_.update(node_id, graph_node_lifecycle_state::failed, 1U,
                           code);
@@ -288,10 +288,10 @@ inline auto detail::invoke_runtime::invoke_session::finalize_node_attempt(
                         });
       return wh::core::result<void>::failure(code);
     }
-    pending_inputs_.store_input(attempt_slot.node_id,
+    pending_inputs_.store_input(slot_state.node_id,
                                 std::move(retained_input).value());
   }
-  detail::node_runtime_access::reset(attempt_slot.node_runtime,
+  detail::node_runtime_access::reset(slot_state.runtime,
                                      effective_parallel_gate);
   return {};
 }
@@ -299,37 +299,37 @@ inline auto detail::invoke_runtime::invoke_session::finalize_node_attempt(
 inline auto detail::invoke_runtime::invoke_session::begin_state_post(
     const attempt_id attempt, graph_value &output)
     -> wh::core::result<std::optional<graph_sender>> {
-  auto &attempt_slot = slot(attempt);
+  auto &slot_state = slot(attempt);
   auto &invoke = invoke_state();
   if (detail::state_runtime::needs_async_phase(
-          attempt_slot.state_handlers, output,
+          slot_state.state_handlers, output,
           detail::state_runtime::state_phase::post)) {
     auto sender = owner_->apply_state_phase_async(
-        context_, attempt_slot.state_handlers,
-        detail::state_runtime::state_phase::post, attempt_slot.cause.node_key,
-        attempt_slot.cause, *attempt_slot.node_scope.local_process_state,
-        std::move(output), attempt_slot.node_scope.path, invoke.outputs,
+        context_, slot_state.state_handlers,
+        detail::state_runtime::state_phase::post, slot_state.cause.node_key,
+        slot_state.cause, *slot_state.node_scope.local_process_state,
+        std::move(output), slot_state.node_scope.path, invoke.outputs,
         *invoke.work_scheduler);
-    attempt_slot.stage = invoke_stage::post_state;
+    slot_state.current_stage = invoke_stage::post_state;
     return std::optional<graph_sender>{std::move(sender)};
   }
 
   auto post_state = owner_->apply_state_phase(
-      context_, attempt_slot.state_handlers,
-      detail::state_runtime::state_phase::post, attempt_slot.cause.node_key,
-      attempt_slot.cause, *attempt_slot.node_scope.local_process_state, output,
-      attempt_slot.node_scope.path, invoke.outputs);
+      context_, slot_state.state_handlers,
+      detail::state_runtime::state_phase::post, slot_state.cause.node_key,
+      slot_state.cause, *slot_state.node_scope.local_process_state, output,
+      slot_state.node_scope.path, invoke.outputs);
   if (post_state.has_error()) {
-    owner_->publish_node_run_error(invoke.outputs, attempt_slot.node_scope.path,
-                                   attempt_slot.node_id, post_state.error(),
+    owner_->publish_node_run_error(invoke.outputs, slot_state.node_scope.path,
+                                   slot_state.node_id, post_state.error(),
                                    "node post-state handler failed");
-    state_table_.update(attempt_slot.node_id,
+    state_table_.update(slot_state.node_id,
                         graph_node_lifecycle_state::failed, 1U,
                         post_state.error());
-    append_transition(attempt_slot.node_id,
+    append_transition(slot_state.node_id,
                       graph_state_transition_event{
                           .kind = graph_state_transition_kind::node_fail,
-                          .cause = attempt_slot.cause,
+                          .cause = slot_state.cause,
                           .lifecycle = graph_node_lifecycle_state::failed,
                         });
     release_attempt(attempt);
@@ -342,17 +342,17 @@ inline auto detail::invoke_runtime::invoke_session::begin_state_post(
 inline auto detail::invoke_runtime::invoke_session::fail_node_stage(
     const attempt_id attempt, const wh::core::error_code code,
     const std::string_view message) -> wh::core::result<void> {
-  auto &attempt_slot = slot(attempt);
+  auto &slot_state = slot(attempt);
   owner_->publish_node_run_error(invoke_state().outputs,
-                                 attempt_slot.node_scope.path,
-                                 attempt_slot.node_id, code, message);
-  state_table_.update(attempt_slot.node_id,
+                                 slot_state.node_scope.path,
+                                 slot_state.node_id, code, message);
+  state_table_.update(slot_state.node_id,
                       graph_node_lifecycle_state::failed, 1U,
                       code);
-  append_transition(attempt_slot.node_id,
+  append_transition(slot_state.node_id,
                     graph_state_transition_event{
                         .kind = graph_state_transition_kind::node_fail,
-                        .cause = attempt_slot.cause,
+                        .cause = slot_state.cause,
                         .lifecycle = graph_node_lifecycle_state::failed,
                     });
   release_attempt(attempt);
@@ -374,16 +374,16 @@ inline auto detail::invoke_runtime::invoke_session::bind_node_runtime_call_optio
                 state->cache_state().resolved_node_observations[slot.node_id]);
   slot.node_scope.trace = state->next_node_trace(slot.node_id);
   detail::node_runtime_access::bind_scope(
-      slot.node_runtime, std::addressof(bound_call_options),
+      slot.runtime, std::addressof(bound_call_options),
       std::addressof(slot.node_scope.path));
   detail::node_runtime_access::bind_runtime(
-      slot.node_runtime,
+      slot.runtime,
       std::addressof(*state->invoke_state().control_scheduler),
       std::addressof(*state->invoke_state().work_scheduler),
       slot.node_scope.local_process_state, slot.node_scope.observation,
       std::addressof(slot.node_scope.trace));
   detail::node_runtime_access::bind_internal(
-      slot.node_runtime, std::addressof(state->invoke_state().outputs),
+      slot.runtime, std::addressof(state->invoke_state().outputs),
       state->nested_graph_entry());
 }
 
@@ -497,7 +497,7 @@ inline auto detail::invoke_runtime::invoke_session::run_sync_node_execution(
   bind_node_runtime_call_options(slot, bound_call_options, state);
   const auto attempt_start = std::chrono::steady_clock::now();
   auto executed =
-      run_compiled_sync_node(node, input_value, context, slot.node_runtime);
+      run_compiled_sync_node(node, input_value, context, slot.runtime);
   if (!apply_timeout_after_execution) {
     return executed;
   }
@@ -531,7 +531,7 @@ inline auto detail::invoke_runtime::invoke_session::make_async_node_attempt_send
   return make_async_timed_node_sender(
       stdexec::starts_on(*state->invoke_state().work_scheduler,
                          run_compiled_async_node(node, input_value, context,
-                                                 slot.node_runtime)),
+                                                 slot.runtime)),
       state->invoke_state().outputs, slot, attempt_start);
 }
 

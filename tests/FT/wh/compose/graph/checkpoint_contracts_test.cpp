@@ -621,7 +621,7 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
                      wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_stream_reader> {
-                    return std::move(input);
+                    return input;
                   })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
@@ -792,7 +792,7 @@ TEST_CASE("compose graph runtime records stream-converter missing pair as struct
                      wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_stream_reader> {
-                    return std::move(input);
+                    return input;
                   })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());

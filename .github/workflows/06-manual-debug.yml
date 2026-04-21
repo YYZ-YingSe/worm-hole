@@ -1,0 +1,75 @@
+name: ci-06-manual-debug
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_os:
+        description: Runner label to use.
+        required: true
+        type: choice
+        default: windows-latest
+        options:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+      mode:
+        description: CI execution mode.
+        required: true
+        type: choice
+        default: build-test
+        options:
+          - build-test
+          - sanitizer
+      configure_preset:
+        description: Configure preset to run.
+        required: true
+        type: string
+        default: ci-windows-release
+      build_preset:
+        description: Optional build preset override.
+        required: false
+        type: string
+        default: ""
+      shard_count:
+        description: Total shard count.
+        required: true
+        type: string
+        default: "1"
+      shard_index:
+        description: Shard index to run.
+        required: true
+        type: string
+        default: "0"
+      include_label:
+        description: Optional include label.
+        required: false
+        type: string
+        default: ci.pr
+      exclude_label:
+        description: Optional exclude label.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-debug-${{ github.ref }}-${{ github.event.inputs.runner_os }}-${{ github.event.inputs.configure_preset }}
+  cancel-in-progress: true
+
+jobs:
+  debug:
+    uses: ./.github/workflows/reusable-build-test.yml
+    with:
+      mode: ${{ github.event.inputs.mode }}
+      runner_os: ${{ github.event.inputs.runner_os }}
+      install_profile: build
+      configure_preset: ${{ github.event.inputs.configure_preset }}
+      build_preset: ${{ github.event.inputs.build_preset }}
+      shard_count: ${{ fromJson(github.event.inputs.shard_count) }}
+      shard_index: ${{ fromJson(github.event.inputs.shard_index) }}
+      include_label: ${{ github.event.inputs.include_label }}
+      exclude_label: ${{ github.event.inputs.exclude_label }}
+      timeout_minutes: 60
+      always_upload_diagnostics: true

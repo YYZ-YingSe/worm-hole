@@ -63,7 +63,8 @@ auto start_nested_graph(const graph &graph, wh::core::run_context &context,
 #include "wh/compose/node/detail/runtime_access.hpp"
 #include "wh/core/compiler.hpp"
 #include "wh/core/stdexec.hpp"
-#include "wh/core/stdexec/manual_lifetime.hpp"
+
+#include <new>
 
 namespace wh::compose {
 
@@ -235,13 +236,12 @@ private:
           *owner_, context_, std::move(request_),
           *control_scheduler, *work_scheduler,
           std::addressof(report_outputs_));
-      [[maybe_unused]] auto &child_op = child_op_.construct_with([&]() {
-        return stdexec::connect(
-            stdexec::starts_on(scheduler_t{*control_scheduler}, std::move(sender)),
-            child_receiver{this, receiver_env_});
-      });
+      ::new (static_cast<void *>(child_op()))
+          child_op_t(stdexec::connect(
+              stdexec::starts_on(scheduler_t{*control_scheduler}, std::move(sender)),
+              child_receiver{this, receiver_env_}));
       child_op_engaged_ = true;
-      stdexec::start(child_op_.get());
+      stdexec::start(*child_op());
     } catch (...) {
       destroy_child();
       complete_error(wh::core::errc::internal_error);
@@ -250,9 +250,17 @@ private:
 
   auto destroy_child() noexcept -> void {
     if (child_op_engaged_) {
-      child_op_.destruct();
+      child_op()->~child_op_t();
       child_op_engaged_ = false;
     }
+  }
+
+  [[nodiscard]] auto child_op() noexcept -> child_op_t * {
+    return std::launder(reinterpret_cast<child_op_t *>(child_op_storage_));
+  }
+
+  [[nodiscard]] auto child_op() const noexcept -> const child_op_t * {
+    return std::launder(reinterpret_cast<const child_op_t *>(child_op_storage_));
   }
 
   [[nodiscard]] auto control_scheduler() const noexcept -> const scheduler_t * {
@@ -282,7 +290,7 @@ private:
   std::optional<scheduler_t> fallback_control_scheduler_{};
   receiver_t receiver_;
   receiver_env_t receiver_env_{};
-  wh::core::detail::manual_lifetime<child_op_t> child_op_{};
+  alignas(child_op_t) std::byte child_op_storage_[sizeof(child_op_t)];
   std::atomic<bool> delivered_{false};
   bool child_op_engaged_{false};
 };

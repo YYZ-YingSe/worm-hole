@@ -14,32 +14,4 @@ concurrency:
 
 jobs:
   fast-gates:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0
-
-      - name: Prepare CI job
-        uses: ./.github/actions/prepare/job
-        with:
-          install_profile: fast-gates
-          setup_clang_format: "true"
-
-      - name: Lint GitHub Actions
-        uses: devops-actions/actionlint@e7ee33fbf5aa8c9f9ee1145137f3e52e25d6a35b # v0.1.3
-
-      - name: Scan secrets with gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
-
-      - name: Run fast gates
-        shell: bash
-        run: |
-          python_bin="$(command -v python3 || command -v python)"
-          "$python_bin" scripts/toolchain.py ci fast-gates
+    uses: ./.github/workflows/reusable-fast-gates.yml

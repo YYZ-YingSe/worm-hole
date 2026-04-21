@@ -830,7 +830,7 @@ private:
   auto fail_fast(const wh::core::error_code code, message_t &&message)
       -> wh::core::result<void>;
 
-  [[nodiscard]] constexpr auto is_cycle_allowed() const noexcept -> bool;
+  [[nodiscard]] auto is_cycle_allowed() const noexcept -> bool;
 
   [[nodiscard]] auto resolve_step_budget(
       const detail::runtime_state::invoke_config &config,

@@ -22,6 +22,7 @@ BUILD_ROOT = ROOT / "build"
 TESTS_DIR = ROOT / "tests"
 DEFAULT_REPORTER = "compact"
 DEFAULT_LOCAL_PRESET = "dev-debug"
+DEFAULT_EDITOR_PRESET = "dev-editor"
 DEFAULT_ANALYSIS_PRESET = "ci-static-analysis"
 DEFAULT_SANITIZER_PRESET = "ci-asan-ubsan"
 DEFAULT_COVERAGE_PRESET = "ci-coverage"
@@ -179,6 +180,56 @@ def sync_compile_commands(build_dir: Path) -> None:
         return
     shutil.copyfile(source, target)
     print_step("compile-commands", f"SYNC {source} -> {target}")
+
+
+def editor_compile_database_is_stale() -> bool:
+    editor_build_dir = build_dir_for_preset(DEFAULT_EDITOR_PRESET)
+    compile_db = editor_build_dir / "compile_commands.json"
+    if not compile_db.exists():
+        return True
+
+    compile_db_mtime = compile_db.stat().st_mtime
+    watched_roots = [
+        ROOT / "CMakeLists.txt",
+        ROOT / "CMakePresets.json",
+        ROOT / ".clangd",
+        ROOT / "cmake",
+        ROOT / "tests",
+        ROOT / "example",
+        ROOT / "benchmark",
+    ]
+
+    for path in watched_roots:
+        if not path.exists():
+            continue
+        if path.is_file():
+            if path.stat().st_mtime > compile_db_mtime:
+                return True
+            continue
+
+        for child in path.rglob("*"):
+            if not child.is_file():
+                continue
+            if child.stat().st_mtime > compile_db_mtime:
+                return True
+    return False
+
+
+def ensure_editor_compile_database(tag: str) -> None:
+    if os.environ.get("WH_SKIP_EDITOR_SYNC") == "1":
+        print_step("editor", "SKIP disabled by WH_SKIP_EDITOR_SYNC=1")
+        return
+
+    if not editor_compile_database_is_stale():
+        print_step("editor", f"READY {build_dir_for_preset(DEFAULT_EDITOR_PRESET)}")
+        return
+
+    print_step("editor", f"CONFIGURE {DEFAULT_EDITOR_PRESET}")
+    build_dir = configure_preset(
+        DEFAULT_EDITOR_PRESET,
+        f"{tag}-editor",
+    )
+    print_step("editor", f"PASS {build_dir}")
 
 
 def compiler_cache_bin() -> str | None:
@@ -1490,11 +1541,15 @@ def local_clean(args: argparse.Namespace) -> None:
 
 def local_configure(args: argparse.Namespace) -> None:
     build_dir = configure_preset(args.preset, "configure", cache_entries=args.define)
+    if args.preset != DEFAULT_EDITOR_PRESET:
+        ensure_editor_compile_database("configure")
     print_step("configure", f"PASS {build_dir}")
 
 
 def local_build(args: argparse.Namespace) -> None:
     configure_preset(args.preset, "build", cache_entries=args.define)
+    if args.preset != DEFAULT_EDITOR_PRESET:
+        ensure_editor_compile_database("build")
     targets = list(args.target) if args.target else [build_artifact_target(args.artifacts)]
     build_preset(args.preset, "build", targets=targets, jobs=args.jobs)
     print_compiler_cache_stats()
@@ -1514,6 +1569,8 @@ def local_test(args: argparse.Namespace) -> None:
         )
     else:
         configure_preset(args.preset, "test", cache_entries=args.define)
+        if args.preset != DEFAULT_EDITOR_PRESET:
+            ensure_editor_compile_database("test")
 
     manifest_path = build_dir_for_preset(args.preset) / "wh_test_manifest.tsv"
     shard = manifest_shard(
@@ -1537,6 +1594,8 @@ def local_test(args: argparse.Namespace) -> None:
 
 
 def local_verify(args: argparse.Namespace) -> None:
+    if args.configure_preset != DEFAULT_EDITOR_PRESET:
+        ensure_editor_compile_database("verify")
     run_build_test_mode(
         "verify",
         configure_preset_name=args.configure_preset,
@@ -1550,6 +1609,10 @@ def local_verify(args: argparse.Namespace) -> None:
         reporter=args.reporter,
         cache_entries=args.define,
     )
+
+
+def local_editor(_: argparse.Namespace) -> None:
+    ensure_editor_compile_database("editor")
 
 
 def add_define_args(parser: argparse.ArgumentParser) -> None:
@@ -1589,6 +1652,12 @@ def build_parser() -> argparse.ArgumentParser:
     local_clean_parser.add_argument("--preset", default=DEFAULT_LOCAL_PRESET)
     local_clean_parser.add_argument("--all", action="store_true")
     local_clean_parser.set_defaults(func=local_clean)
+
+    local_editor_parser = local_sub.add_parser(
+        "editor",
+        help="Configure the full editor/clangd preset and refresh the root compile database.",
+    )
+    local_editor_parser.set_defaults(func=local_editor)
 
     local_configure_parser = local_sub.add_parser("configure")
     local_configure_parser.add_argument("--preset", default=DEFAULT_LOCAL_PRESET)

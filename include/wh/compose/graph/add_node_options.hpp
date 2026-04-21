@@ -255,7 +255,7 @@ struct graph_add_node_options {
   /// True means node may execute with no data predecessor.
   bool allow_no_data{false};
   /// Dispatch policy for authored sync node execution.
-  sync_dispatch sync_dispatch{sync_dispatch::work};
+  sync_dispatch dispatch{sync_dispatch::work};
   /// Optional node-level retry budget override (falls back to graph default).
   std::optional<std::size_t> retry_budget_override{};
   /// Optional node-level timeout override (`nullopt` falls back to graph

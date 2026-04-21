@@ -15,10 +15,9 @@ concurrency:
 jobs:
   stress:
     name: nightly-stress (${{ matrix.shard_index }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - shard_count: 3
@@ -28,28 +27,14 @@ jobs:
           - shard_count: 3
             shard_index: 2
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Prepare CI job
-        uses: ./.github/actions/prepare/job
-        with:
-          install_profile: nightly
-
-      - name: Setup sccache
-        uses: ./.github/actions/setup/sccache
-
-      - name: Run nightly stress shard ${{ matrix.shard_index }}
-        shell: bash
-        run: |
-          python_bin="$(command -v python3 || command -v python)"
-          "$python_bin" scripts/toolchain.py ci build-test \
-            --configure-preset ci-linux-release \
-            --build-preset ci-linux-release \
-            --shard-count "${{ matrix.shard_count }}" \
-            --shard-index "${{ matrix.shard_index }}" \
-            --include-label ci.nightly
+    uses: ./.github/workflows/reusable-build-test.yml
+    with:
+      mode: build-test
+      runner_os: ubuntu-latest
+      install_profile: nightly
+      configure_preset: ci-linux-release
+      build_preset: ci-linux-release
+      shard_count: ${{ matrix.shard_count }}
+      shard_index: ${{ matrix.shard_index }}
+      include_label: ci.nightly
+      timeout_minutes: 90

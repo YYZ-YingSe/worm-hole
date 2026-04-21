@@ -189,7 +189,11 @@ inline auto detail::invoke_runtime::pregel_runtime::commit_node_output(
     return wh::core::result<void>::failure(wh::core::errc::canceled);
   }
 
-  if (!session.interrupt_state().freeze_requested) {
+  const auto &interrupt = session.interrupt_state();
+  const bool preserve_wait_inflight_successors =
+      interrupt.freeze_requested && interrupt.freeze_external &&
+      interrupt.wait_mode_active;
+  if (!interrupt.freeze_requested || preserve_wait_inflight_successors) {
     session.owner_->stage_pregel_successors(attempt_slot.node_id, resolved_branch,
                                     pregel_delivery_);
     enqueue_fn(attempt_slot.node_id);

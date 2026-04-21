@@ -9,12 +9,12 @@ TEST_CASE("graph diff check reports changed compile options and nodes",
   baseline.nodes.push_back(
       {.key = "a",
        .node_id = 1U,
-       .options = {.sync_dispatch = wh::compose::sync_dispatch::work}});
+       .options = {.dispatch = wh::compose::sync_dispatch::work}});
 
   wh::compose::graph_snapshot candidate = baseline;
   candidate.compile_options.name = "candidate";
   candidate.nodes.push_back({.key = "b", .node_id = 2U});
-  candidate.nodes.front().options.sync_dispatch =
+  candidate.nodes.front().options.dispatch =
       wh::compose::sync_dispatch::inline_control;
 
   auto diff = wh::compose::diff_graph(baseline, candidate);

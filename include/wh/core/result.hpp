@@ -174,6 +174,7 @@ template <typename value_t, typename error_t = error_code> class result {
 public:
   using value_type = value_t;
   using error_type = error_t;
+  using storage_type = detail::result_storage_t<value_t, error_t>;
 
   static_assert(!std::is_reference_v<value_t>,
                 "result value type cannot be a reference");
@@ -443,8 +444,9 @@ public:
   }
 
   [[nodiscard]] friend constexpr auto
-  operator==(const result &lhs,
-             const result &rhs) noexcept(noexcept(lhs.storage_ == rhs.storage_))
+  operator==(const result &lhs, const result &rhs) noexcept(
+      noexcept(std::declval<const storage_type &>() ==
+               std::declval<const storage_type &>()))
       -> bool {
     return lhs.storage_ == rhs.storage_;
   }
@@ -480,30 +482,26 @@ private:
   template <typename value_u, typename error_u>
   [[nodiscard]] static constexpr auto
   copy_convert_storage(const result<value_u, error_u> &other)
-      -> detail::result_storage_t<value_t, error_t> {
+      -> storage_type {
     if (other.has_value()) {
-      return detail::result_storage_t<value_t, error_t>(std::in_place_index<0>,
-                                                        *other);
+      return storage_type(std::in_place_index<0>, *other);
     }
 
-    return detail::result_storage_t<value_t, error_t>(std::in_place_index<1>,
-                                                      other.error());
+    return storage_type(std::in_place_index<1>, other.error());
   }
 
   template <typename value_u, typename error_u>
   [[nodiscard]] static constexpr auto
   move_convert_storage(result<value_u, error_u> &&other)
-      -> detail::result_storage_t<value_t, error_t> {
+      -> storage_type {
     if (other.has_value()) {
-      return detail::result_storage_t<value_t, error_t>(std::in_place_index<0>,
-                                                        *std::move(other));
+      return storage_type(std::in_place_index<0>, *std::move(other));
     }
 
-    return detail::result_storage_t<value_t, error_t>(std::in_place_index<1>,
-                                                      std::move(other).error());
+    return storage_type(std::in_place_index<1>, std::move(other).error());
   }
 
-  detail::result_storage_t<value_t, error_t> storage_;
+  storage_type storage_;
 };
 
 template <typename char_t, typename traits_t, typename value_t,
@@ -524,6 +522,7 @@ template <typename value_t, typename error_t> class result<value_t &, error_t> {
 public:
   using value_type = value_t &;
   using error_type = error_t;
+  using storage_type = std::variant<value_t *, error_t>;
 
   static_assert(!std::is_reference_v<error_t>,
                 "result error type cannot be a reference");
@@ -691,8 +690,9 @@ public:
   }
 
   [[nodiscard]] friend constexpr auto
-  operator==(const result &lhs,
-             const result &rhs) noexcept(noexcept(lhs.storage_ == rhs.storage_))
+  operator==(const result &lhs, const result &rhs) noexcept(
+      noexcept(std::declval<const storage_type &>() ==
+               std::declval<const storage_type &>()))
       -> bool {
     return lhs.storage_ == rhs.storage_;
   }
@@ -716,30 +716,26 @@ private:
   template <typename value_u, typename error_u>
   [[nodiscard]] static constexpr auto
   copy_convert_storage(const result<value_u &, error_u> &other)
-      -> std::variant<value_t *, error_t> {
+      -> storage_type {
     if (other.has_value()) {
-      return std::variant<value_t *, error_t>(std::in_place_index<0>,
-                                              &other.value());
+      return storage_type(std::in_place_index<0>, &other.value());
     }
 
-    return std::variant<value_t *, error_t>(std::in_place_index<1>,
-                                            other.error());
+    return storage_type(std::in_place_index<1>, other.error());
   }
 
   template <typename value_u, typename error_u>
   [[nodiscard]] static constexpr auto
   move_convert_storage(result<value_u &, error_u> &&other)
-      -> std::variant<value_t *, error_t> {
+      -> storage_type {
     if (other.has_value()) {
-      return std::variant<value_t *, error_t>(std::in_place_index<0>,
-                                              &other.value());
+      return storage_type(std::in_place_index<0>, &other.value());
     }
 
-    return std::variant<value_t *, error_t>(std::in_place_index<1>,
-                                            std::move(other).error());
+    return storage_type(std::in_place_index<1>, std::move(other).error());
   }
 
-  std::variant<value_t *, error_t> storage_;
+  storage_type storage_;
 };
 
 template <typename char_t, typename traits_t, typename value_t,
@@ -760,6 +756,7 @@ template <typename error_t> class result<void, error_t> {
 public:
   using value_type = void;
   using error_type = error_t;
+  using storage_type = std::variant<std::monostate, error_t>;
 
   static_assert(!std::is_reference_v<error_t>,
                 "result error type cannot be a reference");
@@ -910,8 +907,9 @@ public:
   }
 
   [[nodiscard]] friend constexpr auto
-  operator==(const result &lhs,
-             const result &rhs) noexcept(noexcept(lhs.storage_ == rhs.storage_))
+  operator==(const result &lhs, const result &rhs) noexcept(
+      noexcept(std::declval<const storage_type &>() ==
+               std::declval<const storage_type &>()))
       -> bool {
     return lhs.storage_ == rhs.storage_;
   }
@@ -923,7 +921,7 @@ public:
   }
 
 private:
-  std::variant<std::monostate, error_t> storage_;
+  storage_type storage_;
 };
 
 template <typename char_t, typename traits_t, typename error_t>

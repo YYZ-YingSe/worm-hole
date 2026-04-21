@@ -128,9 +128,9 @@ TEST_CASE("adk runner utility helpers normalize run paths events message collect
   auto prefixed = wh::adk::prefix_agent_event(
       wh::adk::make_message_event(
           make_assistant_message("done"),
-          wh::adk::event_metadata{.run_path = wh::adk::run_path{{"leaf"}}}),
+          wh::adk::event_metadata{.path = wh::adk::run_path{{"leaf"}}}),
       wh::adk::run_path{{"root"}});
-  REQUIRE(prefixed.metadata.run_path.to_string("/") == "root/leaf");
+  REQUIRE(prefixed.metadata.path.to_string("/") == "root/leaf");
 
   wh::adk::agent_message_stream_reader message_reader{
       wh::schema::stream::make_values_stream_reader(

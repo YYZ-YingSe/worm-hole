@@ -20,6 +20,8 @@ struct source_stats {
   std::vector<result_t> read_results{};
   std::size_t read_index{0U};
   result_t async_result{0};
+  std::vector<result_t> async_results{};
+  std::size_t async_index{0U};
   int close_calls{0};
   bool automatic_close{true};
 };
@@ -44,7 +46,12 @@ struct scripted_async_source {
     return std::nullopt;
   }
 
-  [[nodiscard]] auto read_async() { return stdexec::just(stats->async_result); }
+  [[nodiscard]] auto read_async() {
+    if (stats->async_index < stats->async_results.size()) {
+      return stdexec::just(stats->async_results[stats->async_index++]);
+    }
+    return stdexec::just(stats->async_result);
+  }
 
   [[nodiscard]] auto close() -> wh::core::result<void> {
     ++stats->close_calls;
@@ -57,11 +64,11 @@ struct async_probe_waiter : wh::core::cursor_reader_detail::async_waiter_base<re
 
   async_probe_waiter() {
     static constexpr typename wh::core::cursor_reader_detail::async_waiter_base<
-        result_t>::ops_type ops{
+        result_t>::ops_type waiter_ops{
         [](auto *base) noexcept {
           static_cast<async_probe_waiter *>(base)->completed = true;
         }};
-    this->ops = &ops;
+    this->ops = &waiter_ops;
   }
 };
 
@@ -194,6 +201,47 @@ TEST_CASE("shared state register_async_waiter remove_async_waiter and start_asyn
   auto ready = second_waiter.take_ready();
   REQUIRE(ready.has_value());
   REQUIRE(ready.value() == 8);
+}
+
+TEST_CASE("shared state async pull remains reusable across consecutive inline completions",
+          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::start_async_pull][lifetime][regression]") {
+  using policy_t =
+      wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
+  auto stats = std::make_shared<source_stats>();
+  stats->try_results = {std::nullopt, std::nullopt};
+  stats->async_results = {result_t{12}, result_t{34}};
+
+  auto state = wh::core::detail::make_intrusive<
+      wh::core::cursor_reader_detail::shared_state<scripted_async_source, policy_t>>(
+      scripted_async_source{stats}, 1U);
+
+  async_probe_waiter first_waiter{};
+  auto first_ticket = state->register_async_waiter(0U, &first_waiter);
+  REQUIRE(first_ticket.registered());
+  REQUIRE(first_ticket.start_pull);
+
+  state->start_async_pull(
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
+
+  REQUIRE(first_waiter.completed);
+  REQUIRE_FALSE(first_waiter.waiting_registered());
+  auto first_ready = first_waiter.take_ready();
+  REQUIRE(first_ready.has_value());
+  REQUIRE(first_ready.value() == 12);
+
+  async_probe_waiter second_waiter{};
+  auto second_ticket = state->register_async_waiter(0U, &second_waiter);
+  REQUIRE(second_ticket.registered());
+  REQUIRE(second_ticket.start_pull);
+
+  state->start_async_pull(
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
+
+  REQUIRE(second_waiter.completed);
+  REQUIRE_FALSE(second_waiter.waiting_registered());
+  auto second_ready = second_waiter.take_ready();
+  REQUIRE(second_ready.has_value());
+  REQUIRE(second_ready.value() == 34);
 }
 
 TEST_CASE("shared state read_for uses blocking leader path and respects automatic close toggle",

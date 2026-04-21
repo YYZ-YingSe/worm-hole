@@ -31,12 +31,12 @@ TEST_CASE("adk event payload and run path contracts are stable",
   auto message_event = wh::adk::make_message_event(
       make_message("hello"),
       wh::adk::event_metadata{
-          .run_path = path,
+          .path = path,
           .agent_name = "planner",
           .tool_name = "search",
       });
 
-  REQUIRE(message_event.metadata.run_path == path);
+  REQUIRE(message_event.metadata.path == path);
   REQUIRE(message_event.metadata.agent_name == "planner");
   REQUIRE(message_event.metadata.tool_name == "search");
   REQUIRE(std::holds_alternative<wh::adk::message_event>(message_event.payload));
@@ -51,7 +51,7 @@ TEST_CASE("adk event payload and run path contracts are stable",
           .kind = wh::adk::control_action_kind::transfer,
           .target = "delegate",
       },
-      wh::adk::event_metadata{.run_path = path});
+      wh::adk::event_metadata{.path = path});
   REQUIRE(std::holds_alternative<wh::adk::control_action>(control_event.payload));
   REQUIRE(std::get<wh::adk::control_action>(control_event.payload).target ==
           "delegate");

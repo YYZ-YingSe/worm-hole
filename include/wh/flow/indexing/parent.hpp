@@ -124,10 +124,11 @@ template <detail::indexing::indexer_component indexer_t,
           detail::indexing::sub_id_generator sub_id_generator_t>
 class parent {
   struct authored_state {
-    authored_state(indexer_t indexer, transformer_t transformer,
-                   sub_id_generator_t sub_id_generator) noexcept
-        : indexer(std::move(indexer)), transformer(std::move(transformer)),
-          sub_id_generator(std::move(sub_id_generator)) {}
+    authored_state(indexer_t indexer_value, transformer_t transformer_value,
+                   sub_id_generator_t sub_id_generator_value) noexcept
+        : indexer(std::move(indexer_value)),
+          transformer(std::move(transformer_value)),
+          sub_id_generator(std::move(sub_id_generator_value)) {}
 
     indexer_t indexer;
     transformer_t transformer;
@@ -135,10 +136,11 @@ class parent {
   };
 
   struct runtime_state {
-    runtime_state(indexer_t indexer, transformer_t transformer,
-                  sub_id_generator_t sub_id_generator) noexcept
-        : indexer(std::move(indexer)), transformer(std::move(transformer)),
-          sub_id_generator(std::move(sub_id_generator)) {}
+    runtime_state(indexer_t indexer_value, transformer_t transformer_value,
+                  sub_id_generator_t sub_id_generator_value) noexcept
+        : indexer(std::move(indexer_value)),
+          transformer(std::move(transformer_value)),
+          sub_id_generator(std::move(sub_id_generator_value)) {}
 
     indexer_t indexer;
     transformer_t transformer;

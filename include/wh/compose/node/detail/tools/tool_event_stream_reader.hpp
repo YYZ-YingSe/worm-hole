@@ -197,16 +197,16 @@ public:
   [[nodiscard]] auto read_async() const {
     using input_result_t = wh::schema::stream::stream_result<
         wh::schema::stream::stream_chunk<graph_value>>;
-    auto state = state_;
-    return state->reader.read_async() |
+    auto shared_state = state_;
+    return shared_state->reader.read_async() |
            stdexec::then([](auto status) {
              return input_result_t{std::move(status)};
            }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);
            }) |
-           stdexec::then([state = std::move(state)](input_result_t next) {
-             return map_read_owned(state, std::move(next));
+           stdexec::then([shared_state = std::move(shared_state)](input_result_t next) {
+             return map_read_owned(shared_state, std::move(next));
            });
   }
 
@@ -329,16 +329,16 @@ public:
   [[nodiscard]] auto read_async() const {
     using input_result_t = wh::schema::stream::stream_result<
         wh::schema::stream::stream_chunk<graph_value>>;
-    auto state = state_;
-    return state->reader.read_async() |
+    auto shared_state = state_;
+    return shared_state->reader.read_async() |
            stdexec::then([](auto status) {
              return input_result_t{std::move(status)};
            }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);
            }) |
-           stdexec::then([state = std::move(state)](input_result_t next) {
-             return map_read_owned(state, std::move(next));
+           stdexec::then([shared_state = std::move(shared_state)](input_result_t next) {
+             return map_read_owned(shared_state, std::move(next));
            });
   }
 

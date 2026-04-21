@@ -49,7 +49,8 @@ template <stdexec::sender... sender_t> class variant_sender {
   template <typename receiver_t, typename... operation_t>
   class operation_state {
     using storage_tuple_t =
-        std::tuple<wh::core::detail::manual_lifetime<operation_t>...>;
+        std::tuple<wh::core::detail::manual_storage<sizeof(operation_t),
+                                                    alignof(operation_t)>...>;
 
   public:
     template <typename self_t>
@@ -73,11 +74,12 @@ template <stdexec::sender... sender_t> class variant_sender {
         if (self.index() == Index) {
           using operation_type = std::tuple_element_t<Index, std::tuple<operation_t...>>;
           [[maybe_unused]] auto &operation =
-              std::get<Index>(operations_).construct_with([&]() -> operation_type {
-            return stdexec::connect(
-                std::get<Index + 1U>(std::forward<self_t>(self).senders_),
-                std::move(receiver));
-          });
+              std::get<Index>(operations_)
+                  .template construct_with<operation_type>([&]() -> operation_type {
+                return stdexec::connect(
+                    std::get<Index + 1U>(std::forward<self_t>(self).senders_),
+                    std::move(receiver));
+              });
           active_index_ = Index;
           return;
         }
@@ -88,7 +90,9 @@ template <stdexec::sender... sender_t> class variant_sender {
     template <std::size_t Index> auto start_active() noexcept -> void {
       if constexpr (Index < sizeof...(sender_t)) {
         if (active_index_ == Index) {
-          stdexec::start(std::get<Index>(operations_).get());
+          using operation_type =
+              std::tuple_element_t<Index, std::tuple<operation_t...>>;
+          stdexec::start(std::get<Index>(operations_).template get<operation_type>());
           return;
         }
         start_active<Index + 1U>();
@@ -98,7 +102,9 @@ template <stdexec::sender... sender_t> class variant_sender {
     template <std::size_t Index> auto destroy_active() noexcept -> void {
       if constexpr (Index < sizeof...(sender_t)) {
         if (active_index_ == Index) {
-          std::get<Index>(operations_).destruct();
+          using operation_type =
+              std::tuple_element_t<Index, std::tuple<operation_t...>>;
+          std::get<Index>(operations_).template destruct<operation_type>();
           active_index_ = static_cast<std::size_t>(-1);
           return;
         }

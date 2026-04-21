@@ -8,6 +8,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include <stdexec/execution.hpp>
 
@@ -234,6 +235,9 @@ private:
   using wait_state_t =
       detail::wait_state<push_waiter_base_t, pop_waiter_base_t>;
   using storage_t = detail::ring_storage<value_t, allocator_t>;
+  static constexpr bool try_pop_is_nothrow =
+      std::is_nothrow_move_constructible_v<value_t> &&
+      std::is_nothrow_copy_constructible_v<value_t>;
 
 public:
   using value_type = value_t;
@@ -300,8 +304,7 @@ public:
   }
 
   [[nodiscard]] auto
-  try_pop() noexcept(std::is_nothrow_move_constructible_v<value_type> &&
-                     std::is_nothrow_copy_constructible_v<value_type>)
+  try_pop() noexcept(try_pop_is_nothrow)
       -> try_pop_result {
     return try_pop_impl();
   }
@@ -484,6 +487,9 @@ private:
     using try_handoff_storage_t =
         detail::try_handoff_storage<scheduler_t, try_handoff_receiver>;
     using completion_bits_t = detail::completion_bits;
+    struct handoff_value_tag {};
+    using handoff_completion_t =
+        std::variant<handoff_value_tag, std::exception_ptr, detail::stopped_tag>;
 
     bounded_queue *queue{nullptr};
     receiver_t receiver;
@@ -496,17 +502,35 @@ private:
     wh_no_unique_address try_handoff_storage_t try_handoff_{};
     completion_bits_t completion_bits_{};
     std::optional<stop_callback_t> stop_callback_{};
+    std::optional<handoff_completion_t> handoff_completion_{};
+    std::atomic<bool> handoff_completion_ready_{false};
+    std::atomic<bool> handoff_start_returned_{true};
 
     auto *handoff_op_ptr() noexcept {
       return std::launder(
           reinterpret_cast<handoff_op_t *>(handoff_op_storage_));
     }
 
-    void construct_handoff_op() noexcept {
+    auto reset_handoff_op() noexcept -> void {
+      if (!handoff_op_constructed_) {
+        return;
+      }
+      handoff_op_ptr()->~handoff_op_t();
+      handoff_op_constructed_ = false;
+    }
+
+    void construct_handoff_op() {
       ::new (static_cast<void *>(handoff_op_storage_))
           handoff_op_t(stdexec::connect(stdexec::schedule(scheduler),
                                         handoff_receiver{this}));
       handoff_op_constructed_ = true;
+    }
+
+    auto ensure_completion_handoff() -> void {
+      if (is_same_scheduler() || handoff_op_constructed_) {
+        return;
+      }
+      construct_handoff_op();
     }
 
     struct stop_callback {
@@ -520,17 +544,20 @@ private:
 
       push_operation *self{nullptr};
 
-      auto set_value() noexcept -> void { self->complete(); }
+      auto set_value() noexcept -> void {
+        self->publish_handoff_completion(handoff_completion_t{
+            handoff_value_tag{}});
+      }
 
       template <typename error_t>
       auto set_error(error_t &&error) noexcept -> void {
-        stdexec::set_error(
-            std::move(self->receiver),
-            detail::to_exception_ptr(std::forward<error_t>(error)));
+        self->publish_handoff_completion(handoff_completion_t{
+            detail::to_exception_ptr(std::forward<error_t>(error))});
       }
 
       auto set_stopped() noexcept -> void {
-        stdexec::set_stopped(std::move(self->receiver));
+        self->publish_handoff_completion(handoff_completion_t{
+            detail::stopped_tag{}});
       }
 
       [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> {
@@ -592,9 +619,7 @@ private:
     auto operator=(push_operation &&) -> push_operation & = delete;
 
     ~push_operation() {
-      if (handoff_op_constructed_) {
-        handoff_op_ptr()->~handoff_op_t();
-      }
+      reset_handoff_op();
     }
 
     [[nodiscard]] auto is_same_scheduler() const noexcept -> bool {
@@ -624,8 +649,75 @@ private:
         }
         return;
       }
-      construct_handoff_op();
-      stdexec::start(*handoff_op_ptr());
+      try {
+        ensure_completion_handoff();
+        handoff_start_returned_.store(false, std::memory_order_release);
+        stdexec::start(*handoff_op_ptr());
+        handoff_start_returned_.store(true, std::memory_order_release);
+        if (handoff_completion_ready_.load(std::memory_order_acquire)) {
+          drain_handoff_completion();
+        }
+      } catch (...) {
+        handoff_start_returned_.store(true, std::memory_order_release);
+        reset_handoff_op();
+        store_exception(*this, std::current_exception());
+        complete();
+      }
+    }
+
+    auto prepare_wait(const stop_token_t &stop_token) noexcept -> bool {
+      try {
+        ensure_completion_handoff();
+      } catch (...) {
+        store_exception(*this, std::current_exception());
+        complete_immediate();
+        return false;
+      }
+
+      if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
+        if (!stop_callback_.has_value()) {
+          try {
+            stop_callback_.emplace(stop_token, stop_callback{this});
+          } catch (...) {
+            store_exception(*this, std::current_exception());
+            complete_immediate();
+            return false;
+          }
+        }
+        if (stop_token.stop_requested()) {
+          store_stopped(*this);
+          complete_immediate();
+          return false;
+        }
+      }
+      return true;
+    }
+
+    auto publish_handoff_completion(handoff_completion_t completion) noexcept
+        -> void {
+      wh_invariant(
+          !handoff_completion_ready_.load(std::memory_order_acquire));
+      handoff_completion_.emplace(std::move(completion));
+      handoff_completion_ready_.store(true, std::memory_order_release);
+      if (handoff_start_returned_.load(std::memory_order_acquire)) {
+        drain_handoff_completion();
+      }
+    }
+
+    auto drain_handoff_completion() noexcept -> void {
+      if (!handoff_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+        return;
+      }
+      auto completion = std::move(*handoff_completion_);
+      handoff_completion_.reset();
+      reset_handoff_op();
+
+      if (std::holds_alternative<std::exception_ptr>(completion)) {
+        store_exception(*this, std::move(std::get<std::exception_ptr>(completion)));
+      } else if (std::holds_alternative<detail::stopped_tag>(completion)) {
+        store_stopped(*this);
+      }
+      complete();
     }
 
     // Inline delivery — no atomics, no handoff. Used on fast path when
@@ -720,52 +812,65 @@ private:
         return;
       }
 
-      pop_waiter_base_t *ready_pop = nullptr;
-      {
-        std::unique_lock<critical_section> lock(op.queue->lock_);
-        if (op.queue->wait_state_.is_closed()) {
-          store_status(op, status_type::closed);
-          lock.unlock();
+      bool wait_prepared = false;
+      for (;;) {
+        pop_waiter_base_t *ready_pop = nullptr;
+        bool should_prepare_wait = false;
+        bool enqueued = false;
+
+        {
+          std::unique_lock<critical_section> lock(op.queue->lock_);
+          if (op.queue->wait_state_.is_closed()) {
+            store_status(op, status_type::closed);
+          } else if (auto *waiter = op.queue->wait_state_.take_pop()) {
+            ready_pop = waiter;
+            store_status(op, status_type::success);
+          } else if (!op.queue->buffer_.full()) {
+            try {
+              op.queue->buffer_.push_back(std::move(op.value));
+              store_status(op, status_type::success);
+            } catch (...) {
+              store_exception(op, std::current_exception());
+            }
+          } else if (!wait_prepared) {
+            should_prepare_wait = true;
+          } else {
+            op.queue->wait_state_.enqueue_push(&op);
+            enqueued = true;
+          }
+        }
+
+        if (ready_pop != nullptr) {
+          try {
+            store_value(*ready_pop, std::move(op.value));
+          } catch (...) {
+            store_exception(*ready_pop, std::current_exception());
+          }
+          complete_waiter(ready_pop);
           op.complete_immediate();
           return;
         }
 
-        if (auto *waiter = op.queue->wait_state_.take_pop()) {
-          ready_pop = waiter;
-          store_status(op, status_type::success);
-        } else if (!op.queue->buffer_.full()) {
-          try {
-            op.queue->buffer_.push_back(std::move(op.value));
-            store_status(op, status_type::success);
-          } catch (...) {
-            store_exception(op, std::current_exception());
-          }
-        } else {
-          op.queue->wait_state_.enqueue_push(&op);
-          lock.unlock();
+        if (enqueued) {
           if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
-            if (!op.completion_bits_.has_claimed()) {
-              op.stop_callback_.emplace(stop_token, stop_callback{&op});
-              if (stop_token.stop_requested()) {
-                op.cancel_wait();
-              }
+            if (stop_token.stop_requested()) {
+              op.cancel_wait();
             }
           }
           return;
         }
-      }
 
-      if (ready_pop != nullptr) {
-        try {
-          store_value(*ready_pop, std::move(op.value));
-        } catch (...) {
-          store_exception(*ready_pop, std::current_exception());
+        if (should_prepare_wait) {
+          if (!op.prepare_wait(stop_token)) {
+            return;
+          }
+          wait_prepared = true;
+          continue;
         }
-        complete_waiter(ready_pop);
+
         op.complete_immediate();
         return;
       }
-      op.complete_immediate();
     }
   };
 
@@ -786,6 +891,9 @@ private:
     using try_handoff_storage_t =
         detail::try_handoff_storage<scheduler_t, try_handoff_receiver>;
     using completion_bits_t = detail::completion_bits;
+    struct handoff_value_tag {};
+    using handoff_completion_t =
+        std::variant<handoff_value_tag, std::exception_ptr, detail::stopped_tag>;
 
     bounded_queue *queue{nullptr};
     receiver_t receiver;
@@ -796,17 +904,35 @@ private:
     wh_no_unique_address try_handoff_storage_t try_handoff_{};
     completion_bits_t completion_bits_{};
     std::optional<stop_callback_t> stop_callback_{};
+    std::optional<handoff_completion_t> handoff_completion_{};
+    std::atomic<bool> handoff_completion_ready_{false};
+    std::atomic<bool> handoff_start_returned_{true};
 
     auto *handoff_op_ptr() noexcept {
       return std::launder(
           reinterpret_cast<handoff_op_t *>(handoff_op_storage_));
     }
 
-    void construct_handoff_op() noexcept {
+    auto reset_handoff_op() noexcept -> void {
+      if (!handoff_op_constructed_) {
+        return;
+      }
+      handoff_op_ptr()->~handoff_op_t();
+      handoff_op_constructed_ = false;
+    }
+
+    void construct_handoff_op() {
       ::new (static_cast<void *>(handoff_op_storage_))
           handoff_op_t(stdexec::connect(stdexec::schedule(scheduler),
                                         handoff_receiver{this}));
       handoff_op_constructed_ = true;
+    }
+
+    auto ensure_completion_handoff() -> void {
+      if (is_same_scheduler() || handoff_op_constructed_) {
+        return;
+      }
+      construct_handoff_op();
     }
 
     struct stop_callback {
@@ -820,17 +946,20 @@ private:
 
       pop_operation *self{nullptr};
 
-      auto set_value() noexcept -> void { self->complete(); }
+      auto set_value() noexcept -> void {
+        self->publish_handoff_completion(handoff_completion_t{
+            handoff_value_tag{}});
+      }
 
       template <typename error_t>
       auto set_error(error_t &&error) noexcept -> void {
-        stdexec::set_error(
-            std::move(self->receiver),
-            detail::to_exception_ptr(std::forward<error_t>(error)));
+        self->publish_handoff_completion(handoff_completion_t{
+            detail::to_exception_ptr(std::forward<error_t>(error))});
       }
 
       auto set_stopped() noexcept -> void {
-        stdexec::set_stopped(std::move(self->receiver));
+        self->publish_handoff_completion(handoff_completion_t{
+            detail::stopped_tag{}});
       }
 
       [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> {
@@ -888,9 +1017,7 @@ private:
     auto operator=(pop_operation &&) -> pop_operation & = delete;
 
     ~pop_operation() {
-      if (handoff_op_constructed_) {
-        handoff_op_ptr()->~handoff_op_t();
-      }
+      reset_handoff_op();
     }
 
     [[nodiscard]] auto is_same_scheduler() const noexcept -> bool {
@@ -920,8 +1047,75 @@ private:
         }
         return;
       }
-      construct_handoff_op();
-      stdexec::start(*handoff_op_ptr());
+      try {
+        ensure_completion_handoff();
+        handoff_start_returned_.store(false, std::memory_order_release);
+        stdexec::start(*handoff_op_ptr());
+        handoff_start_returned_.store(true, std::memory_order_release);
+        if (handoff_completion_ready_.load(std::memory_order_acquire)) {
+          drain_handoff_completion();
+        }
+      } catch (...) {
+        handoff_start_returned_.store(true, std::memory_order_release);
+        reset_handoff_op();
+        store_exception(*this, std::current_exception());
+        complete();
+      }
+    }
+
+    auto prepare_wait(const stop_token_t &stop_token) noexcept -> bool {
+      try {
+        ensure_completion_handoff();
+      } catch (...) {
+        store_exception(*this, std::current_exception());
+        complete_immediate();
+        return false;
+      }
+
+      if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
+        if (!stop_callback_.has_value()) {
+          try {
+            stop_callback_.emplace(stop_token, stop_callback{this});
+          } catch (...) {
+            store_exception(*this, std::current_exception());
+            complete_immediate();
+            return false;
+          }
+        }
+        if (stop_token.stop_requested()) {
+          store_stopped(*this);
+          complete_immediate();
+          return false;
+        }
+      }
+      return true;
+    }
+
+    auto publish_handoff_completion(handoff_completion_t completion) noexcept
+        -> void {
+      wh_invariant(
+          !handoff_completion_ready_.load(std::memory_order_acquire));
+      handoff_completion_.emplace(std::move(completion));
+      handoff_completion_ready_.store(true, std::memory_order_release);
+      if (handoff_start_returned_.load(std::memory_order_acquire)) {
+        drain_handoff_completion();
+      }
+    }
+
+    auto drain_handoff_completion() noexcept -> void {
+      if (!handoff_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+        return;
+      }
+      auto completion = std::move(*handoff_completion_);
+      handoff_completion_.reset();
+      reset_handoff_op();
+
+      if (std::holds_alternative<std::exception_ptr>(completion)) {
+        store_exception(*this, std::move(std::get<std::exception_ptr>(completion)));
+      } else if (std::holds_alternative<detail::stopped_tag>(completion)) {
+        store_stopped(*this);
+      }
+      complete();
     }
 
     auto finish() noexcept -> void {
@@ -1014,69 +1208,84 @@ private:
         return;
       }
 
-      push_waiter_base_t *ready_push = nullptr;
-      bool ready_zero_capacity_push = false;
-      {
-        std::unique_lock<critical_section> lock(op.queue->lock_);
-        if (!op.queue->buffer_.empty()) {
-          try {
-            op.queue->buffer_.consume_front(
-                [&](value_type &&value) { store_value(op, std::move(value)); });
-          } catch (...) {
-            store_exception(op, std::current_exception());
-          }
-          if (auto *waiter = op.queue->wait_state_.take_push()) {
+      bool wait_prepared = false;
+      for (;;) {
+        push_waiter_base_t *ready_push = nullptr;
+        bool ready_zero_capacity_push = false;
+        bool should_prepare_wait = false;
+        bool enqueued = false;
+
+        {
+          std::unique_lock<critical_section> lock(op.queue->lock_);
+          if (!op.queue->buffer_.empty()) {
             try {
-              op.queue->push_waiter_into_ring(*waiter);
-              store_status(*waiter, status_type::success);
+              op.queue->buffer_.consume_front(
+                  [&](value_type &&value) { store_value(op, std::move(value)); });
             } catch (...) {
-              store_exception(*waiter, std::current_exception());
+              store_exception(op, std::current_exception());
             }
+            if (auto *waiter = op.queue->wait_state_.take_push()) {
+              try {
+                op.queue->push_waiter_into_ring(*waiter);
+                store_status(*waiter, status_type::success);
+              } catch (...) {
+                store_exception(*waiter, std::current_exception());
+              }
+              ready_push = waiter;
+            }
+          } else if (auto *waiter = op.queue->wait_state_.take_push();
+                     waiter != nullptr && op.queue->buffer_.capacity() == 0U) {
             ready_push = waiter;
+            ready_zero_capacity_push = true;
+          } else if (op.queue->wait_state_.is_closed()) {
+            store_status(op, status_type::closed);
+          } else if (!wait_prepared) {
+            should_prepare_wait = true;
+          } else {
+            op.queue->wait_state_.enqueue_pop(&op);
+            enqueued = true;
           }
-        } else if (auto *waiter = op.queue->wait_state_.take_push();
-                   waiter != nullptr && op.queue->buffer_.capacity() == 0U) {
-          ready_push = waiter;
-          ready_zero_capacity_push = true;
-        } else if (op.queue->wait_state_.is_closed()) {
-          store_status(op, status_type::closed);
-          lock.unlock();
+        }
+
+        if (ready_zero_capacity_push) {
+          try {
+            op.queue->visit_push_source(*ready_push, [&](auto &&value) {
+              store_value(op, std::forward<decltype(value)>(value));
+            });
+            store_status(*ready_push, status_type::success);
+          } catch (...) {
+            auto error = std::current_exception();
+            store_exception(op, error);
+            store_exception(*ready_push, std::move(error));
+          }
+        }
+
+        if (ready_push != nullptr) {
+          complete_waiter(ready_push);
           op.complete_immediate();
           return;
-        } else {
-          op.queue->wait_state_.enqueue_pop(&op);
-          lock.unlock();
+        }
+
+        if (enqueued) {
           if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
-            if (!op.completion_bits_.has_claimed()) {
-              op.stop_callback_.emplace(stop_token, stop_callback{&op});
-              if (stop_token.stop_requested()) {
-                op.cancel_wait();
-              }
+            if (stop_token.stop_requested()) {
+              op.cancel_wait();
             }
           }
           return;
         }
-      }
 
-      if (ready_zero_capacity_push) {
-        try {
-          op.queue->visit_push_source(*ready_push, [&](auto &&value) {
-            store_value(op, std::forward<decltype(value)>(value));
-          });
-          store_status(*ready_push, status_type::success);
-        } catch (...) {
-          auto error = std::current_exception();
-          store_exception(op, error);
-          store_exception(*ready_push, std::move(error));
+        if (should_prepare_wait) {
+          if (!op.prepare_wait(stop_token)) {
+            return;
+          }
+          wait_prepared = true;
+          continue;
         }
-      }
 
-      if (ready_push != nullptr) {
-        complete_waiter(ready_push);
         op.complete_immediate();
         return;
       }
-      op.complete_immediate();
     }
   };
 
@@ -1291,6 +1500,16 @@ private:
            waiter->ops->try_complete(waiter);
   }
 
+  [[noreturn]] static auto rethrow_or_terminate_try_pop(
+      [[maybe_unused]] std::exception_ptr error) noexcept(try_pop_is_nothrow)
+      -> void {
+    if constexpr (try_pop_is_nothrow) {
+      std::terminate();
+    } else {
+      std::rethrow_exception(std::move(error));
+    }
+  }
+
   template <typename sink_t>
   auto visit_push_source(push_waiter_base_t &waiter, sink_t &&sink) -> void {
     if (waiter.has_move_source()) {
@@ -1497,8 +1716,7 @@ private:
   }
 
   [[nodiscard]] auto
-  try_pop_impl() noexcept(std::is_nothrow_move_constructible_v<value_type> &&
-                          std::is_nothrow_copy_constructible_v<value_type>)
+  try_pop_impl() noexcept(try_pop_is_nothrow)
       -> try_pop_result {
     push_waiter_base_t *ready_push = nullptr;
     push_waiter_base_t *scheduled_async_push = nullptr;
@@ -1528,9 +1746,10 @@ private:
             complete_waiter(ready_rendezvous);
             return std::move(*ready_value);
           } catch (...) {
-            store_exception(*ready_rendezvous, std::current_exception());
+            auto error = std::current_exception();
+            store_exception(*ready_rendezvous, error);
             complete_waiter(ready_rendezvous);
-            throw;
+            rethrow_or_terminate_try_pop(std::move(error));
           }
         }
 
@@ -1555,12 +1774,14 @@ private:
         if (scheduled_async_push != nullptr) {
           auto *failed_waiter = wait_state_.take_push();
           if (failed_waiter != nullptr) {
-            store_exception(*failed_waiter, std::current_exception());
+            auto error = std::current_exception();
+            store_exception(*failed_waiter, error);
             lock.unlock();
             complete_waiter(failed_waiter);
+            rethrow_or_terminate_try_pop(std::move(error));
           }
         }
-        throw;
+        rethrow_or_terminate_try_pop(std::current_exception());
       }
 
       if (auto *waiter = wait_state_.take_push()) {

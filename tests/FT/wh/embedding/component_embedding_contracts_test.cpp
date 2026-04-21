@@ -62,10 +62,10 @@ TEST_CASE("embedding callbacks keep partial-success batches on end path",
           -> wh::core::result<wh::embedding::embedding_response> {
         wh::embedding::embedding_response output{};
         output.reserve(request.inputs.size());
-        const auto options = request.options.resolve_view();
+        const auto request_options = request.options.resolve_view();
         for (const auto &input : request.inputs) {
           if (input == "bad") {
-            if (options.failure_policy ==
+            if (request_options.failure_policy ==
                 wh::embedding::batch_failure_policy::fail_fast) {
               return wh::core::result<wh::embedding::embedding_response>::failure(
                   wh::core::errc::invalid_argument);

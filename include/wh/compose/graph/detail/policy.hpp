@@ -44,7 +44,7 @@ inline auto graph::resolve_node_sync_dispatch(const std::uint32_t node_id) const
       node->meta.exec_origin != node_exec_origin::authored) {
     return sync_dispatch::inline_control;
   }
-  return node->meta.options.sync_dispatch;
+  return node->meta.options.dispatch;
 }
 
 inline auto graph::resolve_branch_merge(
@@ -88,7 +88,7 @@ inline auto graph::merge_branch_selected_nodes(
 inline auto graph::commit_branch_selection(
     const std::uint32_t node_id,
     std::optional<std::vector<std::uint32_t>> selection,
-    dag_schedule &dag_schedule,
+    dag_schedule &schedule,
     const detail::runtime_state::invoke_config &config) const
     -> wh::core::result<void> {
   if (!selection.has_value()) {
@@ -96,9 +96,9 @@ inline auto graph::commit_branch_selection(
   }
   const auto strategy = resolve_branch_merge(config);
 
-  auto &state = dag_schedule.branch_states[node_id];
+  auto &state = schedule.branch_states[node_id];
   if (!state.decided) {
-    dag_schedule.mark_branch_decided(node_id, std::move(selection).value());
+    schedule.mark_branch_decided(node_id, std::move(selection).value());
     return {};
   }
   auto merged = merge_branch_selected_nodes(
@@ -106,9 +106,9 @@ inline auto graph::commit_branch_selection(
   if (merged.has_error()) {
     return wh::core::result<void>::failure(merged.error());
   }
-  if (std::ranges::find(dag_schedule.decided_branch_nodes, node_id) ==
-      dag_schedule.decided_branch_nodes.end()) {
-    dag_schedule.decided_branch_nodes.push_back(node_id);
+  if (std::ranges::find(schedule.decided_branch_nodes, node_id) ==
+      schedule.decided_branch_nodes.end()) {
+    schedule.decided_branch_nodes.push_back(node_id);
   }
   state.selected_end_nodes_sorted = std::move(merged).value();
   return {};

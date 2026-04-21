@@ -42,7 +42,7 @@ TEST_CASE("graph compile info stores node options branches and nested subgraph s
       .options = {.name = "Node",
                   .type = "lambda",
                   .allow_no_control = true,
-                  .sync_dispatch = wh::compose::sync_dispatch::inline_control,
+                  .dispatch = wh::compose::sync_dispatch::inline_control,
                   .state_handlers = {.post = true}},
   });
 
@@ -55,7 +55,7 @@ TEST_CASE("graph compile info stores node options branches and nested subgraph s
   REQUIRE(info.nodes.front().has_subgraph);
   REQUIRE(info.nodes.front().field_mapping.input_key == "in");
   REQUIRE(info.nodes.front().options.name == "Node");
-  REQUIRE(info.nodes.front().options.sync_dispatch ==
+  REQUIRE(info.nodes.front().options.dispatch ==
           wh::compose::sync_dispatch::inline_control);
   REQUIRE(info.nodes.front().options.state_handlers.post);
 }

@@ -110,7 +110,7 @@ struct attempt_input {
 };
 
 struct attempt_slot {
-  stage stage{stage::input};
+  stage current_stage{stage::input};
   std::uint32_t node_id{0U};
   graph_state_cause cause{};
   const compiled_node *node{nullptr};
@@ -119,7 +119,7 @@ struct attempt_slot {
   std::size_t attempt{0U};
   std::optional<std::chrono::milliseconds> timeout_budget{};
   std::optional<attempt_input> input{};
-  node_runtime node_runtime{};
+  node_runtime runtime{};
   runtime_state::node_scope node_scope{};
   process_runtime::scoped_node_local_process_state node_local_scope{};
 };

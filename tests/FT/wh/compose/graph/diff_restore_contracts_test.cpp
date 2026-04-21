@@ -81,7 +81,7 @@ template <typename value_t>
   if (compiled.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(compiled.error());
   }
-  return std::move(graph);
+  return graph;
 }
 
 [[nodiscard]] auto invoke_graph_int(

@@ -101,10 +101,10 @@ resolve_id_hint(const checkpoint_save_options &options) -> std::string {
 [[nodiscard]] inline auto
 resolve_serializer(const runtime_state::invoke_config &config)
     -> wh::core::result<const checkpoint_serializer *> {
-  if (config.checkpoint_serializer == nullptr) {
+  if (config.checkpoint_serializer_ptr == nullptr) {
     return std::addressof(default_serializer());
   }
-  const auto *serializer = config.checkpoint_serializer;
+  const auto *serializer = config.checkpoint_serializer_ptr;
   if (!serializer->encode || !serializer->decode) {
     return wh::core::result<const checkpoint_serializer *>::failure(
         wh::core::errc::invalid_argument);
@@ -154,8 +154,8 @@ struct runtime_backend {
 resolve_runtime_backend(const runtime_state::invoke_config &config)
     -> wh::core::result<runtime_backend> {
   runtime_backend resolved{};
-  resolved.store = config.checkpoint_store;
-  resolved.backend = config.checkpoint_backend;
+  resolved.store = config.checkpoint_store_ptr;
+  resolved.backend = config.checkpoint_backend_ptr;
   if (resolved.backend != nullptr &&
       (!resolved.backend->prepare_restore || !resolved.backend->save)) {
     return wh::core::result<runtime_backend>::failure(
@@ -809,23 +809,25 @@ validate_runtime_configuration(const runtime_state::invoke_config &config,
                                runtime_state::invoke_outputs &outputs)
     -> wh::core::result<void> {
   const bool has_runtime_backend =
-      config.checkpoint_store != nullptr || config.checkpoint_backend != nullptr;
+      config.checkpoint_store_ptr != nullptr ||
+      config.checkpoint_backend_ptr != nullptr;
   std::string explicit_checkpoint_id{};
-  if (config.checkpoint_store != nullptr && config.checkpoint_backend != nullptr) {
+  if (config.checkpoint_store_ptr != nullptr &&
+      config.checkpoint_backend_ptr != nullptr) {
     set_error_detail(outputs, wh::core::errc::invalid_argument, "",
                      "validate_runtime_config");
     return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
   }
-  if (config.checkpoint_backend != nullptr &&
-      (!config.checkpoint_backend->prepare_restore ||
-       !config.checkpoint_backend->save)) {
+  if (config.checkpoint_backend_ptr != nullptr &&
+      (!config.checkpoint_backend_ptr->prepare_restore ||
+       !config.checkpoint_backend_ptr->save)) {
     set_error_detail(outputs, wh::core::errc::invalid_argument, "",
                      "validate_runtime_config");
     return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
   }
-  if (config.checkpoint_serializer != nullptr &&
-      (!config.checkpoint_serializer->encode ||
-       !config.checkpoint_serializer->decode)) {
+  if (config.checkpoint_serializer_ptr != nullptr &&
+      (!config.checkpoint_serializer_ptr->encode ||
+       !config.checkpoint_serializer_ptr->decode)) {
     set_error_detail(outputs, wh::core::errc::invalid_argument, "",
                      "validate_runtime_config");
     return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -972,7 +974,7 @@ inline auto prepare_restore(
   }
 
   auto stream_restored = apply_stream_codecs_for_load(
-      checkpoint, context, config.checkpoint_stream_codecs, node_keys,
+      checkpoint, context, config.checkpoint_stream_codecs_ptr, node_keys,
       indexed_edges, end_id);
   if (stream_restored.has_error()) {
     set_error_detail(outputs, stream_restored.error(), checkpoint_id_hint,
@@ -1048,7 +1050,7 @@ inline auto maybe_persist(
   }
 
   auto stream_persisted = apply_stream_codecs_for_save(
-      checkpoint, context, config.checkpoint_stream_codecs, node_keys,
+      checkpoint, context, config.checkpoint_stream_codecs_ptr, node_keys,
       indexed_edges, end_id);
   if (stream_persisted.has_error()) {
     set_error_detail(outputs, stream_persisted.error(), checkpoint_id_hint,

@@ -591,7 +591,7 @@ inline auto append_visible_history(runtime_state &state,
   if (valid.has_error()) {
     return wh::core::result<host_member_definition>::failure(valid.error());
   }
-  return std::move(definition);
+  return definition;
 }
 
 template <typename children_t>
@@ -623,7 +623,7 @@ template <typename children_t>
     definition->root.allowed_children.push_back(child_definition.name);
     definition->children.push_back(std::move(child_definition));
   }
-  return std::move(definition);
+  return definition;
 }
 
 [[nodiscard]] inline auto populate_exported_topology(
@@ -660,7 +660,7 @@ template <typename children_t>
     }
   }
 
-  return std::move(exported);
+  return exported;
 }
 
 class host_graph {

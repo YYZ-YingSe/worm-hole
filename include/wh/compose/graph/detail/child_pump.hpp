@@ -354,7 +354,7 @@ template <typename policy_t> class child_pump_sender {
           }
 
           [[maybe_unused]] auto &child_op =
-              child_op_.construct_with([&]() -> child_op_t {
+              child_op_.template construct_with<child_op_t>([&]() -> child_op_t {
             return stdexec::connect(
                 stdexec::starts_on(exec::trampoline_scheduler{},
                                    stdexec::starts_on(graph_scheduler_,
@@ -364,7 +364,7 @@ template <typename policy_t> class child_pump_sender {
           });
           child_op_engaged_ = true;
           count_.fetch_add(1U, std::memory_order_relaxed);
-          stdexec::start(child_op_.get());
+          stdexec::start(child_op_.template get<child_op_t>());
           return;
         } catch (...) {
           destroy_child();
@@ -379,7 +379,7 @@ template <typename policy_t> class child_pump_sender {
       if (!child_op_engaged_) {
         return;
       }
-      child_op_.destruct();
+      child_op_.template destruct<child_op_t>();
       child_op_engaged_ = false;
     }
 
@@ -387,7 +387,8 @@ template <typename policy_t> class child_pump_sender {
     receiver_env_t receiver_env_;
     graph_scheduler_t graph_scheduler_;
     wh_no_unique_address policy_type policy_;
-    wh::core::detail::manual_lifetime<child_op_t> child_op_{};
+    wh::core::detail::manual_storage<sizeof(child_op_t), alignof(child_op_t)>
+        child_op_{};
     std::optional<completion_t> pending_status_{};
     std::optional<wh::core::result<graph_value>> terminal_{};
     std::atomic<std::size_t> count_{1U};

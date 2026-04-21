@@ -21,6 +21,8 @@ struct sender_source_stats {
   std::vector<std::optional<result_t>> try_results{};
   std::size_t try_index{0U};
   result_t async_result{0};
+  std::vector<result_t> async_results{};
+  std::size_t async_index{0U};
 };
 
 struct sender_async_source {
@@ -35,7 +37,12 @@ struct sender_async_source {
     return std::nullopt;
   }
 
-  [[nodiscard]] auto read_async() { return stdexec::just(stats->async_result); }
+  [[nodiscard]] auto read_async() {
+    if (stats->async_index < stats->async_results.size()) {
+      return stdexec::just(stats->async_results[stats->async_index++]);
+    }
+    return stdexec::just(stats->async_result);
+  }
 
   [[nodiscard]] auto close() -> wh::core::result<void> { return {}; }
 };
@@ -48,6 +55,66 @@ using receiver_t =
 using policy_t =
     wh::core::cursor_reader_detail::default_policy<sender_async_source>;
 using sender_t = wh::core::cursor_reader_detail::read_sender<sender_async_source, policy_t>;
+
+struct inline_handoff_observer_state {
+  bool op_destroyed{false};
+  bool destroyed_before_start_return{false};
+  std::size_t connect_calls{0U};
+};
+
+struct observing_inline_scheduler {
+  using scheduler_concept = stdexec::scheduler_t;
+
+  template <typename receiver_t> struct schedule_op {
+    using operation_state_concept = stdexec::operation_state_t;
+
+    inline_handoff_observer_state *state{nullptr};
+    receiver_t receiver;
+
+    ~schedule_op() {
+      if (state != nullptr) {
+        state->op_destroyed = true;
+      }
+    }
+
+    auto start() noexcept -> void {
+      auto *observer = state;
+      if (observer != nullptr) {
+        observer->op_destroyed = false;
+      }
+      stdexec::set_value(std::move(receiver));
+      if (observer != nullptr && observer->op_destroyed) {
+        observer->destroyed_before_start_return = true;
+      }
+    }
+  };
+
+  struct schedule_sender {
+    inline_handoff_observer_state *state{nullptr};
+
+    using sender_concept = stdexec::sender_t;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t()>;
+
+    template <typename receiver_t>
+    [[nodiscard]] auto connect(receiver_t receiver) const
+        -> schedule_op<receiver_t> {
+      ++state->connect_calls;
+      return schedule_op<receiver_t>{state, std::move(receiver)};
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
+  };
+
+  inline_handoff_observer_state *state{nullptr};
+
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
+    return {state};
+  }
+
+  [[nodiscard]] auto operator==(const observing_inline_scheduler &) const noexcept
+      -> bool = default;
+};
 
 } // namespace
 
@@ -197,4 +264,86 @@ TEST_CASE("read sender pending async path finishes on first scheduler turn when 
   REQUIRE(capture.value->has_value());
   REQUIRE(capture.value->value() == 21);
   REQUIRE(scheduler_state.pending_count() == 0U);
+}
+
+TEST_CASE("read sender supports consecutive async pulls on the same shared state",
+          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::start][concurrency][regression]") {
+  auto stats = std::make_shared<sender_source_stats>();
+  stats->try_results = {std::nullopt, std::nullopt};
+  stats->async_results = {result_t{34}, result_t{55}};
+
+  wh::testing::helper::manual_scheduler_state scheduler_state{};
+  scheduler_t scheduler{&scheduler_state};
+  env_t env{scheduler, {}};
+  auto state = wh::core::detail::make_intrusive<
+      wh::core::cursor_reader_detail::shared_state<sender_async_source, policy_t>>(
+      sender_async_source{stats}, 1U);
+
+  capture_t first_capture{};
+  auto first_operation = stdexec::connect(
+      sender_t{.state_ = state, .reader_index = 0U, .released = false},
+      receiver_t{&first_capture, env});
+  stdexec::start(first_operation);
+
+  REQUIRE_FALSE(first_capture.ready.try_acquire());
+  REQUIRE(scheduler_state.pending_count() == 1U);
+  REQUIRE(scheduler_state.run_one());
+  REQUIRE_FALSE(first_capture.ready.try_acquire());
+  REQUIRE(scheduler_state.pending_count() == 1U);
+  REQUIRE(scheduler_state.run_one());
+  REQUIRE(first_capture.ready.try_acquire());
+  REQUIRE(first_capture.value.has_value());
+  REQUIRE(first_capture.value->has_value());
+  REQUIRE(first_capture.value->value() == 34);
+  REQUIRE(scheduler_state.pending_count() == 0U);
+
+  capture_t second_capture{};
+  auto second_operation = stdexec::connect(
+      sender_t{.state_ = state, .reader_index = 0U, .released = false},
+      receiver_t{&second_capture, env});
+  stdexec::start(second_operation);
+
+  REQUIRE_FALSE(second_capture.ready.try_acquire());
+  REQUIRE(scheduler_state.pending_count() == 1U);
+  REQUIRE(scheduler_state.run_one());
+  REQUIRE_FALSE(second_capture.ready.try_acquire());
+  REQUIRE(scheduler_state.pending_count() == 1U);
+  REQUIRE(scheduler_state.run_one());
+  REQUIRE(second_capture.ready.try_acquire());
+  REQUIRE(second_capture.value.has_value());
+  REQUIRE(second_capture.value->has_value());
+  REQUIRE(second_capture.value->value() == 55);
+  REQUIRE(scheduler_state.pending_count() == 0U);
+}
+
+TEST_CASE("read sender inline handoff does not destroy the handoff op before start returns",
+          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::begin_completion][handoff][lifecycle]") {
+  auto stats = std::make_shared<sender_source_stats>();
+  stats->try_results = {std::optional<result_t>{result_t{88}}};
+
+  auto state = wh::core::detail::make_intrusive<
+      wh::core::cursor_reader_detail::shared_state<sender_async_source, policy_t>>(
+      sender_async_source{stats}, 2U);
+  auto primed = state->try_read_for(1U);
+  REQUIRE(primed.has_value());
+  REQUIRE(primed->has_value());
+  REQUIRE(primed->value() == 88);
+
+  inline_handoff_observer_state observer{};
+  using inline_env_t =
+      wh::testing::helper::scheduler_env<observing_inline_scheduler, std::stop_token>;
+  capture_t capture{};
+  auto operation = stdexec::connect(
+      sender_t{.state_ = state, .reader_index = 0U, .released = false},
+      wh::testing::helper::sender_capture_receiver<result_t, inline_env_t>{
+          &capture, {.scheduler = observing_inline_scheduler{&observer}, .stop_token = {}}});
+  stdexec::start(operation);
+
+  REQUIRE(capture.ready.try_acquire());
+  REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.value.has_value());
+  REQUIRE(capture.value->has_value());
+  REQUIRE(capture.value->value() == 88);
+  REQUIRE(observer.connect_calls == 1U);
+  REQUIRE_FALSE(observer.destroyed_before_start_return);
 }

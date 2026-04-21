@@ -294,7 +294,7 @@ TEST_CASE("compose graph typed invoke request accepts explicit restore on stream
       [](wh::compose::graph_stream_reader input, wh::core::run_context &,
          const wh::compose::graph_call_scope &)
           -> wh::core::result<wh::compose::graph_stream_reader> {
-        return std::move(input);
+        return input;
       });
   REQUIRE(added.has_value());
   REQUIRE(graph.add_entry_edge("passthrough").has_value());

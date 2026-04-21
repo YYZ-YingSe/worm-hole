@@ -314,8 +314,8 @@ inline auto compare_node_options(graph_diff &diff,
   compare_policy("allow_no_data", bool_text(baseline.options.allow_no_data),
                  bool_text(candidate.options.allow_no_data));
   compare_policy("sync_dispatch",
-                 std::string{sync_dispatch_text(baseline.options.sync_dispatch)},
-                 std::string{sync_dispatch_text(candidate.options.sync_dispatch)});
+                 std::string{sync_dispatch_text(baseline.options.dispatch)},
+                 std::string{sync_dispatch_text(candidate.options.dispatch)});
   compare_policy("callbacks_enabled",
                  bool_text(baseline.options.observation.callbacks_enabled),
                  bool_text(candidate.options.observation.callbacks_enabled));

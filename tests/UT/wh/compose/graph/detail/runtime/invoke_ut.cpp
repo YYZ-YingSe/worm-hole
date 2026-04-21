@@ -122,7 +122,7 @@ TEST_CASE("invoke runtime attempt slot and actions default initialize to empty c
   REQUIRE_FALSE(empty_attempt.has_value());
 
   attempt_slot slot{};
-  REQUIRE(slot.stage == stage::input);
+  REQUIRE(slot.current_stage == stage::input);
   REQUIRE(slot.node_id == 0U);
   REQUIRE(slot.node == nullptr);
   REQUIRE(slot.state_handlers == nullptr);
@@ -205,7 +205,7 @@ TEST_CASE("invoke session stage helpers keep live input inside attempt slot",
 
   auto finalized = session.finalize_node_attempt(attempt.value());
   REQUIRE(finalized.has_value());
-  REQUIRE(slot.stage ==
+  REQUIRE(slot.current_stage ==
           wh::compose::detail::invoke_runtime::stage::node);
   REQUIRE(slot.input.has_value());
   REQUIRE(slot.input->payload.has_value());
@@ -252,7 +252,7 @@ TEST_CASE("invoke session prepare_execution_input consumes lowering from attempt
   REQUIRE(prepared.has_value());
   REQUIRE(prepared->attempt == attempt.value());
   REQUIRE(prepared->sender.has_value());
-  REQUIRE(slot.stage ==
+  REQUIRE(slot.current_stage ==
           wh::compose::detail::invoke_runtime::stage::prepare);
   REQUIRE(slot.input.has_value());
   REQUIRE_FALSE(slot.input->lowering.has_value());

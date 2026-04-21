@@ -53,19 +53,14 @@ public:
   using outer_stop_callback_t =
       stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
 
-  explicit receiver_stop_bridge(receiver_t receiver)
-      : receiver_(std::move(receiver)), env_(stdexec::get_env(receiver_)) {}
-
-  receiver_stop_bridge(const receiver_stop_bridge &) = delete;
-  auto operator=(const receiver_stop_bridge &)
-      -> receiver_stop_bridge & = delete;
-
-  auto bind_outer_stop() noexcept -> bool {
+  explicit receiver_stop_bridge(receiver_type &receiver)
+      : receiver_(std::addressof(receiver)),
+        env_(stdexec::get_env(*receiver_)) {
     auto stop_token = stdexec::get_stop_token(env_);
     if (stop_token.stop_requested()) {
       stop_requested_.store(true, std::memory_order_release);
       stop_source_.request_stop();
-      return false;
+      return;
     }
     if constexpr (!stdexec::unstoppable_token<outer_stop_token_t>) {
       stop_callback_.emplace(stop_token, stop_callback{this});
@@ -74,14 +69,21 @@ public:
         stop_source_.request_stop();
       }
     }
-    return true;
   }
+
+  receiver_stop_bridge(const receiver_stop_bridge &) = delete;
+  auto operator=(const receiver_stop_bridge &)
+      -> receiver_stop_bridge & = delete;
 
   [[nodiscard]] auto env() const noexcept -> stop_env_t {
     return stop_env_t{
         .base_env = std::addressof(env_),
         .stop_token = stop_source_.get_token(),
     };
+  }
+
+  [[nodiscard]] auto stop_requested() const noexcept -> bool {
+    return stop_requested_.load(std::memory_order_acquire);
   }
 
   template <typename... value_ts>
@@ -93,7 +95,8 @@ public:
     if (!try_complete()) {
       return;
     }
-    stdexec::set_value(std::move(receiver_), std::forward<value_ts>(values)...);
+    stdexec::set_value(std::move(*receiver_),
+                       std::forward<value_ts>(values)...);
   }
 
   template <typename error_t> auto set_error(error_t &&error) noexcept -> void {
@@ -104,21 +107,17 @@ public:
     if (!try_complete()) {
       return;
     }
-    stdexec::set_error(std::move(receiver_), std::forward<error_t>(error));
+    stdexec::set_error(std::move(*receiver_), std::forward<error_t>(error));
   }
 
   auto set_stopped() noexcept -> void {
     if (!try_complete()) {
       return;
     }
-    stdexec::set_stopped(std::move(receiver_));
+    stdexec::set_stopped(std::move(*receiver_));
   }
 
 private:
-  [[nodiscard]] auto stop_requested() const noexcept -> bool {
-    return stop_requested_.load(std::memory_order_acquire);
-  }
-
   [[nodiscard]] auto try_complete() noexcept -> bool {
     auto expected = false;
     return completed_.compare_exchange_strong(expected, true,
@@ -126,7 +125,7 @@ private:
                                               std::memory_order_acquire);
   }
 
-  receiver_type receiver_;
+  receiver_type *receiver_{nullptr};
   receiver_env_t env_;
   stdexec::inplace_stop_source stop_source_{};
   std::optional<outer_stop_callback_t> stop_callback_{};

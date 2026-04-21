@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -8,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <exec/start_detached.hpp>
+#include <exec/trampoline_scheduler.hpp>
 #include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/pull_op.hpp"
 #include "wh/core/cursor_reader/detail/retained_ring_storage.hpp"
@@ -45,6 +48,52 @@ public:
                          inactive_pull_op>;
   using active_pull_handle_t = wh::core::detail::intrusive_ptr<pull_op_t>;
 
+private:
+  struct pull_completion_task final
+      : wh::core::detail::intrusive_enable_from_this<pull_completion_task> {
+    using owner_handle_t = wh::core::detail::intrusive_ptr<shared_state>;
+
+    pull_completion_task(owner_handle_t owner, active_pull_handle_t pull) noexcept
+        : owner_(std::move(owner)), pull_(std::move(pull)) {}
+
+    auto start() noexcept -> void {
+      auto keepalive = this->intrusive_from_this();
+      try {
+        exec::start_detached(
+            stdexec::then(
+                stdexec::schedule(exec::trampoline_scheduler{}),
+                [keepalive]() mutable noexcept {
+                  keepalive->finish();
+                }));
+      } catch (...) {
+        keepalive->finish();
+      }
+    }
+
+  private:
+    auto finish() noexcept -> void {
+      if (finished_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+      }
+      auto owner = owner_;
+      auto pull = std::move(pull_);
+      if (pull) {
+        pull->drain_completion();
+      }
+      if (owner) {
+        owner->release_pull_completion_task(this);
+      }
+    }
+
+    owner_handle_t owner_{};
+    active_pull_handle_t pull_{};
+    std::atomic<bool> finished_{false};
+  };
+
+  using pull_completion_task_handle_t =
+      wh::core::detail::intrusive_ptr<pull_completion_task>;
+
+public:
   struct async_read_ticket {
     std::optional<result_type> ready{};
     bool start_pull{false};
@@ -134,6 +183,7 @@ public:
         case pull_state::async_reading:
           active_pull = active_pull_;
           break;
+        case pull_state::async_draining:
         case pull_state::closing:
         case pull_state::terminal:
           break;
@@ -306,16 +356,42 @@ public:
     }
   }
 
-  auto finish_source_pull(pull_op_t *pull, result_type status,
-                          const bool terminal_override) noexcept -> void {
-    bool discard_result = false;
-    bool start_close = false;
+  auto schedule_pull_completion(pull_op_t *pull) noexcept -> void {
+    auto owner = this->intrusive_from_this();
+    active_pull_handle_t completed_pull{};
+    pull_completion_task_handle_t task{};
     {
       std::scoped_lock lock(lock_);
       if (!active_pull_ || active_pull_.get() != pull) {
         return;
       }
-      active_pull_.reset();
+      completed_pull = std::move(active_pull_);
+      pull_state_ = pull_state::async_draining;
+    }
+
+    try {
+      task = wh::core::detail::make_intrusive<pull_completion_task>(
+          std::move(owner), std::move(completed_pull));
+    } catch (...) {
+      if (completed_pull) {
+        completed_pull->drain_completion();
+      }
+      return;
+    }
+
+    {
+      std::scoped_lock lock(lock_);
+      drain_task_ = task;
+    }
+    task->start();
+  }
+
+  auto finish_source_pull(pull_op_t *, result_type status,
+                          const bool terminal_override) noexcept -> void {
+    bool discard_result = false;
+    bool start_close = false;
+    {
+      std::scoped_lock lock(lock_);
       if (open_reader_count_ == 0U && close_requested_) {
         pull_state_ = pull_state::closing;
         discard_result = true;
@@ -332,15 +408,10 @@ public:
             terminal_override || policy_t::is_terminal(status));
   }
 
-  auto finish_source_pull_stopped(const pull_op_t *pull) noexcept -> void {
+  auto finish_source_pull_stopped(const pull_op_t *) noexcept -> void {
     bool start_close = false;
     {
       std::scoped_lock lock(lock_);
-      if (!active_pull_ || active_pull_.get() != pull) {
-        return;
-      }
-      active_pull_.reset();
-
       if (open_reader_count_ == 0U && close_requested_) {
         pull_state_ = pull_state::closing;
         start_close = true;
@@ -357,6 +428,13 @@ private:
   [[nodiscard]] static constexpr auto initial_capacity() noexcept
       -> std::size_t {
     return 4U;
+  }
+
+  auto release_pull_completion_task(pull_completion_task *task) noexcept -> void {
+    std::scoped_lock lock(lock_);
+    if (drain_task_ && drain_task_.get() == task) {
+      drain_task_.reset();
+    }
   }
 
   auto increment_async_waiter_count_locked() noexcept -> void {
@@ -620,6 +698,7 @@ private:
   std::size_t open_reader_count_{0U};
   std::size_t async_waiter_count_{0U};
   active_pull_handle_t active_pull_{};
+  pull_completion_task_handle_t drain_task_{};
 };
 
 } // namespace wh::core::cursor_reader_detail

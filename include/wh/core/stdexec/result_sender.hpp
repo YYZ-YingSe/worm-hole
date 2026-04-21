@@ -4,6 +4,7 @@
 
 #include <concepts>
 #include <exception>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -13,6 +14,7 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/stdexec/detail/receiver_stop_bridge.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 
 namespace wh::core::detail {
 
@@ -82,25 +84,51 @@ public:
     using operation_state_concept = stdexec::operation_state_t;
 
     operation(inner_sender_t sender, receiver_t receiver)
-        : bridge_(std::move(receiver)),
-          child_op_(
-              stdexec::connect(std::move(sender), child_receiver{std::addressof(bridge_)})) {}
+        : sender_(std::move(sender)), receiver_(std::move(receiver)) {}
+
+    ~operation() {
+      if (child_op_engaged_) {
+        child_op_.destruct();
+      }
+    }
 
     auto start() & noexcept -> void {
-      if (!bridge_.bind_outer_stop()) {
-        bridge_.set_stopped();
+      try {
+        bridge_.emplace(receiver_);
+      } catch (...) {
+        stdexec::set_value(std::move(receiver_),
+                           result_t::failure(wh::core::errc::internal_error));
         return;
       }
+
+      if (bridge_->stop_requested()) {
+        bridge_->set_stopped();
+        return;
+      }
+
       try {
-        stdexec::start(child_op_);
+        [[maybe_unused]] auto &child_op =
+            child_op_.construct_with([&]() -> child_op_t {
+              return stdexec::connect(std::move(sender_),
+                                      child_receiver{std::addressof(*bridge_)});
+            });
+        child_op_engaged_ = true;
+        stdexec::start(child_op_.get());
       } catch (...) {
-        bridge_.set_value(result_t::failure(wh::core::errc::internal_error));
+        if (child_op_engaged_) {
+          child_op_.destruct();
+          child_op_engaged_ = false;
+        }
+        bridge_->set_value(result_t::failure(wh::core::errc::internal_error));
       }
     }
 
   private:
-    bridge_t bridge_;
-    child_op_t child_op_;
+    inner_sender_t sender_;
+    receiver_t receiver_;
+    std::optional<bridge_t> bridge_{};
+    wh::core::detail::manual_lifetime<child_op_t> child_op_{};
+    bool child_op_engaged_{false};
   };
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>

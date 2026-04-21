@@ -132,7 +132,7 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
   for (const auto &text : message_texts) {
     wh::adk::event_metadata metadata{};
     if (state.add_child_metadata) {
-      metadata.run_path = wh::adk::run_path{{"agent", "leaf"}};
+      metadata.path = wh::adk::run_path{{"agent", "leaf"}};
       metadata.agent_name = "leaf";
     }
     events.push_back(wh::adk::make_message_event(make_assistant_message(text),
@@ -151,7 +151,7 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
             .interrupt_id = "interrupt-1",
         },
         wh::adk::event_metadata{
-            .run_path = wh::adk::run_path{{"agent", "leaf"}},
+            .path = wh::adk::run_path{{"agent", "leaf"}},
             .agent_name = "leaf",
         }));
   }
@@ -234,7 +234,7 @@ TEST_CASE("agent tool request mode maps request json to child chat request and "
   auto reader = std::move(result).value().events;
   auto events = collect_events(reader);
   REQUIRE(events.size() == 1U);
-  REQUIRE(events.front().metadata.run_path.to_string("/") ==
+  REQUIRE(events.front().metadata.path.to_string("/") ==
           "tool/delegate/call-1/agent/worker");
 }
 
@@ -319,37 +319,36 @@ TEST_CASE("agent tool flattens child message substreams without rebuilding a "
   wh::adk::agent_tool tool{"delegate_stream", "delegate stream",
                            wh::agent::agent{"worker"}};
   REQUIRE(tool.set_forward_internal_events(true).has_value());
-  REQUIRE(
+  auto bind_stream_runner =
       tool.bind_runner(
-              [](const wh::adk::run_request &request,
-                 wh::core::run_context &) -> wh::adk::agent_run_result {
-                REQUIRE(request.messages.size() == 1U);
-                REQUIRE(message_text(request.messages.front()) ==
-                        "stream please");
+          [](const wh::adk::run_request &request,
+             wh::core::run_context &) -> wh::adk::agent_run_result {
+            REQUIRE(request.messages.size() == 1U);
+            REQUIRE(message_text(request.messages.front()) == "stream please");
 
-                std::vector<wh::schema::message> streamed_messages{};
-                streamed_messages.push_back(make_assistant_message("first"));
-                streamed_messages.push_back(make_assistant_message("second"));
+            std::vector<wh::schema::message> streamed_messages{};
+            streamed_messages.push_back(make_assistant_message("first"));
+            streamed_messages.push_back(make_assistant_message("second"));
 
-                std::vector<wh::adk::agent_event> events{};
-                events.push_back(wh::adk::make_message_event(
-                    wh::adk::agent_message_stream_reader{
+            std::vector<wh::adk::agent_event> events{};
+            events.push_back(wh::adk::make_message_event(
+                wh::adk::agent_message_stream_reader{
+                    wh::schema::stream::make_values_stream_reader(
+                        std::move(streamed_messages))},
+                wh::adk::event_metadata{
+                    .path = wh::adk::run_path{{"agent", "worker"}},
+                    .agent_name = "worker",
+                }));
+
+            return wh::adk::agent_run_output{
+                .events =
+                    wh::adk::agent_event_stream_reader{
                         wh::schema::stream::make_values_stream_reader(
-                            std::move(streamed_messages))},
-                    wh::adk::event_metadata{
-                        .run_path = wh::adk::run_path{{"agent", "worker"}},
-                        .agent_name = "worker",
-                    }));
-
-                return wh::adk::agent_run_output{
-                    .events =
-                        wh::adk::agent_event_stream_reader{
-                            wh::schema::stream::make_values_stream_reader(
-                                std::move(events))},
-                    .final_message = make_assistant_message("second"),
-                };
-              })
-          .has_value());
+                            std::move(events))},
+                .final_message = make_assistant_message("second"),
+            };
+          });
+  REQUIRE(bind_stream_runner.has_value());
   REQUIRE(tool.freeze().has_value());
 
   wh::compose::tool_call call{
@@ -472,9 +471,9 @@ TEST_CASE("agent tool forwards internal events with prefixed tool run path",
   auto reader = std::move(result).value().events;
   auto events = collect_events(reader);
   REQUIRE(events.size() == 2U);
-  REQUIRE(events.front().metadata.run_path.to_string("/") ==
+  REQUIRE(events.front().metadata.path.to_string("/") ==
           "tool/delegate_stream/call-5/agent/leaf");
-  REQUIRE(events.back().metadata.run_path.to_string("/") ==
+  REQUIRE(events.back().metadata.path.to_string("/") ==
           "tool/delegate_stream/call-5/agent/leaf");
 }
 
@@ -524,37 +523,37 @@ TEST_CASE("agent tool compose entry stream flattens child message substreams",
   wh::adk::agent_tool tool{"delegate_entry_stream", "delegate entry stream",
                            wh::agent::agent{"worker"}};
   REQUIRE(tool.set_forward_internal_events(true).has_value());
-  REQUIRE(
+  auto bind_entry_stream_runner =
       tool.bind_runner(
-              [](const wh::adk::run_request &request,
-                 wh::core::run_context &) -> wh::adk::agent_run_result {
-                REQUIRE(request.messages.size() == 1U);
-                REQUIRE(message_text(request.messages.front()) ==
-                        "stream through entry");
+          [](const wh::adk::run_request &request,
+             wh::core::run_context &) -> wh::adk::agent_run_result {
+            REQUIRE(request.messages.size() == 1U);
+            REQUIRE(message_text(request.messages.front()) ==
+                    "stream through entry");
 
-                std::vector<wh::schema::message> streamed_messages{};
-                streamed_messages.push_back(make_assistant_message("first"));
-                streamed_messages.push_back(make_assistant_message("second"));
+            std::vector<wh::schema::message> streamed_messages{};
+            streamed_messages.push_back(make_assistant_message("first"));
+            streamed_messages.push_back(make_assistant_message("second"));
 
-                std::vector<wh::adk::agent_event> events{};
-                events.push_back(wh::adk::make_message_event(
-                    wh::adk::agent_message_stream_reader{
+            std::vector<wh::adk::agent_event> events{};
+            events.push_back(wh::adk::make_message_event(
+                wh::adk::agent_message_stream_reader{
+                    wh::schema::stream::make_values_stream_reader(
+                        std::move(streamed_messages))},
+                wh::adk::event_metadata{
+                    .path = wh::adk::run_path{{"agent", "worker"}},
+                    .agent_name = "worker",
+                }));
+
+            return wh::adk::agent_run_output{
+                .events =
+                    wh::adk::agent_event_stream_reader{
                         wh::schema::stream::make_values_stream_reader(
-                            std::move(streamed_messages))},
-                    wh::adk::event_metadata{
-                        .run_path = wh::adk::run_path{{"agent", "worker"}},
-                        .agent_name = "worker",
-                    }));
-
-                return wh::adk::agent_run_output{
-                    .events =
-                        wh::adk::agent_event_stream_reader{
-                            wh::schema::stream::make_values_stream_reader(
-                                std::move(events))},
-                    .final_message = make_assistant_message("second"),
-                };
-              })
-          .has_value());
+                            std::move(events))},
+                .final_message = make_assistant_message("second"),
+            };
+          });
+  REQUIRE(bind_entry_stream_runner.has_value());
   REQUIRE(tool.freeze().has_value());
 
   auto entry = tool.compose_entry();
@@ -591,32 +590,31 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
 
   wh::adk::agent_tool tool{"delegate_entry_live", "delegate entry live",
                            wh::agent::agent{"worker"}};
-  REQUIRE(
+  auto bind_live_entry_runner =
       tool.bind_runner(
-              [child_reader](const wh::adk::run_request &request,
-                             wh::core::run_context &) -> wh::adk::agent_run_result {
-                REQUIRE(request.messages.size() == 1U);
-                REQUIRE(message_text(request.messages.front()) ==
-                        "live please");
-                REQUIRE(child_reader->has_value());
+          [child_reader](const wh::adk::run_request &request,
+                         wh::core::run_context &) -> wh::adk::agent_run_result {
+            REQUIRE(request.messages.size() == 1U);
+            REQUIRE(message_text(request.messages.front()) == "live please");
+            REQUIRE(child_reader->has_value());
 
-                std::vector<wh::adk::agent_event> events{};
-                events.push_back(wh::adk::make_message_event(
-                    std::move(**child_reader),
-                    wh::adk::event_metadata{
-                        .run_path = wh::adk::run_path{{"agent", "worker"}},
-                        .agent_name = "worker",
-                    }));
-                child_reader->reset();
+            std::vector<wh::adk::agent_event> events{};
+            events.push_back(wh::adk::make_message_event(
+                std::move(**child_reader),
+                wh::adk::event_metadata{
+                    .path = wh::adk::run_path{{"agent", "worker"}},
+                    .agent_name = "worker",
+                }));
+            child_reader->reset();
 
-                return wh::adk::agent_run_output{
-                    .events =
-                        wh::adk::agent_event_stream_reader{
-                            wh::schema::stream::make_values_stream_reader(
-                                std::move(events))},
-                };
-              })
-          .has_value());
+            return wh::adk::agent_run_output{
+                .events =
+                    wh::adk::agent_event_stream_reader{
+                        wh::schema::stream::make_values_stream_reader(
+                            std::move(events))},
+            };
+          });
+  REQUIRE(bind_live_entry_runner.has_value());
   REQUIRE(tool.freeze().has_value());
 
   auto entry = tool.compose_entry();

@@ -644,7 +644,7 @@ graph::to_compile_node_options_info(const graph_add_node_options &options,
       .input_contract = static_cast<std::uint8_t>(input_contract),
       .allow_no_control = options.allow_no_control,
       .allow_no_data = options.allow_no_data,
-      .sync_dispatch = options.sync_dispatch,
+      .dispatch = options.dispatch,
       .retry_budget_override = options.retry_budget_override,
       .timeout_override = options.timeout_override,
       .retry_window_override = options.retry_window_override,
@@ -1779,7 +1779,7 @@ inline auto graph::release_cold_data_after_compile() -> void {
   core().clear_cold_authoring_state();
 }
 
-inline constexpr auto graph::is_cycle_allowed() const noexcept -> bool {
+inline auto graph::is_cycle_allowed() const noexcept -> bool {
   return core().options_.mode == graph_runtime_mode::pregel;
 }
 

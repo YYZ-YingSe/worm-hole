@@ -75,7 +75,7 @@ TEST_CASE("graph add node options store observation overrides and compile snapsh
   options.label = "Node Label";
   options.allow_no_control = true;
   options.allow_no_data = true;
-  options.sync_dispatch = wh::compose::sync_dispatch::inline_control;
+  options.dispatch = wh::compose::sync_dispatch::inline_control;
   options.retry_budget_override = 2U;
   options.max_parallel_override = 4U;
   options.subgraph_compile_info = wh::compose::graph_compile_info{.name = "sub"};
@@ -89,7 +89,7 @@ TEST_CASE("graph add node options store observation overrides and compile snapsh
   REQUIRE(options.label == "Node Label");
   REQUIRE(options.allow_no_control);
   REQUIRE(options.allow_no_data);
-  REQUIRE(options.sync_dispatch == wh::compose::sync_dispatch::inline_control);
+  REQUIRE(options.dispatch == wh::compose::sync_dispatch::inline_control);
   REQUIRE(options.retry_budget_override == std::optional<std::size_t>{2U});
   REQUIRE(options.max_parallel_override == std::optional<std::size_t>{4U});
   REQUIRE(options.subgraph_compile_info.has_value());
