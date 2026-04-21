@@ -52,35 +52,19 @@ jobs:
   build-test:
     name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets, ~${{ matrix.estimated_build_actions }} actions)
     needs: plan-build-test
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix: ${{ fromJson(needs.plan-build-test.outputs.matrix) }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Prepare CI job
-        uses: ./.github/actions/prepare/job
-        with:
-          install_profile: build
-
-      - name: Setup sccache
-        uses: ./.github/actions/setup/sccache
-
-      - name: Build and test
-        shell: bash
-        run: |
-          python_bin="$(command -v python3 || command -v python)"
-          "$python_bin" scripts/toolchain.py ci build-test \
-            --configure-preset "${{ matrix.configure_preset }}" \
-            --build-preset "${{ matrix.build_preset }}" \
-            --shard-count "${{ matrix.shard_count }}" \
-            --shard-index "${{ matrix.shard_index }}" \
-            --include-label ci.pr \
-            --exclude-label ci.nightly
+    uses: ./.github/workflows/reusable-build-test.yml
+    with:
+      mode: build-test
+      runner_os: ${{ matrix.os }}
+      install_profile: build
+      configure_preset: ${{ matrix.configure_preset }}
+      build_preset: ${{ matrix.build_preset }}
+      shard_count: ${{ matrix.shard_count }}
+      shard_index: ${{ matrix.shard_index }}
+      include_label: ci.pr
+      exclude_label: ci.nightly
+      timeout_minutes: 45

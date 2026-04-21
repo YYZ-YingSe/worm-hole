@@ -17,29 +17,23 @@ struct forwarding_http_client {
     return wh::net::http_response{.status_code = 202, .body = "moved"};
   }
 
-  auto invoke_json(const wh::net::http_json_request_view) const
-      -> wh::net::http_invoke_result {
+  auto invoke_json(const wh::net::http_json_request_view) const -> wh::net::http_invoke_result {
     return wh::net::http_response{.status_code = 210, .body = "json-view"};
   }
 
-  auto invoke_json(const wh::net::http_json_request &) const
-      -> wh::net::http_invoke_result {
+  auto invoke_json(const wh::net::http_json_request &) const -> wh::net::http_invoke_result {
     return wh::net::http_response{.status_code = 211, .body = "json-owned"};
   }
 
-  auto invoke_json(wh::net::http_json_request &&) const
-      -> wh::net::http_invoke_result {
+  auto invoke_json(wh::net::http_json_request &&) const -> wh::net::http_invoke_result {
     return wh::net::http_response{.status_code = 212, .body = "json-moved"};
   }
 
-  auto stream(const wh::net::http_stream_request_view) const
-      -> wh::net::http_stream_result {
-    return wh::net::http_stream_result::failure(
-        wh::net::transport_error{.message = "stream-view"});
+  auto stream(const wh::net::http_stream_request_view) const -> wh::net::http_stream_result {
+    return wh::net::http_stream_result::failure(wh::net::transport_error{.message = "stream-view"});
   }
 
-  auto stream(const wh::net::http_stream_request &) const
-      -> wh::net::http_stream_result {
+  auto stream(const wh::net::http_stream_request &) const -> wh::net::http_stream_result {
     return wh::net::http_stream_result::failure(
         wh::net::transport_error{.message = "stream-owned"});
   }

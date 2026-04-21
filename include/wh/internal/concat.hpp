@@ -26,10 +26,9 @@ namespace detail {
 
 /// Detects ADL customization point `wh_stream_concat(values)`.
 template <typename value_t>
-concept adl_stream_concat_available =
-    requires(std::span<const value_t> values) {
-      { wh_stream_concat(values) } -> std::same_as<wh::core::result<value_t>>;
-    };
+concept adl_stream_concat_available = requires(std::span<const value_t> values) {
+  { wh_stream_concat(values) } -> std::same_as<wh::core::result<value_t>>;
+};
 
 /// Invokes ADL-provided typed stream concat implementation.
 template <typename value_t>
@@ -40,10 +39,9 @@ template <typename value_t>
 
 /// Detects maps that support `reserve(size_t)` optimization.
 template <typename map_t>
-concept concat_reservable_map_like =
-    requires(map_t &map, const std::size_t size) {
-      { map.reserve(size) };
-    };
+concept concat_reservable_map_like = requires(map_t &map, const std::size_t size) {
+  { map.reserve(size) };
+};
 
 } // namespace detail
 
@@ -53,36 +51,29 @@ public:
   stream_concat_registry() = default;
 
   /// Reserves dynamic and typed registration tables.
-  auto reserve(const std::size_t type_count) -> void {
-    core_.reserve(type_count);
-  }
+  auto reserve(const std::size_t type_count) -> void { core_.reserve(type_count); }
 
   /// Freezes registry and rejects future registrations.
   auto freeze() noexcept -> void { core_.freeze(); }
 
   /// Returns whether registry is frozen.
-  [[nodiscard]] auto is_frozen() const noexcept -> bool {
-    return core_.is_frozen();
-  }
+  [[nodiscard]] auto is_frozen() const noexcept -> bool { return core_.is_frozen(); }
 
   /// Registers typed concat function and dynamic bridge for `value_t`.
   template <typename value_t, typename function_t>
   auto register_concat(function_t &&function_value) -> wh::core::result<void> {
-    return core_.template register_reducer<value_t>(
-        std::forward<function_t>(function_value));
+    return core_.template register_reducer<value_t>(std::forward<function_t>(function_value));
   }
 
   /// Registers pointer-based typed concat function and dynamic bridge.
   template <typename value_t, typename function_t>
-  auto register_concat_from_ptrs(function_t &&function_value)
-      -> wh::core::result<void> {
+  auto register_concat_from_ptrs(function_t &&function_value) -> wh::core::result<void> {
     return core_.template register_reducer_from_ptrs<value_t>(
         std::forward<function_t>(function_value));
   }
 
   /// Looks up dynamic concat function by runtime type key.
-  [[nodiscard]] auto
-  find_concat(const wh::core::any_type_key type) const noexcept
+  [[nodiscard]] auto find_concat(const wh::core::any_type_key type) const noexcept
       -> const dynamic_stream_concat_function * {
     return core_.find_dynamic(type);
   }
@@ -92,8 +83,7 @@ public:
                             const dynamic_stream_chunks values) const
       -> wh::core::result<dynamic_stream_chunk> {
     if (values.empty()) {
-      return wh::core::result<dynamic_stream_chunk>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<dynamic_stream_chunk>::failure(wh::core::errc::invalid_argument);
     }
 
     if (const auto *function = find_concat(type); function != nullptr) {
@@ -102,14 +92,12 @@ public:
 
     if (values.size() == 1U) {
       if (values.front().key() != type) {
-        return wh::core::result<dynamic_stream_chunk>::failure(
-            wh::core::errc::type_mismatch);
+        return wh::core::result<dynamic_stream_chunk>::failure(wh::core::errc::type_mismatch);
       }
       return values.front();
     }
 
-    return wh::core::result<dynamic_stream_chunk>::failure(
-        wh::core::errc::not_supported);
+    return wh::core::result<dynamic_stream_chunk>::failure(wh::core::errc::not_supported);
   }
 
   /// Concatenates typed chunks using ADL, registered, or single-value fallback.
@@ -117,8 +105,7 @@ public:
   [[nodiscard]] auto concat_as(const std::span<const value_t> values) const
       -> wh::core::result<value_t> {
     if (values.empty()) {
-      return wh::core::result<value_t>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<value_t>::failure(wh::core::errc::invalid_argument);
     }
 
     if constexpr (detail::adl_stream_concat_available<value_t>) {
@@ -138,9 +125,7 @@ public:
   }
 
   /// Number of registered runtime concat handlers.
-  [[nodiscard]] auto size() const noexcept -> std::size_t {
-    return core_.size();
-  }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return core_.size(); }
 
 private:
   reduce_registry_core core_{};

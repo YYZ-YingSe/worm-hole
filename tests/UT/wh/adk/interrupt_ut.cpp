@@ -1,24 +1,24 @@
-#include <catch2/catch_test_macros.hpp>
-
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/adk/interrupt.hpp"
 
 TEST_CASE("adk interrupt projects only agent and tool segments from runtime paths",
           "[UT][wh/adk/interrupt.hpp][project_interrupt_run_path][condition][branch][boundary]") {
-  REQUIRE(wh::adk::project_interrupt_run_path(
-              wh::core::address{"graph", "root", "agent", "planner", "node",
-                                "inner", "tool", "search", "call-7"})
+  REQUIRE(wh::adk::project_interrupt_run_path(wh::core::address{"graph", "root", "agent", "planner",
+                                                                "node", "inner", "tool", "search",
+                                                                "call-7"})
               .to_string("/") == "agent/planner/tool/search/call-7");
-  REQUIRE(wh::adk::project_interrupt_run_path(
-              wh::core::address{"graph", "root", "misc", "x"})
-              .empty());
+  REQUIRE(
+      wh::adk::project_interrupt_run_path(wh::core::address{"graph", "root", "misc", "x"}).empty());
 }
 
-TEST_CASE("adk interrupt current_interrupt_info covers missing exact descendant and none target states",
-          "[UT][wh/adk/interrupt.hpp][current_interrupt_info][condition][branch][boundary]") {
+TEST_CASE(
+    "adk interrupt current_interrupt_info covers missing exact descendant and none target states",
+    "[UT][wh/adk/interrupt.hpp][current_interrupt_info][condition][branch][boundary]") {
   wh::core::run_context missing_context{};
   auto missing = wh::adk::current_interrupt_info(missing_context);
   REQUIRE(missing.has_error());
@@ -27,17 +27,14 @@ TEST_CASE("adk interrupt current_interrupt_info covers missing exact descendant 
   wh::core::run_context exact_context{};
   exact_context.interrupt_info = wh::core::interrupt_context{
       .interrupt_id = "interrupt-exact",
-      .location =
-          wh::core::address{"graph", "root", "agent", "worker", "tool", "search",
-                            "call-1"},
+      .location = wh::core::address{"graph", "root", "agent", "worker", "tool", "search", "call-1"},
       .state = wh::core::any(std::string{"state"}),
       .layer_payload = wh::core::any(7),
       .trigger_reason = "exact",
   };
   REQUIRE(wh::compose::add_resume_target(
               exact_context.resume_info.emplace(), "interrupt-exact",
-              wh::core::address{"graph", "root", "agent", "worker", "tool",
-                                "search", "call-1"},
+              wh::core::address{"graph", "root", "agent", "worker", "tool", "search", "call-1"},
               std::string{"resume"})
               .has_value());
   auto exact = wh::adk::current_interrupt_info(exact_context);
@@ -54,8 +51,7 @@ TEST_CASE("adk interrupt current_interrupt_info covers missing exact descendant 
   };
   REQUIRE(wh::compose::add_resume_target(
               descendant_context.resume_info.emplace(), "interrupt-child",
-              wh::core::address{"graph", "root", "agent", "worker", "tool",
-                                "search", "call-2"},
+              wh::core::address{"graph", "root", "agent", "worker", "tool", "search", "call-2"},
               std::string{"resume"})
               .has_value());
   auto descendant = wh::adk::current_interrupt_info(descendant_context);
@@ -96,51 +92,47 @@ TEST_CASE("adk interrupt apply_interrupt_patch lowers approve edit and reject de
   };
 
   wh::core::resume_state approved{};
-  REQUIRE(wh::adk::apply_interrupt_patch(
-              approved, interrupt,
-              wh::adk::interrupt_patch{
-                  .resolution = wh::adk::interrupt_resolution::approve,
-                  .audit = wh::adk::interrupt_audit{
-                      .audit_id = "audit-1",
-                      .actor = "tester",
-                      .reason = "ok",
-                  },
-              })
+  REQUIRE(wh::adk::apply_interrupt_patch(approved, interrupt,
+                                         wh::adk::interrupt_patch{
+                                             .resolution = wh::adk::interrupt_resolution::approve,
+                                             .audit =
+                                                 wh::adk::interrupt_audit{
+                                                     .audit_id = "audit-1",
+                                                     .actor = "tester",
+                                                     .reason = "ok",
+                                                 },
+                                         })
               .has_value());
   auto approved_patch = approved.peek<wh::compose::resume_patch>("interrupt-1");
   REQUIRE(approved_patch.has_value());
-  REQUIRE(approved_patch->get().decision ==
-          wh::compose::interrupt_decision_kind::approve);
-  REQUIRE(*wh::core::any_cast<std::string>(&approved_patch->get().data) ==
-          "original");
+  REQUIRE(approved_patch->get().decision == wh::compose::interrupt_decision_kind::approve);
+  REQUIRE(*wh::core::any_cast<std::string>(&approved_patch->get().data) == "original");
 
   wh::core::resume_state edited{};
-  REQUIRE(wh::adk::apply_interrupt_patch(
-              edited, interrupt,
-              wh::adk::interrupt_patch{
-                  .resolution = wh::adk::interrupt_resolution::edit,
-                  .payload = wh::core::any(std::string{"edited"}),
-              })
+  REQUIRE(wh::adk::apply_interrupt_patch(edited, interrupt,
+                                         wh::adk::interrupt_patch{
+                                             .resolution = wh::adk::interrupt_resolution::edit,
+                                             .payload = wh::core::any(std::string{"edited"}),
+                                         })
               .has_value());
   auto edited_patch = edited.peek<wh::compose::resume_patch>("interrupt-1");
   REQUIRE(edited_patch.has_value());
-  REQUIRE(edited_patch->get().decision ==
-          wh::compose::interrupt_decision_kind::edit);
-  REQUIRE(*wh::core::any_cast<std::string>(&edited_patch->get().data) ==
-          "edited");
+  REQUIRE(edited_patch->get().decision == wh::compose::interrupt_decision_kind::edit);
+  REQUIRE(*wh::core::any_cast<std::string>(&edited_patch->get().data) == "edited");
 
   wh::core::resume_state rejected{};
-  auto rejected_status = wh::adk::apply_interrupt_patch(
-      rejected, interrupt,
-      wh::adk::interrupt_patch{
-          .resolution = wh::adk::interrupt_resolution::reject,
-      });
+  auto rejected_status =
+      wh::adk::apply_interrupt_patch(rejected, interrupt,
+                                     wh::adk::interrupt_patch{
+                                         .resolution = wh::adk::interrupt_resolution::reject,
+                                     });
   REQUIRE(rejected_status.has_error());
   REQUIRE(rejected_status.error() == wh::core::errc::canceled);
 }
 
-TEST_CASE("adk interrupt apply_interrupt_patch_batch updates matched contexts and rejects missing ids",
-          "[UT][wh/adk/interrupt.hpp][apply_interrupt_patch_batch][condition][branch][boundary]") {
+TEST_CASE(
+    "adk interrupt apply_interrupt_patch_batch updates matched contexts and rejects missing ids",
+    "[UT][wh/adk/interrupt.hpp][apply_interrupt_patch_batch][condition][branch][boundary]") {
   const wh::core::interrupt_context interrupt{
       .interrupt_id = "interrupt-1",
       .location = wh::core::address{"agent", "worker"},
@@ -151,26 +143,20 @@ TEST_CASE("adk interrupt apply_interrupt_patch_batch updates matched contexts an
       {.interrupt_id = "interrupt-1",
        .patch = {.resolution = wh::adk::interrupt_resolution::approve}},
       {.interrupt_id = "interrupt-1",
-       .patch =
-           {.resolution = wh::adk::interrupt_resolution::edit,
-            .payload = wh::core::any(std::string{"override"})}},
+       .patch = {.resolution = wh::adk::interrupt_resolution::edit,
+                 .payload = wh::core::any(std::string{"override"})}},
   };
 
   wh::core::resume_state batch_state{};
-  REQUIRE(
-      wh::adk::apply_interrupt_patch_batch(batch_state, contexts, patches)
-          .has_value());
+  REQUIRE(wh::adk::apply_interrupt_patch_batch(batch_state, contexts, patches).has_value());
   auto batch_patch = batch_state.peek<wh::compose::resume_patch>("interrupt-1");
   REQUIRE(batch_patch.has_value());
-  REQUIRE(*wh::core::any_cast<std::string>(&batch_patch->get().data) ==
-          "override");
+  REQUIRE(*wh::core::any_cast<std::string>(&batch_patch->get().data) == "override");
 
   const std::vector<wh::adk::interrupt_patch_item> missing_patch{
-      {.interrupt_id = "missing",
-       .patch = {.resolution = wh::adk::interrupt_resolution::approve}},
+      {.interrupt_id = "missing", .patch = {.resolution = wh::adk::interrupt_resolution::approve}},
   };
-  auto missing_batch =
-      wh::adk::apply_interrupt_patch_batch(batch_state, contexts, missing_patch);
+  auto missing_batch = wh::adk::apply_interrupt_patch_batch(batch_state, contexts, missing_patch);
   REQUIRE(missing_batch.has_error());
   REQUIRE(missing_batch.error() == wh::core::errc::not_found);
 }

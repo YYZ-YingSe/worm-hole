@@ -3,7 +3,8 @@
 #include "wh/compose/graph/detail/dag_frontier.hpp"
 
 TEST_CASE("dag frontier enqueues current and next waves without duplicate scheduling",
-          "[UT][wh/compose/graph/detail/dag_frontier.hpp][dag_frontier::promote_next_wave][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "dag_frontier.hpp][dag_frontier::promote_next_wave][condition][branch][boundary]") {
   wh::compose::detail::dag_frontier frontier{};
   frontier.reset(6U);
 
@@ -28,7 +29,8 @@ TEST_CASE("dag frontier enqueues current and next waves without duplicate schedu
 }
 
 TEST_CASE("dag frontier allows a dequeued node to be scheduled again in the same wave",
-          "[UT][wh/compose/graph/detail/dag_frontier.hpp][dag_frontier::enqueue_current][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "dag_frontier.hpp][dag_frontier::enqueue_current][branch][boundary]") {
   wh::compose::detail::dag_frontier frontier{};
   frontier.reset(3U);
 
@@ -41,7 +43,8 @@ TEST_CASE("dag frontier allows a dequeued node to be scheduled again in the same
 }
 
 TEST_CASE("dag frontier reset clears queued bookkeeping across current and next waves",
-          "[UT][wh/compose/graph/detail/dag_frontier.hpp][dag_frontier::reset][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "dag_frontier.hpp][dag_frontier::reset][condition][branch][boundary]") {
   wh::compose::detail::dag_frontier frontier{};
   frontier.reset(4U);
 

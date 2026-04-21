@@ -16,9 +16,8 @@ namespace wh::internal {
 /// Executes a callable and maps thrown exceptions to `result` error codes.
 template <typename value_t, typename callable_t>
   requires wh::core::callable_with<callable_t>
-[[nodiscard]] auto
-safe_call(callable_t &&callable,
-          const wh::core::errc fallback_error = wh::core::errc::internal_error)
+[[nodiscard]] auto safe_call(callable_t &&callable,
+                             const wh::core::errc fallback_error = wh::core::errc::internal_error)
     -> wh::core::result<value_t> {
   try {
     if constexpr (std::same_as<value_t, void>) {
@@ -28,8 +27,7 @@ safe_call(callable_t &&callable,
       return std::forward<callable_t>(callable)();
     }
   } catch (const std::bad_alloc &) {
-    return wh::core::result<value_t>::failure(
-        wh::core::errc::resource_exhausted);
+    return wh::core::result<value_t>::failure(wh::core::errc::resource_exhausted);
   } catch (...) {
     return wh::core::result<value_t>::failure(fallback_error);
   }

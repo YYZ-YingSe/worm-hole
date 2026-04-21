@@ -1,5 +1,7 @@
 include_guard(GLOBAL)
 
+include(wh_release_optimizations)
+
 function(wh_normalize_target_token out_var value)
   string(MAKE_C_IDENTIFIER "${value}" normalized)
   string(REGEX REPLACE "_+" "_" normalized "${normalized}")
@@ -49,6 +51,7 @@ function(wh_add_single_source_executable out_var)
     target_include_directories("${target_name}" PRIVATE
                                ${ARG_INCLUDE_DIRECTORIES})
   endif()
+  wh_apply_target_build_policies("${target_name}")
 
   set("${out_var}" "${target_name}" PARENT_SCOPE)
 endfunction()

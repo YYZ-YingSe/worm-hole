@@ -56,15 +56,13 @@ auto capture_sender_error(capture_t &capture, error_t &&error) noexcept -> void 
 
 } // namespace detail
 
-template <typename env_t>
-struct sender_capture_receiver<void, env_t> {
+template <typename env_t> struct sender_capture_receiver<void, env_t> {
   using receiver_concept = stdexec::receiver_t;
 
   sender_capture<void> *state{nullptr};
   env_t env{};
 
-  template <typename... values_t>
-  auto set_value(values_t &&...) noexcept -> void {
+  template <typename... values_t> auto set_value(values_t &&...) noexcept -> void {
     state->terminal = sender_terminal_kind::value;
     state->ready.release();
   }
@@ -83,15 +81,13 @@ struct sender_capture_receiver<void, env_t> {
   [[nodiscard]] auto get_env() const noexcept -> env_t { return env; }
 };
 
-template <typename value_t, typename env_t>
-struct sender_capture_receiver {
+template <typename value_t, typename env_t> struct sender_capture_receiver {
   using receiver_concept = stdexec::receiver_t;
 
   sender_capture<value_t> *state{nullptr};
   env_t env{};
 
-  template <typename received_t> auto set_value(received_t &&value) noexcept
-      -> void {
+  template <typename received_t> auto set_value(received_t &&value) noexcept -> void {
     state->value.emplace(std::forward<received_t>(value));
     state->terminal = sender_terminal_kind::value;
     state->ready.release();
@@ -113,17 +109,15 @@ struct sender_capture_receiver {
 
 template <typename value_t, typename sender_t, typename rep_t, typename period_t,
           typename env_t = no_scheduler_env>
-[[nodiscard]] auto wait_for_value(
-    sender_t &&sender, value_t &value,
-    const std::chrono::duration<rep_t, period_t> timeout, env_t env = {})
-    -> bool {
+[[nodiscard]] auto wait_for_value(sender_t &&sender, value_t &value,
+                                  const std::chrono::duration<rep_t, period_t> timeout,
+                                  env_t env = {}) -> bool {
   sender_capture<value_t> capture{};
-  auto operation = stdexec::connect(
-      std::forward<sender_t>(sender),
-      sender_capture_receiver<value_t, env_t>{&capture, std::move(env)});
+  auto operation =
+      stdexec::connect(std::forward<sender_t>(sender),
+                       sender_capture_receiver<value_t, env_t>{&capture, std::move(env)});
   stdexec::start(operation);
-  if (!capture.ready.try_acquire_for(timeout) ||
-      capture.terminal != sender_terminal_kind::value ||
+  if (!capture.ready.try_acquire_for(timeout) || capture.terminal != sender_terminal_kind::value ||
       !capture.value.has_value()) {
     return false;
   }

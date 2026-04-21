@@ -1,14 +1,12 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
 #include <utility>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/retriever/callback_event.hpp"
 
-static_assert(
-    std::is_default_constructible_v<wh::retriever::retriever_callback_event>);
-static_assert(
-    std::is_move_constructible_v<wh::retriever::retriever_callback_event>);
+static_assert(std::is_default_constructible_v<wh::retriever::retriever_callback_event>);
+static_assert(std::is_move_constructible_v<wh::retriever::retriever_callback_event>);
 
 TEST_CASE("retriever callback event defaults top-k threshold and text fields",
           "[UT][wh/retriever/callback_event.hpp][retriever_callback_event][condition][boundary]") {
@@ -21,12 +19,10 @@ TEST_CASE("retriever callback event defaults top-k threshold and text fields",
 }
 
 TEST_CASE("retriever callback event aggregate initialization preserves selection metadata",
-          "[UT][wh/retriever/callback_event.hpp][retriever_callback_event][condition][branch][boundary]") {
+          "[UT][wh/retriever/"
+          "callback_event.hpp][retriever_callback_event][condition][branch][boundary]") {
   const wh::retriever::retriever_callback_event source{
-      .top_k = 4U,
-      .score_threshold = 0.25,
-      .filter = "dsl=faq",
-      .extra = "query"};
+      .top_k = 4U, .score_threshold = 0.25, .filter = "dsl=faq", .extra = "query"};
   const auto copied = source;
   auto moved = std::move(copied);
 

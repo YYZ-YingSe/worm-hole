@@ -3,7 +3,8 @@
 #include "wh/compose/graph/compile_options.hpp"
 
 TEST_CASE("graph compile options serialize all major policy fields",
-          "[UT][wh/compose/graph/compile_options.hpp][serialize_graph_compile_options][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/"
+          "compile_options.hpp][serialize_graph_compile_options][condition][branch][boundary]") {
   wh::compose::graph_compile_options options{};
   options.name = "graph-x";
   options.boundary = {.input = wh::compose::node_contract::stream,
@@ -33,8 +34,7 @@ TEST_CASE("graph compile options defaults and false-path serialization remain st
   REQUIRE(options.name == "graph");
   REQUIRE(options.mode == wh::compose::graph_runtime_mode::dag);
   REQUIRE(options.dispatch_policy == wh::compose::graph_dispatch_policy::same_wave);
-  REQUIRE(options.trigger_mode ==
-          wh::compose::graph_trigger_mode::any_predecessor);
+  REQUIRE(options.trigger_mode == wh::compose::graph_trigger_mode::any_predecessor);
   REQUIRE(options.fan_in_policy == wh::compose::graph_fan_in_policy::allow_partial);
   REQUIRE(options.max_steps == 1024U);
   REQUIRE(options.retain_cold_data);

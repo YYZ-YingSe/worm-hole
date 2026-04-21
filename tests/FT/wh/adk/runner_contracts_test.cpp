@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/test_thread_wait.hpp"
@@ -14,8 +13,7 @@
 
 namespace {
 
-[[nodiscard]] auto make_user_message(const std::string &text)
-    -> wh::schema::message {
+[[nodiscard]] auto make_user_message(const std::string &text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
   message.parts.emplace_back(wh::schema::text_part{text});
@@ -24,22 +22,28 @@ namespace {
 
 [[nodiscard]] auto read_messages(const wh::compose::graph_value &value)
     -> wh::core::result<std::vector<wh::schema::message>> {
-  if (const auto *typed =
-          wh::core::any_cast<std::vector<wh::schema::message>>(&value);
+  if (const auto *typed = wh::core::any_cast<std::vector<wh::schema::message>>(&value);
       typed != nullptr) {
     return *typed;
   }
-  return wh::core::result<std::vector<wh::schema::message>>::failure(
-      wh::core::errc::type_mismatch);
+  return wh::core::result<std::vector<wh::schema::message>>::failure(wh::core::errc::type_mismatch);
+}
+
+[[nodiscard]] auto read_messages(const wh::compose::graph_input &input)
+    -> wh::core::result<std::vector<wh::schema::message>> {
+  const auto *payload = input.value_payload();
+  if (payload == nullptr) {
+    return wh::core::result<std::vector<wh::schema::message>>::failure(
+        wh::core::errc::contract_violation);
+  }
+  return read_messages(*payload);
 }
 
 [[nodiscard]] auto make_ready_stream() -> wh::adk::agent_event_stream_reader {
   auto [writer, reader] = wh::adk::make_agent_event_stream();
-  auto sent = wh::adk::send_agent_event(
-      writer, wh::adk::make_control_event(
-                  wh::adk::control_action{
-                      .kind = wh::adk::control_action_kind::exit,
-                  }));
+  auto sent = wh::adk::send_agent_event(writer, wh::adk::make_control_event(wh::adk::control_action{
+                                                    .kind = wh::adk::control_action_kind::exit,
+                                                }));
   REQUIRE(sent.has_value());
   REQUIRE(wh::adk::close_agent_event_stream(writer).has_value());
   return std::move(reader);
@@ -73,12 +77,10 @@ struct lowered_runner_impl {
     state.context_address = std::addressof(context);
 
     state.has_checkpoint_service =
-        request.services != nullptr &&
-        request.services->checkpoint.store != nullptr;
+        request.services != nullptr && request.services->checkpoint.store != nullptr;
 
     if (request.controls.checkpoint.save.has_value()) {
-      state.checkpoint_thread_key =
-          request.controls.checkpoint.save->thread_key;
+      state.checkpoint_thread_key = request.controls.checkpoint.save->thread_key;
     }
 
     state.resume_batch_count = request.controls.resume.batch_items.size();
@@ -94,8 +96,7 @@ struct sender_runner_impl {
 
   [[nodiscard]] auto run(wh::compose::graph_invoke_request &&,
                          wh::core::run_context &context) const {
-    return stdexec::just() |
-           stdexec::then([this, &context]() -> wh::adk::agent_run_result {
+    return stdexec::just() | stdexec::then([this, &context]() -> wh::adk::agent_run_result {
              observed_context = std::addressof(context);
              return make_ready_output();
            });
@@ -117,13 +118,11 @@ TEST_CASE("adk runner query wraps one user message and lowers typed invoke optio
   wh::adk::query_request request{};
   request.text = "hello runner";
   request.options.compose_services = &services;
-  request.options.compose_controls.checkpoint.save =
-      wh::compose::checkpoint_save_options{
-          .thread_key = "runner-query",
-      };
+  request.options.compose_controls.checkpoint.save = wh::compose::checkpoint_save_options{
+      .thread_key = "runner-query",
+  };
 
-  auto started =
-      wh::testing::helper::wait_value_on_test_thread(runner.query(request, parent));
+  auto started = wh::testing::helper::wait_value_on_test_thread(runner.query(request, parent));
   REQUIRE(started.has_value());
   REQUIRE(runner.implementation().captured.has_value());
   REQUIRE(runner.implementation().captured->messages.size() == 1U);
@@ -132,15 +131,13 @@ TEST_CASE("adk runner query wraps one user message and lowers typed invoke optio
   REQUIRE(std::get<wh::schema::text_part>(
               runner.implementation().captured->messages.front().parts.front())
               .text == "hello runner");
-  REQUIRE(runner.implementation().captured->context_address ==
-          std::addressof(parent));
+  REQUIRE(runner.implementation().captured->context_address == std::addressof(parent));
   REQUIRE(runner.implementation().captured->has_checkpoint_service);
   REQUIRE(runner.implementation().captured->checkpoint_thread_key ==
           std::optional<std::string>{"runner-query"});
 }
 
-TEST_CASE("adk runner forwards the same run context on fresh runs",
-          "[core][adk][boundary]") {
+TEST_CASE("adk runner forwards the same run context on fresh runs", "[core][adk][boundary]") {
   lowered_runner_impl impl{};
   wh::adk::runner<lowered_runner_impl> runner{impl};
   wh::core::run_context parent{};
@@ -148,12 +145,10 @@ TEST_CASE("adk runner forwards the same run context on fresh runs",
   wh::adk::run_request request{};
   request.messages.push_back(make_user_message("isolated"));
 
-  auto started =
-      wh::testing::helper::wait_value_on_test_thread(runner.run(request, parent));
+  auto started = wh::testing::helper::wait_value_on_test_thread(runner.run(request, parent));
   REQUIRE(started.has_value());
   REQUIRE(runner.implementation().captured.has_value());
-  REQUIRE(runner.implementation().captured->context_address ==
-          std::addressof(parent));
+  REQUIRE(runner.implementation().captured->context_address == std::addressof(parent));
 }
 
 TEST_CASE("adk runner resume lowers explicit targets into compose resume controls",
@@ -181,8 +176,7 @@ TEST_CASE("adk runner resume lowers explicit targets into compose resume control
   });
   request.reinterrupt_unmatched = true;
 
-  auto started = wh::testing::helper::wait_value_on_test_thread(
-      runner.resume(request, parent));
+  auto started = wh::testing::helper::wait_value_on_test_thread(runner.resume(request, parent));
   REQUIRE(started.has_value());
   REQUIRE(runner.implementation().captured.has_value());
   REQUIRE(runner.implementation().captured->has_checkpoint_service);
@@ -206,8 +200,7 @@ TEST_CASE("adk runner empty target resume degenerates to implicit resume control
   request.run.options.compose_services = &services;
   request.reinterrupt_unmatched = true;
 
-  auto started = wh::testing::helper::wait_value_on_test_thread(
-      runner.resume(request, parent));
+  auto started = wh::testing::helper::wait_value_on_test_thread(runner.resume(request, parent));
   REQUIRE(started.has_value());
   REQUIRE(runner.implementation().captured.has_value());
   REQUIRE(runner.implementation().captured->resume_batch_count == 0U);
@@ -229,8 +222,7 @@ TEST_CASE("adk runner resume fails fast without checkpoint services when require
       .payload = wh::core::any{3},
   });
 
-  auto started = wh::testing::helper::wait_value_on_test_thread(
-      runner.resume(request, parent));
+  auto started = wh::testing::helper::wait_value_on_test_thread(runner.resume(request, parent));
   REQUIRE(started.has_error());
   REQUIRE(started.error() == wh::core::errc::not_found);
 }
@@ -244,8 +236,8 @@ TEST_CASE("adk runner keeps the forwarded run context alive across sender-based 
   wh::adk::run_request request{};
   request.messages.push_back(make_user_message("async"));
 
-  auto started = wh::testing::helper::wait_value_on_test_thread(
-      runner.run(std::move(request), parent));
+  auto started =
+      wh::testing::helper::wait_value_on_test_thread(runner.run(std::move(request), parent));
   REQUIRE(started.has_value());
   REQUIRE(runner.implementation().observed_context == std::addressof(parent));
 }

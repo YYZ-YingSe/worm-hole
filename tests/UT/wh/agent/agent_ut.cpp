@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/agent.hpp"
@@ -18,10 +18,10 @@ TEST_CASE("agent shell exposes metadata topology transfer contracts and typed re
   REQUIRE(transfer.tool_call_id == "call-1");
 
   wh::agent::agent_output output{};
-  output.final_message = wh::testing::helper::make_text_message(
-      wh::schema::message_role::assistant, "done");
-  output.history_messages.push_back(wh::testing::helper::make_text_message(
-      wh::schema::message_role::user, "input"));
+  output.final_message =
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "done");
+  output.history_messages.push_back(
+      wh::testing::helper::make_text_message(wh::schema::message_role::user, "input"));
   output.transfer = transfer;
   output.output_values.emplace("count", wh::core::any{3});
   REQUIRE(output.history_messages.size() == 1U);
@@ -29,11 +29,10 @@ TEST_CASE("agent shell exposes metadata topology transfer contracts and typed re
   REQUIRE(*wh::core::any_cast<int>(&output.output_values.at("count")) == 3);
 
   wh::agent::output_reader<std::string> reader =
-      [](const wh::agent::agent_output &value, wh::core::run_context &)
-          -> wh::core::result<std::string> {
-        return std::get<wh::schema::text_part>(value.final_message.parts.front())
-            .text;
-      };
+      [](const wh::agent::agent_output &value,
+         wh::core::run_context &) -> wh::core::result<std::string> {
+    return std::get<wh::schema::text_part>(value.final_message.parts.front()).text;
+  };
   wh::core::run_context context{};
   auto read = reader(output, context);
   REQUIRE(read.has_value());
@@ -75,11 +74,14 @@ TEST_CASE("agent shell exposes metadata topology transfer contracts and typed re
   REQUIRE(root.child("planner").value().get().frozen());
 }
 
-TEST_CASE("agent shell validates freeze lower_graph and hook error paths",
-          "[UT][wh/agent/agent.hpp][agent::lower_graph][condition][branch][boundary]") {
+TEST_CASE("agent shell validates freeze lower and hook error paths",
+          "[UT][wh/agent/agent.hpp][agent::lower][condition][branch][boundary]") {
   wh::agent::agent plain{"plain"};
+  auto unfrozen = plain.lower();
+  REQUIRE(unfrozen.has_error());
+  REQUIRE(unfrozen.error() == wh::core::errc::contract_violation);
   REQUIRE(plain.freeze().has_value());
-  auto unsupported = plain.lower_graph();
+  auto unsupported = plain.lower();
   REQUIRE(unsupported.has_error());
   REQUIRE(unsupported.error() == wh::core::errc::not_supported);
 
@@ -106,7 +108,7 @@ TEST_CASE("agent shell validates freeze lower_graph and hook error paths",
   REQUIRE(executable.freeze().has_value());
   REQUIRE(*freeze_calls == 1U);
 
-  auto graph = executable.lower_graph();
+  auto graph = executable.lower();
   REQUIRE(graph.has_value());
   REQUIRE(graph.value().compiled());
 
@@ -128,15 +130,12 @@ TEST_CASE("agent shell rejects invalid mutations duplicate topology and missing 
           "[UT][wh/agent/agent.hpp][agent::bind_execution][condition][branch][boundary]") {
   wh::agent::agent root{"root"};
   REQUIRE(root.add_child(wh::agent::agent{""}).has_error());
-  REQUIRE(root.add_child(wh::agent::agent{""}).error() ==
-          wh::core::errc::invalid_argument);
+  REQUIRE(root.add_child(wh::agent::agent{""}).error() == wh::core::errc::invalid_argument);
   REQUIRE(root.add_child(wh::agent::agent{"planner"}).has_value());
   REQUIRE(root.add_child(wh::agent::agent{"planner"}).has_error());
-  REQUIRE(root.add_child(wh::agent::agent{"planner"}).error() ==
-          wh::core::errc::already_exists);
+  REQUIRE(root.add_child(wh::agent::agent{"planner"}).error() == wh::core::errc::already_exists);
   REQUIRE(root.allow_transfer_to_child("").has_error());
-  REQUIRE(root.allow_transfer_to_child("").error() ==
-          wh::core::errc::invalid_argument);
+  REQUIRE(root.allow_transfer_to_child("").error() == wh::core::errc::invalid_argument);
 
   wh::agent::agent invalid_bind{"invalid-bind"};
   auto invalid = invalid_bind.bind_execution(nullptr, nullptr);
@@ -145,8 +144,7 @@ TEST_CASE("agent shell rejects invalid mutations duplicate topology and missing 
 
   REQUIRE(root.freeze().has_value());
   REQUIRE(root.set_description("late").has_error());
-  REQUIRE(root.set_description("late").error() ==
-          wh::core::errc::contract_violation);
+  REQUIRE(root.set_description("late").error() == wh::core::errc::contract_violation);
   REQUIRE(root.append_instruction("late").has_error());
   REQUIRE(root.replace_instruction("late").has_error());
   REQUIRE(root.add_child(wh::agent::agent{"late"}).has_error());
@@ -154,14 +152,12 @@ TEST_CASE("agent shell rejects invalid mutations duplicate topology and missing 
   REQUIRE(root.allow_transfer_to_parent().has_error());
   REQUIRE(root.bind_execution(nullptr,
                               []() -> wh::core::result<wh::compose::graph> {
-                                return wh::testing::helper::make_passthrough_graph(
-                                    "late_node");
+                                return wh::testing::helper::make_passthrough_graph("late_node");
                               })
               .has_error());
   REQUIRE(root.bind_execution(nullptr,
                               []() -> wh::core::result<wh::compose::graph> {
-                                return wh::testing::helper::make_passthrough_graph(
-                                    "late_node");
+                                return wh::testing::helper::make_passthrough_graph("late_node");
                               })
               .error() == wh::core::errc::contract_violation);
 }
@@ -171,12 +167,12 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
   wh::agent::agent named{"named"};
   const std::string copied_name = "named_node";
   auto copied_bound = named.bind_execution(
-      nullptr,
-      [copied_name]() mutable -> wh::core::result<wh::compose::graph> {
+      nullptr, [copied_name]() mutable -> wh::core::result<wh::compose::graph> {
         return wh::testing::helper::make_passthrough_graph(copied_name);
       });
   REQUIRE(copied_bound.has_value());
-  auto named_graph = named.lower_graph();
+  REQUIRE(named.freeze().has_value());
+  auto named_graph = named.lower();
   REQUIRE(named_graph.has_value());
   REQUIRE(named_graph->compiled());
 
@@ -184,25 +180,26 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
   auto shell_name = std::make_unique<std::string>("move_only_node");
   auto move_only_bound = move_only.bind_execution(
       nullptr,
-      [shell_name = std::move(shell_name)]() mutable
-          -> wh::core::result<wh::compose::graph> {
+      [shell_name = std::move(shell_name)]() mutable -> wh::core::result<wh::compose::graph> {
         return wh::testing::helper::make_passthrough_graph(*shell_name);
       });
   REQUIRE(move_only_bound.has_value());
-  auto move_only_graph = move_only.lower_graph();
+  REQUIRE(move_only.freeze().has_value());
+  auto move_only_graph = move_only.lower();
   REQUIRE(move_only_graph.has_value());
   REQUIRE(move_only_graph->compiled());
 
-  auto frozen_graph =
-      wh::testing::helper::make_passthrough_graph("prebuilt_node");
+  auto frozen_graph = wh::testing::helper::make_passthrough_graph("prebuilt_node");
   REQUIRE(frozen_graph.has_value());
   wh::agent::agent prebuilt{"prebuilt"};
   auto prebuilt_bound = prebuilt.bind_execution(
       nullptr,
-      [graph = std::move(frozen_graph).value()]() mutable
-          -> wh::core::result<wh::compose::graph> { return graph; });
+      [graph = std::move(frozen_graph).value()]() mutable -> wh::core::result<wh::compose::graph> {
+        return graph;
+      });
   REQUIRE(prebuilt_bound.has_value());
-  auto prebuilt_graph = prebuilt.lower_graph();
+  REQUIRE(prebuilt.freeze().has_value());
+  auto prebuilt_graph = prebuilt.lower();
   REQUIRE(prebuilt_graph.has_value());
   REQUIRE(prebuilt_graph->compiled());
 }

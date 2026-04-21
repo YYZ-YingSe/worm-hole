@@ -25,8 +25,8 @@ struct graph_introspect_event {
 };
 
 /// Converts one introspection event to graph diagnostic record.
-[[nodiscard]] inline auto
-to_graph_diagnostic(const graph_introspect_event &event) -> graph_diagnostic {
+[[nodiscard]] inline auto to_graph_diagnostic(const graph_introspect_event &event)
+    -> graph_diagnostic {
   compose_error error{};
   error.code = event.code;
   error.phase = event.phase;

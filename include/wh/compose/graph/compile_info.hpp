@@ -56,12 +56,14 @@ struct graph_compile_node_options_info {
   graph_compile_node_observation_info observation{};
   /// Optional display label emitted in introspection events.
   std::string label{};
-  /// Missing-rerun-input autofill contract (`value` or `stream`).
+  /// Missing-pending-input autofill contract (`value` or `stream`).
   std::uint8_t input_contract{0U};
   /// True means node may execute with no control predecessor.
   bool allow_no_control{false};
   /// True means node may execute with no data predecessor.
   bool allow_no_data{false};
+  /// Dispatch policy for authored sync execution.
+  sync_dispatch dispatch{sync_dispatch::work};
   /// Optional node-level retry budget override.
   std::optional<std::size_t> retry_budget_override{};
   /// Optional node-level timeout override (`nullopt` falls back to graph

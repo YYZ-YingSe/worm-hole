@@ -15,8 +15,7 @@ template <typename value_t>
 [[nodiscard]] inline auto make_pipe_stream(const std::size_t capacity = 64U)
     -> std::pair<pipe_stream_writer<value_t>, pipe_stream_reader<value_t>> {
   auto state = std::make_shared<detail::pipe_stream_state<value_t>>(capacity);
-  return {pipe_stream_writer<value_t>{state},
-          pipe_stream_reader<value_t>{state}};
+  return {pipe_stream_writer<value_t>{state}, pipe_stream_reader<value_t>{state}};
 }
 
 } // namespace wh::schema::stream

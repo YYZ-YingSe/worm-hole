@@ -1,5 +1,5 @@
 name: setup-sccache
-description: Enable sccache and export compiler-cache environment variables for subsequent steps.
+description: Enable sccache for CI jobs and export compiler-cache environment variables for subsequent steps.
 
 inputs:
   max_size:

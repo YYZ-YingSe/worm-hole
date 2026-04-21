@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/json.hpp"
 
@@ -27,14 +27,10 @@ TEST_CASE("json kinds and aliases expose rapidjson surface",
 
   REQUIRE(wh::core::json_kind(null_value) == wh::core::json_value_kind::null_value);
   REQUIRE(wh::core::json_kind(bool_value) == wh::core::json_value_kind::bool_value);
-  REQUIRE(wh::core::json_kind(number_value) ==
-          wh::core::json_value_kind::number_value);
-  REQUIRE(wh::core::json_kind(string_value) ==
-          wh::core::json_value_kind::string_value);
-  REQUIRE(wh::core::json_kind(array_value) ==
-          wh::core::json_value_kind::array_value);
-  REQUIRE(wh::core::json_kind(object_value) ==
-          wh::core::json_value_kind::object_value);
+  REQUIRE(wh::core::json_kind(number_value) == wh::core::json_value_kind::number_value);
+  REQUIRE(wh::core::json_kind(string_value) == wh::core::json_value_kind::string_value);
+  REQUIRE(wh::core::json_kind(array_value) == wh::core::json_value_kind::array_value);
+  REQUIRE(wh::core::json_kind(object_value) == wh::core::json_value_kind::object_value);
 }
 
 TEST_CASE("json parse helpers expose success and detailed failure information",

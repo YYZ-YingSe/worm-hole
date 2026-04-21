@@ -1,9 +1,9 @@
 #pragma once
 
-#include <tuple>
 #include <memory>
 #include <span>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -15,14 +15,14 @@
 #include "wh/agent/react.hpp"
 #include "wh/agent/reflexion.hpp"
 #include "wh/agent/research.hpp"
-#include "wh/agent/revision.hpp"
 #include "wh/agent/reviewer_executor.hpp"
+#include "wh/agent/revision.hpp"
 #include "wh/agent/self_refine.hpp"
 #include "wh/agent/supervisor.hpp"
 #include "wh/agent/swarm.hpp"
 #include "wh/compose/graph.hpp"
-#include "wh/compose/node/tools_contract.hpp"
 #include "wh/compose/node/lambda.hpp"
+#include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/component.hpp"
 #include "wh/model/chat_model.hpp"
 #include "wh/schema/stream/reader/values_stream_reader.hpp"
@@ -30,12 +30,10 @@
 
 namespace wh::testing::helper {
 
-[[nodiscard]] inline auto make_configured_chat(std::string name,
-                                               std::string description)
+[[nodiscard]] inline auto make_configured_chat(std::string name, std::string description)
     -> wh::agent::chat;
 
-[[nodiscard]] inline auto make_text_message(
-    const wh::schema::message_role role, std::string text)
+[[nodiscard]] inline auto make_text_message(const wh::schema::message_role role, std::string text)
     -> wh::schema::message {
   wh::schema::message message{};
   message.role = role;
@@ -43,12 +41,10 @@ namespace wh::testing::helper {
   return message;
 }
 
-[[nodiscard]] inline auto message_text(const wh::schema::message &message)
-    -> std::string {
+[[nodiscard]] inline auto message_text(const wh::schema::message &message) -> std::string {
   std::string text{};
   for (const auto &part : message.parts) {
-    if (const auto *typed = std::get_if<wh::schema::text_part>(&part);
-        typed != nullptr) {
+    if (const auto *typed = std::get_if<wh::schema::text_part>(&part); typed != nullptr) {
       text.append(typed->text);
     }
   }
@@ -60,8 +56,7 @@ namespace wh::testing::helper {
   auto node = wh::compose::make_lambda_node(
       name,
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         return std::move(input);
       });
   wh::compose::graph_boundary boundary{
@@ -91,22 +86,29 @@ namespace wh::testing::helper {
 [[nodiscard]] inline auto make_executable_agent(const std::string &name)
     -> wh::core::result<wh::agent::agent> {
   wh::agent::agent authored{name};
-  auto bound = authored.bind_execution(
-      nullptr,
-      [name]() mutable -> wh::core::result<wh::compose::graph> {
+  auto bound =
+      authored.bind_execution(nullptr, [name]() mutable -> wh::core::result<wh::compose::graph> {
         return make_passthrough_graph(name + "_node");
       });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  }
   return authored;
 }
 
-[[nodiscard]] inline auto make_executable_chat_agent(
-    std::string name, std::string description = "assistant")
+[[nodiscard]] inline auto make_executable_chat_agent(std::string name,
+                                                     std::string description = "assistant")
     -> wh::core::result<wh::agent::agent> {
   auto authored = make_configured_chat(std::move(name), std::move(description));
-  return wh::agent::make_agent(std::move(authored));
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  }
+  return std::move(authored).into_agent();
 }
 
 [[nodiscard]] inline auto make_fixed_output_graph(const std::string &node_name,
@@ -115,10 +117,9 @@ namespace wh::testing::helper {
   wh::compose::graph graph{};
   auto node = wh::compose::make_lambda_node(
       node_name,
-      [output = std::move(output)](wh::compose::graph_value &,
-                                   wh::core::run_context &,
-                                   const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+      [output = std::move(output)](
+          wh::compose::graph_value &, wh::core::run_context &,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         return wh::compose::graph_value{output};
       });
   auto added = graph.add_lambda(std::move(node));
@@ -151,97 +152,92 @@ namespace wh::testing::helper {
   wh::agent::agent authored{name};
   auto bound = authored.bind_execution(
       nullptr,
-      [graph = std::move(graph).value()]() mutable
-          -> wh::core::result<wh::compose::graph> { return graph; });
+      [graph = std::move(graph).value()]() mutable -> wh::core::result<wh::compose::graph> {
+        return graph;
+      });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
+  }
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
   }
   return authored;
 }
 
-[[nodiscard]] inline auto invoke_agent_graph(
-    wh::compose::graph &graph, std::vector<wh::schema::message> messages)
+[[nodiscard]] inline auto invoke_agent_graph(wh::compose::graph &graph,
+                                             std::vector<wh::schema::message> messages)
     -> wh::core::result<wh::agent::agent_output> {
   wh::compose::graph_invoke_request request{};
-  request.input = wh::core::any{std::move(messages)};
+  request.input = wh::compose::graph_input::value(wh::core::any{std::move(messages)});
 
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   if (!waited.has_value()) {
-    return wh::core::result<wh::agent::agent_output>::failure(
-        wh::core::errc::canceled);
+    return wh::core::result<wh::agent::agent_output>::failure(wh::core::errc::canceled);
   }
 
   auto invoke_status = std::get<0>(std::move(waited).value());
   if (invoke_status.has_error()) {
-    return wh::core::result<wh::agent::agent_output>::failure(
-        invoke_status.error());
+    return wh::core::result<wh::agent::agent_output>::failure(invoke_status.error());
   }
   auto invoke_result = std::move(invoke_status).value();
   if (invoke_result.output_status.has_error()) {
-    return wh::core::result<wh::agent::agent_output>::failure(
-        invoke_result.output_status.error());
+    return wh::core::result<wh::agent::agent_output>::failure(invoke_result.output_status.error());
   }
 
-  auto *typed =
-      wh::core::any_cast<wh::agent::agent_output>(&invoke_result.output_status.value());
+  auto *typed = wh::core::any_cast<wh::agent::agent_output>(&invoke_result.output_status.value());
   if (typed == nullptr) {
-    return wh::core::result<wh::agent::agent_output>::failure(
-        wh::core::errc::type_mismatch);
+    return wh::core::result<wh::agent::agent_output>::failure(wh::core::errc::type_mismatch);
   }
   return std::move(*typed);
 }
 
-[[nodiscard]] inline auto make_revision_request_builder()
-    -> wh::agent::revision_request_builder {
-  return [](const wh::agent::revision_context &context, wh::core::run_context &)
-      -> wh::core::result<std::vector<wh::schema::message>> {
+[[nodiscard]] inline auto make_revision_request_builder() -> wh::agent::revision_request_builder {
+  return [](const wh::agent::revision_context &context,
+            wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::message>> {
     return std::vector<wh::schema::message>{context.input_messages.begin(),
                                             context.input_messages.end()};
   };
 }
 
-[[nodiscard]] inline auto
-make_review_decision_reader(const wh::agent::review_decision_kind kind)
+[[nodiscard]] inline auto make_review_decision_reader(const wh::agent::review_decision_kind kind)
     -> wh::agent::review_decision_reader {
-  return [kind](const wh::agent::agent_output &, wh::core::run_context &)
-      -> wh::core::result<wh::agent::review_decision> {
+  return [kind](const wh::agent::agent_output &,
+                wh::core::run_context &) -> wh::core::result<wh::agent::review_decision> {
     return wh::agent::review_decision{.kind = kind};
   };
 }
 
-[[nodiscard]] inline auto make_plan_request_builder()
-    -> wh::agent::plan_execute_request_builder {
+[[nodiscard]] inline auto make_plan_request_builder() -> wh::agent::plan_execute_request_builder {
   return [](const wh::agent::plan_execute_context &context,
-            wh::core::run_context &)
-      -> wh::core::result<std::vector<wh::schema::message>> {
+            wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::message>> {
     return std::vector<wh::schema::message>{context.input_messages.begin(),
                                             context.input_messages.end()};
   };
 }
 
-[[nodiscard]] inline auto make_plan_reader()
-    -> wh::agent::plan_execute_plan_reader {
-  return [](const wh::agent::agent_output &, wh::core::run_context &)
-      -> wh::core::result<wh::agent::plan_execute_plan> {
+[[nodiscard]] inline auto make_plan_reader() -> wh::agent::plan_execute_plan_reader {
+  return [](const wh::agent::agent_output &,
+            wh::core::run_context &) -> wh::core::result<wh::agent::plan_execute_plan> {
     return wh::agent::plan_execute_plan{.steps = {"step-1", "step-2"}};
   };
 }
 
-[[nodiscard]] inline auto make_step_reader()
-    -> wh::agent::plan_execute_step_reader {
-  return [](const wh::agent::agent_output &, wh::core::run_context &)
-      -> wh::core::result<std::string> { return std::string{"step-result"}; };
+[[nodiscard]] inline auto make_step_reader() -> wh::agent::plan_execute_step_reader {
+  return [](const wh::agent::agent_output &,
+            wh::core::run_context &) -> wh::core::result<std::string> {
+    return std::string{"step-result"};
+  };
 }
 
 [[nodiscard]] inline auto make_plan_execute_decision_reader()
     -> wh::agent::plan_execute_decision_reader {
-  return [](const wh::agent::agent_output &, wh::core::run_context &)
-      -> wh::core::result<wh::agent::plan_execute_decision> {
+  return [](const wh::agent::agent_output &,
+            wh::core::run_context &) -> wh::core::result<wh::agent::plan_execute_decision> {
     return wh::agent::plan_execute_decision{
         .kind = wh::agent::plan_execute_decision_kind::respond,
-        .response = make_text_message(wh::schema::message_role::assistant,
-                                      "done"),
+        .response = make_text_message(wh::schema::message_role::assistant, "done"),
     };
   };
 }
@@ -261,34 +257,27 @@ public:
     return {"ProbeModel", wh::core::component_kind::model};
   }
 
-  [[nodiscard]] auto invoke(const wh::model::chat_request &,
-                            wh::core::run_context &) const
+  [[nodiscard]] auto invoke(const wh::model::chat_request &, wh::core::run_context &) const
       -> wh::model::chat_invoke_result {
     return wh::model::chat_response{
         .message = make_text_message(wh::schema::message_role::assistant, "ok")};
   }
 
-  [[nodiscard]] auto stream(const wh::model::chat_request &,
-                            wh::core::run_context &) const
+  [[nodiscard]] auto stream(const wh::model::chat_request &, wh::core::run_context &) const
       -> wh::model::chat_message_stream_result {
     return wh::model::chat_message_stream_reader{
-        wh::schema::stream::make_values_stream_reader(
-            std::vector<wh::schema::message>{
-                make_text_message(wh::schema::message_role::assistant, "ok")})};
+        wh::schema::stream::make_values_stream_reader(std::vector<wh::schema::message>{
+            make_text_message(wh::schema::message_role::assistant, "ok")})};
   }
 
-  [[nodiscard]] auto bind_tools(
-      std::span<const wh::schema::tool_schema_definition> tools) const
+  [[nodiscard]] auto bind_tools(std::span<const wh::schema::tool_schema_definition> tools) const
       -> sync_probe_model {
     ++state_->bind_calls;
     return sync_probe_model{
-        state_,
-        std::vector<wh::schema::tool_schema_definition>{tools.begin(),
-                                                        tools.end()}};
+        state_, std::vector<wh::schema::tool_schema_definition>{tools.begin(), tools.end()}};
   }
 
-  [[nodiscard]] auto options() const noexcept
-      -> const wh::model::chat_model_options & {
+  [[nodiscard]] auto options() const noexcept -> const wh::model::chat_model_options & {
     return options_;
   }
 
@@ -297,8 +286,7 @@ public:
     return bound_tools_;
   }
 
-  [[nodiscard]] auto state() const noexcept
-      -> const std::shared_ptr<probe_model_state> & {
+  [[nodiscard]] auto state() const noexcept -> const std::shared_ptr<probe_model_state> & {
     return state_;
   }
 
@@ -314,13 +302,11 @@ struct sync_tool {
       .description = "sync tool",
   };
 
-  [[nodiscard]] auto schema() const
-      -> const wh::schema::tool_schema_definition & {
+  [[nodiscard]] auto schema() const -> const wh::schema::tool_schema_definition & {
     return schema_value;
   }
 
-  [[nodiscard]] auto invoke(wh::tool::tool_request request,
-                            wh::core::run_context &) const
+  [[nodiscard]] auto invoke(wh::tool::tool_request request, wh::core::run_context &) const
       -> wh::tool::tool_invoke_result {
     return request.input_json;
   }
@@ -332,36 +318,29 @@ struct async_stream_tool {
       .description = "stream tool",
   };
 
-  [[nodiscard]] auto schema() const
-      -> const wh::schema::tool_schema_definition & {
+  [[nodiscard]] auto schema() const -> const wh::schema::tool_schema_definition & {
     return schema_value;
   }
 
-  [[nodiscard]] auto async_stream(wh::tool::tool_request request,
-                                  wh::core::run_context &) const {
+  [[nodiscard]] auto async_stream(wh::tool::tool_request request, wh::core::run_context &) const {
     auto reader =
-        wh::schema::stream::make_single_value_stream_reader<std::string>(
-            request.input_json);
+        wh::schema::stream::make_single_value_stream_reader<std::string>(request.input_json);
     return stdexec::just(wh::tool::tool_output_stream_result{
         wh::tool::tool_output_stream_reader{std::move(reader)}});
   }
 };
 
-[[nodiscard]] inline auto make_configured_chat(std::string name,
-                                               std::string description)
+[[nodiscard]] inline auto make_configured_chat(std::string name, std::string description)
     -> wh::agent::chat {
   wh::agent::chat authored{std::move(name), std::move(description)};
-  [[maybe_unused]] const auto model_status =
-      authored.set_model(sync_probe_model{});
+  [[maybe_unused]] const auto model_status = authored.set_model(sync_probe_model{});
   return authored;
 }
 
-[[nodiscard]] inline auto make_configured_react(std::string name,
-                                                std::string description)
+[[nodiscard]] inline auto make_configured_react(std::string name, std::string description)
     -> wh::agent::react {
   wh::agent::react authored{std::move(name), std::move(description)};
-  [[maybe_unused]] const auto model_status =
-      authored.set_model(sync_probe_model{});
+  [[maybe_unused]] const auto model_status = authored.set_model(sync_probe_model{});
   [[maybe_unused]] const auto options_status =
       authored.set_tools_node_options(wh::agent::tools_node_authoring_options{});
   return authored;
@@ -384,8 +363,7 @@ struct async_stream_tool {
   }
   auto executor_set = authored.set_executor(std::move(executor).value());
   if (executor_set.has_error()) {
-    return wh::core::result<wh::agent::plan_execute>::failure(
-        executor_set.error());
+    return wh::core::result<wh::agent::plan_execute>::failure(executor_set.error());
   }
   authored.set_planner_request_builder(make_plan_request_builder());
   authored.set_executor_request_builder(make_plan_request_builder());
@@ -401,23 +379,19 @@ struct async_stream_tool {
   wh::agent::reviewer_executor authored{std::move(name)};
   auto reviewer = make_executable_agent("reviewer");
   if (reviewer.has_error()) {
-    return wh::core::result<wh::agent::reviewer_executor>::failure(
-        reviewer.error());
+    return wh::core::result<wh::agent::reviewer_executor>::failure(reviewer.error());
   }
   auto executor = make_executable_agent("executor");
   if (executor.has_error()) {
-    return wh::core::result<wh::agent::reviewer_executor>::failure(
-        executor.error());
+    return wh::core::result<wh::agent::reviewer_executor>::failure(executor.error());
   }
   auto reviewer_set = authored.set_reviewer(std::move(reviewer).value());
   if (reviewer_set.has_error()) {
-    return wh::core::result<wh::agent::reviewer_executor>::failure(
-        reviewer_set.error());
+    return wh::core::result<wh::agent::reviewer_executor>::failure(reviewer_set.error());
   }
   auto executor_set = authored.set_executor(std::move(executor).value());
   if (executor_set.has_error()) {
-    return wh::core::result<wh::agent::reviewer_executor>::failure(
-        executor_set.error());
+    return wh::core::result<wh::agent::reviewer_executor>::failure(executor_set.error());
   }
   authored.set_executor_request_builder(make_revision_request_builder());
   authored.set_reviewer_request_builder(make_revision_request_builder());
@@ -487,8 +461,7 @@ struct async_stream_tool {
   }
   auto specialist_set = authored.add_specialist(std::move(specialist).value());
   if (specialist_set.has_error()) {
-    return wh::core::result<wh::agent::research>::failure(
-        specialist_set.error());
+    return wh::core::result<wh::agent::research>::failure(specialist_set.error());
   }
   return authored;
 }
@@ -506,8 +479,7 @@ struct async_stream_tool {
   }
   auto supervisor_set = authored.set_supervisor(std::move(supervisor).value());
   if (supervisor_set.has_error()) {
-    return wh::core::result<wh::agent::supervisor>::failure(
-        supervisor_set.error());
+    return wh::core::result<wh::agent::supervisor>::failure(supervisor_set.error());
   }
   auto worker_set = authored.add_worker(std::move(worker).value());
   if (worker_set.has_error()) {

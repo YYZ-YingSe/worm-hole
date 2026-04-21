@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <exception>
 #include <memory>
 #include <stdexcept>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/bounded_queue/detail/waiter.hpp"
 
@@ -16,19 +16,16 @@ struct tracked_waiter_value {
 
   tracked_waiter_value() { ++live_count; }
   explicit tracked_waiter_value(int input) : value(input) { ++live_count; }
-  tracked_waiter_value(const tracked_waiter_value &other) : value(other.value) {
-    ++live_count;
-  }
-  tracked_waiter_value(tracked_waiter_value &&other) noexcept : value(other.value) {
-    ++live_count;
-  }
+  tracked_waiter_value(const tracked_waiter_value &other) : value(other.value) { ++live_count; }
+  tracked_waiter_value(tracked_waiter_value &&other) noexcept : value(other.value) { ++live_count; }
   ~tracked_waiter_value() { --live_count; }
 };
 
 } // namespace
 
 TEST_CASE("push waiter base tracks source success closed error and stopped states",
-          "[UT][wh/core/bounded_queue/detail/waiter.hpp][push_waiter_base::store_error][condition][branch]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "waiter.hpp][push_waiter_base::store_error][condition][branch]") {
   wh::core::detail::push_waiter_base<std::string> waiter{};
   std::string source = "value";
 
@@ -59,7 +56,8 @@ TEST_CASE("push waiter base tracks source success closed error and stopped state
 }
 
 TEST_CASE("pop waiter base owns values and tears them down across terminal transitions",
-          "[UT][wh/core/bounded_queue/detail/waiter.hpp][pop_waiter_base::emplace_value][condition][branch][boundary]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "waiter.hpp][pop_waiter_base::emplace_value][condition][branch][boundary]") {
   tracked_waiter_value::live_count = 0;
 
   wh::core::detail::pop_waiter_base<tracked_waiter_value> waiter{};

@@ -33,8 +33,7 @@ using graph_stream_reader = wh::schema::stream::any_stream_reader<graph_value>;
 /// Type-erased graph stream writer used across compose graph boundaries.
 using graph_stream_writer = wh::schema::stream::any_stream_writer<graph_value>;
 /// Type-erased async result boundary carrying one graph value.
-using graph_value_sender = exec::any_receiver_ref<stdexec::completion_signatures<
-    stdexec::set_value_t(wh::core::result<graph_value>), stdexec::set_stopped_t()>>::any_sender<>;
+using graph_value_sender = wh::core::detail::result_sender<wh::core::result<graph_value>>;
 /// Logical contract for node input/output boundaries.
 enum class node_contract : std::uint8_t {
   /// One scalar/object payload.
@@ -50,6 +49,14 @@ enum class node_contract : std::uint8_t {
 enum class node_exec_mode : std::uint8_t {
   sync = 0U,
   async,
+};
+
+/// Dispatch policy for authored sync nodes.
+enum class sync_dispatch : std::uint8_t {
+  /// Offload sync work onto the invoke work scheduler.
+  work = 0U,
+  /// Run sync work inline on the invoke control scheduler.
+  inline_control,
 };
 
 /// Records whether `exec_mode` came from user choice or built-in node rules.

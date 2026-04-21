@@ -12,8 +12,7 @@ struct impl_specific_options {
 
 TEST_CASE("component descriptors and common options preserve fields",
           "[UT][wh/core/component/types.hpp][component_descriptor][branch]") {
-  const wh::core::component_descriptor descriptor{"worker",
-                                                  wh::core::component_kind::tool};
+  const wh::core::component_descriptor descriptor{"worker", wh::core::component_kind::tool};
   const wh::core::component_common_options options{
       .callbacks_enabled = false,
       .trace_id = "trace-a",
@@ -30,9 +29,7 @@ TEST_CASE("component descriptors and common options preserve fields",
 TEST_CASE("component options resolve base call overrides and impl-specific data",
           "[UT][wh/core/component/types.hpp][component_options][branch][boundary]") {
   wh::core::component_options options{};
-  options.set_base({.callbacks_enabled = true,
-                    .trace_id = "trace-a",
-                    .span_id = "span-a"});
+  options.set_base({.callbacks_enabled = true, .trace_id = "trace-a", .span_id = "span-a"});
 
   auto base_view = options.resolve_view();
   REQUIRE(base_view.callbacks_enabled);
@@ -52,8 +49,7 @@ TEST_CASE("component options resolve base call overrides and impl-specific data"
 
   options.set_impl_specific(impl_specific_options{7});
   REQUIRE(options.impl_specific_if<impl_specific_options>()->limit == 7);
-  REQUIRE(options.impl_specific_as<impl_specific_options>().value().get().limit ==
-          7);
+  REQUIRE(options.impl_specific_as<impl_specific_options>().value().get().limit == 7);
 
   options.clear_call_override();
   REQUIRE(options.resolve().trace_id == "trace-a");
@@ -62,9 +58,7 @@ TEST_CASE("component options resolve base call overrides and impl-specific data"
 TEST_CASE("component options ignore absent overrides and keep base values",
           "[UT][wh/core/component/types.hpp][component_options::resolve_view][condition][branch]") {
   wh::core::component_options options{};
-  options.set_base({.callbacks_enabled = false,
-                    .trace_id = "base-trace",
-                    .span_id = "base-span"});
+  options.set_base({.callbacks_enabled = false, .trace_id = "base-trace", .span_id = "base-span"});
   options.set_call_override(wh::core::component_override_options{});
 
   const auto resolved = options.resolve();

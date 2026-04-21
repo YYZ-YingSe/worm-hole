@@ -4,8 +4,10 @@
 #include "wh/compose/graph/detail/graph_core.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
-TEST_CASE("graph core indices plans and storage helpers preserve topology state across copy move and clear",
-          "[UT][wh/compose/graph/detail/graph_core.hpp][graph_core::clear_cold_authoring_state][condition][branch][boundary]") {
+TEST_CASE("graph core indices plans and storage helpers preserve topology state across copy move "
+          "and clear",
+          "[UT][wh/compose/graph/detail/"
+          "graph_core.hpp][graph_core::clear_cold_authoring_state][condition][branch][boundary]") {
   using graph_core = wh::compose::detail::graph_core;
 
   graph_core::indexed_value_branch_definition value_branch{
@@ -56,9 +58,10 @@ TEST_CASE("graph core indices plans and storage helpers preserve topology state 
   core.options_.name = "graph-core";
   core.nodes_.emplace("worker", wh::compose::make_passthrough_node("worker"));
   core.compiled_nodes_.push_back(wh::compose::compiled_node{
-      .meta = wh::compose::compiled_node_meta{
-          .key = "worker",
-      },
+      .meta =
+          wh::compose::compiled_node_meta{
+              .key = "worker",
+          },
   });
   core.node_insertion_order_.push_back("worker");
   core.node_id_index_.emplace("worker", 0U);
@@ -66,16 +69,12 @@ TEST_CASE("graph core indices plans and storage helpers preserve topology state 
       .from = "start",
       .to = "worker",
   });
-  core.value_branches_.emplace(
-      "worker",
-      graph_core::value_branch_definition{
-          .end_nodes = {"left", "right"},
-      });
-  core.stream_branches_.emplace(
-      "worker",
-      graph_core::stream_branch_definition{
-          .end_nodes = {"stream"},
-      });
+  core.value_branches_.emplace("worker", graph_core::value_branch_definition{
+                                             .end_nodes = {"left", "right"},
+                                         });
+  core.stream_branches_.emplace("worker", graph_core::stream_branch_definition{
+                                              .end_nodes = {"stream"},
+                                          });
   core.compile_order_.push_back("worker");
   core.compiled_ = true;
   core.first_error_ = wh::core::make_error_code(wh::core::errc::invalid_argument);
@@ -110,7 +109,9 @@ TEST_CASE("graph core indices plans and storage helpers preserve topology state 
 }
 
 TEST_CASE("graph core helper indices return empty and null branches for missing sources",
-          "[UT][wh/compose/graph/detail/graph_core.hpp][graph_core::graph_index::value_branch_for_source][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "graph_core.hpp][graph_core::graph_index::value_branch_for_source][condition][branch]["
+          "boundary]") {
   using graph_core = wh::compose::detail::graph_core;
 
   graph_core::csr_edge_index empty_edges{};

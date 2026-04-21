@@ -86,6 +86,11 @@ That example:
 - runs a ReAct agent whose model emits a tool call and then answers from the
   tool result
 
+Flow wrappers follow the same authored-surface contract as the rest of the
+project: configure first, call `freeze()`, then execute or wire them into a
+graph node. Agent shells follow the matching public phase path:
+`freeze() -> into_agent() -> lower()` before invocation.
+
 Example build entrypoint:
 
 ```bash
@@ -113,6 +118,12 @@ The repository now exposes one preset-driven local surface:
 ./build.sh test --preset dev-debug --build-first
 ```
 
+For editor and clangd support, configure the dedicated full-surface preset once:
+
+```bash
+./build.sh editor
+```
+
 Common variants:
 
 ```bash
@@ -120,6 +131,8 @@ Common variants:
 ./build.sh test --preset dev-debug --build-first --suite FT
 ./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
 ./build.sh build --preset dev-debug --define WH_BUILD_EXAMPLES=ON
+./build.sh configure --preset dev-clang-release
+./build.sh configure --preset dev-gcc-release
 ```
 
 For machine-oriented automation, the canonical orchestrator is:
@@ -133,7 +146,7 @@ python3 scripts/toolchain.py --help
 - CMake 3.25+
 - C++20
 - build/test CI across Ubuntu, macOS, and Windows
-- deep analysis, coverage, and nightly heavy-test jobs on Linux
+- deep analysis, coverage, and nightly stress shards on Linux
 
 ## Documentation
 

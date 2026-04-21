@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/prompt/chat_template.hpp"
@@ -25,9 +24,8 @@ struct async_prompt_impl {
     wh::schema::message message{};
     message.role = wh::schema::message_role::assistant;
     message.parts.emplace_back(wh::schema::text_part{"async"});
-    return stdexec::just(
-        wh::core::result<std::vector<wh::schema::message>>{
-            std::vector<wh::schema::message>{message}});
+    return stdexec::just(wh::core::result<std::vector<wh::schema::message>>{
+        std::vector<wh::schema::message>{message}});
   }
 };
 
@@ -43,8 +41,7 @@ TEST_CASE("chat template wrapper forwards sync implementations",
   auto result = wrapped.render(request, context);
   REQUIRE(result.has_value());
   REQUIRE(result.value().size() == 1U);
-  REQUIRE(std::get<wh::schema::text_part>(result.value().front().parts.front()).text ==
-          "sync");
+  REQUIRE(std::get<wh::schema::text_part>(result.value().front().parts.front()).text == "sync");
 }
 
 TEST_CASE("chat template wrapper normalizes async sender outputs",
@@ -56,18 +53,18 @@ TEST_CASE("chat template wrapper normalizes async sender outputs",
   auto awaited = stdexec::sync_wait(wrapped.async_render(request, context));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
-  REQUIRE(std::get<wh::schema::text_part>(
-              std::get<0>(*awaited).value().front().parts.front())
-              .text == "async");
+  REQUIRE(
+      std::get<wh::schema::text_part>(std::get<0>(*awaited).value().front().parts.front()).text ==
+      "async");
 }
 
-TEST_CASE("chat template detail callback state resolves template name and variable count",
-          "[UT][wh/prompt/chat_template.hpp][detail::make_callback_state][condition][branch][boundary]") {
+TEST_CASE(
+    "chat template detail callback state resolves template name and variable count",
+    "[UT][wh/prompt/chat_template.hpp][detail::make_callback_state][condition][branch][boundary]") {
   wh::prompt::prompt_render_request request{};
   request.context.insert_or_assign("name", "Ada");
   request.context.insert_or_assign("question", "What?");
-  request.options.set_base(
-      wh::prompt::prompt_common_options{.template_name = "base-name"});
+  request.options.set_base(wh::prompt::prompt_common_options{.template_name = "base-name"});
   request.options.set_call_override(
       wh::prompt::prompt_common_options{.template_name = "override-name"});
 

@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <chrono>
 #include <stdexcept>
 #include <thread>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/cursor_reader/detail/waiter.hpp"
 
@@ -20,12 +20,18 @@ TEST_CASE("cursor sync waiter blocks until completion and returns stored result"
 }
 
 TEST_CASE("cursor async waiter state buffers and aliases expose ready bookkeeping types",
-          "[UT][wh/core/cursor_reader/detail/waiter.hpp][async_waiter_base::store_ready][condition][branch][boundary]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "waiter.hpp][async_waiter_base::store_ready][condition][branch][boundary]") {
   using namespace wh::core::cursor_reader_detail;
 
   async_waiter_base<int> waiter{};
   waiter.store_ready(9);
   REQUIRE(waiter.take_ready() == 9);
+  REQUIRE_FALSE(waiter.waiting_registered());
+  waiter.mark_waiting_registered();
+  REQUIRE(waiter.waiting_registered());
+  waiter.clear_waiting_registered();
+  REQUIRE_FALSE(waiter.waiting_registered());
 
   reader_state<int> state{};
   REQUIRE(state.next_sequence == 0U);

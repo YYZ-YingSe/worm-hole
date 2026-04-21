@@ -1,25 +1,23 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <cstddef>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph/detail/runtime/stream.hpp"
 
 TEST_CASE("stream runtime emits debug and transition events only for subscribed channels",
-          "[UT][wh/compose/graph/detail/runtime/stream.hpp][append_state_transition][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "stream.hpp][append_state_transition][condition][branch][boundary]") {
   wh::compose::graph_call_options options{};
   options.isolate_debug_stream = false;
-  options.stream_subscriptions.push_back(
-      {.kind = wh::compose::graph_stream_channel_kind::debug,
-       .custom_channel = {},
-       .enabled = true});
-  options.stream_subscriptions.push_back(
-      {.kind = wh::compose::graph_stream_channel_kind::message,
-       .custom_channel = {},
-       .enabled = true});
-  options.stream_subscriptions.push_back(
-      {.kind = wh::compose::graph_stream_channel_kind::custom,
-       .custom_channel = "audit",
-       .enabled = true});
+  options.stream_subscriptions.push_back({.kind = wh::compose::graph_stream_channel_kind::debug,
+                                          .custom_channel = {},
+                                          .enabled = true});
+  options.stream_subscriptions.push_back({.kind = wh::compose::graph_stream_channel_kind::message,
+                                          .custom_channel = {},
+                                          .enabled = true});
+  options.stream_subscriptions.push_back({.kind = wh::compose::graph_stream_channel_kind::custom,
+                                          .custom_channel = "audit",
+                                          .enabled = true});
 
   std::size_t observed_steps = 0U;
   options.graph_debug_observer =
@@ -28,8 +26,7 @@ TEST_CASE("stream runtime emits debug and transition events only for subscribed 
 
   auto scope = wh::compose::graph_call_scope::root(options);
   auto path = wh::compose::make_node_path({"worker"});
-  auto event_scope =
-      wh::compose::make_graph_event_scope("graph", "worker", path);
+  auto event_scope = wh::compose::make_graph_event_scope("graph", "worker", path);
 
   wh::core::run_context context{};
   wh::compose::detail::runtime_state::invoke_outputs outputs{};
@@ -40,8 +37,8 @@ TEST_CASE("stream runtime emits debug and transition events only for subscribed 
       .path = path,
       .step = 3U,
   };
-  wh::compose::detail::stream_runtime::emit_debug_event(
-      context, outputs, scope, debug_event, event_scope);
+  wh::compose::detail::stream_runtime::emit_debug_event(context, outputs, scope, debug_event,
+                                                        event_scope);
 
   REQUIRE(observed_steps == 3U);
   REQUIRE(outputs.debug_events.size() == 1U);
@@ -79,8 +76,7 @@ TEST_CASE("stream runtime ignores unsubscribed debug events and isolated message
 
   wh::compose::detail::runtime_state::invoke_outputs outputs{};
   auto path = wh::compose::make_node_path({"worker"});
-  auto event_scope =
-      wh::compose::make_graph_event_scope("graph", "worker", path);
+  auto event_scope = wh::compose::make_graph_event_scope("graph", "worker", path);
   auto event = wh::compose::graph_debug_stream_event{
       .decision = wh::compose::graph_debug_stream_event::decision_kind::retry,
       .node_key = "worker",
@@ -92,8 +88,8 @@ TEST_CASE("stream runtime ignores unsubscribed debug events and isolated message
   REQUIRE(outputs.debug_events.empty());
 
   wh::core::run_context context{};
-  wh::compose::detail::stream_runtime::emit_debug_event(
-      context, outputs, scope, event, event_scope);
+  wh::compose::detail::stream_runtime::emit_debug_event(context, outputs, scope, event,
+                                                        event_scope);
   REQUIRE(outputs.debug_events.empty());
   REQUIRE(outputs.runtime_message_events.empty());
 }

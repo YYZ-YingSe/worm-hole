@@ -1,20 +1,19 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <string>
 #include <unordered_map>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/internal/merge.hpp"
 
-static_assert(
-    wh::internal::string_keyed_map_like<std::unordered_map<std::string, int>>);
+static_assert(wh::internal::string_keyed_map_like<std::unordered_map<std::string, int>>);
 
 TEST_CASE("values merge registry merges registered reducers and typed singletons",
           "[UT][wh/internal/merge.hpp][values_merge_registry::merge_as][branch][boundary]") {
   wh::internal::values_merge_registry registry{};
 
-  auto registered = registry.register_merge<int>(
-      [](const std::span<const int> values) -> wh::core::result<int> {
+  auto registered =
+      registry.register_merge<int>([](const std::span<const int> values) -> wh::core::result<int> {
         int sum = 0;
         for (const auto value : values) {
           sum += value;
@@ -48,21 +47,20 @@ TEST_CASE("values merge registry reports empty unsupported and singleton fallbac
   REQUIRE(single.value() == 7);
 
   const std::array unsupported_values = {wh::core::any{1}};
-  auto unsupported =
-      registry.merge(wh::core::any_type_key_v<int>, unsupported_values);
+  auto unsupported = registry.merge(wh::core::any_type_key_v<int>, unsupported_values);
   REQUIRE(unsupported.has_error());
   REQUIRE(unsupported.error() == wh::core::errc::not_supported);
 }
 
 TEST_CASE(
     "values merge registry supports pointer reducers duplicate guards and freeze",
-    "[UT][wh/internal/merge.hpp][values_merge_registry::register_merge_from_ptrs][condition][branch][boundary]") {
+    "[UT][wh/internal/"
+    "merge.hpp][values_merge_registry::register_merge_from_ptrs][condition][branch][boundary]") {
   wh::internal::values_merge_registry registry{};
   registry.reserve(2U);
 
   auto pointer_registered = registry.register_merge_from_ptrs<std::string>(
-      [](const std::span<const std::string *> values)
-          -> wh::core::result<std::string> {
+      [](const std::span<const std::string *> values) -> wh::core::result<std::string> {
         std::string joined{};
         for (const auto *value : values) {
           joined += *value;

@@ -40,7 +40,7 @@ struct graph_step_limit_error_detail {
   /// Node key being evaluated when overflow happened.
   std::string node{};
   /// Completed node set captured at overflow point.
-  std::vector<std::string> completed_nodes{};
+  std::vector<std::string> completed_node_keys{};
 };
 
 /// Structured detail emitted when one node execution exceeds timeout budget.
@@ -114,8 +114,8 @@ struct compose_error {
 };
 
 /// Converts step-limit detail to one compose error record.
-[[nodiscard]] inline auto
-to_compose_error(const graph_step_limit_error_detail &detail) -> compose_error {
+[[nodiscard]] inline auto to_compose_error(const graph_step_limit_error_detail &detail)
+    -> compose_error {
   compose_error error{};
   error.code = wh::core::errc::timeout;
   error.phase = compose_error_phase::schedule;
@@ -126,8 +126,7 @@ to_compose_error(const graph_step_limit_error_detail &detail) -> compose_error {
 }
 
 /// Converts node-timeout detail to one compose error record.
-[[nodiscard]] inline auto
-to_compose_error(const graph_node_timeout_error_detail &detail)
+[[nodiscard]] inline auto to_compose_error(const graph_node_timeout_error_detail &detail)
     -> compose_error {
   compose_error error{};
   error.code = wh::core::errc::timeout;
@@ -140,8 +139,7 @@ to_compose_error(const graph_node_timeout_error_detail &detail)
 }
 
 /// Converts one compose error to graph diagnostic record.
-[[nodiscard]] inline auto to_graph_diagnostic(const compose_error &error)
-    -> graph_diagnostic {
+[[nodiscard]] inline auto to_graph_diagnostic(const compose_error &error) -> graph_diagnostic {
   std::string phase{};
   switch (error.phase) {
   case compose_error_phase::compile:

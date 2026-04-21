@@ -8,6 +8,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include <stdexec/execution.hpp>
 
@@ -23,26 +24,22 @@ public:
   static constexpr std::uint8_t claimed_bit_ = 0x1U;
   static constexpr std::uint8_t completion_started_bit_ = 0x2U;
   static constexpr std::uint8_t payload_ready_bit_ = 0x4U;
-  static constexpr std::uint8_t ready_and_claimed_bits_ =
-      payload_ready_bit_ | claimed_bit_;
+  static constexpr std::uint8_t ready_and_claimed_bits_ = payload_ready_bit_ | claimed_bit_;
 
   [[nodiscard]] auto has_claimed() const noexcept -> bool {
     return (state_bits_.load(std::memory_order_acquire) & claimed_bit_) != 0U;
   }
 
   [[nodiscard]] auto start_completion() noexcept -> bool {
-    return (state_bits_.fetch_or(completion_started_bit_,
-                                 std::memory_order_acq_rel) &
+    return (state_bits_.fetch_or(completion_started_bit_, std::memory_order_acq_rel) &
             completion_started_bit_) == 0U;
   }
 
   [[nodiscard]] auto mark_ready() noexcept -> std::uint8_t {
-    return state_bits_.fetch_or(ready_and_claimed_bits_,
-                                std::memory_order_acq_rel);
+    return state_bits_.fetch_or(ready_and_claimed_bits_, std::memory_order_acq_rel);
   }
 
-  [[nodiscard]] static auto is_claimed(const std::uint8_t state_bits) noexcept
-      -> bool {
+  [[nodiscard]] static auto is_claimed(const std::uint8_t state_bits) noexcept -> bool {
     return (state_bits & claimed_bit_) != 0U;
   }
 
@@ -88,8 +85,7 @@ private:
       return false;
     }
     auto expected = not_locked;
-    return state_.compare_exchange_strong(expected, locked_no_waiters,
-                                          std::memory_order_acquire,
+    return state_.compare_exchange_strong(expected, locked_no_waiters, std::memory_order_acquire,
                                           std::memory_order_relaxed);
   }
 
@@ -99,19 +95,16 @@ private:
     auto old_state = state_.load(std::memory_order_relaxed);
     while (true) {
       if (old_state == not_locked) {
-        if (state_.compare_exchange_weak(old_state, locked_no_waiters,
-                                         std::memory_order_acquire,
+        if (state_.compare_exchange_weak(old_state, locked_no_waiters, std::memory_order_acquire,
                                          std::memory_order_relaxed)) {
           return false;
         }
         continue;
       }
-      waiter.next = (old_state == locked_no_waiters)
-                        ? nullptr
-                        : reinterpret_cast<waiter_base *>(old_state);
-      if (state_.compare_exchange_weak(
-              old_state, reinterpret_cast<std::uintptr_t>(&waiter),
-              std::memory_order_release, std::memory_order_relaxed)) {
+      waiter.next =
+          (old_state == locked_no_waiters) ? nullptr : reinterpret_cast<waiter_base *>(old_state);
+      if (state_.compare_exchange_weak(old_state, reinterpret_cast<std::uintptr_t>(&waiter),
+                                       std::memory_order_release, std::memory_order_relaxed)) {
         return true;
       }
     }
@@ -121,8 +114,8 @@ private:
   // the cancel path already claimed it.
   static auto try_claim_waiter(waiter_base *w) noexcept -> bool {
     bool expected = false;
-    return w->dequeue_claimed.compare_exchange_strong(
-        expected, true, std::memory_order_acq_rel, std::memory_order_relaxed);
+    return w->dequeue_claimed.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
+                                                      std::memory_order_relaxed);
   }
 
   auto unlock_one() noexcept -> void {
@@ -142,16 +135,14 @@ private:
 
       // Phase 2: no FIFO waiters left, try to release the lock.
       auto expected = locked_no_waiters;
-      if (state_.compare_exchange_strong(expected, not_locked,
-                                         std::memory_order_release,
+      if (state_.compare_exchange_strong(expected, not_locked, std::memory_order_release,
                                          std::memory_order_relaxed)) {
         return;
       }
 
       // Phase 3: new waiters arrived on the LIFO stack — grab them all
       // and reverse to approximate FIFO.
-      auto old_state =
-          state_.exchange(locked_no_waiters, std::memory_order_acquire);
+      auto old_state = state_.exchange(locked_no_waiters, std::memory_order_acquire);
       auto *stack = reinterpret_cast<waiter_base *>(old_state);
       waiter_base *reversed = nullptr;
       while (stack != nullptr) {
@@ -167,8 +158,7 @@ private:
 
 public:
   async_mutex() = default;
-  explicit async_mutex(std::uint32_t spin_count) noexcept
-      : spin_count_(spin_count) {}
+  explicit async_mutex(std::uint32_t spin_count) noexcept : spin_count_(spin_count) {}
   ~async_mutex() = default;
 
   async_mutex(const async_mutex &) = delete;
@@ -200,8 +190,7 @@ public:
   lock_guard(const lock_guard &) = delete;
   auto operator=(const lock_guard &) -> lock_guard & = delete;
 
-  lock_guard(lock_guard &&other) noexcept
-      : mutex_(std::exchange(other.mutex_, nullptr)) {}
+  lock_guard(lock_guard &&other) noexcept : mutex_(std::exchange(other.mutex_, nullptr)) {}
 
   auto operator=(lock_guard &&other) noexcept -> lock_guard & {
     if (this != &other) {
@@ -220,9 +209,7 @@ public:
     }
   }
 
-  [[nodiscard]] explicit operator bool() const noexcept {
-    return mutex_ != nullptr;
-  }
+  [[nodiscard]] explicit operator bool() const noexcept { return mutex_ != nullptr; }
 };
 
 inline auto async_mutex::try_lock() noexcept -> std::optional<lock_guard> {
@@ -232,23 +219,22 @@ inline auto async_mutex::try_lock() noexcept -> std::optional<lock_guard> {
   return std::nullopt;
 }
 
-template <typename receiver_t>
-struct async_mutex::lock_operation final : async_mutex::waiter_base {
+template <typename receiver_t> struct async_mutex::lock_operation final : async_mutex::waiter_base {
   using operation_state_concept = stdexec::operation_state_t;
 
   using stop_token_t = stdexec::stop_token_of_t<stdexec::env_of_t<receiver_t>>;
-  using scheduler_t =
-      wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>;
+  using scheduler_t = wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>;
 
   struct stop_callback;
   struct handoff_receiver;
+  struct handoff_value_tag {};
+  struct handoff_stopped_tag {};
 
   using handoff_op_t =
-      stdexec::connect_result_t<stdexec::schedule_result_t<scheduler_t>,
-                                handoff_receiver>;
+      stdexec::connect_result_t<stdexec::schedule_result_t<scheduler_t>, handoff_receiver>;
   using completion_bits_t = wh::sync::detail::completion_bits;
-  using stop_callback_t =
-      stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
+  using stop_callback_t = stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
+  using handoff_completion_t = std::variant<handoff_value_tag, handoff_stopped_tag>;
 
   async_mutex *mutex{nullptr};
   receiver_t receiver;
@@ -259,15 +245,38 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
   // Avoids connect(schedule(scheduler), ...) cost on the fast path.
   alignas(handoff_op_t) std::byte handoff_storage_[sizeof(handoff_op_t)];
   bool handoff_constructed_{false};
+  std::optional<handoff_completion_t> handoff_completion_{};
+  std::atomic<bool> handoff_completion_ready_{false};
+  std::atomic<bool> handoff_start_returned_{true};
 
   auto *handoff_ptr() noexcept {
     return std::launder(reinterpret_cast<handoff_op_t *>(handoff_storage_));
   }
 
-  void construct_handoff() noexcept {
-    ::new (static_cast<void *>(handoff_storage_)) handoff_op_t(
-        stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this}));
+  auto reset_handoff() noexcept -> void {
+    if (!handoff_constructed_) {
+      return;
+    }
+    handoff_ptr()->~handoff_op_t();
+    handoff_constructed_ = false;
+  }
+
+  void construct_handoff() {
+    ::new (static_cast<void *>(handoff_storage_))
+        handoff_op_t(stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this}));
     handoff_constructed_ = true;
+  }
+
+  [[nodiscard]] auto ensure_handoff() noexcept -> bool {
+    if (is_same_scheduler() || handoff_constructed_) {
+      return true;
+    }
+    try {
+      construct_handoff();
+      return true;
+    } catch (...) {
+      return false;
+    }
   }
 
   struct stop_callback {
@@ -280,14 +289,16 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
 
     lock_operation *self{nullptr};
 
-    auto set_value() noexcept -> void { self->complete(); }
+    auto set_value() noexcept -> void {
+      self->publish_handoff_completion(handoff_completion_t{handoff_value_tag{}});
+    }
 
     template <typename error_t> auto set_error(error_t &&) noexcept -> void {
-      stdexec::set_stopped(std::move(self->receiver));
+      self->publish_handoff_completion(handoff_completion_t{handoff_stopped_tag{}});
     }
 
     auto set_stopped() noexcept -> void {
-      stdexec::set_stopped(std::move(self->receiver));
+      self->publish_handoff_completion(handoff_completion_t{handoff_stopped_tag{}});
     }
 
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
@@ -296,33 +307,56 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
   template <typename receiver_value_t>
     requires std::constructible_from<receiver_t, receiver_value_t &&>
   lock_operation(async_mutex *mutex_ptr, receiver_value_t &&receiver_value)
-      : mutex(mutex_ptr),
-        receiver(std::forward<receiver_value_t>(receiver_value)),
-        scheduler(
-            wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
-                stdexec::get_env(receiver))) {
+      : mutex(mutex_ptr), receiver(std::forward<receiver_value_t>(receiver_value)),
+        scheduler(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
+            stdexec::get_env(receiver))) {
     this->complete_fn = [](waiter_base *base) noexcept {
       static_cast<lock_operation *>(base)->complete_ready();
     };
   }
 
-  ~lock_operation() {
-    if (handoff_constructed_) {
-      handoff_ptr()->~handoff_op_t();
-    }
-  }
+  ~lock_operation() { reset_handoff(); }
 
   lock_operation(const lock_operation &) = delete;
   auto operator=(const lock_operation &) -> lock_operation & = delete;
   lock_operation(lock_operation &&) = delete;
   auto operator=(lock_operation &&) -> lock_operation & = delete;
 
-  [[nodiscard]] auto has_claimed() const noexcept -> bool {
-    return completion_bits_.has_claimed();
-  }
+  [[nodiscard]] auto has_claimed() const noexcept -> bool { return completion_bits_.has_claimed(); }
 
   [[nodiscard]] auto is_same_scheduler() const noexcept -> bool {
     return wh::core::detail::scheduler_handoff::same_scheduler(scheduler);
+  }
+
+  auto release_acquired_lock() noexcept -> void {
+    if (!this->acquired || mutex == nullptr) {
+      return;
+    }
+    lock_guard guard{mutex};
+    guard.unlock();
+    this->acquired = false;
+  }
+
+  auto publish_handoff_completion(handoff_completion_t completion) noexcept -> void {
+    wh_invariant(!handoff_completion_ready_.load(std::memory_order_acquire));
+    handoff_completion_.emplace(std::move(completion));
+    handoff_completion_ready_.store(true, std::memory_order_release);
+    if (handoff_start_returned_.load(std::memory_order_acquire)) {
+      drain_handoff_completion();
+    }
+  }
+
+  auto drain_handoff_completion() noexcept -> void {
+    if (!handoff_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+      return;
+    }
+    auto completion = std::move(*handoff_completion_);
+    handoff_completion_.reset();
+    reset_handoff();
+    if (std::holds_alternative<handoff_stopped_tag>(completion)) {
+      release_acquired_lock();
+    }
+    complete();
   }
 
   auto complete_ready() noexcept -> void {
@@ -334,8 +368,20 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
       complete();
       return;
     }
-    construct_handoff();
-    stdexec::start(*handoff_ptr());
+    wh_invariant(handoff_constructed_);
+    try {
+      handoff_start_returned_.store(false, std::memory_order_release);
+      stdexec::start(*handoff_ptr());
+      handoff_start_returned_.store(true, std::memory_order_release);
+      if (handoff_completion_ready_.load(std::memory_order_acquire)) {
+        drain_handoff_completion();
+      }
+    } catch (...) {
+      handoff_start_returned_.store(true, std::memory_order_release);
+      reset_handoff();
+      release_acquired_lock();
+      complete();
+    }
   }
 
   auto complete() noexcept -> void {
@@ -358,6 +404,11 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
     }
     // Need scheduler handoff — fall back to normal path.
     this->acquired = true;
+    if (!ensure_handoff()) {
+      release_acquired_lock();
+      stdexec::set_stopped(std::move(receiver));
+      return;
+    }
     complete_ready();
   }
 
@@ -373,9 +424,37 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
     complete_ready();
   }
 
+  auto prepare_wait(const stop_token_t &stop_token) noexcept -> bool {
+    if (!ensure_handoff()) {
+      stdexec::set_stopped(std::move(receiver));
+      return false;
+    }
+    if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
+      if (!stop_callback_.has_value()) {
+        try {
+          stop_callback_.emplace(stop_token, stop_callback{this});
+        } catch (...) {
+          this->acquired = false;
+          complete_ready();
+          return false;
+        }
+      }
+      if (stop_token.stop_requested()) {
+        this->acquired = false;
+        complete_ready();
+        return false;
+      }
+    }
+    return true;
+  }
+
   auto start() noexcept -> void {
     auto stop_token = stdexec::get_stop_token(stdexec::get_env(receiver));
     if (stop_token.stop_requested()) {
+      if (!is_same_scheduler() && !ensure_handoff()) {
+        stdexec::set_stopped(std::move(receiver));
+        return;
+      }
       this->acquired = false;
       complete_ready();
       return;
@@ -402,20 +481,21 @@ struct async_mutex::lock_operation final : async_mutex::waiter_base {
       }
     }
 
+    if (!prepare_wait(stop_token)) {
+      return;
+    }
+
     // Enqueue returned false means lock was acquired during enqueue.
     const bool pending = mutex->enqueue(*this);
     if (!pending) {
+      stop_callback_.reset();
       complete_sync();
       return;
     }
 
-    // Slow path: waiter is enqueued. Register stop callback for cancellation.
     if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
-      if (!has_claimed()) {
-        stop_callback_.emplace(stop_token, stop_callback{this});
-        if (stop_token.stop_requested()) {
-          cancel_wait();
-        }
+      if (stop_token.stop_requested()) {
+        cancel_wait();
       }
     }
   }
@@ -425,25 +505,22 @@ class async_mutex::lock_sender {
 public:
   using sender_concept = stdexec::sender_t;
   using completion_signatures =
-      stdexec::completion_signatures<stdexec::set_value_t(lock_guard),
-                                     stdexec::set_stopped_t()>;
+      stdexec::completion_signatures<stdexec::set_value_t(lock_guard), stdexec::set_stopped_t()>;
 
   explicit lock_sender(async_mutex *mutex_ptr) noexcept : mutex_(mutex_ptr) {}
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver)
-      && -> lock_operation<std::remove_cvref_t<receiver_t>> {
-    return lock_operation<std::remove_cvref_t<receiver_t>>{mutex_,
-                                                           std::move(receiver)};
+  [[nodiscard]] auto
+  connect(receiver_t receiver) && -> lock_operation<std::remove_cvref_t<receiver_t>> {
+    return lock_operation<std::remove_cvref_t<receiver_t>>{mutex_, std::move(receiver)};
   }
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver)
-      const & -> lock_operation<std::remove_cvref_t<receiver_t>> {
-    return lock_operation<std::remove_cvref_t<receiver_t>>{mutex_,
-                                                           std::move(receiver)};
+  [[nodiscard]] auto
+  connect(receiver_t receiver) const & -> lock_operation<std::remove_cvref_t<receiver_t>> {
+    return lock_operation<std::remove_cvref_t<receiver_t>>{mutex_, std::move(receiver)};
   }
 
   template <typename promise_t>
@@ -454,29 +531,23 @@ public:
 
   template <typename promise_t>
     requires wh::core::detail::promise_with_resume_scheduler<promise_t>
-  [[nodiscard]] auto
-  as_awaitable(promise_t &promise) const & -> decltype(auto) {
+  [[nodiscard]] auto as_awaitable(promise_t &promise) const & -> decltype(auto) {
     return stdexec::as_awaitable(make_await_sender(*this), promise);
   }
 
-  [[nodiscard]] auto get_env() const noexcept
-      -> wh::core::detail::async_completion_env {
+  [[nodiscard]] auto get_env() const noexcept -> wh::core::detail::async_completion_env {
     return {};
   }
 
 private:
-  template <typename self_t>
-  [[nodiscard]] static auto make_await_sender(self_t &&self) {
-    return stdexec::then(
-        static_cast<self_t &&>(self),
-        [](lock_guard guard) noexcept -> lock_guard { return guard; });
+  template <typename self_t> [[nodiscard]] static auto make_await_sender(self_t &&self) {
+    return stdexec::then(static_cast<self_t &&>(self),
+                         [](lock_guard guard) noexcept -> lock_guard { return guard; });
   }
 
   async_mutex *mutex_{nullptr};
 };
 
-inline auto async_mutex::lock() noexcept -> lock_sender {
-  return lock_sender{this};
-}
+inline auto async_mutex::lock() noexcept -> lock_sender { return lock_sender{this}; }
 
 } // namespace wh::sync

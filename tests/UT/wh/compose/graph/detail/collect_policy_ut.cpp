@@ -1,11 +1,12 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph/detail/collect_policy.hpp"
 
 TEST_CASE("collect policy drains value chunks until terminal eof and returns collected vector",
-          "[UT][wh/compose/graph/detail/collect_policy.hpp][collect_policy::handle_completion][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "collect_policy.hpp][collect_policy::handle_completion][condition][branch][boundary]") {
   std::vector<wh::compose::graph_value> values{};
   values.emplace_back(1);
   values.emplace_back(2);
@@ -40,16 +41,16 @@ TEST_CASE("collect policy drains value chunks until terminal eof and returns col
   auto finished = policy.handle_completion(std::move(eof).value());
   REQUIRE(finished.has_value());
   REQUIRE(finished->has_value());
-  auto *collected =
-      wh::core::any_cast<std::vector<wh::compose::graph_value>>(&finished->value());
+  auto *collected = wh::core::any_cast<std::vector<wh::compose::graph_value>>(&finished->value());
   REQUIRE(collected != nullptr);
   REQUIRE(collected->size() == 2U);
   REQUIRE(*wh::core::any_cast<int>(&(*collected)[0]) == 1);
   REQUIRE(*wh::core::any_cast<int>(&(*collected)[1]) == 2);
 }
 
-TEST_CASE("collect policy enforces item limits and propagates read errors",
-          "[UT][wh/compose/graph/detail/collect_policy.hpp][collect_policy::next_step][branch][error]") {
+TEST_CASE(
+    "collect policy enforces item limits and propagates read errors",
+    "[UT][wh/compose/graph/detail/collect_policy.hpp][collect_policy::next_step][branch][error]") {
   std::vector<wh::compose::graph_value> values{};
   values.emplace_back(1);
   values.emplace_back(2);
@@ -72,8 +73,8 @@ TEST_CASE("collect policy enforces item limits and propagates read errors",
   REQUIRE(overflow->error() == wh::core::errc::resource_exhausted);
 
   wh::compose::detail::collect_policy error_policy{};
-  auto errored = error_policy.handle_completion(
-      wh::compose::graph_stream_reader::chunk_result_type::failure(
+  auto errored =
+      error_policy.handle_completion(wh::compose::graph_stream_reader::chunk_result_type::failure(
           wh::core::errc::invalid_argument));
   REQUIRE(errored.has_value());
   REQUIRE(errored->has_error());

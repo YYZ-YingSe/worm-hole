@@ -1,11 +1,11 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/authored.hpp"
@@ -15,23 +15,18 @@
 
 namespace {
 
-using wh::testing::helper::invoke_value_sync;
-using wh::testing::helper::make_int_mul_node;
-using wh::testing::helper::make_int_add_node;
 using wh::testing::helper::collect_int_graph_stream;
+using wh::testing::helper::invoke_value_sync;
+using wh::testing::helper::make_int_add_node;
+using wh::testing::helper::make_int_mul_node;
 using wh::testing::helper::read_graph_value;
 
 struct int_component {
-  auto invoke(int, wh::core::run_context &) const -> wh::core::result<int> {
-    return 1;
-  }
+  auto invoke(int, wh::core::run_context &) const -> wh::core::result<int> { return 1; }
 };
 
 struct string_component {
-  auto invoke(std::string, wh::core::run_context &) const
-      -> wh::core::result<int> {
-    return 1;
-  }
+  auto invoke(std::string, wh::core::run_context &) const -> wh::core::result<int> { return 1; }
 };
 
 struct tool_result_consumer {
@@ -111,8 +106,7 @@ TEST_CASE("compose graph compile callback receives compile snapshot",
   options.max_parallel_nodes = 4U;
   options.max_parallel_per_node = 2U;
   options.compile_callback = wh::compose::graph_compile_callback{
-      [&compile_snapshot](const wh::compose::graph_compile_info &info)
-          -> wh::core::result<void> {
+      [&compile_snapshot](const wh::compose::graph_compile_info &info) -> wh::core::result<void> {
         compile_snapshot = info;
         return {};
       }};
@@ -146,24 +140,19 @@ TEST_CASE("compose graph compile callback receives compile snapshot",
   REQUIRE(compile_snapshot->node_key_to_id.contains("worker"));
   REQUIRE(compile_snapshot->subgraphs.contains("worker"));
   REQUIRE(compile_snapshot->subgraphs.at("worker").name == "child-workflow");
-  REQUIRE(std::any_of(compile_snapshot->control_edges.begin(),
-                      compile_snapshot->control_edges.end(),
+  REQUIRE(
+      std::any_of(compile_snapshot->control_edges.begin(), compile_snapshot->control_edges.end(),
+                  [](const wh::compose::graph_edge &edge) {
+                    return edge.from == wh::compose::graph_start_node_key && edge.to == "worker";
+                  }));
+  REQUIRE(std::any_of(compile_snapshot->data_edges.begin(), compile_snapshot->data_edges.end(),
                       [](const wh::compose::graph_edge &edge) {
-                        return edge.from == wh::compose::graph_start_node_key &&
-                               edge.to == "worker";
-                      }));
-  REQUIRE(std::any_of(compile_snapshot->data_edges.begin(),
-                      compile_snapshot->data_edges.end(),
-                      [](const wh::compose::graph_edge &edge) {
-                        return edge.from == "worker" &&
-                               edge.to == wh::compose::graph_end_node_key;
+                        return edge.from == "worker" && edge.to == wh::compose::graph_end_node_key;
                       }));
 
   const auto worker_iter = std::find_if(
       compile_snapshot->nodes.begin(), compile_snapshot->nodes.end(),
-      [](const wh::compose::graph_compile_node_info &node) {
-        return node.key == "worker";
-      });
+      [](const wh::compose::graph_compile_node_info &node) { return node.key == "worker"; });
   REQUIRE(worker_iter != compile_snapshot->nodes.end());
   REQUIRE(worker_iter->has_sender);
   REQUIRE(worker_iter->has_subgraph);
@@ -176,8 +165,7 @@ TEST_CASE("compose graph compile callback receives compile snapshot",
   REQUIRE(worker_iter->options.retry_budget_override.has_value());
   REQUIRE(*worker_iter->options.retry_budget_override == 4U);
   REQUIRE(worker_iter->options.timeout_override.has_value());
-  REQUIRE(worker_iter->options.timeout_override.value() ==
-          std::chrono::milliseconds{7});
+  REQUIRE(worker_iter->options.timeout_override.value() == std::chrono::milliseconds{7});
   REQUIRE(worker_iter->options.max_parallel_override.has_value());
   REQUIRE(worker_iter->options.max_parallel_override.value() == 1U);
 }
@@ -187,11 +175,9 @@ TEST_CASE("compose graph compile callback failure aborts compile",
   bool callback_called = false;
   wh::compose::graph_compile_options options{};
   options.compile_callback = wh::compose::graph_compile_callback{
-      [&callback_called](const wh::compose::graph_compile_info &)
-          -> wh::core::result<void> {
+      [&callback_called](const wh::compose::graph_compile_info &) -> wh::core::result<void> {
         callback_called = true;
-        return wh::core::result<void>::failure(
-            wh::core::errc::contract_violation);
+        return wh::core::result<void>::failure(wh::core::errc::contract_violation);
       }};
 
   wh::compose::graph graph{std::move(options)};
@@ -214,19 +200,18 @@ TEST_CASE("compose graph compile requires one explicit path from START to END",
   REQUIRE(compiled.has_error());
   REQUIRE(compiled.error() == wh::core::errc::not_found);
   REQUIRE_FALSE(graph.diagnostics().empty());
-  REQUIRE(graph.diagnostics().back().message ==
-          "no reachable path from START to END");
+  REQUIRE(graph.diagnostics().back().message == "no reachable path from START to END");
 }
 
 TEST_CASE("compose graph keeps first build error stable after duplicate edge",
           "[core][compose][graph][branch]") {
   wh::compose::graph graph{};
-  REQUIRE(graph.add_lambda("inc", [](const wh::compose::graph_value &input,
-                                     wh::core::run_context &,
-                                     const wh::compose::graph_call_scope &)
-                               -> wh::core::result<wh::compose::graph_value> {
-            return input;
-          }).has_value());
+  REQUIRE(graph
+              .add_lambda("inc",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> { return input; })
+              .has_value());
   REQUIRE(graph.add_entry_edge("inc").has_value());
   REQUIRE(graph.add_exit_edge("inc").has_value());
 
@@ -244,14 +229,18 @@ TEST_CASE("compose graph rejects duplicate output keys during compile",
   wh::compose::graph graph{};
 
   auto left = wh::compose::make_lambda_node(
-      "left", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> { return input; });
+      "left",
+      [](const wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+        return input;
+      });
   left.mutable_options().output_key = "shared";
   auto right = wh::compose::make_lambda_node(
-      "right", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                   const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> { return input; });
+      "right",
+      [](const wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+        return input;
+      });
   right.mutable_options().output_key = "shared";
 
   REQUIRE(graph.add_lambda(std::move(left)).has_value());
@@ -269,26 +258,25 @@ TEST_CASE("compose graph rejects duplicate output keys during compile",
 TEST_CASE("compose graph rejects invalid noControl and noData combination",
           "[core][compose][graph][branch]") {
   wh::compose::graph graph{};
-  REQUIRE(graph.add_lambda("a", [](const wh::compose::graph_value &input,
-                                   wh::core::run_context &,
-                                   const wh::compose::graph_call_scope &)
-                               -> wh::core::result<wh::compose::graph_value> {
-            return input;
-          }).has_value());
-  REQUIRE(graph.add_lambda("b", [](const wh::compose::graph_value &input,
-                                   wh::core::run_context &,
-                                   const wh::compose::graph_call_scope &)
-                               -> wh::core::result<wh::compose::graph_value> {
-            return input;
-          }).has_value());
+  REQUIRE(graph
+              .add_lambda("a",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> { return input; })
+              .has_value());
+  REQUIRE(graph
+              .add_lambda("b",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> { return input; })
+              .has_value());
   REQUIRE(graph.add_entry_edge("a").has_value());
 
-  auto invalid = graph.add_edge(
-      "a", "b",
-      wh::compose::edge_options{
-          .no_control = true,
-          .no_data = true,
-      });
+  auto invalid = graph.add_edge("a", "b",
+                                wh::compose::edge_options{
+                                    .no_control = true,
+                                    .no_data = true,
+                                });
   REQUIRE(invalid.has_error());
   REQUIRE(invalid.error() == wh::core::errc::invalid_argument);
 }
@@ -331,10 +319,8 @@ TEST_CASE("compose graph compile surfaces authored subgraph compile failures",
   REQUIRE(child.add_exit_edge("worker").has_value());
 
   wh::compose::graph parent{};
-  REQUIRE(parent
-              .add_subgraph(
-                  wh::compose::make_subgraph_node("child", std::move(child)))
-              .has_value());
+  REQUIRE(
+      parent.add_subgraph(wh::compose::make_subgraph_node("child", std::move(child))).has_value());
   REQUIRE(parent.add_entry_edge("child").has_value());
   REQUIRE(parent.add_exit_edge("child").has_value());
 
@@ -349,26 +335,20 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
           "[core][compose][graph][boundary]") {
   SECTION("passthrough propagation keeps upstream exact value type") {
     wh::compose::graph graph{};
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, int, int>(
-                     "producer", int_component{}))
-            .has_value());
     REQUIRE(graph
-                .add_passthrough(
-                    wh::compose::make_passthrough_node("relay"))
+                .add_component(
+                    wh::compose::make_component_node<wh::core::component_kind::custom,
+                                                     wh::compose::node_contract::value,
+                                                     wh::compose::node_contract::value, int, int>(
+                        "producer", int_component{}))
                 .has_value());
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, std::string, int>(
-                     "consumer", string_component{}))
-            .has_value());
+    REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("relay")).has_value());
+    REQUIRE(graph
+                .add_component(wh::compose::make_component_node<
+                               wh::core::component_kind::custom, wh::compose::node_contract::value,
+                               wh::compose::node_contract::value, std::string, int>(
+                    "consumer", string_component{}))
+                .has_value());
     REQUIRE(graph.add_entry_edge("producer").has_value());
     REQUIRE(graph.add_edge("producer", "relay").has_value());
     REQUIRE(graph.add_edge("relay", "consumer").has_value());
@@ -377,24 +357,20 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     auto compiled = graph.compile();
     REQUIRE(compiled.has_error());
     REQUIRE(compiled.error() == wh::core::errc::contract_violation);
-    REQUIRE(graph.diagnostics().back().message.find("relay -> consumer") !=
-            std::string::npos);
+    REQUIRE(graph.diagnostics().back().message.find("relay -> consumer") != std::string::npos);
   }
 
   SECTION("tools exact value output rejects mismatched typed consumer") {
     wh::compose::graph graph{};
-    REQUIRE(graph
-                .add_tools(wh::compose::make_tools_node(
-                    "tools", wh::compose::tool_registry{}))
+    REQUIRE(graph.add_tools(wh::compose::make_tools_node("tools", wh::compose::tool_registry{}))
                 .has_value());
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, int, int>(
-                     "consumer", int_component{}))
-            .has_value());
+    REQUIRE(graph
+                .add_component(
+                    wh::compose::make_component_node<wh::core::component_kind::custom,
+                                                     wh::compose::node_contract::value,
+                                                     wh::compose::node_contract::value, int, int>(
+                        "consumer", int_component{}))
+                .has_value());
     REQUIRE(graph.add_entry_edge("tools").has_value());
     REQUIRE(graph.add_edge("tools", "consumer").has_value());
     REQUIRE(graph.add_exit_edge("consumer").has_value());
@@ -402,24 +378,20 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     auto compiled = graph.compile();
     REQUIRE(compiled.has_error());
     REQUIRE(compiled.error() == wh::core::errc::contract_violation);
-    REQUIRE(graph.diagnostics().back().message.find("tools -> consumer") !=
-            std::string::npos);
+    REQUIRE(graph.diagnostics().back().message.find("tools -> consumer") != std::string::npos);
   }
 
   SECTION("tools exact value output accepts matching typed consumer") {
     wh::compose::graph graph{};
-    REQUIRE(graph
-                .add_tools(wh::compose::make_tools_node(
-                    "tools", wh::compose::tool_registry{}))
+    REQUIRE(graph.add_tools(wh::compose::make_tools_node("tools", wh::compose::tool_registry{}))
                 .has_value());
     REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value,
-                     std::vector<wh::compose::tool_result>, int>(
-                     "consumer", tool_result_consumer{}))
+        graph
+            .add_component(
+                wh::compose::make_component_node<
+                    wh::core::component_kind::custom, wh::compose::node_contract::value,
+                    wh::compose::node_contract::value, std::vector<wh::compose::tool_result>, int>(
+                    "consumer", tool_result_consumer{}))
             .has_value());
     REQUIRE(graph.add_entry_edge("tools").has_value());
     REQUIRE(graph.add_edge("tools", "consumer").has_value());
@@ -429,23 +401,19 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
 
   SECTION("map lambda exact input rejects scalar upstream value") {
     wh::compose::graph graph{};
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, int, int>(
-                     "producer", int_component{}))
-            .has_value());
+    REQUIRE(graph
+                .add_component(
+                    wh::compose::make_component_node<wh::core::component_kind::custom,
+                                                     wh::compose::node_contract::value,
+                                                     wh::compose::node_contract::value, int, int>(
+                        "producer", int_component{}))
+                .has_value());
     REQUIRE(graph
                 .add_lambda(wh::compose::make_lambda_node(
                     "transform",
-                    [](wh::compose::graph_value_map &input,
-                       wh::core::run_context &,
+                    [](wh::compose::graph_value_map &input, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
-                        -> wh::core::result<wh::compose::graph_value_map> {
-                      return input;
-                    }))
+                        -> wh::core::result<wh::compose::graph_value_map> { return input; }))
                 .has_value());
     REQUIRE(graph.add_entry_edge("producer").has_value());
     REQUIRE(graph.add_edge("producer", "transform").has_value());
@@ -454,33 +422,27 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     auto compiled = graph.compile();
     REQUIRE(compiled.has_error());
     REQUIRE(compiled.error() == wh::core::errc::contract_violation);
-    REQUIRE(graph.diagnostics().back().message.find("producer -> transform") !=
-            std::string::npos);
+    REQUIRE(graph.diagnostics().back().message.find("producer -> transform") != std::string::npos);
   }
 
   SECTION("value_to_stream edge lowers automatically from node contracts") {
     wh::compose::graph graph{};
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, int, int>(
-                     "producer", int_component{}))
-            .has_value());
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::stream,
-                            wh::compose::node_contract::value>(
+                .add_component(
+                    wh::compose::make_component_node<wh::core::component_kind::custom,
+                                                     wh::compose::node_contract::value,
+                                                     wh::compose::node_contract::value, int, int>(
+                        "producer", int_component{}))
+                .has_value());
+    REQUIRE(graph
+                .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                     "consumer",
-                    [](wh::compose::graph_stream_reader input,
-                       wh::core::run_context &,
+                    [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_value> {
-                      auto chunks =
-                          wh::compose::collect_graph_stream_reader(std::move(input));
+                      auto chunks = wh::compose::collect_graph_stream_reader(std::move(input));
                       if (chunks.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            chunks.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(chunks.error());
                       }
                       return wh::core::any(static_cast<int>(chunks.value().size()));
                     })
@@ -494,24 +456,21 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
   SECTION("stream_to_value edge lowers automatically from node contracts") {
     wh::compose::graph graph{};
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream>(
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                     "source",
                     [](wh::compose::graph_value &, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_stream_reader> {
-                      return wh::compose::make_single_value_stream_reader(
-                          wh::core::any(1));
+                      return wh::compose::make_single_value_stream_reader(wh::core::any(1));
                     })
                 .has_value());
     REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value,
-                     std::vector<wh::compose::graph_value>, int>(
-                     "consumer", collected_stream_consumer{}))
+        graph
+            .add_component(
+                wh::compose::make_component_node<
+                    wh::core::component_kind::custom, wh::compose::node_contract::value,
+                    wh::compose::node_contract::value, std::vector<wh::compose::graph_value>, int>(
+                    "consumer", collected_stream_consumer{}))
             .has_value());
     REQUIRE(graph.add_entry_edge("source").has_value());
     REQUIRE(graph.add_edge("source", "consumer").has_value());
@@ -522,24 +481,21 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
   SECTION("default stream_to_value lowering exposes collected vector type") {
     wh::compose::graph graph{};
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream>(
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                     "source",
                     [](wh::compose::graph_value &, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_stream_reader> {
-                      return wh::compose::make_single_value_stream_reader(
-                          wh::core::any(1));
+                      return wh::compose::make_single_value_stream_reader(wh::core::any(1));
                     })
                 .has_value());
     REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value,
-                     std::vector<wh::compose::graph_value>, int>(
-                     "consumer", collected_stream_consumer{}))
+        graph
+            .add_component(
+                wh::compose::make_component_node<
+                    wh::core::component_kind::custom, wh::compose::node_contract::value,
+                    wh::compose::node_contract::value, std::vector<wh::compose::graph_value>, int>(
+                    "consumer", collected_stream_consumer{}))
             .has_value());
     REQUIRE(graph.add_entry_edge("source").has_value());
     REQUIRE(graph.add_edge("source", "consumer").has_value());
@@ -550,24 +506,21 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
   SECTION("default stream_to_value lowering rejects impossible typed consumer") {
     wh::compose::graph graph{};
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream>(
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                     "source",
                     [](wh::compose::graph_value &, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_stream_reader> {
-                      return wh::compose::make_single_value_stream_reader(
-                          wh::core::any(1));
+                      return wh::compose::make_single_value_stream_reader(wh::core::any(1));
                     })
                 .has_value());
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, int, int>(
-                     "consumer", int_component{}))
-            .has_value());
+    REQUIRE(graph
+                .add_component(
+                    wh::compose::make_component_node<wh::core::component_kind::custom,
+                                                     wh::compose::node_contract::value,
+                                                     wh::compose::node_contract::value, int, int>(
+                        "consumer", int_component{}))
+                .has_value());
     REQUIRE(graph.add_entry_edge("source").has_value());
     REQUIRE(graph.add_edge("source", "consumer").has_value());
     REQUIRE(graph.add_exit_edge("consumer").has_value());
@@ -575,49 +528,40 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     auto compiled = graph.compile();
     REQUIRE(compiled.has_error());
     REQUIRE(compiled.error() == wh::core::errc::contract_violation);
-    REQUIRE(graph.diagnostics().back().message.find("source -> consumer") !=
-            std::string::npos);
+    REQUIRE(graph.diagnostics().back().message.find("source -> consumer") != std::string::npos);
   }
 
   SECTION("tools stream output default stream_to_value lowering exposes collected vector type") {
     wh::compose::tool_registry tools{};
     tools.insert_or_assign(
-        "echo", wh::compose::tool_entry{
-                    .stream =
-                        [](const wh::compose::tool_call &call, wh::tool::call_scope)
-                            -> wh::core::result<wh::compose::graph_stream_reader> {
-                      auto [writer, reader] = wh::compose::make_graph_stream();
-                      auto wrote =
-                          writer.try_write(wh::core::any(call.arguments));
-                      if (wrote.has_error()) {
-                        return wh::core::result<
-                            wh::compose::graph_stream_reader>::failure(
-                            wrote.error());
-                      }
-                      auto closed = writer.close();
-                      if (closed.has_error()) {
-                        return wh::core::result<
-                            wh::compose::graph_stream_reader>::failure(
-                            closed.error());
-                      }
-                      return std::move(reader);
-                    }});
+        "echo", wh::compose::tool_entry{.stream = [](const wh::compose::tool_call &call,
+                                                     wh::tool::call_scope)
+                                            -> wh::core::result<wh::compose::graph_stream_reader> {
+          auto [writer, reader] = wh::compose::make_graph_stream();
+          auto wrote = writer.try_write(wh::core::any(call.arguments));
+          if (wrote.has_error()) {
+            return wh::core::result<wh::compose::graph_stream_reader>::failure(wrote.error());
+          }
+          auto closed = writer.close();
+          if (closed.has_error()) {
+            return wh::core::result<wh::compose::graph_stream_reader>::failure(closed.error());
+          }
+          return std::move(reader);
+        }});
 
     wh::compose::graph graph{};
     REQUIRE(graph
-                .add_tools(wh::compose::make_tools_node<
-                           wh::compose::node_contract::value,
-                           wh::compose::node_contract::stream>(
+                .add_tools(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                        wh::compose::node_contract::stream>(
                     "tools", std::move(tools)))
                 .has_value());
     REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value,
-                     std::vector<wh::compose::graph_value>, int>(
-                     "consumer", collected_stream_consumer{}))
+        graph
+            .add_component(
+                wh::compose::make_component_node<
+                    wh::core::component_kind::custom, wh::compose::node_contract::value,
+                    wh::compose::node_contract::value, std::vector<wh::compose::graph_value>, int>(
+                    "consumer", collected_stream_consumer{}))
             .has_value());
     REQUIRE(graph.add_entry_edge("tools").has_value());
     REQUIRE(graph.add_edge("tools", "consumer").has_value());
@@ -625,45 +569,38 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     REQUIRE(graph.compile().has_value());
   }
 
-  SECTION("tools stream output default stream_to_value lowering rejects impossible typed consumer") {
+  SECTION(
+      "tools stream output default stream_to_value lowering rejects impossible typed consumer") {
     wh::compose::tool_registry tools{};
     tools.insert_or_assign(
-        "echo", wh::compose::tool_entry{
-                    .stream =
-                        [](const wh::compose::tool_call &call, wh::tool::call_scope)
-                            -> wh::core::result<wh::compose::graph_stream_reader> {
-                      auto [writer, reader] = wh::compose::make_graph_stream();
-                      auto wrote =
-                          writer.try_write(wh::core::any(call.arguments));
-                      if (wrote.has_error()) {
-                        return wh::core::result<
-                            wh::compose::graph_stream_reader>::failure(
-                            wrote.error());
-                      }
-                      auto closed = writer.close();
-                      if (closed.has_error()) {
-                        return wh::core::result<
-                            wh::compose::graph_stream_reader>::failure(
-                            closed.error());
-                      }
-                      return std::move(reader);
-                    }});
+        "echo", wh::compose::tool_entry{.stream = [](const wh::compose::tool_call &call,
+                                                     wh::tool::call_scope)
+                                            -> wh::core::result<wh::compose::graph_stream_reader> {
+          auto [writer, reader] = wh::compose::make_graph_stream();
+          auto wrote = writer.try_write(wh::core::any(call.arguments));
+          if (wrote.has_error()) {
+            return wh::core::result<wh::compose::graph_stream_reader>::failure(wrote.error());
+          }
+          auto closed = writer.close();
+          if (closed.has_error()) {
+            return wh::core::result<wh::compose::graph_stream_reader>::failure(closed.error());
+          }
+          return std::move(reader);
+        }});
 
     wh::compose::graph graph{};
     REQUIRE(graph
-                .add_tools(wh::compose::make_tools_node<
-                           wh::compose::node_contract::value,
-                           wh::compose::node_contract::stream>(
+                .add_tools(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                        wh::compose::node_contract::stream>(
                     "tools", std::move(tools)))
                 .has_value());
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, int, int>(
-                     "consumer", int_component{}))
-            .has_value());
+    REQUIRE(graph
+                .add_component(
+                    wh::compose::make_component_node<wh::core::component_kind::custom,
+                                                     wh::compose::node_contract::value,
+                                                     wh::compose::node_contract::value, int, int>(
+                        "consumer", int_component{}))
+                .has_value());
     REQUIRE(graph.add_entry_edge("tools").has_value());
     REQUIRE(graph.add_edge("tools", "consumer").has_value());
     REQUIRE(graph.add_exit_edge("consumer").has_value());
@@ -671,24 +608,20 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     auto compiled = graph.compile();
     REQUIRE(compiled.has_error());
     REQUIRE(compiled.error() == wh::core::errc::contract_violation);
-    REQUIRE(graph.diagnostics().back().message.find("tools -> consumer") !=
-            std::string::npos);
+    REQUIRE(graph.diagnostics().back().message.find("tools -> consumer") != std::string::npos);
   }
 
   SECTION("subgraph stream output default stream_to_value lowering exposes collected vector type") {
-    wh::compose::graph child{
-        wh::compose::graph_boundary{
-            .output = wh::compose::node_contract::stream,
-        }};
+    wh::compose::graph child{wh::compose::graph_boundary{
+        .output = wh::compose::node_contract::stream,
+    }};
     REQUIRE(child
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream>(
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                     "leaf",
                     [](const wh::compose::graph_value &, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_stream_reader> {
-                      return wh::compose::make_single_value_stream_reader(
-                          wh::core::any(1));
+                      return wh::compose::make_single_value_stream_reader(wh::core::any(1));
                     })
                 .has_value());
     REQUIRE(child.add_entry_edge("leaf").has_value());
@@ -696,18 +629,15 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     REQUIRE(child.compile().has_value());
 
     wh::compose::graph graph{};
-    REQUIRE(graph
-                .add_subgraph(
-                    wh::compose::make_subgraph_node("source", std::move(child)))
+    REQUIRE(graph.add_subgraph(wh::compose::make_subgraph_node("source", std::move(child)))
                 .has_value());
     REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value,
-                     std::vector<wh::compose::graph_value>, int>(
-                     "consumer", collected_stream_consumer{}))
+        graph
+            .add_component(
+                wh::compose::make_component_node<
+                    wh::core::component_kind::custom, wh::compose::node_contract::value,
+                    wh::compose::node_contract::value, std::vector<wh::compose::graph_value>, int>(
+                    "consumer", collected_stream_consumer{}))
             .has_value());
     REQUIRE(graph.add_entry_edge("source").has_value());
     REQUIRE(graph.add_edge("source", "consumer").has_value());
@@ -715,20 +645,18 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     REQUIRE(graph.compile().has_value());
   }
 
-  SECTION("subgraph stream output default stream_to_value lowering rejects impossible typed consumer") {
-    wh::compose::graph child{
-        wh::compose::graph_boundary{
-            .output = wh::compose::node_contract::stream,
-        }};
+  SECTION(
+      "subgraph stream output default stream_to_value lowering rejects impossible typed consumer") {
+    wh::compose::graph child{wh::compose::graph_boundary{
+        .output = wh::compose::node_contract::stream,
+    }};
     REQUIRE(child
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream>(
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                     "leaf",
                     [](const wh::compose::graph_value &, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_stream_reader> {
-                      return wh::compose::make_single_value_stream_reader(
-                          wh::core::any(1));
+                      return wh::compose::make_single_value_stream_reader(wh::core::any(1));
                     })
                 .has_value());
     REQUIRE(child.add_entry_edge("leaf").has_value());
@@ -736,18 +664,15 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     REQUIRE(child.compile().has_value());
 
     wh::compose::graph graph{};
-    REQUIRE(graph
-                .add_subgraph(
-                    wh::compose::make_subgraph_node("source", std::move(child)))
+    REQUIRE(graph.add_subgraph(wh::compose::make_subgraph_node("source", std::move(child)))
                 .has_value());
-    REQUIRE(
-        graph.add_component(
-                 wh::compose::make_component_node<
-                     wh::core::component_kind::custom,
-                     wh::compose::node_contract::value,
-                     wh::compose::node_contract::value, int, int>(
-                     "consumer", int_component{}))
-            .has_value());
+    REQUIRE(graph
+                .add_component(
+                    wh::compose::make_component_node<wh::core::component_kind::custom,
+                                                     wh::compose::node_contract::value,
+                                                     wh::compose::node_contract::value, int, int>(
+                        "consumer", int_component{}))
+                .has_value());
     REQUIRE(graph.add_entry_edge("source").has_value());
     REQUIRE(graph.add_edge("source", "consumer").has_value());
     REQUIRE(graph.add_exit_edge("consumer").has_value());
@@ -755,8 +680,7 @@ TEST_CASE("compose graph compile rejects impossible typed edges",
     auto compiled = graph.compile();
     REQUIRE(compiled.has_error());
     REQUIRE(compiled.error() == wh::core::errc::contract_violation);
-    REQUIRE(graph.diagnostics().back().message.find("source -> consumer") !=
-            std::string::npos);
+    REQUIRE(graph.diagnostics().back().message.find("source -> consumer") != std::string::npos);
   }
 }
 
@@ -765,13 +689,10 @@ TEST_CASE("compose graph compile-options snapshot preserves runtime fields",
   wh::compose::graph_compile_options compile_options{};
   compile_options.name = "task11";
   compile_options.max_steps = 77U;
-  compile_options.dispatch_policy =
-      wh::compose::graph_dispatch_policy::next_wave;
+  compile_options.dispatch_policy = wh::compose::graph_dispatch_policy::next_wave;
   compile_options.retain_cold_data = false;
-  compile_options.trigger_mode =
-      wh::compose::graph_trigger_mode::all_predecessors;
-  compile_options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  compile_options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
+  compile_options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   compile_options.retry_budget = 3U;
   compile_options.node_timeout = std::chrono::milliseconds{42};
   compile_options.max_parallel_nodes = 9U;
@@ -782,13 +703,10 @@ TEST_CASE("compose graph compile-options snapshot preserves runtime fields",
   REQUIRE(snapshot.name == "task11");
   REQUIRE(snapshot.mode == wh::compose::graph_runtime_mode::pregel);
   REQUIRE(snapshot.max_steps == 77U);
-  REQUIRE(snapshot.dispatch_policy ==
-          wh::compose::graph_dispatch_policy::next_wave);
+  REQUIRE(snapshot.dispatch_policy == wh::compose::graph_dispatch_policy::next_wave);
   REQUIRE(!snapshot.retain_cold_data);
-  REQUIRE(snapshot.trigger_mode ==
-          wh::compose::graph_trigger_mode::all_predecessors);
-  REQUIRE(snapshot.fan_in_policy ==
-          wh::compose::graph_fan_in_policy::require_all_sources);
+  REQUIRE(snapshot.trigger_mode == wh::compose::graph_trigger_mode::all_predecessors);
+  REQUIRE(snapshot.fan_in_policy == wh::compose::graph_fan_in_policy::require_all_sources);
   REQUIRE(snapshot.retry_budget == 3U);
   REQUIRE(snapshot.node_timeout.has_value());
   REQUIRE(snapshot.node_timeout.value() == std::chrono::milliseconds{42});
@@ -799,8 +717,7 @@ TEST_CASE("compose graph compile-options snapshot preserves runtime fields",
 TEST_CASE("compose graph exact scalar value fan-in fails at graph compile",
           "[core][compose][graph][branch]") {
   struct join_component {
-    auto invoke(int value, wh::core::run_context &) const
-        -> wh::core::result<int> {
+    auto invoke(int value, wh::core::run_context &) const -> wh::core::result<int> {
       return value + 1;
     }
   };
@@ -813,14 +730,11 @@ TEST_CASE("compose graph exact scalar value fan-in fails at graph compile",
 
   REQUIRE(graph.add_lambda(make_int_add_node("a", 10)).has_value());
   REQUIRE(graph.add_lambda(make_int_add_node("b", 20)).has_value());
-  REQUIRE(
-      graph.add_component(
-               wh::compose::make_component_node<
-                   wh::core::component_kind::custom,
-                   wh::compose::node_contract::value,
-                   wh::compose::node_contract::value, int, int>(
-                   "join", join_component{}))
-          .has_value());
+  REQUIRE(graph
+              .add_component(wh::compose::make_component_node<
+                             wh::core::component_kind::custom, wh::compose::node_contract::value,
+                             wh::compose::node_contract::value, int, int>("join", join_component{}))
+              .has_value());
   REQUIRE(graph.add_entry_edge("a").has_value());
   REQUIRE(graph.add_entry_edge("b").has_value());
   REQUIRE(graph.add_edge("a", "join").has_value());
@@ -830,8 +744,7 @@ TEST_CASE("compose graph exact scalar value fan-in fails at graph compile",
   auto compiled = graph.compile();
   REQUIRE(compiled.has_error());
   REQUIRE(compiled.error() == wh::core::errc::contract_violation);
-  REQUIRE(graph.diagnostics().back().message.find("node=join") !=
-          std::string::npos);
+  REQUIRE(graph.diagnostics().back().message.find("node=join") != std::string::npos);
 }
 
 TEST_CASE("compose graph compiles validates edges and executes invoke path",
@@ -845,11 +758,10 @@ TEST_CASE("compose graph compiles validates edges and executes invoke path",
 
   REQUIRE(graph.compile().has_value());
   const auto diagnostics = graph.diagnostics();
-  const auto compile_diag =
-      std::find_if(diagnostics.begin(), diagnostics.end(),
-                   [](const wh::compose::graph_diagnostic &diagnostic) {
-                     return diagnostic.message.find("compile_options:") == 0U;
-                   });
+  const auto compile_diag = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                         [](const wh::compose::graph_diagnostic &diagnostic) {
+                                           return diagnostic.message.find("compile_options:") == 0U;
+                                         });
   REQUIRE(compile_diag != diagnostics.end());
 
   wh::core::run_context context{};
@@ -870,11 +782,9 @@ TEST_CASE("compose graph allow-no-control node forms one explicit root path",
   node_options.allow_no_control = true;
   node_options.allow_no_data = true;
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                   "sink",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     if (!input.is_source_closed()) {
@@ -883,8 +793,7 @@ TEST_CASE("compose graph allow-no-control node forms one explicit root path",
                     }
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          values.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(values.error());
                     }
                     return wh::core::any(static_cast<int>(values.value().size()));
                   },

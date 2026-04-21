@@ -3,7 +3,8 @@
 #include "wh/compose/graph/detail/runtime/process.hpp"
 
 TEST_CASE("process runtime acquires binds and releases node local process state slots safely",
-          "[UT][wh/compose/graph/detail/runtime/process.hpp][acquire_node_local_process_state][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "process.hpp][acquire_node_local_process_state][condition][branch][boundary]") {
   using namespace wh::compose::detail::process_runtime;
 
   node_local_process_state_slots slots(2U);
@@ -39,7 +40,8 @@ TEST_CASE("process runtime acquires binds and releases node local process state 
 }
 
 TEST_CASE("process runtime distinguishes an empty slot from an invalid scoped token",
-          "[UT][wh/compose/graph/detail/runtime/process.hpp][scoped_node_local_process_state::get][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "process.hpp][scoped_node_local_process_state::get][condition][branch][boundary]") {
   using namespace wh::compose::detail::process_runtime;
 
   node_local_process_state_slots slots(1U);

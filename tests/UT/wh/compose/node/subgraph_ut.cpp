@@ -1,12 +1,11 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/graph.hpp"
-#include "wh/compose/node/subgraph.hpp"
 #include "wh/compose/node/passthrough.hpp"
+#include "wh/compose/node/subgraph.hpp"
 
 namespace {
 
@@ -43,8 +42,7 @@ TEST_CASE("subgraph nodes execute nested graphs and preserve compiled child snap
   REQUIRE(child.compile().has_value());
 
   wh::compose::graph parent{};
-  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("child", child))
-              .has_value());
+  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("child", child)).has_value());
   REQUIRE(parent.add_entry_edge("child").has_value());
   REQUIRE(parent.add_exit_edge("child").has_value());
   REQUIRE(parent.compile().has_value());
@@ -53,20 +51,17 @@ TEST_CASE("subgraph nodes execute nested graphs and preserve compiled child snap
   REQUIRE(compiled.has_value());
   REQUIRE(compiled.value().get().meta.subgraph_snapshot.has_value());
   REQUIRE(compiled.value().get().meta.subgraph_restore_shape.has_value());
-  REQUIRE(compiled.value().get().meta.compiled_input_gate ==
-          child.boundary_input_gate());
-  REQUIRE(compiled.value().get().meta.compiled_output_gate ==
-          child.boundary_output_gate());
+  REQUIRE(compiled.value().get().meta.compiled_input_gate == child.boundary_input_gate());
+  REQUIRE(compiled.value().get().meta.compiled_output_gate == child.boundary_output_gate());
 
   wh::compose::graph_invoke_request request{};
-  request.input = wh::compose::graph_value{23};
+  request.input = wh::compose::graph_input::value(23);
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(parent.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
   REQUIRE(std::get<0>(*awaited).value().output_status.has_value());
-  REQUIRE(*wh::core::any_cast<int>(
-              &std::get<0>(*awaited).value().output_status.value()) == 23);
+  REQUIRE(*wh::core::any_cast<int>(&std::get<0>(*awaited).value().output_status.value()) == 23);
 }
 
 TEST_CASE("subgraph nodes also auto-compile owned child graphs during parent compile",
@@ -74,8 +69,8 @@ TEST_CASE("subgraph nodes also auto-compile owned child graphs during parent com
   auto child = make_child_graph();
 
   wh::compose::graph parent{};
-  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("child", std::move(child)))
-              .has_value());
+  REQUIRE(
+      parent.add_subgraph(wh::compose::make_subgraph_node("child", std::move(child))).has_value());
   REQUIRE(parent.add_entry_edge("child").has_value());
   REQUIRE(parent.add_exit_edge("child").has_value());
   REQUIRE(parent.compile().has_value());

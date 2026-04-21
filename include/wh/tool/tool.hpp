@@ -1,8 +1,10 @@
 // Defines the executable tool component and its execution contracts.
 #pragma once
 
+#include <atomic>
 #include <concepts>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -10,7 +12,9 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
+#include <exec/trampoline_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/callbacks/callbacks.hpp"
@@ -21,12 +25,8 @@
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/stdexec.hpp"
-#include "wh/core/stdexec/detail/callback_guard.hpp"
-#include "wh/core/stdexec/detail/receiver_completion.hpp"
-#include "wh/core/stdexec/detail/scheduled_drive_loop.hpp"
-#include "wh/core/stdexec/detail/shared_operation_state.hpp"
-#include "wh/core/stdexec/detail/single_completion_slot.hpp"
-#include "wh/core/stdexec/manual_lifetime_box.hpp"
+#include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 #include "wh/schema/stream.hpp"
 #include "wh/schema/tool.hpp"
 #include "wh/tool/callback_event.hpp"
@@ -538,19 +538,26 @@ template <typename result_t, typename run_attempt_t>
 
 template <typename result_t, typename state_t, typename make_attempt_t>
 class tool_attempt_loop_sender {
-  template <typename receiver_t>
-  class operation
-      : public std::enable_shared_from_this<operation<receiver_t>>,
-        private wh::core::detail::scheduled_drive_loop<operation<receiver_t>,
-                                                       wh::core::detail::any_resume_scheduler_t> {
-    using drive_loop_t =
-        wh::core::detail::scheduled_drive_loop<operation<receiver_t>,
-                                               wh::core::detail::any_resume_scheduler_t>;
-    friend drive_loop_t;
-    friend class wh::core::detail::callback_guard<operation>;
+  template <typename receiver_t> class operation {
+    friend class wh::core::detail::scheduled_resume_turn<operation, exec::trampoline_scheduler>;
 
     using receiver_env_t = decltype(stdexec::get_env(std::declval<const receiver_t &>()));
-    using final_completion_t = wh::core::detail::receiver_completion<receiver_t, result_t>;
+    using outer_stop_token_t = stdexec::stop_token_of_t<receiver_env_t>;
+    using stop_token_env_t =
+        decltype(stdexec::prop{stdexec::get_stop_token, stdexec::inplace_stop_token{}});
+
+    enum class control_state : std::uint8_t {
+      started,
+      stopped,
+    };
+
+    struct stopped_tag {};
+
+    struct stop_callback {
+      operation *op{nullptr};
+
+      auto operator()() const noexcept -> void { op->request_stop(); }
+    };
 
     struct child_receiver {
       using receiver_concept = stdexec::receiver_t;
@@ -559,175 +566,265 @@ class tool_attempt_loop_sender {
       receiver_env_t env_{};
 
       auto set_value(result_t status) && noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
-        op->finish_child(std::move(status));
+        op->publish_child_completion(std::move(status));
       }
 
       template <typename error_t> auto set_error(error_t &&) && noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
-        op->finish_child(result_t::failure(wh::core::errc::internal_error));
+        op->publish_child_completion(result_t::failure(wh::core::errc::internal_error));
       }
 
-      auto set_stopped() && noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
-        op->finish_child(result_t::failure(wh::core::errc::canceled));
-      }
+      auto set_stopped() && noexcept -> void { op->publish_child_completion(stopped_tag{}); }
 
       [[nodiscard]] auto get_env() const noexcept { return env_; }
     };
 
     using child_sender_t = std::remove_cvref_t<std::invoke_result_t<make_attempt_t &, state_t &>>;
-    using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
+    using adapted_child_sender_t = decltype(stdexec::write_env(std::declval<child_sender_t>(),
+                                                               std::declval<stop_token_env_t>()));
+    using child_op_t = stdexec::connect_result_t<adapted_child_sender_t, child_receiver>;
+    using child_completion_t = std::variant<result_t, stopped_tag>;
+    using stop_callback_t = stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
 
   public:
     template <typename stored_state_t, typename stored_make_attempt_t>
       requires std::constructible_from<wh::core::result<state_t>, stored_state_t &&> &&
                    std::constructible_from<make_attempt_t, stored_make_attempt_t &&>
-    explicit operation(stored_state_t &&state,
-                       const wh::core::detail::any_resume_scheduler_t &drive_scheduler,
-                       stored_make_attempt_t &&make_attempt, receiver_t receiver)
-        : drive_loop_t(drive_scheduler), receiver_(std::move(receiver)),
-          state_(std::forward<stored_state_t>(state)),
+    explicit operation(stored_state_t &&state, stored_make_attempt_t &&make_attempt,
+                       receiver_t receiver)
+        : receiver_(std::move(receiver)), receiver_env_(stdexec::get_env(receiver_)),
+          run_state_(std::forward<stored_state_t>(state)),
           make_attempt_(std::forward<stored_make_attempt_t>(make_attempt)) {}
 
-    auto start() noexcept -> void { request_drive(); }
+    operation(const operation &) = delete;
+    auto operator=(const operation &) -> operation & = delete;
+    operation(operation &&) = delete;
+    auto operator=(operation &&) -> operation & = delete;
+
+    ~operation() {
+      on_stop_.reset();
+      resume_turn_.destroy();
+      cleanup_current_attempt();
+      child_completion_.reset();
+      child_completion_ready_.store(false, std::memory_order_release);
+    }
+
+    auto start() & noexcept -> void {
+      if (run_state_.has_error()) {
+        terminal_ready_.store(true, std::memory_order_release);
+        arrive();
+        return;
+      }
+
+      if constexpr (!stdexec::unstoppable_token<outer_stop_token_t>) {
+        auto stop_token = stdexec::get_stop_token(receiver_env_);
+        try {
+          on_stop_.emplace(stop_token, stop_callback{this});
+        } catch (...) {
+          auto &run_state = run_state_.value();
+          static_cast<void>(consume_tool_attempt_result(
+              run_state, result_t::failure(wh::core::errc::internal_error)));
+          terminal_ready_.store(true, std::memory_order_release);
+          arrive();
+          return;
+        }
+      }
+
+      if (state_.load(std::memory_order_acquire) == control_state::started) {
+        request_resume();
+      }
+      arrive();
+    }
 
   private:
-    [[nodiscard]] auto finished() const noexcept -> bool {
-      return delivered_.load(std::memory_order_acquire);
-    }
-
-    [[nodiscard]] auto completion_pending() const noexcept -> bool {
-      return pending_completion_.has_value();
-    }
-
-    [[nodiscard]] auto take_completion() noexcept -> std::optional<final_completion_t> {
-      if (!pending_completion_.has_value()) {
-        return std::nullopt;
-      }
-      auto completion = std::move(pending_completion_);
-      pending_completion_.reset();
-      return completion;
-    }
-
-    [[nodiscard]] auto acquire_owner_lifetime_guard() noexcept -> std::shared_ptr<operation> {
-      auto keepalive = this->weak_from_this().lock();
-      if (!keepalive) {
-        ::wh::core::contract_violation(::wh::core::contract_kind::invariant,
-                                       "tool attempt loop owner lifetime guard expired");
-      }
-      return keepalive;
-    }
-
-    auto on_callback_exit() noexcept -> void {
-      if (completion_.ready()) {
-        request_drive();
+    auto cleanup_current_attempt() noexcept -> void {
+      if (attempt_op_engaged_) {
+        attempt_op_.template destruct<child_op_t>();
+        attempt_op_engaged_ = false;
       }
     }
 
-    auto request_drive() noexcept -> void { drive_loop_t::request_drive(); }
+    auto mark_stopped() noexcept -> void {
+      auto expected = control_state::started;
+      if (state_.compare_exchange_strong(expected, control_state::stopped,
+                                         std::memory_order_acq_rel, std::memory_order_acquire)) {
+        stop_source_.request_stop();
+      }
+    }
 
-    auto drive() noexcept -> void {
-      while (!finished()) {
-        if (callbacks_.active()) {
-          return;
-        }
+    auto arrive() noexcept -> void {
+      if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U && should_complete()) {
+        complete();
+      }
+    }
 
-        if (auto current = completion_.take(); current.has_value()) {
-          if (!attempt_in_flight_) {
-            std::terminate();
+    auto request_stop() noexcept -> void {
+      count_.fetch_add(1U, std::memory_order_relaxed);
+      mark_stopped();
+      request_resume();
+      arrive();
+    }
+
+    auto request_resume() noexcept -> void { resume_turn_.request(this); }
+
+    [[nodiscard]] auto completed() const noexcept -> bool {
+      return completed_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] auto should_complete() const noexcept -> bool {
+      const auto state = state_.load(std::memory_order_acquire);
+      if (state == control_state::stopped) {
+        return !child_active_.load(std::memory_order_acquire) &&
+               !child_completion_ready_.load(std::memory_order_acquire) && !resume_turn_.running();
+      }
+      return terminal_ready_.load(std::memory_order_acquire) &&
+             !child_active_.load(std::memory_order_acquire) &&
+             !child_completion_ready_.load(std::memory_order_acquire) && !resume_turn_.running();
+    }
+
+    auto publish_child_completion(child_completion_t completion) noexcept -> void {
+      if (completed()) {
+        return;
+      }
+      wh_invariant(!child_completion_ready_.load(std::memory_order_acquire));
+      child_completion_.emplace(std::move(completion));
+      child_completion_ready_.store(true, std::memory_order_release);
+      request_resume();
+      arrive();
+    }
+
+    [[nodiscard]] auto resume_turn_completed() const noexcept -> bool { return completed(); }
+
+    auto resume_turn_arrive() noexcept -> void { arrive(); }
+
+    auto resume_turn_add_ref() noexcept -> void { count_.fetch_add(1U, std::memory_order_relaxed); }
+
+    auto resume_turn_schedule_error(const wh::core::error_code error) noexcept -> void {
+      if (run_state_.has_value()) {
+        terminal_ready_.store(
+            consume_tool_attempt_result(run_state_.value(), result_t::failure(error)),
+            std::memory_order_release);
+      } else {
+        run_state_ = wh::core::result<state_t>::failure(error);
+        terminal_ready_.store(true, std::memory_order_release);
+      }
+    }
+
+    auto resume_turn_run() noexcept -> void {
+      while (!completed()) {
+        if (child_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+          wh_invariant(child_completion_.has_value());
+          auto completion = std::move(*child_completion_);
+          child_completion_.reset();
+          cleanup_current_attempt();
+          child_active_.store(false, std::memory_order_release);
+
+          if (std::holds_alternative<stopped_tag>(completion)) {
+            mark_stopped();
+            continue;
           }
-          child_op_.reset();
-          attempt_in_flight_ = false;
-          terminal_ready_ = consume_tool_attempt_result(state_.value(), std::move(*current));
+
+          if (state_.load(std::memory_order_acquire) != control_state::started) {
+            continue;
+          }
+
+          const auto terminal = consume_tool_attempt_result(
+              run_state_.value(), std::move(std::get<result_t>(completion)));
+          terminal_ready_.store(terminal, std::memory_order_release);
           continue;
         }
 
-        if (state_.has_error()) {
-          finish(result_t::failure(state_.error()));
+        if (state_.load(std::memory_order_acquire) != control_state::started ||
+            terminal_ready_.load(std::memory_order_acquire) ||
+            child_active_.load(std::memory_order_acquire) || run_state_.has_error()) {
           return;
         }
 
-        if (terminal_ready_) {
-          finish(finish_tool_run(std::move(state_).value()));
+        auto &run_state = run_state_.value();
+        if (run_state.next_attempt >= run_state.max_attempts) {
+          terminal_ready_.store(true, std::memory_order_release);
           return;
         }
 
-        if (attempt_in_flight_) {
+        ++run_state.next_attempt;
+        try {
+          auto attempt_sender = std::invoke(make_attempt_, run_state);
+          [[maybe_unused]] auto &attempt_op =
+              attempt_op_.template construct_with<child_op_t>([&]() -> child_op_t {
+                return stdexec::connect(stdexec::write_env(std::move(attempt_sender),
+                                                           stdexec::prop{stdexec::get_stop_token,
+                                                                         stop_source_.get_token()}),
+                                        child_receiver{this, receiver_env_});
+              });
+          attempt_op_engaged_ = true;
+          count_.fetch_add(1U, std::memory_order_relaxed);
+          child_active_.store(true, std::memory_order_release);
+          stdexec::start(attempt_op_.template get<child_op_t>());
           return;
-        }
-
-        start_next_attempt();
-        if (completion_.ready() || terminal_ready_) {
+        } catch (...) {
+          cleanup_current_attempt();
+          child_active_.store(false, std::memory_order_release);
+          terminal_ready_.store(consume_tool_attempt_result(
+                                    run_state, result_t::failure(wh::core::errc::internal_error)),
+                                std::memory_order_release);
           continue;
         }
-        if (attempt_in_flight_) {
-          return;
-        }
       }
     }
 
-    auto drive_error(const wh::core::error_code error) noexcept -> void {
-      finish(result_t::failure(error));
+    auto resume_turn_idle() noexcept -> void { maybe_complete(); }
+
+    auto maybe_complete() noexcept -> void {
+      if (completed()) {
+        return;
+      }
+      if (count_.load(std::memory_order_acquire) != 0U || !should_complete()) {
+        return;
+      }
+      complete();
     }
 
-    auto start_next_attempt() noexcept -> void {
-      auto &run_state = state_.value();
-      if (run_state.next_attempt >= run_state.max_attempts) {
-        terminal_ready_ = true;
+    auto complete() noexcept -> void {
+      if (completed_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+      }
+      on_stop_.reset();
+
+      const auto state = state_.load(std::memory_order_acquire);
+      if (state == control_state::stopped) {
+        auto &run_state = run_state_.value();
+        run_state.last_error = wh::core::make_error(wh::core::errc::canceled);
+        mark_error(run_state.callback, run_state.last_error,
+                   resolve_options_view(run_state.resolved_options));
+        emit_callback(run_state.sink, wh::callbacks::stage::error, run_state.callback);
+        stdexec::set_value(std::move(receiver_), result_t::failure(wh::core::errc::canceled));
         return;
       }
 
-      ++run_state.next_attempt;
-      attempt_in_flight_ = true;
-
-      try {
-        child_op_.emplace_from(stdexec::connect, std::invoke(make_attempt_, run_state),
-                               child_receiver{this, stdexec::get_env(receiver_)});
-      } catch (...) {
-        child_op_.reset();
-        attempt_in_flight_ = false;
-        run_state.last_error = wh::core::make_error(wh::core::errc::internal_error);
-        terminal_ready_ = true;
+      if (run_state_.has_error()) {
+        stdexec::set_value(std::move(receiver_), result_t::failure(run_state_.error()));
         return;
       }
 
-      stdexec::start(child_op_.get());
-    }
-
-    auto finish_child(result_t status) noexcept -> void {
-      if (finished()) {
-        return;
-      }
-#ifndef NDEBUG
-      wh_invariant(completion_.publish(std::move(status)));
-#else
-      completion_.publish(std::move(status));
-#endif
-      request_drive();
-    }
-
-    auto finish(result_t status) noexcept -> void {
-      if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-        return;
-      }
-      child_op_.reset();
-      attempt_in_flight_ = false;
-      completion_.reset();
-      pending_completion_.emplace(
-          final_completion_t::set_value(std::move(receiver_), std::move(status)));
+      stdexec::set_value(std::move(receiver_), finish_tool_run(std::move(run_state_).value()));
     }
 
     receiver_t receiver_;
-    wh::core::result<state_t> state_;
+    receiver_env_t receiver_env_{};
+    wh::core::result<state_t> run_state_;
     make_attempt_t make_attempt_;
-    wh::core::detail::manual_lifetime_box<child_op_t> child_op_{};
-    wh::core::detail::single_completion_slot<result_t> completion_{};
-    wh::core::detail::callback_guard<operation> callbacks_{};
-    std::optional<final_completion_t> pending_completion_{};
-    std::atomic<bool> delivered_{false};
-    bool attempt_in_flight_{false};
-    bool terminal_ready_{false};
+    wh::core::detail::manual_storage<sizeof(child_op_t), alignof(child_op_t)> attempt_op_{};
+    std::optional<stop_callback_t> on_stop_{};
+    stdexec::inplace_stop_source stop_source_{};
+    std::optional<child_completion_t> child_completion_{};
+    bool attempt_op_engaged_{false};
+    std::atomic<std::size_t> count_{1U};
+    std::atomic<control_state> state_{control_state::started};
+    std::atomic<bool> child_active_{false};
+    std::atomic<bool> child_completion_ready_{false};
+    std::atomic<bool> completed_{false};
+    std::atomic<bool> terminal_ready_{false};
+    wh::core::detail::scheduled_resume_turn<operation, exec::trampoline_scheduler> resume_turn_{
+        exec::trampoline_scheduler{}};
   };
 
 public:
@@ -745,20 +842,9 @@ public:
              (!std::is_const_v<std::remove_reference_t<self_t>>)
   STDEXEC_EXPLICIT_THIS_BEGIN(auto connect)(this self_t &&self, receiver_t receiver) {
     using stored_receiver_t = std::remove_cvref_t<receiver_t>;
-    using env_t = std::remove_cvref_t<decltype(stdexec::get_env(receiver))>;
-    auto drive_scheduler = [&]() -> wh::core::detail::any_resume_scheduler_t {
-      if constexpr (wh::core::detail::env_with_resume_scheduler<stdexec::set_value_t, env_t>) {
-        return wh::core::detail::erase_resume_scheduler(
-            wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
-                stdexec::get_env(receiver)));
-      } else {
-        return wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{});
-      }
-    }();
     using operation_t = operation<stored_receiver_t>;
-    return wh::core::detail::shared_operation_state<operation_t>{std::make_shared<operation_t>(
-        std::forward<self_t>(self).state_, std::move(drive_scheduler),
-        std::forward<self_t>(self).make_attempt_, std::move(receiver))};
+    return operation_t{std::forward<self_t>(self).state_, std::forward<self_t>(self).make_attempt_,
+                       std::move(receiver)};
   }
   STDEXEC_EXPLICIT_THIS_END(connect)
 

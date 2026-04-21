@@ -11,8 +11,7 @@
 
 namespace wh::core::detail {
 
-template <typename value_t, typename allocator_t = std::allocator<value_t>>
-class ring_storage {
+template <typename value_t, typename allocator_t = std::allocator<value_t>> class ring_storage {
 public:
   using value_type = value_t;
   using allocator_type = allocator_t;
@@ -30,8 +29,8 @@ public:
   auto operator=(const ring_storage &) -> ring_storage & = delete;
 
   ring_storage(ring_storage &&other) noexcept
-      : allocator_(std::move(other.allocator_)), capacity_(other.capacity_),
-        size_(other.size_), head_(other.head_), storage_(other.storage_) {
+      : allocator_(std::move(other.allocator_)), capacity_(other.capacity_), size_(other.size_),
+        head_(other.head_), storage_(other.storage_) {
     other.capacity_ = 0U;
     other.size_ = 0U;
     other.head_ = 0U;
@@ -60,23 +59,16 @@ public:
   ~ring_storage() { destroy_all(); }
 
   [[nodiscard]] auto empty() const noexcept -> bool { return size_ == 0U; }
-  [[nodiscard]] auto full() const noexcept -> bool {
-    return size_ == capacity_;
-  }
-  [[nodiscard]] auto capacity() const noexcept -> std::size_t {
-    return capacity_;
-  }
+  [[nodiscard]] auto full() const noexcept -> bool { return size_ == capacity_; }
+  [[nodiscard]] auto capacity() const noexcept -> std::size_t { return capacity_; }
   [[nodiscard]] auto size() const noexcept -> std::size_t { return size_; }
-  [[nodiscard]] auto get_allocator() const noexcept -> allocator_type {
-    return allocator_;
-  }
+  [[nodiscard]] auto get_allocator() const noexcept -> allocator_type { return allocator_; }
 
   template <typename... args_t>
     requires std::constructible_from<value_t, args_t &&...>
   auto emplace_back(args_t &&...args) -> void {
     assert(!full());
-    allocator_traits::construct(allocator_, storage_ + tail_index(),
-                                std::forward<args_t>(args)...);
+    allocator_traits::construct(allocator_, storage_ + tail_index(), std::forward<args_t>(args)...);
     ++size_;
   }
 
@@ -123,8 +115,7 @@ private:
     return tail >= capacity_ ? (tail - capacity_) : tail;
   }
 
-  [[nodiscard]] auto advance_index(const std::size_t index) const noexcept
-      -> std::size_t {
+  [[nodiscard]] auto advance_index(const std::size_t index) const noexcept -> std::size_t {
     if (capacity_ == 0U) {
       return 0U;
     }

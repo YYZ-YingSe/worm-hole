@@ -59,14 +59,12 @@ public:
   }
 
   /// Returns the explicit host role.
-  [[nodiscard]] auto host_agent()
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto host_agent() -> wh::core::result<std::reference_wrapper<agent>> {
     return role_ref(host_);
   }
 
   /// Returns the explicit host role.
-  [[nodiscard]] auto host_agent() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto host_agent() const -> wh::core::result<std::reference_wrapper<const agent>> {
     return role_ref(host_);
   }
 
@@ -81,14 +79,10 @@ public:
   }
 
   /// Returns the peer roles used by this authored shell.
-  [[nodiscard]] auto peers() noexcept -> std::vector<agent> & {
-    return peers_;
-  }
+  [[nodiscard]] auto peers() noexcept -> std::vector<agent> & { return peers_; }
 
   /// Returns the peer roles used by this authored shell.
-  [[nodiscard]] auto peers() const noexcept -> const std::vector<agent> & {
-    return peers_;
-  }
+  [[nodiscard]] auto peers() const noexcept -> const std::vector<agent> & { return peers_; }
 
   /// Validates the authored shape once. Runtime topology wiring happens only
   /// when the shell is lowered into the executable agent surface.
@@ -100,25 +94,20 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     if (host_->name() != name_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     if (!host_->executable()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     for (const auto &peer : peers_) {
-      if (!peer.executable() || peer.name().empty() ||
-          peer.name() == host_->name()) {
-        return wh::core::result<void>::failure(
-            wh::core::errc::contract_violation);
+      if (!peer.executable() || peer.name().empty() || peer.name() == host_->name()) {
+        return wh::core::result<void>::failure(wh::core::errc::contract_violation);
       }
     }
     for (std::size_t index = 0U; index < peers_.size(); ++index) {
       for (std::size_t other = index + 1U; other < peers_.size(); ++other) {
         if (peers_[index].name() == peers_[other].name()) {
-          return wh::core::result<void>::failure(
-              wh::core::errc::already_exists);
+          return wh::core::result<void>::failure(wh::core::errc::already_exists);
         }
       }
     }
@@ -126,7 +115,7 @@ public:
     return {};
   }
 
-  /// Converts this authored shell into the common executable agent surface.
+  /// Converts this frozen authored shell into the common executable agent surface.
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:
@@ -142,16 +131,14 @@ private:
   [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
       -> wh::core::result<std::reference_wrapper<agent>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
 
   [[nodiscard]] auto ensure_mutable() const -> wh::core::result<void> {
     if (frozen_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     return {};
   }

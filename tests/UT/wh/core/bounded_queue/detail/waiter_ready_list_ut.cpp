@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/bounded_queue/detail/waiter_ready_list.hpp"
 
@@ -21,7 +21,8 @@ auto record_completion(ready_waiter *waiter) noexcept -> void {
 } // namespace
 
 TEST_CASE("waiter ready list completes queued waiters in FIFO order",
-          "[UT][wh/core/bounded_queue/detail/waiter_ready_list.hpp][waiter_ready_list::complete_all][condition][branch]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "waiter_ready_list.hpp][waiter_ready_list::complete_all][condition][branch]") {
   wh::core::detail::waiter_ready_list<ready_waiter> list{};
   std::vector<int> trace{};
   ready_waiter first{.complete = record_completion, .id = 1, .trace = &trace};
@@ -44,7 +45,8 @@ TEST_CASE("waiter ready list completes queued waiters in FIFO order",
 }
 
 TEST_CASE("waiter ready list can be reused after draining and resets intrusive links on push",
-          "[UT][wh/core/bounded_queue/detail/waiter_ready_list.hpp][waiter_ready_list::push_back][branch][boundary]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "waiter_ready_list.hpp][waiter_ready_list::push_back][branch][boundary]") {
   wh::core::detail::waiter_ready_list<ready_waiter> list{};
   std::vector<int> trace{};
   ready_waiter waiter{.next = reinterpret_cast<ready_waiter *>(0x1),

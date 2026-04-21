@@ -27,22 +27,17 @@ namespace wh::internal {
 namespace detail {
 
 /// Removes cv and reference qualifiers.
-template <typename type_t>
-using remove_cvref_t = wh::core::remove_cvref_t<type_t>;
+template <typename type_t> using remove_cvref_t = wh::core::remove_cvref_t<type_t>;
 
 /// Detects ADL-provided custom JSON codec (`wh_to_json` / `wh_from_json`).
 template <typename type_t>
-concept custom_json_codec =
-    requires(const remove_cvref_t<type_t> &value, wh::core::json_value &output,
-             wh::core::json_allocator &allocator) {
-      {
-        wh_to_json(value, output, allocator)
-      } -> std::same_as<wh::core::result<void>>;
-    } &&
-    requires(const wh::core::json_value &input,
-             remove_cvref_t<type_t> &output) {
-      { wh_from_json(input, output) } -> std::same_as<wh::core::result<void>>;
-    };
+concept custom_json_codec = requires(const remove_cvref_t<type_t> &value,
+                                     wh::core::json_value &output,
+                                     wh::core::json_allocator &allocator) {
+  { wh_to_json(value, output, allocator) } -> std::same_as<wh::core::result<void>>;
+} && requires(const wh::core::json_value &input, remove_cvref_t<type_t> &output) {
+  { wh_from_json(input, output) } -> std::same_as<wh::core::result<void>>;
+};
 
 template <typename type_t> struct is_std_array : std::false_type {};
 
@@ -52,8 +47,7 @@ struct is_std_array<std::array<value_t, extent>> : std::true_type {};
 
 /// Variable-template form of `is_std_array`.
 template <typename type_t>
-inline constexpr bool is_std_array_v =
-    is_std_array<remove_cvref_t<type_t>>::value;
+inline constexpr bool is_std_array_v = is_std_array<remove_cvref_t<type_t>>::value;
 
 template <typename type_t> struct is_unique_ptr : std::false_type {};
 
@@ -63,32 +57,27 @@ struct is_unique_ptr<std::unique_ptr<value_t, deleter_t>> : std::true_type {};
 
 /// Variable-template form of `is_unique_ptr`.
 template <typename type_t>
-inline constexpr bool is_unique_ptr_v =
-    is_unique_ptr<remove_cvref_t<type_t>>::value;
+inline constexpr bool is_unique_ptr_v = is_unique_ptr<remove_cvref_t<type_t>>::value;
 
 template <typename type_t> struct is_shared_ptr : std::false_type {};
 
 /// Marks `std::shared_ptr<T>` as shared-pointer-like.
-template <typename value_t>
-struct is_shared_ptr<std::shared_ptr<value_t>> : std::true_type {};
+template <typename value_t> struct is_shared_ptr<std::shared_ptr<value_t>> : std::true_type {};
 
 /// Variable-template form of `is_shared_ptr`.
 template <typename type_t>
-inline constexpr bool is_shared_ptr_v =
-    is_shared_ptr<remove_cvref_t<type_t>>::value;
+inline constexpr bool is_shared_ptr_v = is_shared_ptr<remove_cvref_t<type_t>>::value;
 
 /// Detects raw pointer types.
 template <typename type_t>
-inline constexpr bool is_raw_pointer_v =
-    std::is_pointer_v<remove_cvref_t<type_t>>;
+inline constexpr bool is_raw_pointer_v = std::is_pointer_v<remove_cvref_t<type_t>>;
 
 /// Detects map-like containers supported by generic JSON object conversion.
 template <typename type_t>
 concept map_like =
     wh::core::container_like<type_t> &&
     wh::core::pair_like<typename remove_cvref_t<type_t>::value_type> &&
-    requires(remove_cvref_t<type_t> value,
-             typename remove_cvref_t<type_t>::key_type key,
+    requires(remove_cvref_t<type_t> value, typename remove_cvref_t<type_t>::key_type key,
              typename remove_cvref_t<type_t>::mapped_type mapped) {
       typename remove_cvref_t<type_t>::key_type;
       typename remove_cvref_t<type_t>::mapped_type;
@@ -100,8 +89,7 @@ concept map_like =
 template <typename type_t>
 concept sequence_like =
     (!map_like<type_t>) && wh::core::container_like<type_t> &&
-    requires(remove_cvref_t<type_t> value,
-             typename remove_cvref_t<type_t>::value_type item) {
+    requires(remove_cvref_t<type_t> value, typename remove_cvref_t<type_t>::value_type item) {
       typename remove_cvref_t<type_t>::value_type;
       value.clear();
       value.push_back(std::move(item));
@@ -109,8 +97,7 @@ concept sequence_like =
 
 /// Encodes map key to JSON object member name string.
 template <typename key_t>
-[[nodiscard]] auto encode_json_key(const key_t &key)
-    -> wh::core::result<std::string> {
+[[nodiscard]] auto encode_json_key(const key_t &key) -> wh::core::result<std::string> {
   if constexpr (std::same_as<remove_cvref_t<key_t>, std::string>) {
     return key;
   } else if constexpr (std::integral<remove_cvref_t<key_t>> &&
@@ -125,8 +112,7 @@ template <typename key_t>
 
 /// Decodes JSON object member name string back to map key type.
 template <typename key_t>
-[[nodiscard]] auto decode_json_key(const std::string_view encoded)
-    -> wh::core::result<key_t> {
+[[nodiscard]] auto decode_json_key(const std::string_view encoded) -> wh::core::result<key_t> {
   if constexpr (std::same_as<remove_cvref_t<key_t>, std::string>) {
     return std::string{encoded};
   } else if constexpr (std::integral<remove_cvref_t<key_t>> &&
@@ -156,18 +142,16 @@ template <typename key_t>
 
 /// Serializes a typed value into RapidJSON node.
 template <typename type_t>
-auto to_json(const type_t &input, wh::core::json_value &output,
-             wh::core::json_allocator &allocator) -> wh::core::result<void>;
+auto to_json(const type_t &input, wh::core::json_value &output, wh::core::json_allocator &allocator)
+    -> wh::core::result<void>;
 
 /// Deserializes a RapidJSON node into typed value.
 template <typename type_t>
-auto from_json(const wh::core::json_value &input, type_t &output)
-    -> wh::core::result<void>;
+auto from_json(const wh::core::json_value &input, type_t &output) -> wh::core::result<void>;
 
 /// Convenience helper that returns serialized JSON value by value.
 template <typename type_t>
-[[nodiscard]] auto to_json_value(const type_t &input,
-                                 wh::core::json_allocator &allocator)
+[[nodiscard]] auto to_json_value(const type_t &input, wh::core::json_allocator &allocator)
     -> wh::core::result<wh::core::json_value> {
   wh::core::json_value output;
   auto encoded = to_json(input, output, allocator);
@@ -179,8 +163,7 @@ template <typename type_t>
 
 /// Convenience helper that returns deserialized typed value by value.
 template <typename type_t>
-[[nodiscard]] auto from_json_value(const wh::core::json_value &input)
-    -> wh::core::result<type_t> {
+[[nodiscard]] auto from_json_value(const wh::core::json_value &input) -> wh::core::result<type_t> {
   type_t output{};
   auto decoded = from_json(input, output);
   if (decoded.has_error()) {
@@ -191,8 +174,8 @@ template <typename type_t>
 
 /// Generic serialization dispatcher with built-in codecs and container support.
 template <typename type_t>
-auto to_json(const type_t &input, wh::core::json_value &output,
-             wh::core::json_allocator &allocator) -> wh::core::result<void> {
+auto to_json(const type_t &input, wh::core::json_value &output, wh::core::json_allocator &allocator)
+    -> wh::core::result<void> {
   using normalized_t = detail::remove_cvref_t<type_t>;
 
   if constexpr (detail::custom_json_codec<normalized_t>) {
@@ -200,13 +183,11 @@ auto to_json(const type_t &input, wh::core::json_value &output,
   } else if constexpr (std::same_as<normalized_t, bool>) {
     output.SetBool(input);
     return {};
-  } else if constexpr (std::integral<normalized_t> &&
-                       !std::same_as<normalized_t, bool> &&
+  } else if constexpr (std::integral<normalized_t> && !std::same_as<normalized_t, bool> &&
                        std::is_signed_v<normalized_t>) {
     output.SetInt64(static_cast<std::int64_t>(input));
     return {};
-  } else if constexpr (std::integral<normalized_t> &&
-                       !std::same_as<normalized_t, bool> &&
+  } else if constexpr (std::integral<normalized_t> && !std::same_as<normalized_t, bool> &&
                        std::is_unsigned_v<normalized_t>) {
     output.SetUint64(static_cast<std::uint64_t>(input));
     return {};
@@ -214,14 +195,10 @@ auto to_json(const type_t &input, wh::core::json_value &output,
     output.SetDouble(static_cast<double>(input));
     return {};
   } else if constexpr (std::same_as<normalized_t, std::string>) {
-    output.SetString(input.data(),
-                     static_cast<wh::core::json_size_type>(input.size()),
-                     allocator);
+    output.SetString(input.data(), static_cast<wh::core::json_size_type>(input.size()), allocator);
     return {};
   } else if constexpr (std::same_as<normalized_t, std::string_view>) {
-    output.SetString(input.data(),
-                     static_cast<wh::core::json_size_type>(input.size()),
-                     allocator);
+    output.SetString(input.data(), static_cast<wh::core::json_size_type>(input.size()), allocator);
     return {};
   } else if constexpr (wh::core::is_optional_v<normalized_t>) {
     if (!input.has_value()) {
@@ -274,8 +251,7 @@ auto to_json(const type_t &input, wh::core::json_value &output,
 
       wh::core::json_value name;
       const auto &name_string = encoded_key.value();
-      name.SetString(name_string.data(),
-                     static_cast<wh::core::json_size_type>(name_string.size()),
+      name.SetString(name_string.data(), static_cast<wh::core::json_size_type>(name_string.size()),
                      allocator);
 
       wh::core::json_value encoded_value;
@@ -294,8 +270,7 @@ auto to_json(const type_t &input, wh::core::json_value &output,
 /// Generic deserialization dispatcher with built-in codecs and container
 /// support.
 template <typename type_t>
-auto from_json(const wh::core::json_value &input, type_t &output)
-    -> wh::core::result<void> {
+auto from_json(const wh::core::json_value &input, type_t &output) -> wh::core::result<void> {
   using normalized_t = detail::remove_cvref_t<type_t>;
 
   if constexpr (detail::custom_json_codec<normalized_t>) {
@@ -306,8 +281,7 @@ auto from_json(const wh::core::json_value &input, type_t &output)
     }
     output = input.GetBool();
     return {};
-  } else if constexpr (std::integral<normalized_t> &&
-                       !std::same_as<normalized_t, bool> &&
+  } else if constexpr (std::integral<normalized_t> && !std::same_as<normalized_t, bool> &&
                        std::is_signed_v<normalized_t>) {
     if (!input.IsInt64()) {
       return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
@@ -319,8 +293,7 @@ auto from_json(const wh::core::json_value &input, type_t &output)
     }
     output = static_cast<normalized_t>(parsed);
     return {};
-  } else if constexpr (std::integral<normalized_t> &&
-                       !std::same_as<normalized_t, bool> &&
+  } else if constexpr (std::integral<normalized_t> && !std::same_as<normalized_t, bool> &&
                        std::is_unsigned_v<normalized_t>) {
     if (!input.IsUint64()) {
       return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
@@ -341,8 +314,7 @@ auto from_json(const wh::core::json_value &input, type_t &output)
     if (!input.IsString()) {
       return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
     }
-    output.assign(input.GetString(),
-                  static_cast<std::size_t>(input.GetStringLength()));
+    output.assign(input.GetString(), static_cast<std::size_t>(input.GetStringLength()));
     return {};
   } else if constexpr (wh::core::is_optional_v<normalized_t>) {
     if (input.IsNull()) {
@@ -405,8 +377,7 @@ auto from_json(const wh::core::json_value &input, type_t &output)
       return wh::core::result<void>::failure(wh::core::errc::parse_error);
     }
     for (std::size_t index = 0; index < output.size(); ++index) {
-      auto decoded = from_json(
-          input[static_cast<wh::core::json_size_type>(index)], output[index]);
+      auto decoded = from_json(input[static_cast<wh::core::json_size_type>(index)], output[index]);
       if (decoded.has_error()) {
         return decoded;
       }
@@ -433,11 +404,9 @@ auto from_json(const wh::core::json_value &input, type_t &output)
 
     output.clear();
     for (const auto &member : input.GetObject()) {
-      const std::string_view encoded_key{
-          member.name.GetString(),
-          static_cast<std::size_t>(member.name.GetStringLength())};
-      auto key =
-          detail::decode_json_key<typename normalized_t::key_type>(encoded_key);
+      const std::string_view encoded_key{member.name.GetString(),
+                                         static_cast<std::size_t>(member.name.GetStringLength())};
+      auto key = detail::decode_json_key<typename normalized_t::key_type>(encoded_key);
       if (key.has_error()) {
         return wh::core::result<void>::failure(key.error());
       }

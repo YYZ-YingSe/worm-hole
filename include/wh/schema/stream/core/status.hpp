@@ -17,8 +17,7 @@ enum class stream_signal : std::uint8_t {
 };
 
 /// Stable string form for stream control markers.
-[[nodiscard]] constexpr auto to_string(const stream_signal signal) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto to_string(const stream_signal signal) noexcept -> std::string_view {
   switch (signal) {
   case stream_signal::pending:
     return "pending";
@@ -27,8 +26,7 @@ enum class stream_signal : std::uint8_t {
 }
 
 template <typename char_t, typename traits_t>
-auto operator<<(std::basic_ostream<char_t, traits_t> &stream,
-                const stream_signal signal)
+auto operator<<(std::basic_ostream<char_t, traits_t> &stream, const stream_signal signal)
     -> std::basic_ostream<char_t, traits_t> & {
   stream << to_string(signal);
   return stream;

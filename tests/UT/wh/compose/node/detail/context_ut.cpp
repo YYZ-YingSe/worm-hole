@@ -248,7 +248,7 @@ TEST_CASE("node sender binders preserve shared or forked context and adapt value
           "[UT][wh/compose/node/detail/context.hpp][bind_reader_sender][condition][branch]") {
   wh::core::run_context shared_context{};
   wh::compose::node_runtime shared_runtime{};
-  shared_runtime.set_graph_scheduler(&inline_graph_scheduler());
+  shared_runtime.set_control_scheduler(&inline_graph_scheduler());
 
   const auto shared_result = wh::compose::with_node_context(
       shared_context, shared_runtime,
@@ -267,7 +267,7 @@ TEST_CASE("node sender binders preserve shared or forked context and adapt value
   wh::compose::graph_node_trace fork_trace{};
   fork_trace.trace_id = "fork-trace";
   wh::compose::node_runtime fork_runtime{};
-  fork_runtime.set_graph_scheduler(&inline_graph_scheduler())
+  fork_runtime.set_control_scheduler(&inline_graph_scheduler())
       .set_observation(&fork_observation)
       .set_trace(&fork_trace);
 

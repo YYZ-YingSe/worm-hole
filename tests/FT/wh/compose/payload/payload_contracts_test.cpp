@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/payload.hpp"
@@ -24,14 +24,12 @@ TEST_CASE("compose payload map and keyed helpers bridge payload shapes",
   REQUIRE(left_value.has_value());
   REQUIRE(left_value.value() == 7);
 
-  auto moved_round_trip =
-      wh::compose::payload_to_value_map(wh::compose::value_map_to_payload(
-          wh::compose::graph_value_map{
-              {"right", wh::core::any(std::string{"ok"})},
-          }));
+  auto moved_round_trip = wh::compose::payload_to_value_map(
+      wh::compose::value_map_to_payload(wh::compose::graph_value_map{
+          {"right", wh::core::any(std::string{"ok"})},
+      }));
   REQUIRE(moved_round_trip.has_value());
-  auto right_value =
-      read_graph_value<std::string>(moved_round_trip.value().at("right"));
+  auto right_value = read_graph_value<std::string>(moved_round_trip.value().at("right"));
   REQUIRE(right_value.has_value());
   REQUIRE(right_value.value() == "ok");
 
@@ -43,8 +41,7 @@ TEST_CASE("compose payload map and keyed helpers bridge payload shapes",
 
   wh::compose::graph_value_map writable{};
   wh::compose::write_keyed_output(writable, "int", 9);
-  wh::compose::write_keyed_output(writable, "payload",
-                                  wh::core::any(std::string{"v"}));
+  wh::compose::write_keyed_output(writable, "payload", wh::core::any(std::string{"v"}));
   REQUIRE(writable.contains("int"));
   REQUIRE(writable.contains("payload"));
   REQUIRE(read_graph_value<int>(writable.at("int")).value() == 9);

@@ -6,8 +6,7 @@
 namespace wh::compose::detail {
 
 struct collect_policy {
-  using child_sender_type =
-      decltype(std::declval<graph_stream_reader &>().read_async());
+  using child_sender_type = decltype(std::declval<graph_stream_reader &>().read_async());
   using completion_type = graph_stream_reader::chunk_result_type;
 
   graph_stream_reader reader{};
@@ -20,8 +19,7 @@ struct collect_policy {
     }
   }
 
-  [[nodiscard]] auto next_step()
-      -> wh::core::result<child_pump_step<child_sender_type>> {
+  [[nodiscard]] auto next_step() -> wh::core::result<child_pump_step<child_sender_type>> {
     return child_pump_step<child_sender_type>::launch(reader.read_async());
   }
 
@@ -37,8 +35,7 @@ struct collect_policy {
       if (closed.has_error()) {
         return wh::core::result<graph_value>::failure(closed.error());
       }
-      return wh::core::result<graph_value>{
-          wh::core::any(std::move(collected))};
+      return wh::core::result<graph_value>{wh::core::any(std::move(collected))};
     }
     if (chunk.is_source_eof()) {
       return std::nullopt;
@@ -50,8 +47,7 @@ struct collect_policy {
     if (chunk.value.has_value()) {
       collected.push_back(std::move(*chunk.value));
       if (limits.max_items > 0U && collected.size() > limits.max_items) {
-        return wh::core::result<graph_value>::failure(
-            wh::core::errc::resource_exhausted);
+        return wh::core::result<graph_value>::failure(wh::core::errc::resource_exhausted);
       }
     }
     return std::nullopt;
@@ -62,9 +58,9 @@ struct collect_policy {
 
 namespace wh::compose {
 
-inline auto graph::collect_reader_value(
-    graph_stream_reader reader, const edge_limits limits,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler)
+inline auto
+graph::collect_reader_value(graph_stream_reader reader, const edge_limits limits,
+                            const wh::core::detail::any_resume_scheduler_t &graph_scheduler)
     -> graph_sender {
   return detail::bridge_graph_sender(detail::make_child_pump_sender(
       detail::collect_policy{

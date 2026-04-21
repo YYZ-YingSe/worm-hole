@@ -1,5 +1,5 @@
 name: prepare-ci-job
-description: Prepare a CI job by installing the selected tool profile and optional tool-specific environments.
+description: Prepare one CI job by installing one CI tool profile and any optional per-job environments.
 
 inputs:
   install_profile:

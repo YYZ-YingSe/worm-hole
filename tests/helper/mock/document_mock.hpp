@@ -19,9 +19,7 @@ public:
     scripted_.enqueue_success(std::forward<content_t>(content));
   }
 
-  auto enqueue_error(const wh::core::errc code) -> void {
-    scripted_.enqueue_error(code);
-  }
+  auto enqueue_error(const wh::core::errc code) -> void { scripted_.enqueue_error(code); }
 
   [[nodiscard]] auto load([[maybe_unused]] const std::string &document_id)
       -> wh::core::result<std::string> {
@@ -29,9 +27,7 @@ public:
     return scripted_.next();
   }
 
-  [[nodiscard]] auto load_count() const noexcept -> std::size_t {
-    return load_count_;
-  }
+  [[nodiscard]] auto load_count() const noexcept -> std::size_t { return load_count_; }
 
 private:
   detail::scripted_result_queue<std::string> scripted_{};

@@ -2,15 +2,16 @@
 
 #include "wh/compose/graph/add_node_options.hpp"
 
-TEST_CASE("graph add node state options require and bind phases while exposing metadata",
-          "[UT][wh/compose/graph/add_node_options.hpp][graph_node_state_options::metadata][condition][branch][boundary]") {
+TEST_CASE(
+    "graph add node state options require and bind phases while exposing metadata",
+    "[UT][wh/compose/graph/"
+    "add_node_options.hpp][graph_node_state_options::metadata][condition][branch][boundary]") {
   wh::compose::graph_node_state_options state{};
   REQUIRE_FALSE(state.any());
   REQUIRE(state.authored_handlers() == nullptr);
 
-  state.bind_pre<int>([](const wh::compose::graph_state_cause &,
-                         wh::compose::graph_process_state &, int &value,
-                         wh::core::run_context &) -> wh::core::result<void> {
+  state.bind_pre<int>([](const wh::compose::graph_state_cause &, wh::compose::graph_process_state &,
+                         int &value, wh::core::run_context &) -> wh::core::result<void> {
     ++value;
     return {};
   });
@@ -34,8 +35,10 @@ TEST_CASE("graph add node state options require and bind phases while exposing m
   REQUIRE(options.state.metadata().pre);
 }
 
-TEST_CASE("graph add node state options typed handlers accept matching payloads and reject mismatches",
-          "[UT][wh/compose/graph/add_node_options.hpp][graph_node_state_options::bind_pre][condition][branch]") {
+TEST_CASE(
+    "graph add node state options typed handlers accept matching payloads and reject mismatches",
+    "[UT][wh/compose/graph/"
+    "add_node_options.hpp][graph_node_state_options::bind_pre][condition][branch]") {
   wh::compose::graph_node_state_options state{};
   state.bind_pre<int>([](const wh::compose::graph_state_cause &cause,
                          wh::compose::graph_process_state &, int &value,
@@ -75,6 +78,7 @@ TEST_CASE("graph add node options store observation overrides and compile snapsh
   options.label = "Node Label";
   options.allow_no_control = true;
   options.allow_no_data = true;
+  options.dispatch = wh::compose::sync_dispatch::inline_control;
   options.retry_budget_override = 2U;
   options.max_parallel_override = 4U;
   options.subgraph_compile_info = wh::compose::graph_compile_info{.name = "sub"};
@@ -88,6 +92,7 @@ TEST_CASE("graph add node options store observation overrides and compile snapsh
   REQUIRE(options.label == "Node Label");
   REQUIRE(options.allow_no_control);
   REQUIRE(options.allow_no_data);
+  REQUIRE(options.dispatch == wh::compose::sync_dispatch::inline_control);
   REQUIRE(options.retry_budget_override == std::optional<std::size_t>{2U});
   REQUIRE(options.max_parallel_override == std::optional<std::size_t>{4U});
   REQUIRE(options.subgraph_compile_info.has_value());

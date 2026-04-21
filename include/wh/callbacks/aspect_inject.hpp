@@ -22,8 +22,8 @@ inline auto emit_start(wh::core::run_context &context, const payload_t &payload,
 
 template <typename payload_t>
 /// Emits one `end` callback event.
-inline auto emit_end(wh::core::run_context &context, const payload_t &payload,
-                     const run_info &info) -> void {
+inline auto emit_end(wh::core::run_context &context, const payload_t &payload, const run_info &info)
+    -> void {
   emit(context, stage::end, payload, info);
 }
 
@@ -36,17 +36,15 @@ inline auto emit_error(wh::core::run_context &context, const payload_t &payload,
 
 template <typename payload_t>
 /// Emits one `stream_start` callback event.
-inline auto emit_stream_start(wh::core::run_context &context,
-                              const payload_t &payload, const run_info &info)
-    -> void {
+inline auto emit_stream_start(wh::core::run_context &context, const payload_t &payload,
+                              const run_info &info) -> void {
   emit(context, stage::stream_start, payload, info);
 }
 
 template <typename payload_t>
 /// Emits one `stream_end` callback event.
-inline auto emit_stream_end(wh::core::run_context &context,
-                            const payload_t &payload, const run_info &info)
-    -> void {
+inline auto emit_stream_end(wh::core::run_context &context, const payload_t &payload,
+                            const run_info &info) -> void {
   emit(context, stage::stream_end, payload, info);
 }
 

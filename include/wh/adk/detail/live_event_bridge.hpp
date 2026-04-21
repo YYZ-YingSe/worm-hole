@@ -21,14 +21,10 @@ struct live_event_bridge {
   }
 
   /// Closes the write side once the wrapper has finished emitting events.
-  [[nodiscard]] auto close() -> wh::core::result<void> {
-    return close_agent_event_stream(writer);
-  }
+  [[nodiscard]] auto close() -> wh::core::result<void> { return close_agent_event_stream(writer); }
 
   /// Releases the reader side after the write side has been closed.
-  [[nodiscard]] auto release_reader() -> agent_event_stream_reader {
-    return std::move(reader);
-  }
+  [[nodiscard]] auto release_reader() -> agent_event_stream_reader { return std::move(reader); }
 };
 
 /// Creates one live ADK event bridge using the shared schema::stream pipe.

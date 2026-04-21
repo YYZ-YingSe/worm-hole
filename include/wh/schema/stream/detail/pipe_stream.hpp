@@ -21,14 +21,12 @@
 namespace wh::schema::stream::detail {
 
 template <typename state_t>
-inline auto
-keep_pipe_state_alive(const std::shared_ptr<state_t> &state) noexcept -> void {
+inline auto keep_pipe_state_alive(const std::shared_ptr<state_t> &state) noexcept -> void {
   [[maybe_unused]] const auto *raw_state = state.get();
 }
 
 template <typename state_t>
-[[nodiscard]] inline auto shared_closed_pipe_state()
-    -> const std::shared_ptr<state_t> & {
+[[nodiscard]] inline auto shared_closed_pipe_state() -> const std::shared_ptr<state_t> & {
   static const auto closed_state = [] {
     auto state = std::make_shared<state_t>(1U);
     state->queue.close();
@@ -66,25 +64,21 @@ template <typename state_t> struct pipe_async_state_snapshot {
 };
 
 template <typename state_t>
-[[nodiscard]] inline auto
-select_pipe_async_state(const std::shared_ptr<state_t> &state)
+[[nodiscard]] inline auto select_pipe_async_state(const std::shared_ptr<state_t> &state)
     -> pipe_async_state_snapshot<state_t> {
   const bool state_missing = !state;
-  const bool reader_closed =
-      !state_missing && state->reader_closed.load(std::memory_order_acquire);
+  const bool reader_closed = !state_missing && state->reader_closed.load(std::memory_order_acquire);
 
   return {
-      .state = (state_missing || reader_closed)
-                   ? shared_closed_pipe_state<state_t>()
-                   : state,
+      .state = (state_missing || reader_closed) ? shared_closed_pipe_state<state_t>() : state,
       .state_missing = state_missing,
       .reader_closed = reader_closed,
   };
 }
 
 template <typename attempt_t>
-[[nodiscard]] inline auto retry_busy_status(attempt_t &&attempt) noexcept(
-    noexcept(std::forward<attempt_t>(attempt)()))
+[[nodiscard]] inline auto
+retry_busy_status(attempt_t &&attempt) noexcept(noexcept(std::forward<attempt_t>(attempt)()))
     -> wh::core::bounded_queue_status {
   auto attempt_fn = std::forward<attempt_t>(attempt);
   auto status = attempt_fn();
@@ -96,12 +90,11 @@ template <typename attempt_t>
 }
 
 template <typename attempt_t>
-[[nodiscard]] inline auto retry_busy_result(attempt_t &&attempt) noexcept(
-    noexcept(std::forward<attempt_t>(attempt)())) {
+[[nodiscard]] inline auto
+retry_busy_result(attempt_t &&attempt) noexcept(noexcept(std::forward<attempt_t>(attempt)())) {
   auto attempt_fn = std::forward<attempt_t>(attempt);
   auto result = attempt_fn();
-  while (result.has_error() &&
-         result.error() == wh::core::bounded_queue_status::busy) {
+  while (result.has_error() && result.error() == wh::core::bounded_queue_status::busy) {
     wh::core::spin_pause();
     result = attempt_fn();
   }
@@ -109,16 +102,14 @@ template <typename attempt_t>
 }
 
 template <typename result_t>
-[[nodiscard]] inline auto rethrow_pipe_exception(std::exception_ptr error)
-    -> result_t {
+[[nodiscard]] inline auto rethrow_pipe_exception(std::exception_ptr error) -> result_t {
   std::rethrow_exception(std::move(error));
 }
 
 template <typename state_t, stdexec::sender sender_t>
 [[nodiscard]] inline auto
 normalize_pipe_write_sender(sender_t &&sender, std::shared_ptr<state_t> state,
-                            const bool state_missing,
-                            const bool reader_closed) {
+                            const bool state_missing, const bool reader_closed) {
   auto success_state = state;
   auto error_state = std::move(state);
   return stdexec::upon_error(
@@ -127,12 +118,10 @@ normalize_pipe_write_sender(sender_t &&sender, std::shared_ptr<state_t> state,
                      reader_closed]() mutable -> wh::core::result<void> {
                       keep_pipe_state_alive(state);
                       if (state_missing) {
-                        return wh::core::result<void>::failure(
-                            wh::core::errc::not_found);
+                        return wh::core::result<void>::failure(wh::core::errc::not_found);
                       }
                       if (reader_closed) {
-                        return wh::core::result<void>::failure(
-                            wh::core::errc::channel_closed);
+                        return wh::core::result<void>::failure(wh::core::errc::channel_closed);
                       }
                       return {};
                     }),
@@ -144,10 +133,8 @@ normalize_pipe_write_sender(sender_t &&sender, std::shared_ptr<state_t> state,
           if (state_missing) {
             return wh::core::result<void>::failure(wh::core::errc::not_found);
           }
-          if (reader_closed ||
-              error == wh::core::bounded_queue_status::closed) {
-            return wh::core::result<void>::failure(
-                wh::core::errc::channel_closed);
+          if (reader_closed || error == wh::core::bounded_queue_status::closed) {
+            return wh::core::result<void>::failure(wh::core::errc::channel_closed);
           }
           return wh::core::result<void>::failure(map_pipe_queue_status(error));
         } else {
@@ -186,21 +173,18 @@ normalize_pipe_read_sender(sender_t &&sender, std::shared_ptr<state_t> state,
           if (state_missing) {
             return result_t::failure(wh::core::errc::not_found);
           }
-          if (reader_closed ||
-              error == wh::core::bounded_queue_status::closed) {
+          if (reader_closed || error == wh::core::bounded_queue_status::closed) {
             return result_t{chunk_type::make_eof()};
           }
           return result_t::failure(map_pipe_queue_status(error));
         } else {
-          return rethrow_pipe_exception<result_t>(
-              std::forward<decltype(error)>(error));
+          return rethrow_pipe_exception<result_t>(std::forward<decltype(error)>(error));
         }
       });
 }
 
 template <typename value_t> struct pipe_stream_state {
-  explicit pipe_stream_state(const std::size_t capacity)
-      : queue(capacity == 0U ? 1U : capacity) {}
+  explicit pipe_stream_state(const std::size_t capacity) : queue(capacity == 0U ? 1U : capacity) {}
 
   wh::core::bounded_queue<value_t> queue;
   std::atomic<bool> reader_closed{false};

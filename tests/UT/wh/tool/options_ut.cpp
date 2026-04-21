@@ -39,8 +39,7 @@ TEST_CASE("tool options expose component specific extras",
           "[UT][wh/tool/options.hpp][tool_options::component_options][boundary]") {
   wh::tool::tool_options options{};
   options.component_options().set_impl_specific(tool_options_probe{21});
-  const auto *probe =
-      options.component_options().impl_specific_if<tool_options_probe>();
+  const auto *probe = options.component_options().impl_specific_if<tool_options_probe>();
   REQUIRE(probe != nullptr);
   REQUIRE(probe->value == 21);
 }

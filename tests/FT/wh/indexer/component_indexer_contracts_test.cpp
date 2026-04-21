@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/component_contract_support.hpp"
 #include "wh/indexer/indexer.hpp"
@@ -29,10 +29,8 @@ TEST_CASE("indexer callbacks and embedding-combined config stay consistent",
   wh::core::run_context callback_context{};
   callback_context.callbacks.emplace();
   auto registered = register_test_callbacks(
-      std::move(callback_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(callback_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::indexer::indexer_callback_event>();
         REQUIRE(typed != nullptr);
@@ -57,24 +55,21 @@ TEST_CASE("indexer callbacks and embedding-combined config stay consistent",
   callback_context = std::move(registered).value();
 
   wh::indexer::indexer component{sync_indexer_single_impl{
-      [](const wh::schema::document &doc, const wh::indexer::indexer_options &)
-          -> wh::core::result<std::string> {
+      [](const wh::schema::document &doc,
+         const wh::indexer::indexer_options &) -> wh::core::result<std::string> {
         if (doc.content() == "bad") {
-          return wh::core::result<std::string>::failure(
-              wh::core::errc::network_error);
+          return wh::core::result<std::string>::failure(wh::core::errc::network_error);
         }
         return std::string{"id-" + doc.content()};
       }}};
 
   auto missing_embedding =
-      component.write({{wh::schema::document{"ok"}}, {}, options},
-                      callback_context);
+      component.write({{wh::schema::document{"ok"}}, {}, options}, callback_context);
   REQUIRE(missing_embedding.has_error());
   REQUIRE(missing_embedding.error() == wh::core::errc::invalid_argument);
 
   auto status = component.write(
-      {{wh::schema::document{"ok"}, wh::schema::document{"bad"}},
-       {0.5, 0.25}, options},
+      {{wh::schema::document{"ok"}, wh::schema::document{"bad"}}, {0.5, 0.25}, options},
       callback_context);
   REQUIRE(status.has_value());
   REQUIRE(status.value().success_count == 1U);
@@ -94,19 +89,17 @@ TEST_CASE("indexer skip policy keeps successes and reports failures",
   options.set_base(common);
 
   wh::indexer::indexer component{sync_indexer_single_impl{
-      [](const wh::schema::document &doc, const wh::indexer::indexer_options &)
-          -> wh::core::result<std::string> {
+      [](const wh::schema::document &doc,
+         const wh::indexer::indexer_options &) -> wh::core::result<std::string> {
         if (doc.content() == "bad") {
-          return wh::core::result<std::string>::failure(
-              wh::core::errc::network_error);
+          return wh::core::result<std::string>::failure(wh::core::errc::network_error);
         }
         return std::string{"id-" + doc.content()};
       }}};
 
   wh::core::run_context context{};
   auto indexed = component.write(
-      {{wh::schema::document{"ok"}, wh::schema::document{"bad"}}, {}, options},
-      context);
+      {{wh::schema::document{"ok"}, wh::schema::document{"bad"}}, {}, options}, context);
   REQUIRE(indexed.has_value());
   REQUIRE(indexed.value().success_count == 1U);
   REQUIRE(indexed.value().failure_count == 1U);

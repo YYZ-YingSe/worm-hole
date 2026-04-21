@@ -8,10 +8,10 @@
 #include <utility>
 #include <vector>
 
-#include "wh/compose/graph.hpp"
 #include "wh/compose/authored/parallel.hpp"
 #include "wh/compose/authored/stream_branch.hpp"
 #include "wh/compose/authored/value_branch.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/node.hpp"
 #include "wh/compose/node/subgraph.hpp"
 #include "wh/core/error.hpp"
@@ -39,9 +39,7 @@ public:
   }
 
   /// Appends a lambda node after the current tail set.
-  auto append(const lambda_node &node) -> wh::core::result<void> {
-    return append_authored(node);
-  }
+  auto append(const lambda_node &node) -> wh::core::result<void> { return append_authored(node); }
 
   /// Appends a lambda node after the current tail set.
   auto append(lambda_node &&node) -> wh::core::result<void> {
@@ -49,32 +47,26 @@ public:
   }
 
   /// Appends a subgraph node after the current tail set.
-  auto append(const subgraph_node &node) -> wh::core::result<void> {
-    return append_authored(node);
-  }
+  auto append(const subgraph_node &node) -> wh::core::result<void> { return append_authored(node); }
 
   /// Appends a subgraph node after the current tail set.
   auto append(subgraph_node &&node) -> wh::core::result<void> {
     return append_authored(std::move(node));
   }
 
-  template <typename key_t, typename graph_t,
-            typename options_t = graph_add_node_options>
+  template <typename key_t, typename graph_t, typename options_t = graph_add_node_options>
     requires std::constructible_from<std::string, key_t &&> &&
              std::constructible_from<graph_add_node_options, options_t &&> &&
              graph_viewable<std::remove_cvref_t<graph_t>>
   /// Appends a graph-like object as one subgraph node after the current tail set.
-  auto append_subgraph(key_t &&key, graph_t &&subgraph,
-                       options_t &&options = {}) -> wh::core::result<void> {
-    return append(make_subgraph_node(std::forward<key_t>(key),
-                                     std::forward<graph_t>(subgraph),
+  auto append_subgraph(key_t &&key, graph_t &&subgraph, options_t &&options = {})
+      -> wh::core::result<void> {
+    return append(make_subgraph_node(std::forward<key_t>(key), std::forward<graph_t>(subgraph),
                                      std::forward<options_t>(options)));
   }
 
   /// Appends a tools node after the current tail set.
-  auto append(const tools_node &node) -> wh::core::result<void> {
-    return append_authored(node);
-  }
+  auto append(const tools_node &node) -> wh::core::result<void> { return append_authored(node); }
 
   /// Appends a tools node after the current tail set.
   auto append(tools_node &&node) -> wh::core::result<void> {
@@ -138,9 +130,7 @@ private:
 
 public:
   /// Appends one branch from current single-tail predecessor.
-  auto append(const value_branch &value) -> wh::core::result<void> {
-    return append_branch(value);
-  }
+  auto append(const value_branch &value) -> wh::core::result<void> { return append_branch(value); }
 
   /// Appends one branch from current single-tail predecessor.
   auto append(value_branch &&value) -> wh::core::result<void> {
@@ -148,9 +138,7 @@ public:
   }
 
   /// Appends one stream-branch from current single-tail predecessor.
-  auto append(const stream_branch &value) -> wh::core::result<void> {
-    return append_branch(value);
-  }
+  auto append(const stream_branch &value) -> wh::core::result<void> { return append_branch(value); }
 
   /// Appends one stream-branch from current single-tail predecessor.
   auto append(stream_branch &&value) -> wh::core::result<void> {
@@ -158,10 +146,7 @@ public:
   }
 
   /// Appends one parallel fan-out from current single-tail predecessor.
-  auto append(const parallel &value)
-      -> wh::core::result<void> {
-    return append_parallel(value);
-  }
+  auto append(const parallel &value) -> wh::core::result<void> { return append_parallel(value); }
 
   /// Appends one parallel fan-out from current single-tail predecessor.
   auto append(parallel &&value) -> wh::core::result<void> {
@@ -306,24 +291,19 @@ public:
   template <typename input_t>
     requires std::same_as<std::remove_cvref_t<input_t>, graph_value>
   /// Executes the lowered graph through the typed graph invoke request.
-  [[nodiscard]] auto invoke(wh::core::run_context &context,
-                            input_t &&input) const {
+  [[nodiscard]] auto invoke(wh::core::run_context &context, input_t &&input) const {
     wh::compose::graph_invoke_request request{};
-    request.input = graph_value{std::forward<input_t>(input)};
+    request.input = wh::compose::graph_input::value(std::forward<input_t>(input));
     return wh::core::detail::map_result_sender<wh::core::result<graph_value>>(
         graph_.invoke(context, std::move(request)),
-        [](graph_invoke_result invoke_result) {
-          return std::move(invoke_result.output_status);
-        });
+        [](graph_invoke_result invoke_result) { return std::move(invoke_result.output_status); });
   }
 
   /// Returns the underlying lowered graph for inspection or nested composition.
   [[nodiscard]] auto graph_view() const noexcept -> const graph & { return graph_; }
 
   /// Releases the lowered graph for nesting or ownership transfer.
-  [[nodiscard]] auto release_graph() && noexcept -> graph {
-    return std::move(graph_);
-  }
+  [[nodiscard]] auto release_graph() && noexcept -> graph { return std::move(graph_); }
 
 private:
   auto ensure_writable() -> wh::core::result<void> {

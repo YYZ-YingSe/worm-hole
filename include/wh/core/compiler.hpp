@@ -63,13 +63,7 @@ inline constexpr bool supports_native_stacktrace_capture = true;
 inline constexpr bool supports_native_stacktrace_capture = false;
 #endif
 
-#if defined(__cpp_lib_hardware_interference_size)
-inline constexpr std::size_t default_cacheline_size =
-    std::hardware_destructive_interference_size > 0 ? std::hardware_destructive_interference_size
-                                                    : 64U;
-#else
 inline constexpr std::size_t default_cacheline_size = 64U;
-#endif
 
 /// True when a value can be moved by raw relocation safely.
 template <typename t>

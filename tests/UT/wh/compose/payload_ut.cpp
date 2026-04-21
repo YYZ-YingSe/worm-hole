@@ -4,8 +4,7 @@
 
 TEST_CASE("compose payload facade exposes keyed packing helpers",
           "[UT][wh/compose/payload.hpp][pack_keyed_payload][condition][branch][boundary]") {
-  auto payload =
-      wh::compose::pack_keyed_payload("value", wh::compose::graph_value{3});
+  auto payload = wh::compose::pack_keyed_payload("value", wh::compose::graph_value{3});
   auto unpacked = wh::compose::unpack_keyed_payload(payload, "value");
   auto missing = wh::compose::unpack_keyed_payload(payload, "other");
 

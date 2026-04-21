@@ -1,18 +1,19 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <string>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
+#include "helper/thread_support.hpp"
 #include "wh/schema/stream/pipe.hpp"
 #include "wh/schema/stream/reader/copy_stream_reader.hpp"
 #include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 TEST_CASE("copy stream readers keep independent cursors and support single-copy boundary",
-          "[UT][wh/schema/stream/reader/copy_stream_reader.hpp][make_copy_stream_readers][branch][boundary]") {
+          "[UT][wh/schema/stream/reader/"
+          "copy_stream_reader.hpp][make_copy_stream_readers][branch][boundary]") {
   auto [writer, reader] = wh::schema::stream::make_pipe_stream<std::string>(4U);
   REQUIRE(writer.try_write("alpha").has_value());
   REQUIRE(writer.try_write("beta").has_value());
@@ -28,8 +29,10 @@ TEST_CASE("copy stream readers keep independent cursors and support single-copy 
       if (std::holds_alternative<wh::schema::stream::stream_signal>(chunk)) {
         continue;
       }
-      auto next = std::move(std::get<wh::schema::stream::stream_result<
-          wh::schema::stream::stream_chunk<std::string>>>(chunk));
+      auto next = std::move(
+          std::get<
+              wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<std::string>>>(
+              chunk));
       if (next.has_error()) {
         FAIL("unexpected error while draining copy reader");
       }
@@ -49,14 +52,15 @@ TEST_CASE("copy stream readers keep independent cursors and support single-copy 
   REQUIRE(single_writer.close().has_value());
   auto single = wh::schema::stream::make_copy_stream_readers(std::move(single_reader), 1U);
   REQUIRE(single.size() == 1U);
-  auto first = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(single.front().try_read());
+  auto first = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      single.front().try_read());
   REQUIRE(first.has_value());
   REQUIRE(first.value().value == std::optional<int>{1});
 }
 
 TEST_CASE("copy stream readers async waits resume independently after upstream write",
-          "[UT][wh/schema/stream/reader/copy_stream_reader.hpp][copy_stream_reader::read_async][concurrency][branch]") {
+          "[UT][wh/schema/stream/reader/"
+          "copy_stream_reader.hpp][copy_stream_reader::read_async][concurrency][branch]") {
   auto [writer, reader] = wh::schema::stream::make_pipe_stream<int>(4U);
   auto copies = wh::schema::stream::make_copy_stream_readers(std::move(reader), 2U);
   REQUIRE(copies.size() == 2U);
@@ -65,16 +69,16 @@ TEST_CASE("copy stream readers async waits resume independently after upstream w
   std::optional<wh::core::result<void>> write_status{};
   std::optional<wh::core::result<void>> close_status{};
 
-  std::jthread producer([stream_writer = std::move(writer), &write_status,
-                         &close_status]() mutable {
-    std::this_thread::sleep_for(std::chrono::milliseconds{10});
-    write_status.emplace(stream_writer.try_write(11));
-    close_status.emplace(stream_writer.close());
-  });
+  wh::testing::helper::joining_thread producer(
+      [stream_writer = std::move(writer), &write_status, &close_status]() mutable {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        write_status.emplace(stream_writer.try_write(11));
+        close_status.emplace(stream_writer.close());
+      });
 
-  auto waited = stdexec::sync_wait(stdexec::when_all(
-      stdexec::starts_on(pool.get_scheduler(), copies[0].read_async()),
-      stdexec::starts_on(pool.get_scheduler(), copies[1].read_async())));
+  auto waited = stdexec::sync_wait(
+      stdexec::when_all(stdexec::starts_on(pool.get_scheduler(), copies[0].read_async()),
+                        stdexec::starts_on(pool.get_scheduler(), copies[1].read_async())));
 
   REQUIRE(waited.has_value());
   REQUIRE(write_status.has_value());
@@ -90,12 +94,12 @@ TEST_CASE("copy stream readers async waits resume independently after upstream w
   REQUIRE(second.value().value == std::optional<int>{11});
 }
 
-TEST_CASE("copy stream readers preserve source-closed query and auto-close forwarding on copied values source",
-          "[UT][wh/schema/stream/reader/copy_stream_reader.hpp][copy_stream_reader::set_automatic_close][condition]") {
+TEST_CASE("copy stream readers preserve source-closed query and auto-close forwarding on copied "
+          "values source",
+          "[UT][wh/schema/stream/reader/"
+          "copy_stream_reader.hpp][copy_stream_reader::set_automatic_close][condition]") {
   auto copies = wh::schema::stream::make_copy_stream_readers(
-      wh::schema::stream::make_values_stream_reader(std::vector<std::string>{
-          "left", "right"}),
-      2U);
+      wh::schema::stream::make_values_stream_reader(std::vector<std::string>{"left", "right"}), 2U);
   REQUIRE(copies.size() == 2U);
   copies[0].set_automatic_close(wh::schema::stream::auto_close_disabled);
   copies[1].set_automatic_close(wh::schema::stream::auto_close_disabled);

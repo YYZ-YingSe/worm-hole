@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/bind.hpp"
@@ -21,8 +21,7 @@ TEST_CASE("research shell binds lead specialists validates names and lowers into
   REQUIRE(authored.set_lead(std::move(lead).value()).has_value());
   REQUIRE(authored.add_specialist(std::move(specialist).value()).has_value());
   REQUIRE(authored.lead().has_value());
-  REQUIRE(authored.specialist_names() ==
-          std::vector<std::string>{"specialist"});
+  REQUIRE(authored.specialist_names() == std::vector<std::string>{"specialist"});
   REQUIRE(authored.specialists().size() == 1U);
   REQUIRE(authored.freeze().has_value());
 

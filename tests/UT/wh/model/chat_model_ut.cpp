@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <memory>
 #include <span>
@@ -8,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/model/chat_model.hpp"
@@ -18,19 +17,16 @@ template <typename text_t>
 [[nodiscard]] auto make_user_message(text_t &&text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
-  message.parts.emplace_back(
-      wh::schema::text_part{std::forward<text_t>(text)});
+  message.parts.emplace_back(wh::schema::text_part{std::forward<text_t>(text)});
   return message;
 }
 
 template <typename reader_t>
-[[nodiscard]] auto take_try_chunk(reader_t &reader)
-    -> typename std::remove_cvref_t<reader_t>::chunk_result_type {
+[[nodiscard]] auto take_try_chunk(reader_t &reader) ->
+    typename std::remove_cvref_t<reader_t>::chunk_result_type {
   auto next = reader.try_read();
-  REQUIRE_FALSE(
-      std::holds_alternative<wh::schema::stream::stream_signal>(next));
-  return std::move(
-      std::get<typename std::remove_cvref_t<reader_t>::chunk_result_type>(next));
+  REQUIRE_FALSE(std::holds_alternative<wh::schema::stream::stream_signal>(next));
+  return std::move(std::get<typename std::remove_cvref_t<reader_t>::chunk_result_type>(next));
 }
 
 struct probe_state {
@@ -69,19 +65,16 @@ public:
     state_->bound_tool_count = bound_tools_.size();
     return wh::model::chat_message_stream_reader{
         wh::schema::stream::make_single_value_stream_reader<wh::schema::message>(
-            wh::schema::message{
-                .role = wh::schema::message_role::assistant,
-                .parts = {wh::schema::text_part{
-                    "stream:" + std::to_string(bound_tools_.size())}}})};
+            wh::schema::message{.role = wh::schema::message_role::assistant,
+                                .parts = {wh::schema::text_part{
+                                    "stream:" + std::to_string(bound_tools_.size())}}})};
   }
 
-  [[nodiscard]] auto bind_tools(
-      std::span<const wh::schema::tool_schema_definition> tools) const
+  [[nodiscard]] auto bind_tools(std::span<const wh::schema::tool_schema_definition> tools) const
       -> sync_probe_model_impl {
     ++state_->bind_calls;
     return sync_probe_model_impl{
-        state_,
-        std::vector<wh::schema::tool_schema_definition>{tools.begin(), tools.end()}};
+        state_, std::vector<wh::schema::tool_schema_definition>{tools.begin(), tools.end()}};
   }
 
   [[nodiscard]] auto options() const noexcept -> const wh::model::chat_model_options & {
@@ -108,17 +101,15 @@ struct async_probe_model_impl {
     wh::schema::message message{};
     message.role = wh::schema::message_role::assistant;
     message.parts.emplace_back(wh::schema::text_part{"async"});
-    return stdexec::just(
-        wh::model::chat_invoke_result{wh::model::chat_response{message, {}}});
+    return stdexec::just(wh::model::chat_invoke_result{wh::model::chat_response{message, {}}});
   }
 
   [[nodiscard]] auto stream_sender(const wh::model::chat_request &) const {
-    return stdexec::just(wh::model::chat_message_stream_result{
-        wh::model::chat_message_stream_reader{
+    return stdexec::just(
+        wh::model::chat_message_stream_result{wh::model::chat_message_stream_reader{
             wh::schema::stream::make_single_value_stream_reader<wh::schema::message>(
-                wh::schema::message{
-                    .role = wh::schema::message_role::assistant,
-                    .parts = {wh::schema::text_part{"async-stream"}}})}});
+                wh::schema::message{.role = wh::schema::message_role::assistant,
+                                    .parts = {wh::schema::text_part{"async-stream"}}})}});
   }
 };
 
@@ -136,8 +127,7 @@ struct failing_probe_model_impl {
 
   [[nodiscard]] auto stream(const wh::model::chat_request &) const
       -> wh::model::chat_message_stream_result {
-    return wh::model::chat_message_stream_result::failure(
-        wh::core::errc::timeout);
+    return wh::model::chat_message_stream_result::failure(wh::core::errc::timeout);
   }
 };
 
@@ -164,8 +154,7 @@ TEST_CASE("chat model wrapper exposes sync surface options and tool binding",
 
   auto invoked = rebound.invoke(request, context);
   REQUIRE(invoked.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(invoked.value().message.parts.front()).text ==
-          "bound:1");
+  REQUIRE(std::get<wh::schema::text_part>(invoked.value().message.parts.front()).text == "bound:1");
 
   auto streamed = rebound.stream(request, context);
   REQUIRE(streamed.has_value());
@@ -173,8 +162,7 @@ TEST_CASE("chat model wrapper exposes sync surface options and tool binding",
   auto first = take_try_chunk(reader);
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front()).text ==
-          "stream:1");
+  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front()).text == "stream:1");
   REQUIRE(state->invoke_calls == 1U);
   REQUIRE(state->stream_calls == 1U);
   REQUIRE(state->bound_tool_count == 1U);
@@ -190,9 +178,9 @@ TEST_CASE("chat model wrapper normalizes async invoke and stream senders",
   auto invoked = stdexec::sync_wait(wrapped.async_invoke(request, context));
   REQUIRE(invoked.has_value());
   REQUIRE(std::get<0>(*invoked).has_value());
-  REQUIRE(std::get<wh::schema::text_part>(
-              std::get<0>(*invoked).value().message.parts.front())
-              .text == "async");
+  REQUIRE(
+      std::get<wh::schema::text_part>(std::get<0>(*invoked).value().message.parts.front()).text ==
+      "async");
 
   auto streamed = stdexec::sync_wait(wrapped.async_stream(request, context));
   REQUIRE(streamed.has_value());
@@ -216,48 +204,41 @@ TEST_CASE("chat model fallback helpers report invoke and stream selections",
   request.tools.push_back({.name = "search", .description = "lookup"});
 
   auto invoke_report = wh::model::invoke_with_fallback_report_only(
-      std::span<const wh::model::chat_model<sync_probe_model_impl>>{models},
-      request);
+      std::span<const wh::model::chat_model<sync_probe_model_impl>>{models}, request);
   REQUIRE_FALSE(invoke_report.final_error.has_value());
-  REQUIRE(invoke_report.frozen_candidates ==
-          std::vector<std::string>{"ProbeModel"});
-  REQUIRE(invoke_report.response.message.role ==
-          wh::schema::message_role::assistant);
+  REQUIRE(invoke_report.frozen_candidates == std::vector<std::string>{"ProbeModel"});
+  REQUIRE(invoke_report.response.message.role == wh::schema::message_role::assistant);
   REQUIRE(state->bind_calls == 1U);
 
   auto stream_report = wh::model::stream_with_fallback_report_only(
-      std::span<const wh::model::chat_model<sync_probe_model_impl>>{models},
-      request);
+      std::span<const wh::model::chat_model<sync_probe_model_impl>>{models}, request);
   REQUIRE_FALSE(stream_report.final_error.has_value());
   REQUIRE(stream_report.selected_model == "ProbeModel");
   auto reader = std::move(stream_report.reader);
   auto first = take_try_chunk(reader);
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front()).text ==
-          "stream:1");
+  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front()).text == "stream:1");
 
   wh::model::chat_model_common_options forced{};
   forced.tool_choice.mode = wh::schema::tool_call_mode::force;
   forced.allowed_tool_names = {"missing"};
   request.options.set_base(forced);
   auto missing = wh::model::invoke_with_fallback_report_only(
-      std::span<const wh::model::chat_model<sync_probe_model_impl>>{models},
-      request);
+      std::span<const wh::model::chat_model<sync_probe_model_impl>>{models}, request);
   REQUIRE(missing.final_error.has_value());
   REQUIRE(*missing.final_error == wh::core::errc::not_found);
 
   wh::model::chat_request empty_request{};
   auto no_models = wh::model::invoke_with_fallback_report_only(
-      std::span<const wh::model::chat_model<sync_probe_model_impl>>{},
-      empty_request);
+      std::span<const wh::model::chat_model<sync_probe_model_impl>>{}, empty_request);
   REQUIRE(no_models.final_error.has_value());
   REQUIRE(*no_models.final_error == wh::core::errc::not_found);
 }
 
-TEST_CASE(
-    "chat model fallback helpers honor keep-failure-reasons when all candidates fail",
-    "[UT][wh/model/chat_model.hpp][stream_with_fallback_report_only][condition][branch][boundary]") {
+TEST_CASE("chat model fallback helpers honor keep-failure-reasons when all candidates fail",
+          "[UT][wh/model/"
+          "chat_model.hpp][stream_with_fallback_report_only][condition][branch][boundary]") {
   std::array<wh::model::chat_model<failing_probe_model_impl>, 2> models{
       wh::model::chat_model{failing_probe_model_impl{"slow"}},
       wh::model::chat_model{failing_probe_model_impl{"fast"}}};
@@ -269,8 +250,7 @@ TEST_CASE(
   keep.fallback.keep_failure_reasons = true;
   request.options.set_base(keep);
   auto kept = wh::model::invoke_with_fallback_report_only(
-      std::span<const wh::model::chat_model<failing_probe_model_impl>>{models},
-      request);
+      std::span<const wh::model::chat_model<failing_probe_model_impl>>{models}, request);
   REQUIRE(kept.final_error.has_value());
   REQUIRE(*kept.final_error == wh::core::errc::timeout);
   REQUIRE(kept.attempts.size() == 2U);
@@ -280,8 +260,7 @@ TEST_CASE(
   drop.fallback.keep_failure_reasons = false;
   request.options.set_base(drop);
   auto dropped = wh::model::stream_with_fallback_report_only(
-      std::span<const wh::model::chat_model<failing_probe_model_impl>>{models},
-      request);
+      std::span<const wh::model::chat_model<failing_probe_model_impl>>{models}, request);
   REQUIRE(dropped.final_error.has_value());
   REQUIRE(*dropped.final_error == wh::core::errc::timeout);
   REQUIRE(dropped.attempts.empty());

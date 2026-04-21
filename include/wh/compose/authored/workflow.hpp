@@ -33,12 +33,11 @@
 namespace wh::compose {
 
 /// Stable internal key prefix used by lowered workflow input nodes.
-inline constexpr std::string_view workflow_input_node_key_prefix =
-    "__wf_input__";
+inline constexpr std::string_view workflow_input_node_key_prefix = "__wf_input__";
 
 /// Returns the stable internal pre-node key used for one workflow target.
-[[nodiscard]] inline auto
-workflow_input_node_key(const std::string_view target_key) -> std::string {
+[[nodiscard]] inline auto workflow_input_node_key(const std::string_view target_key)
+    -> std::string {
   std::string key{workflow_input_node_key_prefix};
   key.append(target_key);
   return key;
@@ -80,21 +79,18 @@ public:
 
     /// Adds one graph-entry input dependency to this step.
     auto from_entry() const -> wh::core::result<void> {
-      return add_dependency_from_key(
-          graph_start_node_key, workflow_dependency_kind::control_data, {});
+      return add_dependency_from_key(graph_start_node_key, workflow_dependency_kind::control_data,
+                                     {});
     }
 
     /// Adds one execution-only dependency from the graph entry boundary.
     auto from_entry_without_input() const -> wh::core::result<void> {
-      return add_dependency_from_key(graph_start_node_key,
-                                     workflow_dependency_kind::control, {});
+      return add_dependency_from_key(graph_start_node_key, workflow_dependency_kind::control, {});
     }
 
     /// Adds one mapped graph-entry input dependency to this step.
-    auto from_entry(std::vector<field_mapping_rule> mappings) const
-        -> wh::core::result<void> {
-      return add_dependency_from_key(graph_start_node_key,
-                                     workflow_dependency_kind::control_data,
+    auto from_entry(std::vector<field_mapping_rule> mappings) const -> wh::core::result<void> {
+      return add_dependency_from_key(graph_start_node_key, workflow_dependency_kind::control_data,
                                      std::move(mappings));
     }
 
@@ -108,8 +104,7 @@ public:
       if (from_valid.has_error()) {
         return from_valid;
       }
-      return add_dependency_from_key(from.key_,
-                                     workflow_dependency_kind::control, {});
+      return add_dependency_from_key(from.key_, workflow_dependency_kind::control, {});
     }
 
     /// Adds one data+control input dependency from another step.
@@ -122,13 +117,11 @@ public:
       if (from_valid.has_error()) {
         return from_valid;
       }
-      return add_dependency_from_key(
-          from.key_, workflow_dependency_kind::control_data, {});
+      return add_dependency_from_key(from.key_, workflow_dependency_kind::control_data, {});
     }
 
     /// Adds one mapped data+control input dependency from another step.
-    auto add_input(const step_ref &from,
-                   std::vector<field_mapping_rule> mappings) const
+    auto add_input(const step_ref &from, std::vector<field_mapping_rule> mappings) const
         -> wh::core::result<void> {
       auto valid = validate();
       if (valid.has_error()) {
@@ -138,14 +131,12 @@ public:
       if (from_valid.has_error()) {
         return from_valid;
       }
-      return add_dependency_from_key(from.key_,
-                                     workflow_dependency_kind::control_data,
+      return add_dependency_from_key(from.key_, workflow_dependency_kind::control_data,
                                      std::move(mappings));
     }
 
     /// Adds one data-only input dependency from another step.
-    auto add_input_without_control(const step_ref &from) const
-        -> wh::core::result<void> {
+    auto add_input_without_control(const step_ref &from) const -> wh::core::result<void> {
       auto valid = validate();
       if (valid.has_error()) {
         return valid;
@@ -154,14 +145,12 @@ public:
       if (from_valid.has_error()) {
         return from_valid;
       }
-      return add_dependency_from_key(from.key_, workflow_dependency_kind::data,
-                                     {});
+      return add_dependency_from_key(from.key_, workflow_dependency_kind::data, {});
     }
 
     /// Adds one mapped data-only input dependency from another step.
-    auto
-    add_input_without_control(const step_ref &from,
-                              std::vector<field_mapping_rule> mappings) const
+    auto add_input_without_control(const step_ref &from,
+                                   std::vector<field_mapping_rule> mappings) const
         -> wh::core::result<void> {
       auto valid = validate();
       if (valid.has_error()) {
@@ -176,8 +165,7 @@ public:
     }
 
     /// Adds one value branch routed from this step.
-    auto add_value_branch(const value_branch &branch) const
-        -> wh::core::result<void> {
+    auto add_value_branch(const value_branch &branch) const -> wh::core::result<void> {
       auto source_valid = validate_source();
       if (source_valid.has_error()) {
         return source_valid;
@@ -186,8 +174,7 @@ public:
     }
 
     /// Adds one value branch routed from this step.
-    auto add_value_branch(value_branch &&branch) const
-        -> wh::core::result<void> {
+    auto add_value_branch(value_branch &&branch) const -> wh::core::result<void> {
       auto source_valid = validate_source();
       if (source_valid.has_error()) {
         return source_valid;
@@ -196,8 +183,7 @@ public:
     }
 
     /// Adds one stream branch routed from this step.
-    auto add_stream_branch(const stream_branch &branch) const
-        -> wh::core::result<void> {
+    auto add_stream_branch(const stream_branch &branch) const -> wh::core::result<void> {
       auto source_valid = validate_source();
       if (source_valid.has_error()) {
         return source_valid;
@@ -206,8 +192,7 @@ public:
     }
 
     /// Adds one stream branch routed from this step.
-    auto add_stream_branch(stream_branch &&branch) const
-        -> wh::core::result<void> {
+    auto add_stream_branch(stream_branch &&branch) const -> wh::core::result<void> {
       auto source_valid = validate_source();
       if (source_valid.has_error()) {
         return source_valid;
@@ -216,23 +201,19 @@ public:
     }
 
     /// Expands one authored parallel group from this step.
-    auto add_parallel(const parallel &group) const
-        -> wh::core::result<std::vector<step_ref>> {
+    auto add_parallel(const parallel &group) const -> wh::core::result<std::vector<step_ref>> {
       auto source_valid = validate_source();
       if (source_valid.has_error()) {
-        return wh::core::result<std::vector<step_ref>>::failure(
-            source_valid.error());
+        return wh::core::result<std::vector<step_ref>>::failure(source_valid.error());
       }
       return owner_->add_parallel_from(key_, group);
     }
 
     /// Expands one authored parallel group from this step.
-    auto add_parallel(parallel &&group) const
-        -> wh::core::result<std::vector<step_ref>> {
+    auto add_parallel(parallel &&group) const -> wh::core::result<std::vector<step_ref>> {
       auto source_valid = validate_source();
       if (source_valid.has_error()) {
-        return wh::core::result<std::vector<step_ref>>::failure(
-            source_valid.error());
+        return wh::core::result<std::vector<step_ref>>::failure(source_valid.error());
       }
       return owner_->add_parallel_from(key_, std::move(group));
     }
@@ -241,8 +222,7 @@ public:
     template <typename path_t, typename value_t>
       requires std::constructible_from<std::string, path_t &&> &&
                std::constructible_from<graph_value, value_t &&>
-    auto set_static_value(path_t &&path, value_t &&value) const
-        -> wh::core::result<void> {
+    auto set_static_value(path_t &&path, value_t &&value) const -> wh::core::result<void> {
       auto valid = validate();
       if (valid.has_error()) {
         return valid;
@@ -256,8 +236,7 @@ public:
   private:
     friend class workflow;
 
-    explicit step_ref(workflow *owner, std::string key)
-        : owner_(owner), key_(std::move(key)) {}
+    explicit step_ref(workflow *owner, std::string key) : owner_(owner), key_(std::move(key)) {}
 
     [[nodiscard]] auto validate() const -> wh::core::result<void> {
       return owner_->validate_target_key(key_);
@@ -267,17 +246,14 @@ public:
       return owner_->validate_source_key(key_);
     }
 
-    [[nodiscard]] auto validate_source_ref(const step_ref &from) const
-        -> wh::core::result<void> {
+    [[nodiscard]] auto validate_source_ref(const step_ref &from) const -> wh::core::result<void> {
       if (from.owner_ != owner_) {
-        return wh::core::result<void>::failure(
-            wh::core::errc::invalid_argument);
+        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       }
       return owner_->validate_source_key(from.key_);
     }
 
-    auto add_dependency_from_key(const std::string_view from,
-                                 const workflow_dependency_kind kind,
+    auto add_dependency_from_key(const std::string_view from, const workflow_dependency_kind kind,
                                  std::vector<field_mapping_rule> mappings) const
         -> wh::core::result<void> {
       workflow_dependency dependency{};
@@ -294,8 +270,7 @@ public:
 
   workflow() = default;
   explicit workflow(const graph_compile_options &options) : graph_(options) {}
-  explicit workflow(graph_compile_options &&options)
-      : graph_(std::move(options)) {}
+  explicit workflow(graph_compile_options &&options) : graph_(std::move(options)) {}
 
   template <authored_node_like node_t>
   /// Registers one authored node as a workflow step and returns a step handle.
@@ -322,17 +297,14 @@ public:
     return retain_step(step_key, status);
   }
 
-  template <typename key_t, typename graph_t,
-            typename options_t = graph_add_node_options>
+  template <typename key_t, typename graph_t, typename options_t = graph_add_node_options>
     requires std::constructible_from<std::string, key_t &&> &&
              std::constructible_from<graph_add_node_options, options_t &&> &&
              graph_viewable<std::remove_cvref_t<graph_t>>
   /// Registers one graph-like object as a workflow step via a subgraph node.
-  auto add_subgraph_step(key_t &&key, graph_t &&subgraph,
-                         options_t &&options = {})
+  auto add_subgraph_step(key_t &&key, graph_t &&subgraph, options_t &&options = {})
       -> wh::core::result<step_ref> {
-    return add_step(make_subgraph_node(std::forward<key_t>(key),
-                                       std::forward<graph_t>(subgraph),
+    return add_step(make_subgraph_node(std::forward<key_t>(key), std::forward<graph_t>(subgraph),
                                        std::forward<options_t>(options)));
   }
 
@@ -387,18 +359,16 @@ public:
     requires std::constructible_from<graph_value_map, input_t &&>
   /// Executes the lowered graph and returns one sender of
   /// `result<graph_value_map>`.
-  [[nodiscard]] auto invoke(wh::core::run_context &context,
-                            input_t &&input) const {
+  [[nodiscard]] auto invoke(wh::core::run_context &context, input_t &&input) const {
     using result_t = wh::core::result<graph_value_map>;
     using error_sender_t = wh::core::detail::ready_sender_t<result_t>;
     using request_t = wh::compose::graph_invoke_request;
     using graph_sender_t = std::remove_cvref_t<decltype(map_graph_output_sender(
         graph_.invoke(context,
-                      request_t{.input = value_map_to_payload(graph_value_map{
-                                    std::forward<input_t>(input)})}),
+                      request_t{.input = wh::compose::graph_input::value(value_map_to_payload(
+                                    graph_value_map{std::forward<input_t>(input)}))}),
         output_source_keys_))>;
-    using sender_t =
-        wh::core::detail::variant_sender<error_sender_t, graph_sender_t>;
+    using sender_t = wh::core::detail::variant_sender<error_sender_t, graph_sender_t>;
 
     if (!compiled_ || first_error_.has_value()) {
       return sender_t{wh::core::detail::failure_result_sender<result_t>(
@@ -407,20 +377,16 @@ public:
 
     return sender_t{map_graph_output_sender(
         graph_.invoke(context,
-                      request_t{.input = value_map_to_payload(graph_value_map{
-                                    std::forward<input_t>(input)})}),
+                      request_t{.input = wh::compose::graph_input::value(value_map_to_payload(
+                                    graph_value_map{std::forward<input_t>(input)}))}),
         output_source_keys_)};
   }
 
   /// Returns the lowered graph view.
-  [[nodiscard]] auto graph_view() const noexcept -> const graph & {
-    return graph_;
-  }
+  [[nodiscard]] auto graph_view() const noexcept -> const graph & { return graph_; }
 
   /// Releases the lowered graph for nesting or ownership transfer.
-  [[nodiscard]] auto release_graph() && noexcept -> graph {
-    return std::move(graph_);
-  }
+  [[nodiscard]] auto release_graph() && noexcept -> graph { return std::move(graph_); }
 
 private:
   [[nodiscard]] static constexpr auto
@@ -431,8 +397,7 @@ private:
 
   [[nodiscard]] static constexpr auto
   has_data_dependency(const workflow_dependency_kind kind) noexcept -> bool {
-    return kind == workflow_dependency_kind::data ||
-           kind == workflow_dependency_kind::control_data;
+    return kind == workflow_dependency_kind::data || kind == workflow_dependency_kind::control_data;
   }
 
   [[nodiscard]] static constexpr auto
@@ -440,14 +405,12 @@ private:
     return source_key == graph_start_node_key;
   }
 
-  [[nodiscard]] static constexpr auto dependency_carries_input_payload(
-      const workflow_dependency &dependency) noexcept -> bool {
-    return has_data_dependency(dependency.kind) ||
-           carries_graph_input(dependency.from);
+  [[nodiscard]] static constexpr auto
+  dependency_carries_input_payload(const workflow_dependency &dependency) noexcept -> bool {
+    return has_data_dependency(dependency.kind) || carries_graph_input(dependency.from);
   }
 
-  [[nodiscard]] static auto
-  map_graph_output_sender(stdexec::sender auto &&sender) {
+  [[nodiscard]] static auto map_graph_output_sender(stdexec::sender auto &&sender) {
     return map_graph_output_sender(std::forward<decltype(sender)>(sender), {});
   }
 
@@ -456,16 +419,14 @@ private:
                           const std::vector<std::string> &output_source_keys) {
     using result_t = wh::core::result<graph_value_map>;
     return wh::core::detail::map_result_sender<result_t>(
-        wh::core::detail::normalize_result_sender<
-            wh::core::result<graph_invoke_result>>(
+        wh::core::detail::normalize_result_sender<wh::core::result<graph_invoke_result>>(
             std::forward<decltype(sender)>(sender)),
         [output_source_keys](graph_invoke_result invoke_result) {
           if (invoke_result.output_status.has_error()) {
             return wh::core::result<graph_value_map>::failure(
                 std::move(invoke_result.output_status).error());
           }
-          auto output = payload_to_value_map(
-              std::move(invoke_result.output_status).value());
+          auto output = payload_to_value_map(std::move(invoke_result.output_status).value());
           if (output.has_error()) {
             return output;
           }
@@ -475,22 +436,19 @@ private:
           }
 
           const auto iter = output.value().begin();
-          if (std::ranges::find(output_source_keys, iter->first) ==
-              output_source_keys.end()) {
+          if (std::ranges::find(output_source_keys, iter->first) == output_source_keys.end()) {
             return output;
           }
 
           auto unwrapped = payload_to_value_map(graph_value{iter->second});
           if (unwrapped.has_error()) {
-            return wh::core::result<graph_value_map>::failure(
-                unwrapped.error());
+            return wh::core::result<graph_value_map>::failure(unwrapped.error());
           }
           return unwrapped;
         });
   }
 
-  [[nodiscard]] static auto
-  validate_dependency(const workflow_dependency &dependency)
+  [[nodiscard]] static auto validate_dependency(const workflow_dependency &dependency)
       -> wh::core::result<void> {
     if (dependency.from.empty() || dependency.to.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -501,24 +459,21 @@ private:
     if (!has_data_dependency(dependency.kind) && !dependency.mappings.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    if (has_data_dependency(dependency.kind) &&
-        !has_control_dependency(dependency.kind) &&
+    if (has_data_dependency(dependency.kind) && !has_control_dependency(dependency.kind) &&
         dependency.mappings.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     return {};
   }
 
-  [[nodiscard]] static auto
-  has_control_path(const control_edge_list &control_edges,
-                   const std::string_view from, const std::string_view to)
+  [[nodiscard]] static auto has_control_path(const control_edge_list &control_edges,
+                                             const std::string_view from, const std::string_view to)
       -> bool {
     if (from == to) {
       return true;
     }
 
-    std::unordered_map<std::string_view, std::vector<std::string_view>>
-        adjacency{};
+    std::unordered_map<std::string_view, std::vector<std::string_view>> adjacency{};
     for (const auto &edge : control_edges) {
       adjacency[edge.from].push_back(edge.to);
     }
@@ -547,17 +502,14 @@ private:
     return false;
   }
 
-  [[nodiscard]] static auto is_path_prefix(const field_path &lhs,
-                                           const field_path &rhs) -> bool {
+  [[nodiscard]] static auto is_path_prefix(const field_path &lhs, const field_path &rhs) -> bool {
     if (lhs.segments.size() > rhs.segments.size()) {
       return false;
     }
-    return std::ranges::equal(
-        lhs.segments, rhs.segments | std::views::take(lhs.segments.size()));
+    return std::ranges::equal(lhs.segments, rhs.segments | std::views::take(lhs.segments.size()));
   }
 
-  [[nodiscard]] static auto
-  is_whole_object_mapping(const field_mapping_rule &rule) -> bool {
+  [[nodiscard]] static auto is_whole_object_mapping(const field_mapping_rule &rule) -> bool {
     return rule.to_path == "*";
   }
 
@@ -570,8 +522,7 @@ private:
     }
     if (rule.static_value.has_value()) {
       if (!rule.from_path.empty() || static_cast<bool>(rule.extractor)) {
-        return wh::core::result<void>::failure(
-            wh::core::errc::invalid_argument);
+        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       }
     } else if (!rule.extractor && rule.from_path.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -579,15 +530,12 @@ private:
 
     const bool new_whole_mapping = is_whole_object_mapping(rule);
     if (new_whole_mapping && !existing_rules.empty()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
-    if (std::ranges::any_of(existing_rules,
-                            [](const field_mapping_rule &existing) -> bool {
-                              return is_whole_object_mapping(existing);
-                            })) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+    if (std::ranges::any_of(existing_rules, [](const field_mapping_rule &existing) -> bool {
+          return is_whole_object_mapping(existing);
+        })) {
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
 
     if (new_whole_mapping) {
@@ -620,8 +568,7 @@ private:
 
   [[nodiscard]] auto ensure_writable() const -> wh::core::result<void> {
     if (compiled_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     if (first_error_.has_value()) {
       return wh::core::result<void>::failure(*first_error_);
@@ -636,8 +583,7 @@ private:
     return wh::core::result<void>::failure(code);
   }
 
-  auto retain_step(const std::string &step_key,
-                   const wh::core::result<void> &status)
+  auto retain_step(const std::string &step_key, const wh::core::result<void> &status)
       -> wh::core::result<step_ref> {
     if (status.has_error()) {
       return wh::core::result<step_ref>::failure(status.error());
@@ -697,8 +643,7 @@ private:
     return {};
   }
 
-  auto stage_dependency(workflow_dependency dependency)
-      -> wh::core::result<void> {
+  auto stage_dependency(workflow_dependency dependency) -> wh::core::result<void> {
     auto writable = ensure_writable();
     if (writable.has_error()) {
       return writable;
@@ -725,8 +670,7 @@ private:
     return {};
   }
 
-  auto stage_value_branch(const std::string_view from,
-                          const value_branch &branch)
+  auto stage_value_branch(const std::string_view from, const value_branch &branch)
       -> wh::core::result<void> {
     auto writable = ensure_writable();
     if (writable.has_error()) {
@@ -760,8 +704,7 @@ private:
     return {};
   }
 
-  auto stage_stream_branch(const std::string_view from,
-                           const stream_branch &branch)
+  auto stage_stream_branch(const std::string_view from, const stream_branch &branch)
       -> wh::core::result<void> {
     auto writable = ensure_writable();
     if (writable.has_error()) {
@@ -804,16 +747,14 @@ private:
     }
     auto source_valid = validate_source_key(from);
     if (source_valid.has_error()) {
-      return wh::core::result<std::vector<step_ref>>::failure(
-          source_valid.error());
+      return wh::core::result<std::vector<step_ref>>::failure(source_valid.error());
     }
 
     using stored_group_t = std::remove_cvref_t<group_t>;
     stored_group_t stored_group{std::forward<group_t>(group)};
     const auto &nodes = stored_group.nodes();
     if (nodes.size() < 2U) {
-      return wh::core::result<std::vector<step_ref>>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<std::vector<step_ref>>::failure(wh::core::errc::invalid_argument);
     }
 
     std::vector<step_ref> added_steps{};
@@ -836,8 +777,7 @@ private:
     return added_steps;
   }
 
-  auto validate_staged_rules(const std::string_view target,
-                             const workflow_dependency &dependency)
+  auto validate_staged_rules(const std::string_view target, const workflow_dependency &dependency)
       -> wh::core::result<void> {
     if (!dependency_carries_input_payload(dependency)) {
       return {};
@@ -864,8 +804,7 @@ private:
 
   [[nodiscard]] static auto find_or_add_input_plan(
       std::vector<input_node_plan> &plans,
-      std::unordered_map<std::string, std::size_t,
-                         wh::core::transparent_string_hash,
+      std::unordered_map<std::string, std::size_t, wh::core::transparent_string_hash,
                          wh::core::transparent_string_equal> &plan_index,
       const std::string_view target_key) -> input_node_plan & {
     const auto [iter, inserted] = plan_index.emplace(target_key, plans.size());
@@ -875,18 +814,16 @@ private:
     return plans[iter->second];
   }
 
-  [[nodiscard]] static auto
-  make_input_node(const std::string &key,
-                  std::vector<compiled_field_mapping_rule> rules)
+  [[nodiscard]] static auto make_input_node(const std::string &key,
+                                            std::vector<compiled_field_mapping_rule> rules)
       -> lambda_node {
     graph_add_node_options options{};
     options.type = "workflow.input";
     options.label = "workflow.input";
     return make_lambda_node(
         key,
-        [rules = std::move(rules)](
-            graph_value_map &input, wh::core::run_context &context,
-            const graph_call_scope &) -> wh::core::result<graph_value_map> {
+        [rules = std::move(rules)](graph_value_map &input, wh::core::run_context &context,
+                                   const graph_call_scope &) -> wh::core::result<graph_value_map> {
           auto updated = apply_field_mappings_in_place(input, rules, context);
           if (updated.has_error()) {
             return wh::core::result<graph_value_map>::failure(updated.error());
@@ -898,31 +835,26 @@ private:
 
   [[nodiscard]] auto collect_control_edges() const -> control_edge_list {
     control_edge_list control_edges{};
-    control_edges.reserve(dependencies_.size() + value_branches_.size() +
-                          stream_branches_.size());
+    control_edges.reserve(dependencies_.size() + value_branches_.size() + stream_branches_.size());
     for (const auto &dependency : dependencies_) {
       if (has_control_dependency(dependency.kind)) {
-        control_edges.push_back(
-            control_edge{.from = dependency.from, .to = dependency.to});
+        control_edges.push_back(control_edge{.from = dependency.from, .to = dependency.to});
       }
     }
     for (const auto &branch : value_branches_) {
       for (const auto &target : branch.branch.end_nodes()) {
-        control_edges.push_back(
-            control_edge{.from = branch.from, .to = target});
+        control_edges.push_back(control_edge{.from = branch.from, .to = target});
       }
     }
     for (const auto &branch : stream_branches_) {
       for (const auto &target : branch.branch.end_nodes()) {
-        control_edges.push_back(
-            control_edge{.from = branch.from, .to = target});
+        control_edges.push_back(control_edge{.from = branch.from, .to = target});
       }
     }
     return control_edges;
   }
 
-  [[nodiscard]] auto
-  terminal_steps(const control_edge_list &control_edges) const
+  [[nodiscard]] auto terminal_steps(const control_edge_list &control_edges) const
       -> std::vector<std::string> {
     std::unordered_set<std::string, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>
@@ -942,16 +874,13 @@ private:
     return terminals;
   }
 
-  [[nodiscard]] static auto
-  has_explicit_end_route(const control_edge_list &control_edges) noexcept
+  [[nodiscard]] static auto has_explicit_end_route(const control_edge_list &control_edges) noexcept
       -> bool {
-    return std::ranges::any_of(control_edges, [](const auto &edge) noexcept {
-      return edge.to == graph_end_node_key;
-    });
+    return std::ranges::any_of(
+        control_edges, [](const auto &edge) noexcept { return edge.to == graph_end_node_key; });
   }
 
-  auto validate_terminal_shape(const control_edge_list &control_edges)
-      -> wh::core::result<void> {
+  auto validate_terminal_shape(const control_edge_list &control_edges) -> wh::core::result<void> {
     if (has_explicit_end_route(control_edges)) {
       return {};
     }
@@ -990,8 +919,8 @@ private:
   [[nodiscard]] static auto rewrite_target_key(
       const std::string_view target,
       const std::unordered_set<std::string, wh::core::transparent_string_hash,
-                               wh::core::transparent_string_equal>
-          &input_node_targets) -> std::string {
+                               wh::core::transparent_string_equal> &input_node_targets)
+      -> std::string {
     if (input_node_targets.contains(target)) {
       return workflow_input_node_key(target);
     }
@@ -1002,15 +931,12 @@ private:
       const std::vector<workflow_dependency> &dependencies,
       const std::unordered_map<std::string, std::vector<field_mapping_rule>,
                                wh::core::transparent_string_hash,
-                               wh::core::transparent_string_equal>
-          &static_rules,
+                               wh::core::transparent_string_equal> &static_rules,
       const std::unordered_set<std::string, wh::core::transparent_string_hash,
-                               wh::core::transparent_string_equal>
-          &input_node_targets)
+                               wh::core::transparent_string_equal> &input_node_targets)
       -> wh::core::result<std::vector<input_node_plan>> {
     std::vector<input_node_plan> plans{};
-    std::unordered_map<std::string, std::size_t,
-                       wh::core::transparent_string_hash,
+    std::unordered_map<std::string, std::size_t, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>
         plan_index{};
 
@@ -1019,16 +945,14 @@ private:
     }
 
     for (const auto &dependency : dependencies) {
-      if (!input_node_targets.contains(dependency.to) ||
-          dependency.mappings.empty()) {
+      if (!input_node_targets.contains(dependency.to) || dependency.mappings.empty()) {
         continue;
       }
       auto &plan = find_or_add_input_plan(plans, plan_index, dependency.to);
       for (const auto &rule : dependency.mappings) {
         auto compiled_rule = compile_field_mapping_rule(rule);
         if (compiled_rule.has_error()) {
-          return wh::core::result<std::vector<input_node_plan>>::failure(
-              compiled_rule.error());
+          return wh::core::result<std::vector<input_node_plan>>::failure(compiled_rule.error());
         }
         plan.rules.push_back(std::move(compiled_rule).value());
       }
@@ -1042,8 +966,7 @@ private:
       for (const auto &rule : rules) {
         auto compiled_rule = compile_field_mapping_rule(rule);
         if (compiled_rule.has_error()) {
-          return wh::core::result<std::vector<input_node_plan>>::failure(
-              compiled_rule.error());
+          return wh::core::result<std::vector<input_node_plan>>::failure(compiled_rule.error());
         }
         plan.rules.push_back(std::move(compiled_rule).value());
       }
@@ -1052,11 +975,10 @@ private:
     return plans;
   }
 
-  auto add_input_nodes(const std::vector<input_node_plan> &plans)
-      -> wh::core::result<void> {
+  auto add_input_nodes(const std::vector<input_node_plan> &plans) -> wh::core::result<void> {
     for (const auto &plan : plans) {
-      auto added = graph_.add_lambda(make_input_node(
-          workflow_input_node_key(plan.target_key), plan.rules));
+      auto added =
+          graph_.add_lambda(make_input_node(workflow_input_node_key(plan.target_key), plan.rules));
       if (added.has_error()) {
         return retain_error(added.error());
       }
@@ -1064,13 +986,10 @@ private:
     return {};
   }
 
-  [[nodiscard]] static auto
-  build_input_plan_lookup(std::vector<input_node_plan> &plans)
-      -> std::unordered_map<std::string, input_node_plan *,
-                            wh::core::transparent_string_hash,
+  [[nodiscard]] static auto build_input_plan_lookup(std::vector<input_node_plan> &plans)
+      -> std::unordered_map<std::string, input_node_plan *, wh::core::transparent_string_hash,
                             wh::core::transparent_string_equal> {
-    std::unordered_map<std::string, input_node_plan *,
-                       wh::core::transparent_string_hash,
+    std::unordered_map<std::string, input_node_plan *, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>
         lookup{};
     lookup.reserve(plans.size());
@@ -1083,32 +1002,26 @@ private:
   auto lower_dependency_edges(
       const control_edge_list &control_edges,
       const std::unordered_set<std::string, wh::core::transparent_string_hash,
-                               wh::core::transparent_string_equal>
-          &input_node_targets,
-      std::unordered_map<std::string, input_node_plan *,
-                         wh::core::transparent_string_hash,
+                               wh::core::transparent_string_equal> &input_node_targets,
+      std::unordered_map<std::string, input_node_plan *, wh::core::transparent_string_hash,
                          wh::core::transparent_string_equal> &plan_lookup)
       -> wh::core::result<void> {
     for (const auto &dependency : dependencies_) {
-      if (has_data_dependency(dependency.kind) &&
-          !has_control_dependency(dependency.kind) &&
+      if (has_data_dependency(dependency.kind) && !has_control_dependency(dependency.kind) &&
           !has_control_path(control_edges, dependency.from, dependency.to)) {
         return retain_error(wh::core::errc::contract_violation);
       }
 
-      const auto destination =
-          rewrite_target_key(dependency.to, input_node_targets);
-      if (auto iter = plan_lookup.find(dependency.to);
-          iter != plan_lookup.end()) {
+      const auto destination = rewrite_target_key(dependency.to, input_node_targets);
+      if (auto iter = plan_lookup.find(dependency.to); iter != plan_lookup.end()) {
         iter->second->has_incoming_edge = true;
       }
 
-      auto linked = graph_.add_edge(
-          dependency.from, destination,
-          edge_options{
-              .no_control = !has_control_dependency(dependency.kind),
-              .no_data = !dependency_carries_input_payload(dependency),
-          });
+      auto linked = graph_.add_edge(dependency.from, destination,
+                                    edge_options{
+                                        .no_control = !has_control_dependency(dependency.kind),
+                                        .no_data = !dependency_carries_input_payload(dependency),
+                                    });
       if (linked.has_error()) {
         return retain_error(linked.error());
       }
@@ -1118,10 +1031,8 @@ private:
 
   auto apply_value_branches(
       const std::unordered_set<std::string, wh::core::transparent_string_hash,
-                               wh::core::transparent_string_equal>
-          &input_node_targets,
-      std::unordered_map<std::string, input_node_plan *,
-                         wh::core::transparent_string_hash,
+                               wh::core::transparent_string_equal> &input_node_targets,
+      std::unordered_map<std::string, input_node_plan *, wh::core::transparent_string_hash,
                          wh::core::transparent_string_equal> &plan_lookup)
       -> wh::core::result<void> {
     for (const auto &plan : value_branches_) {
@@ -1139,8 +1050,8 @@ private:
         if (auto iter = plan_lookup.find(entry.to); iter != plan_lookup.end()) {
           iter->second->has_incoming_edge = true;
         }
-        auto added = rewritten.add_case(
-            rewrite_target_key(entry.to, input_node_targets), entry.match);
+        auto added =
+            rewritten.add_case(rewrite_target_key(entry.to, input_node_targets), entry.match);
         if (added.has_error()) {
           return retain_error(added.error());
         }
@@ -1156,10 +1067,8 @@ private:
 
   auto apply_stream_branches(
       const std::unordered_set<std::string, wh::core::transparent_string_hash,
-                               wh::core::transparent_string_equal>
-          &input_node_targets,
-      std::unordered_map<std::string, input_node_plan *,
-                         wh::core::transparent_string_hash,
+                               wh::core::transparent_string_equal> &input_node_targets,
+      std::unordered_map<std::string, input_node_plan *, wh::core::transparent_string_hash,
                          wh::core::transparent_string_equal> &plan_lookup)
       -> wh::core::result<void> {
     for (const auto &plan : stream_branches_) {
@@ -1169,8 +1078,7 @@ private:
       }
 
       stream_branch rewritten{};
-      std::unordered_map<std::string, std::string,
-                         wh::core::transparent_string_hash,
+      std::unordered_map<std::string, std::string, wh::core::transparent_string_hash,
                          wh::core::transparent_string_equal>
           target_rewrites{};
       target_rewrites.reserve(plan.branch.targets().size());
@@ -1193,14 +1101,12 @@ private:
 
       if (plan.branch.selector()) {
         auto selected = rewritten.set_selector(
-            [selector = plan.branch.selector(),
-             target_rewrites = std::move(target_rewrites)](
-                graph_stream_reader input, wh::core::run_context &context)
-                -> wh::core::result<std::vector<std::string>> {
+            [selector = plan.branch.selector(), target_rewrites = std::move(target_rewrites)](
+                graph_stream_reader input,
+                wh::core::run_context &context) -> wh::core::result<std::vector<std::string>> {
               auto routed = selector(std::move(input), context);
               if (routed.has_error()) {
-                return wh::core::result<std::vector<std::string>>::failure(
-                    routed.error());
+                return wh::core::result<std::vector<std::string>>::failure(routed.error());
               }
               std::vector<std::string> rewritten_keys{};
               rewritten_keys.reserve(routed.value().size());
@@ -1227,13 +1133,11 @@ private:
     return {};
   }
 
-  auto connect_input_nodes(std::vector<input_node_plan> &plans)
-      -> wh::core::result<void> {
+  auto connect_input_nodes(std::vector<input_node_plan> &plans) -> wh::core::result<void> {
     for (auto &plan : plans) {
       const auto input_key = workflow_input_node_key(plan.target_key);
       if (!plan.has_incoming_edge) {
-        auto linked =
-            graph_.add_entry_edge(input_key, edge_options{.no_data = false});
+        auto linked = graph_.add_entry_edge(input_key, edge_options{.no_data = false});
         if (linked.has_error()) {
           return retain_error(linked.error());
         }
@@ -1250,14 +1154,14 @@ private:
   [[nodiscard]] auto collect_output_source_keys(
       const control_edge_list &control_edges,
       const std::unordered_set<std::string, wh::core::transparent_string_hash,
-                               wh::core::transparent_string_equal>
-          &input_node_targets) const -> std::vector<std::string> {
+                               wh::core::transparent_string_equal> &input_node_targets) const
+      -> std::vector<std::string> {
     std::unordered_set<std::string, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>
         keys{};
     auto terminals = terminal_steps(control_edges);
-    keys.reserve(terminals.size() + dependencies_.size() +
-                 value_branches_.size() + stream_branches_.size() + 1U);
+    keys.reserve(terminals.size() + dependencies_.size() + value_branches_.size() +
+                 stream_branches_.size() + 1U);
     for (auto &terminal : terminals) {
       keys.insert(std::move(terminal));
     }
@@ -1266,28 +1170,25 @@ private:
       keys.emplace(workflow_input_node_key(graph_end_node_key));
     } else {
       for (const auto &dependency : dependencies_) {
-        if (dependency.to != graph_end_node_key ||
-            !dependency_carries_input_payload(dependency)) {
+        if (dependency.to != graph_end_node_key || !dependency_carries_input_payload(dependency)) {
           continue;
         }
         keys.emplace(dependency.from);
       }
       for (const auto &branch : value_branches_) {
-        if (!std::ranges::any_of(
-                branch.branch.cases(),
-                [](const value_branch_case &entry) noexcept -> bool {
-                  return entry.to == graph_end_node_key;
-                })) {
+        if (!std::ranges::any_of(branch.branch.cases(),
+                                 [](const value_branch_case &entry) noexcept -> bool {
+                                   return entry.to == graph_end_node_key;
+                                 })) {
           continue;
         }
         keys.emplace(branch.from);
       }
       for (const auto &branch : stream_branches_) {
-        if (!std::ranges::any_of(
-                branch.branch.targets(),
-                [](const std::string &target) noexcept -> bool {
-                  return target == graph_end_node_key;
-                })) {
+        if (!std::ranges::any_of(branch.branch.targets(),
+                                 [](const std::string &target) noexcept -> bool {
+                                   return target == graph_end_node_key;
+                                 })) {
           continue;
         }
         keys.emplace(branch.from);
@@ -1302,13 +1203,11 @@ private:
     return output_sources;
   }
 
-  auto connect_terminals_to_end(const control_edge_list &control_edges)
-      -> wh::core::result<void> {
+  auto connect_terminals_to_end(const control_edge_list &control_edges) -> wh::core::result<void> {
     auto terminals = terminal_steps(control_edges);
     for (const auto &step_key : terminals) {
       auto linked = graph_.add_exit_edge(step_key);
-      if (linked.has_error() &&
-          linked.error() != wh::core::errc::already_exists) {
+      if (linked.has_error() && linked.error() != wh::core::errc::already_exists) {
         return retain_error(linked.error());
       }
     }
@@ -1323,8 +1222,7 @@ private:
     }
 
     const auto input_node_targets = determine_input_node_targets();
-    auto plans =
-        build_input_plans(dependencies_, static_rules_, input_node_targets);
+    auto plans = build_input_plans(dependencies_, static_rules_, input_node_targets);
     if (plans.has_error()) {
       return retain_error(plans.error());
     }
@@ -1342,20 +1240,17 @@ private:
       return lowered_dependencies;
     }
 
-    auto lowered_value_branches =
-        apply_value_branches(input_node_targets, plan_lookup);
+    auto lowered_value_branches = apply_value_branches(input_node_targets, plan_lookup);
     if (lowered_value_branches.has_error()) {
       return lowered_value_branches;
     }
 
-    auto lowered_stream_branches =
-        apply_stream_branches(input_node_targets, plan_lookup);
+    auto lowered_stream_branches = apply_stream_branches(input_node_targets, plan_lookup);
     if (lowered_stream_branches.has_error()) {
       return lowered_stream_branches;
     }
 
-    output_source_keys_ =
-        collect_output_source_keys(control_edges, input_node_targets);
+    output_source_keys_ = collect_output_source_keys(control_edges, input_node_targets);
 
     auto connected_inputs = connect_input_nodes(plans.value());
     if (connected_inputs.has_error()) {
@@ -1379,13 +1274,11 @@ private:
   std::vector<workflow_dependency> dependencies_{};
   /// Staged target-local static mapping rules.
   std::unordered_map<std::string, std::vector<field_mapping_rule>,
-                     wh::core::transparent_string_hash,
-                     wh::core::transparent_string_equal>
+                     wh::core::transparent_string_hash, wh::core::transparent_string_equal>
       static_rules_{};
   /// Per-target staged mapping validation bucket.
   std::unordered_map<std::string, std::vector<field_mapping_rule>,
-                     wh::core::transparent_string_hash,
-                     wh::core::transparent_string_equal>
+                     wh::core::transparent_string_hash, wh::core::transparent_string_equal>
       validation_buckets_{};
   /// Staged value-branch authored declarations before lowering.
   std::vector<branch_plan<value_branch>> value_branches_{};

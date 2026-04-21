@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/bounded_queue.hpp"
 
@@ -10,8 +10,7 @@ static_assert(std::is_class_v<wh::core::bounded_queue_consumer<int>>);
 
 TEST_CASE("bounded_queue facade exports queue types and status enum text",
           "[UT][wh/core/bounded_queue.hpp][bounded_queue_status][branch][boundary]") {
-  REQUIRE(wh::core::to_string(wh::core::bounded_queue_status::success) ==
-          "success");
+  REQUIRE(wh::core::to_string(wh::core::bounded_queue_status::success) == "success");
 }
 
 TEST_CASE("bounded_queue facade reexports producer consumer endpoint helpers",

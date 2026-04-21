@@ -171,8 +171,7 @@ struct interrupt_context_tree_node {
 };
 
 template <> struct any_owned_traits<interrupt_signal> {
-  [[nodiscard]] static auto into_owned(const interrupt_signal &value)
-      -> result<interrupt_signal> {
+  [[nodiscard]] static auto into_owned(const interrupt_signal &value) -> result<interrupt_signal> {
     auto state = wh::core::into_owned(value.state);
     if (state.has_error()) {
       return result<interrupt_signal>::failure(state.error());
@@ -192,8 +191,7 @@ template <> struct any_owned_traits<interrupt_signal> {
     };
   }
 
-  [[nodiscard]] static auto into_owned(interrupt_signal &&value)
-      -> result<interrupt_signal> {
+  [[nodiscard]] static auto into_owned(interrupt_signal &&value) -> result<interrupt_signal> {
     auto state = wh::core::into_owned(std::move(value.state));
     if (state.has_error()) {
       return result<interrupt_signal>::failure(state.error());
@@ -236,8 +234,7 @@ template <> struct any_owned_traits<interrupt_context> {
     };
   }
 
-  [[nodiscard]] static auto into_owned(interrupt_context &&value)
-      -> result<interrupt_context> {
+  [[nodiscard]] static auto into_owned(interrupt_context &&value) -> result<interrupt_context> {
     auto state = wh::core::into_owned(std::move(value.state));
     if (state.has_error()) {
       return result<interrupt_context>::failure(state.error());

@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/bounded_queue/detail/queue_wait_state.hpp"
 
@@ -15,7 +15,8 @@ struct queue_waiter {
 } // namespace
 
 TEST_CASE("queue wait state tracks push and pop queues including independent removal branches",
-          "[UT][wh/core/bounded_queue/detail/queue_wait_state.hpp][wait_state::remove_push][condition][branch]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "queue_wait_state.hpp][wait_state::remove_push][condition][branch]") {
   wh::core::detail::wait_state<queue_waiter> state{};
   queue_waiter push_a{.id = 1};
   queue_waiter push_b{.id = 2};
@@ -41,7 +42,8 @@ TEST_CASE("queue wait state tracks push and pop queues including independent rem
 }
 
 TEST_CASE("queue wait state close and detach transitions are single-shot and preserve order",
-          "[UT][wh/core/bounded_queue/detail/queue_wait_state.hpp][wait_state::close_and_detach][branch][boundary]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "queue_wait_state.hpp][wait_state::close_and_detach][branch][boundary]") {
   wh::core::detail::wait_state<queue_waiter> state{};
   queue_waiter push_a{.id = 1};
   queue_waiter push_b{.id = 2};

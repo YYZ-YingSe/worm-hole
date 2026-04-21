@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature
   schedule:
     - cron: "30 3 * * *"
   workflow_dispatch:
@@ -12,48 +13,15 @@ on:
 permissions:
   contents: read
   actions: read
-  security-events: write
+
+env:
+  CI_MAX_BUILD_ACTIONS_PER_SHARD: "200"
 
 concurrency:
   group: security-coverage-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  codeql:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Prepare CI job
-        uses: ./.github/actions/prepare/job
-        with:
-          install_profile: build
-
-      - name: Setup sccache
-        uses: ./.github/actions/setup/sccache
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
-        with:
-          languages: cpp
-          build-mode: manual
-          config-file: ./.github/codeql/codeql-config.yml
-
-      - name: Build for CodeQL extraction
-        shell: bash
-        run: |
-          python_bin="$(command -v python3 || command -v python)"
-          "$python_bin" scripts/toolchain.py ci codeql-build --configure-preset ci-codeql
-
-      - name: Analyze
-        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
-
   sca:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -81,10 +49,13 @@ jobs:
           exit-code: "1"
           skip-dirs: thirdy_party,build
 
-  coverage:
+  plan-coverage:
     if: github.event_name != 'pull_request'
+    name: plan coverage matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -97,13 +68,43 @@ jobs:
         with:
           install_profile: coverage
 
-      - name: Setup sccache
-        uses: ./.github/actions/setup/sccache
-
-      - name: Run coverage gate
+      - name: Plan coverage matrix
+        id: plan
         shell: bash
         run: |
           python_bin="$(command -v python3 || command -v python)"
-          "$python_bin" scripts/toolchain.py ci coverage \
-            --configure-preset ci-coverage \
-            --coverage-min-lines 0.70
+          matrix_path="${RUNNER_TEMP}/coverage-matrix.json"
+          "$python_bin" scripts/toolchain.py ci emit-test-matrix \
+            --config .github/matrices/coverage.json \
+            --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
+            --output "$matrix_path"
+          echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
+
+  coverage-shard:
+    if: github.event_name != 'pull_request'
+    name: coverage (${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets, ~${{ matrix.estimated_build_actions }} actions)
+    needs: plan-coverage
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJson(needs.plan-coverage.outputs.matrix) }}
+    uses: ./.github/workflows/reusable-coverage-shard.yml
+    with:
+      runner_os: ubuntu-latest
+      configure_preset: ${{ matrix.configure_preset }}
+      build_preset: ${{ matrix.build_preset }}
+      shard_count: ${{ matrix.shard_count }}
+      shard_index: ${{ matrix.shard_index }}
+      timeout_minutes: 45
+
+  coverage-aggregate:
+    if: github.event_name != 'pull_request'
+    name: coverage gate
+    needs:
+      - plan-coverage
+      - coverage-shard
+    uses: ./.github/workflows/reusable-coverage-aggregate.yml
+    with:
+      runner_os: ubuntu-latest
+      coverage_min_lines: 0.70
+      timeout_minutes: 45

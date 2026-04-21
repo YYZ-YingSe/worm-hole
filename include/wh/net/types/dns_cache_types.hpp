@@ -47,15 +47,13 @@ struct dns_lookup_response {
 };
 
 /// Result returned by DNS lookup operations.
-using dns_lookup_result =
-    wh::core::result<dns_lookup_response, transport_error>;
+using dns_lookup_result = wh::core::result<dns_lookup_response, transport_error>;
 
 /// Result returned by DNS invalidation operations.
 using dns_invalidate_result = wh::core::result<void, transport_error>;
 
 /// Projects one owned lookup request into its borrowed view form.
-[[nodiscard]] inline auto
-make_dns_lookup_request_view(const dns_lookup_request &request)
+[[nodiscard]] inline auto make_dns_lookup_request_view(const dns_lookup_request &request)
     -> dns_lookup_request_view {
   return dns_lookup_request_view{
       .host = request.host,

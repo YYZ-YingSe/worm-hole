@@ -1,12 +1,11 @@
-#include <catch2/catch_test_macros.hpp>
-
-#include <exec/static_thread_pool.hpp>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <string>
 #include <thread>
+
+#include <catch2/catch_test_macros.hpp>
+#include <exec/static_thread_pool.hpp>
 
 #include "helper/component_contract_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
@@ -22,11 +21,9 @@ using wh::testing::helper::read_any;
 
 } // namespace
 
-TEST_CASE("compose graph transition log is opt-in",
-          "[core][compose][state][condition]") {
+TEST_CASE("compose graph transition log is opt-in", "[core][compose][state][condition]") {
   wh::compose::graph graph{};
-  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
   REQUIRE(graph.compile().has_value());
@@ -55,15 +52,13 @@ TEST_CASE("compose graph unresolved predecessor stall publishes last completed n
   auto invoked = invoke_graph_sync(graph, wh::core::any(1), context);
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_error());
-  REQUIRE(invoked.value().output_status.error() ==
-          wh::core::errc::contract_violation);
-  REQUIRE(invoked.value().report.last_completed_nodes.size() == 1U);
-  REQUIRE(invoked.value().report.last_completed_nodes.front() ==
-          wh::compose::graph_start_node_key);
-  REQUIRE(std::find(invoked.value().report.last_completed_nodes.begin(),
-                    invoked.value().report.last_completed_nodes.end(),
+  REQUIRE(invoked.value().output_status.error() == wh::core::errc::contract_violation);
+  REQUIRE(invoked.value().report.completed_node_keys.size() == 1U);
+  REQUIRE(invoked.value().report.completed_node_keys.front() == wh::compose::graph_start_node_key);
+  REQUIRE(std::find(invoked.value().report.completed_node_keys.begin(),
+                    invoked.value().report.completed_node_keys.end(),
                     std::string{wh::compose::graph_end_node_key}) ==
-          invoked.value().report.last_completed_nodes.end());
+          invoked.value().report.completed_node_keys.end());
 }
 
 TEST_CASE("compose graph runtime emits subscribed state message and custom streams",
@@ -74,9 +69,7 @@ TEST_CASE("compose graph runtime emits subscribed state message and custom strea
                   "worker",
                   [](wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    return std::move(input);
-                  })
+                      -> wh::core::result<wh::compose::graph_value> { return std::move(input); })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -90,8 +83,7 @@ TEST_CASE("compose graph runtime emits subscribed state message and custom strea
   options.stream_subscriptions.push_back(wh::compose::graph_stream_subscription{
       .kind = wh::compose::graph_stream_channel_kind::message});
   options.stream_subscriptions.push_back(wh::compose::graph_stream_subscription{
-      .kind = wh::compose::graph_stream_channel_kind::custom,
-      .custom_channel = "metrics"});
+      .kind = wh::compose::graph_stream_channel_kind::custom, .custom_channel = "metrics"});
   options.stream_subscriptions.push_back(wh::compose::graph_stream_subscription{
       .kind = wh::compose::graph_stream_channel_kind::debug});
 
@@ -105,11 +97,8 @@ TEST_CASE("compose graph runtime emits subscribed state message and custom strea
   REQUIRE_FALSE(invoked.value().report.runtime_message_events.empty());
   REQUIRE_FALSE(invoked.value().report.custom_events.empty());
   REQUIRE(std::any_of(
-      invoked.value().report.custom_events.begin(),
-      invoked.value().report.custom_events.end(),
-      [](const wh::compose::graph_custom_event &event) {
-        return event.channel == "metrics";
-      }));
+      invoked.value().report.custom_events.begin(), invoked.value().report.custom_events.end(),
+      [](const wh::compose::graph_custom_event &event) { return event.channel == "metrics"; }));
 }
 
 TEST_CASE("compose graph nested stream events keep drilled node-path namespace",
@@ -120,18 +109,14 @@ TEST_CASE("compose graph nested stream events keep drilled node-path namespace",
                   "leaf",
                   [](wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    return std::move(input);
-                  })
+                      -> wh::core::result<wh::compose::graph_value> { return std::move(input); })
               .has_value());
   REQUIRE(child.add_entry_edge("leaf").has_value());
   REQUIRE(child.add_exit_edge("leaf").has_value());
   REQUIRE(child.compile().has_value());
 
   wh::compose::graph parent{};
-  REQUIRE(parent
-              .add_subgraph(
-                  wh::compose::make_subgraph_node("subgraph", std::move(child)))
+  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("subgraph", std::move(child)))
               .has_value());
   REQUIRE(parent.add_entry_edge("subgraph").has_value());
   REQUIRE(parent.add_exit_edge("subgraph").has_value());
@@ -145,12 +130,11 @@ TEST_CASE("compose graph nested stream events keep drilled node-path namespace",
   auto invoked = invoke_graph_sync(parent, wh::core::any(7), context, options, {});
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
-  REQUIRE(std::any_of(
-      invoked.value().report.state_snapshot_events.begin(),
-      invoked.value().report.state_snapshot_events.end(),
-      [](const wh::compose::graph_state_snapshot_event &event) {
-        return event.scope.path == "subgraph/leaf";
-      }));
+  REQUIRE(std::any_of(invoked.value().report.state_snapshot_events.begin(),
+                      invoked.value().report.state_snapshot_events.end(),
+                      [](const wh::compose::graph_state_snapshot_event &event) {
+                        return event.scope.path == "subgraph/leaf";
+                      }));
 }
 
 TEST_CASE("compose graph runtime publishes node run and graph run structured errors",
@@ -158,14 +142,13 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
   SECTION("node run error detail includes path and raw error") {
     wh::compose::graph graph{};
     REQUIRE(graph
-                .add_lambda(
-                    "failer",
-                    [](const wh::compose::graph_value &, wh::core::run_context &,
-                       const wh::compose::graph_call_scope &)
-                        -> wh::core::result<wh::compose::graph_value> {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          wh::core::errc::not_supported);
-                    })
+                .add_lambda("failer",
+                            [](const wh::compose::graph_value &, wh::core::run_context &,
+                               const wh::compose::graph_call_scope &)
+                                -> wh::core::result<wh::compose::graph_value> {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  wh::core::errc::not_supported);
+                            })
                 .has_value());
     REQUIRE(graph.add_entry_edge("failer").has_value());
     REQUIRE(graph.add_exit_edge("failer").has_value());
@@ -175,8 +158,7 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
     auto invoked = invoke_graph_sync(graph, wh::core::any(1), context);
     REQUIRE(invoked.has_value());
     REQUIRE(invoked.value().output_status.has_error());
-    REQUIRE(invoked.value().output_status.error() ==
-            wh::core::errc::not_supported);
+    REQUIRE(invoked.value().output_status.error() == wh::core::errc::not_supported);
     REQUIRE(invoked.value().report.node_run_error.has_value());
     const auto &detail = *invoked.value().report.node_run_error;
     REQUIRE(detail.node == "failer");
@@ -188,14 +170,13 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
   SECTION("canceled node run error is passed through without NodeRunError wrapping") {
     wh::compose::graph graph{};
     REQUIRE(graph
-                .add_lambda(
-                    "canceler",
-                    [](const wh::compose::graph_value &, wh::core::run_context &,
-                       const wh::compose::graph_call_scope &)
-                        -> wh::core::result<wh::compose::graph_value> {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          wh::core::errc::canceled);
-                    })
+                .add_lambda("canceler",
+                            [](const wh::compose::graph_value &, wh::core::run_context &,
+                               const wh::compose::graph_call_scope &)
+                                -> wh::core::result<wh::compose::graph_value> {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  wh::core::errc::canceled);
+                            })
                 .has_value());
     REQUIRE(graph.add_entry_edge("canceler").has_value());
     REQUIRE(graph.add_exit_edge("canceler").has_value());
@@ -218,8 +199,7 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
     std::atomic<bool> stop_observed{false};
 
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::value,
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
                             wh::compose::node_exec_mode::async>(
                     "slow",
                     [&](const wh::compose::graph_value &, wh::core::run_context &,
@@ -228,21 +208,17 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
                           pool.get_scheduler(),
                           stdexec::read_env(stdexec::get_stop_token) |
                               stdexec::let_value([&](auto stop_token) {
-                                const auto deadline =
-                                    std::chrono::steady_clock::now() +
-                                    std::chrono::milliseconds{150};
+                                const auto deadline = std::chrono::steady_clock::now() +
+                                                      std::chrono::milliseconds{150};
                                 while (std::chrono::steady_clock::now() < deadline) {
                                   if (stop_token.stop_requested()) {
-                                    stop_observed.store(true,
-                                                        std::memory_order_release);
+                                    stop_observed.store(true, std::memory_order_release);
                                     break;
                                   }
-                                  std::this_thread::sleep_for(
-                                      std::chrono::milliseconds{1});
+                                  std::this_thread::sleep_for(std::chrono::milliseconds{1});
                                 }
                                 return stdexec::just(
-                                    wh::core::result<wh::compose::graph_value>{
-                                        wh::core::any(1)});
+                                    wh::core::result<wh::compose::graph_value>{wh::core::any(1)});
                               }));
                     })
                 .has_value());
@@ -255,8 +231,7 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
     REQUIRE(invoked.has_error());
     REQUIRE(invoked.error() == wh::core::errc::timeout);
 
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds{300};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{300};
     while (!stop_observed.load(std::memory_order_acquire) &&
            std::chrono::steady_clock::now() < deadline) {
       std::this_thread::yield();
@@ -283,7 +258,6 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
     REQUIRE(invoked.value().report.graph_run_error.has_value());
     REQUIRE(invoked.value().report.graph_run_error->phase ==
             wh::compose::compose_error_phase::schedule);
-    REQUIRE(invoked.value().report.graph_run_error->code ==
-            wh::core::errc::timeout);
+    REQUIRE(invoked.value().report.graph_run_error->code == wh::core::errc::timeout);
   }
 }

@@ -1,20 +1,21 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <chrono>
 #include <string>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/compose/graph/detail/runtime/state.hpp"
 
 TEST_CASE("runtime state merge nested outputs appends streams and preserves first terminal detail",
-          "[UT][wh/compose/graph/detail/runtime/state.hpp][merge_nested_outputs][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "state.hpp][merge_nested_outputs][condition][branch][boundary]") {
   using wh::compose::compose_error_phase;
   using wh::compose::detail::runtime_state::invoke_outputs;
   using wh::compose::detail::runtime_state::merge_nested_outputs;
 
   invoke_outputs target{};
   target.publish_transition_log = false;
-  target.last_completed_nodes = {"keep"};
+  target.completed_node_keys = {"keep"};
   target.graph_run_error = wh::compose::graph_run_error_detail{
       .phase = compose_error_phase::execute,
       .node = "existing",
@@ -37,19 +38,19 @@ TEST_CASE("runtime state merge nested outputs appends streams and preserves firs
       .step = 2U,
   });
   nested.runtime_message_events.push_back(wh::compose::graph_runtime_message_event{
-      .scope = wh::compose::make_graph_event_scope(
-          "graph", "worker", wh::compose::make_node_path({"worker"})),
+      .scope = wh::compose::make_graph_event_scope("graph", "worker",
+                                                   wh::compose::make_node_path({"worker"})),
       .step = 2U,
       .text = "runtime-message",
   });
   nested.custom_events.push_back(wh::compose::graph_custom_event{
-      .scope = wh::compose::make_graph_event_scope(
-          "graph", "worker", wh::compose::make_node_path({"worker"})),
+      .scope = wh::compose::make_graph_event_scope("graph", "worker",
+                                                   wh::compose::make_node_path({"worker"})),
       .step = 2U,
       .channel = "audit",
       .payload = wh::compose::graph_value{7},
   });
-  nested.last_completed_nodes = {"nested"};
+  nested.completed_node_keys = {"nested"};
   nested.node_timeout_error = wh::compose::graph_node_timeout_error_detail{
       .node = "worker",
       .attempt = 1U,
@@ -65,7 +66,7 @@ TEST_CASE("runtime state merge nested outputs appends streams and preserves firs
   merge_nested_outputs(target, std::move(nested));
 
   REQUIRE(target.publish_transition_log);
-  REQUIRE(target.last_completed_nodes == std::vector<std::string>{"keep"});
+  REQUIRE(target.completed_node_keys == std::vector<std::string>{"keep"});
   REQUIRE(target.transition_log.size() == 1U);
   REQUIRE(target.debug_events.size() == 1U);
   REQUIRE(target.runtime_message_events.size() == 1U);
@@ -82,8 +83,8 @@ TEST_CASE("runtime state carriers default initialize caches scopes and invoke co
           "[UT][wh/compose/graph/detail/runtime/state.hpp][invoke_config][boundary]") {
   wh::compose::detail::runtime_state::invoke_config config{};
   REQUIRE(config.state_handlers == nullptr);
-  REQUIRE(config.checkpoint_store == nullptr);
-  REQUIRE(config.checkpoint_backend == nullptr);
+  REQUIRE(config.checkpoint_store_ptr == nullptr);
+  REQUIRE(config.checkpoint_backend_ptr == nullptr);
   REQUIRE_FALSE(config.checkpoint_load.has_value());
   REQUIRE_FALSE(config.checkpoint_save.has_value());
   REQUIRE(config.reinterrupt_unmatched);

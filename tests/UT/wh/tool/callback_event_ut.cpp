@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
 #include <utility>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/tool/callback_event.hpp"
 
@@ -19,14 +19,14 @@ TEST_CASE("tool callback event defaults textual fields and interruption flag",
   REQUIRE_FALSE(event.interrupted);
 }
 
-TEST_CASE("tool callback event aggregate initialization preserves request output and interruption state",
-          "[UT][wh/tool/callback_event.hpp][tool_callback_event][condition][branch][boundary]") {
-  const wh::tool::tool_callback_event source{
-      .tool_name = "search",
-      .input_json = R"({"q":"x"})",
-      .output_text = "ok",
-      .error_context = "timeout",
-      .interrupted = true};
+TEST_CASE(
+    "tool callback event aggregate initialization preserves request output and interruption state",
+    "[UT][wh/tool/callback_event.hpp][tool_callback_event][condition][branch][boundary]") {
+  const wh::tool::tool_callback_event source{.tool_name = "search",
+                                             .input_json = R"({"q":"x"})",
+                                             .output_text = "ok",
+                                             .error_context = "timeout",
+                                             .interrupted = true};
   const auto copied = source;
   auto moved = std::move(copied);
 

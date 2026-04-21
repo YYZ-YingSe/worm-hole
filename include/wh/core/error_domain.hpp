@@ -13,8 +13,7 @@
 namespace wh::core {
 
 /// Maps a standard C++ exception object to the framework error domain.
-[[nodiscard]] inline auto map_exception(const std::exception &error) noexcept
-    -> error_code {
+[[nodiscard]] inline auto map_exception(const std::exception &error) noexcept -> error_code {
   if (dynamic_cast<const std::bad_alloc *>(&error) != nullptr) {
     return make_error(errc::resource_exhausted);
   }
@@ -45,8 +44,7 @@ namespace wh::core {
 /// Executes a callable and converts thrown exceptions into `result` errors.
 template <typename value_t, typename callable_t>
   requires callable_with<callable_t>
-[[nodiscard]] auto exception_boundary(callable_t &&callable)
-    -> result<value_t> {
+[[nodiscard]] auto exception_boundary(callable_t &&callable) -> result<value_t> {
   try {
     if constexpr (std::same_as<value_t, void>) {
       std::forward<callable_t>(callable)();

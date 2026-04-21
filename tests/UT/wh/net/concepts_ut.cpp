@@ -8,24 +8,18 @@ struct facade_http_client {
   auto invoke(const wh::net::http_request_view) const -> wh::net::http_invoke_result;
   auto invoke(const wh::net::http_request &) const -> wh::net::http_invoke_result;
   auto invoke(wh::net::http_request &&) const -> wh::net::http_invoke_result;
-  auto invoke_json(const wh::net::http_json_request_view) const
-      -> wh::net::http_invoke_result;
-  auto invoke_json(const wh::net::http_json_request &) const
-      -> wh::net::http_invoke_result;
-  auto invoke_json(wh::net::http_json_request &&) const
-      -> wh::net::http_invoke_result;
-  auto stream(const wh::net::http_stream_request_view) const
-      -> wh::net::http_stream_result;
-  auto stream(const wh::net::http_stream_request &) const
-      -> wh::net::http_stream_result;
+  auto invoke_json(const wh::net::http_json_request_view) const -> wh::net::http_invoke_result;
+  auto invoke_json(const wh::net::http_json_request &) const -> wh::net::http_invoke_result;
+  auto invoke_json(wh::net::http_json_request &&) const -> wh::net::http_invoke_result;
+  auto stream(const wh::net::http_stream_request_view) const -> wh::net::http_stream_result;
+  auto stream(const wh::net::http_stream_request &) const -> wh::net::http_stream_result;
   auto stream(wh::net::http_stream_request &&) const -> wh::net::http_stream_result;
 };
 
 struct facade_sse_parser {
   auto parse(const wh::net::sse_parse_request &) const -> wh::net::sse_parse_result;
   auto parse(wh::net::sse_parse_request &&) const -> wh::net::sse_parse_result;
-  auto parse(const wh::net::sse_parse_request_view) const
-      -> wh::net::sse_parse_result;
+  auto parse(const wh::net::sse_parse_request_view) const -> wh::net::sse_parse_result;
 };
 
 struct incomplete_facade_http_client {

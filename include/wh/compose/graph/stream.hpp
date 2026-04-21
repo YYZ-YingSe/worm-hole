@@ -32,6 +32,40 @@ namespace detail {
   return wrapped;
 }
 
+/// Forks one graph reader in place and returns a stable sibling reader.
+///
+/// Concrete readers split ownership so the source and sibling can advance
+/// independently. Merge readers expose another handle that shares the same live
+/// merge state.
+[[nodiscard]] inline auto fork_graph_reader(graph_stream_reader &reader)
+    -> wh::core::result<graph_stream_reader> {
+  using static_merge_t = wh::schema::stream::merge_stream_reader<
+      graph_stream_reader, wh::schema::stream::merge_topology_mode::static_attached>;
+  using dynamic_merge_t = wh::schema::stream::merge_stream_reader<
+      graph_stream_reader, wh::schema::stream::merge_topology_mode::dynamic_injection>;
+
+  if (auto *merged = reader.template target_if<static_merge_t>(); merged != nullptr) {
+    return graph_stream_reader{merged->share()};
+  }
+
+  if (auto *merged = reader.template target_if<dynamic_merge_t>(); merged != nullptr) {
+    return graph_stream_reader{merged->share()};
+  }
+
+  auto copied = copy_graph_readers(std::move(reader), 2U);
+  if (copied.has_error()) {
+    return wh::core::result<graph_stream_reader>::failure(copied.error());
+  }
+
+  auto readers = std::move(copied).value();
+  if (readers.size() != 2U) {
+    return wh::core::result<graph_stream_reader>::failure(wh::core::errc::type_mismatch);
+  }
+
+  reader = std::move(readers[0]);
+  return std::move(readers[1]);
+}
+
 /// Merges named graph readers into one graph reader.
 [[nodiscard]] inline auto make_graph_merge_reader(
     std::vector<wh::schema::stream::named_stream_reader<graph_stream_reader>> readers)
@@ -55,18 +89,11 @@ namespace detail {
     return wh::core::result<graph_value>::failure(wh::core::errc::type_mismatch);
   }
 
-  auto copied_readers = copy_graph_readers(std::move(*reader), 2U);
-  if (copied_readers.has_error()) {
-    return wh::core::result<graph_value>::failure(copied_readers.error());
+  auto sibling = fork_graph_reader(*reader);
+  if (sibling.has_error()) {
+    return wh::core::result<graph_value>::failure(sibling.error());
   }
-
-  auto readers = std::move(copied_readers).value();
-  if (readers.size() != 2U) {
-    return wh::core::result<graph_value>::failure(wh::core::errc::type_mismatch);
-  }
-
-  payload = wh::core::any(std::move(readers[0]));
-  return wh::core::any(std::move(readers[1]));
+  return graph_value{std::move(sibling).value()};
 }
 
 [[nodiscard]] inline auto is_reader_value_payload(const graph_value &value) noexcept -> bool {
@@ -186,15 +213,14 @@ template <typename reader_t>
   requires(!std::same_as<std::remove_cvref_t<reader_t>, graph_stream_reader>) &&
           wh::schema::stream::stream_reader<std::remove_cvref_t<reader_t>> &&
           (!std::same_as<typename std::remove_cvref_t<reader_t>::value_type, graph_value>) &&
-          std::constructible_from<graph_value,
-                                  const typename std::remove_cvref_t<reader_t>::value_type &>
+          std::constructible_from<graph_value, typename std::remove_cvref_t<reader_t>::value_type>
 [[nodiscard]] inline auto to_graph_stream_reader(reader_t &&reader)
     -> wh::core::result<graph_stream_reader> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;
   auto mapped = wh::schema::stream::make_transform_stream_reader(
       stored_reader_t{std::forward<reader_t>(reader)},
-      [](const typename stored_reader_t::value_type &value) -> wh::core::result<graph_value> {
-        return graph_value{value};
+      [](auto &&value) -> wh::core::result<graph_value> {
+        return graph_value{std::forward<decltype(value)>(value)};
       });
   return graph_stream_reader{std::move(mapped)};
 }

@@ -74,8 +74,8 @@ struct tool_call_part {
 };
 
 /// Union of all supported message content parts.
-using message_part = std::variant<text_part, image_part, audio_part, video_part,
-                                  file_part, tool_call_part>;
+using message_part =
+    std::variant<text_part, image_part, audio_part, video_part, file_part, tool_call_part>;
 
 /// Token usage counters attached to model responses.
 struct token_usage {
@@ -163,14 +163,12 @@ using message_string_equal = wh::core::transparent_string_equal;
 
 /// Optional accelerator index from `message_id` to vector position.
 using message_index =
-    std::unordered_map<std::string, std::size_t, message_string_hash,
-                       message_string_equal>;
+    std::unordered_map<std::string, std::size_t, message_string_hash, message_string_equal>;
 
 namespace detail {
 
 /// Verifies that two message chunks can be merged safely.
-[[nodiscard]] inline auto is_identity_compatible(const message &left,
-                                                 const message &right) noexcept
+[[nodiscard]] inline auto is_identity_compatible(const message &left, const message &right) noexcept
     -> bool {
   if (left.role != right.role) {
     return false;
@@ -182,28 +180,23 @@ namespace detail {
       left.tool_call_id != right.tool_call_id) {
     return false;
   }
-  if (!left.tool_name.empty() && !right.tool_name.empty() &&
-      left.tool_name != right.tool_name) {
+  if (!left.tool_name.empty() && !right.tool_name.empty() && left.tool_name != right.tool_name) {
     return false;
   }
   return true;
 }
 
 /// Merges token usage by taking max counters from chunks.
-inline auto merge_usage(token_usage &target, const token_usage &next) noexcept
-    -> void {
+inline auto merge_usage(token_usage &target, const token_usage &next) noexcept -> void {
   target.prompt_tokens = std::max(target.prompt_tokens, next.prompt_tokens);
-  target.completion_tokens =
-      std::max(target.completion_tokens, next.completion_tokens);
+  target.completion_tokens = std::max(target.completion_tokens, next.completion_tokens);
   target.total_tokens = std::max(target.total_tokens, next.total_tokens);
 }
 
 /// Returns whether two adjacent parts are mergeable.
 [[nodiscard]] inline auto can_merge_adjacent_parts(const message_part &left,
-                                                   const message_part &right)
-    -> bool {
-  if (const auto *left_text = std::get_if<text_part>(&left);
-      left_text != nullptr) {
+                                                   const message_part &right) -> bool {
+  if (const auto *left_text = std::get_if<text_part>(&left); left_text != nullptr) {
     return std::holds_alternative<text_part>(right);
   }
 
@@ -213,15 +206,13 @@ inline auto merge_usage(token_usage &target, const token_usage &next) noexcept
     return false;
   }
 
-  return left_audio->uri.empty() && right_audio->uri.empty() &&
-         !left_audio->base64.empty() && !right_audio->base64.empty();
+  return left_audio->uri.empty() && right_audio->uri.empty() && !left_audio->base64.empty() &&
+         !right_audio->base64.empty();
 }
 
 /// In-place merge for adjacent mergeable parts.
-inline auto merge_adjacent_into(message_part &target,
-                                const message_part &source) -> void {
-  if (auto *target_text = std::get_if<text_part>(&target);
-      target_text != nullptr) {
+inline auto merge_adjacent_into(message_part &target, const message_part &source) -> void {
+  if (auto *target_text = std::get_if<text_part>(&target); target_text != nullptr) {
     target_text->text.append(std::get<text_part>(source).text);
     return;
   }
@@ -233,8 +224,7 @@ inline auto merge_adjacent_into(message_part &target,
 }
 
 /// Normalizes mixed parts: merges adjacents and combines tool-call deltas.
-[[nodiscard]] inline auto
-normalize_message_parts(const std::span<const message_part> parts)
+[[nodiscard]] inline auto normalize_message_parts(const std::span<const message_part> parts)
     -> wh::core::result<std::vector<message_part>> {
   std::vector<message_part> non_tool_parts{};
   std::vector<tool_call_part> tool_calls{};
@@ -244,8 +234,7 @@ normalize_message_parts(const std::span<const message_part> parts)
   tool_call_position.reserve(parts.size());
 
   for (const auto &part : parts) {
-    if (const auto *tool_call = std::get_if<tool_call_part>(&part);
-        tool_call != nullptr) {
+    if (const auto *tool_call = std::get_if<tool_call_part>(&part); tool_call != nullptr) {
       const auto position_iter = tool_call_position.find(tool_call->index);
       if (position_iter == tool_call_position.end()) {
         tool_call_position.emplace(tool_call->index, tool_calls.size());
@@ -254,8 +243,7 @@ normalize_message_parts(const std::span<const message_part> parts)
       }
 
       auto &existing = tool_calls[position_iter->second];
-      if ((!existing.id.empty() && !tool_call->id.empty() &&
-           existing.id != tool_call->id) ||
+      if ((!existing.id.empty() && !tool_call->id.empty() && existing.id != tool_call->id) ||
           (!existing.type.empty() && !tool_call->type.empty() &&
            existing.type != tool_call->type) ||
           (!existing.name.empty() && !tool_call->name.empty() &&
@@ -278,8 +266,7 @@ normalize_message_parts(const std::span<const message_part> parts)
       continue;
     }
 
-    if (!non_tool_parts.empty() &&
-        can_merge_adjacent_parts(non_tool_parts.back(), part)) {
+    if (!non_tool_parts.empty() && can_merge_adjacent_parts(non_tool_parts.back(), part)) {
       merge_adjacent_into(non_tool_parts.back(), part);
       continue;
     }
@@ -287,8 +274,7 @@ normalize_message_parts(const std::span<const message_part> parts)
   }
 
   std::ranges::sort(tool_calls,
-                    [](const tool_call_part &left,
-                       const tool_call_part &right) noexcept -> bool {
+                    [](const tool_call_part &left, const tool_call_part &right) noexcept -> bool {
                       return left.index < right.index;
                     });
   for (auto &tool_call : tool_calls) {
@@ -296,15 +282,13 @@ normalize_message_parts(const std::span<const message_part> parts)
   }
 
   if (non_tool_parts.empty()) {
-    return wh::core::result<std::vector<message_part>>::failure(
-        wh::core::errc::protocol_error);
+    return wh::core::result<std::vector<message_part>>::failure(wh::core::errc::protocol_error);
   }
   return non_tool_parts;
 }
 
 /// Move-overload of `normalize_message_parts` for lower copy overhead.
-[[nodiscard]] inline auto
-normalize_message_parts(std::vector<message_part> &&parts)
+[[nodiscard]] inline auto normalize_message_parts(std::vector<message_part> &&parts)
     -> wh::core::result<std::vector<message_part>> {
   std::vector<message_part> non_tool_parts{};
   std::vector<tool_call_part> tool_calls{};
@@ -314,8 +298,7 @@ normalize_message_parts(std::vector<message_part> &&parts)
   tool_call_position.reserve(parts.size());
 
   for (auto &part : parts) {
-    if (auto *tool_call = std::get_if<tool_call_part>(&part);
-        tool_call != nullptr) {
+    if (auto *tool_call = std::get_if<tool_call_part>(&part); tool_call != nullptr) {
       const auto position_iter = tool_call_position.find(tool_call->index);
       if (position_iter == tool_call_position.end()) {
         tool_call_position.emplace(tool_call->index, tool_calls.size());
@@ -324,8 +307,7 @@ normalize_message_parts(std::vector<message_part> &&parts)
       }
 
       auto &existing = tool_calls[position_iter->second];
-      if ((!existing.id.empty() && !tool_call->id.empty() &&
-           existing.id != tool_call->id) ||
+      if ((!existing.id.empty() && !tool_call->id.empty() && existing.id != tool_call->id) ||
           (!existing.type.empty() && !tool_call->type.empty() &&
            existing.type != tool_call->type) ||
           (!existing.name.empty() && !tool_call->name.empty() &&
@@ -348,8 +330,7 @@ normalize_message_parts(std::vector<message_part> &&parts)
       continue;
     }
 
-    if (!non_tool_parts.empty() &&
-        can_merge_adjacent_parts(non_tool_parts.back(), part)) {
+    if (!non_tool_parts.empty() && can_merge_adjacent_parts(non_tool_parts.back(), part)) {
       merge_adjacent_into(non_tool_parts.back(), part);
       continue;
     }
@@ -357,8 +338,7 @@ normalize_message_parts(std::vector<message_part> &&parts)
   }
 
   std::ranges::sort(tool_calls,
-                    [](const tool_call_part &left,
-                       const tool_call_part &right) noexcept -> bool {
+                    [](const tool_call_part &left, const tool_call_part &right) noexcept -> bool {
                       return left.index < right.index;
                     });
   for (auto &tool_call : tool_calls) {
@@ -366,8 +346,7 @@ normalize_message_parts(std::vector<message_part> &&parts)
   }
 
   if (non_tool_parts.empty()) {
-    return wh::core::result<std::vector<message_part>>::failure(
-        wh::core::errc::protocol_error);
+    return wh::core::result<std::vector<message_part>>::failure(wh::core::errc::protocol_error);
   }
   return non_tool_parts;
 }
@@ -375,8 +354,7 @@ normalize_message_parts(std::vector<message_part> &&parts)
 } // namespace detail
 
 /// Merges message chunks into one normalized message (copy path).
-[[nodiscard]] inline auto
-merge_message_chunks(const std::span<const message> chunks)
+[[nodiscard]] inline auto merge_message_chunks(const std::span<const message> chunks)
     -> wh::core::result<message> {
   if (chunks.empty()) {
     return wh::core::result<message>::failure(wh::core::errc::invalid_argument);
@@ -403,8 +381,7 @@ merge_message_chunks(const std::span<const message> chunks)
       return wh::core::result<message>::failure(wh::core::errc::protocol_error);
     }
     if (!detail::is_identity_compatible(merged, chunk)) {
-      return wh::core::result<message>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<message>::failure(wh::core::errc::contract_violation);
     }
 
     if (merged.name.empty()) {
@@ -421,12 +398,10 @@ merge_message_chunks(const std::span<const message> chunks)
       merged.meta.finish_reason = chunk.meta.finish_reason;
     }
     detail::merge_usage(merged.meta.usage, chunk.meta.usage);
-    merged.meta.logprobs.insert(merged.meta.logprobs.end(),
-                                chunk.meta.logprobs.begin(),
+    merged.meta.logprobs.insert(merged.meta.logprobs.end(), chunk.meta.logprobs.begin(),
                                 chunk.meta.logprobs.end());
 
-    collected_parts.insert(collected_parts.end(), chunk.parts.begin(),
-                           chunk.parts.end());
+    collected_parts.insert(collected_parts.end(), chunk.parts.begin(), chunk.parts.end());
   }
 
   auto normalized = detail::normalize_message_parts(std::move(collected_parts));
@@ -458,8 +433,7 @@ merge_message_chunks(const std::span<const message> chunks)
   merged.meta.logprobs.reserve(total_logprobs);
   std::vector<message_part> collected_parts{};
   collected_parts.reserve(total_parts);
-  collected_parts.insert(collected_parts.end(),
-                         std::make_move_iterator(merged.parts.begin()),
+  collected_parts.insert(collected_parts.end(), std::make_move_iterator(merged.parts.begin()),
                          std::make_move_iterator(merged.parts.end()));
   merged.parts.clear();
 
@@ -468,8 +442,7 @@ merge_message_chunks(const std::span<const message> chunks)
       return wh::core::result<message>::failure(wh::core::errc::protocol_error);
     }
     if (!detail::is_identity_compatible(merged, chunk)) {
-      return wh::core::result<message>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<message>::failure(wh::core::errc::contract_violation);
     }
 
     if (merged.name.empty()) {
@@ -486,13 +459,11 @@ merge_message_chunks(const std::span<const message> chunks)
       merged.meta.finish_reason = std::move(chunk.meta.finish_reason);
     }
     detail::merge_usage(merged.meta.usage, chunk.meta.usage);
-    merged.meta.logprobs.insert(
-        merged.meta.logprobs.end(),
-        std::make_move_iterator(chunk.meta.logprobs.begin()),
-        std::make_move_iterator(chunk.meta.logprobs.end()));
+    merged.meta.logprobs.insert(merged.meta.logprobs.end(),
+                                std::make_move_iterator(chunk.meta.logprobs.begin()),
+                                std::make_move_iterator(chunk.meta.logprobs.end()));
 
-    collected_parts.insert(collected_parts.end(),
-                           std::make_move_iterator(chunk.parts.begin()),
+    collected_parts.insert(collected_parts.end(), std::make_move_iterator(chunk.parts.begin()),
                            std::make_move_iterator(chunk.parts.end()));
   }
 
@@ -507,10 +478,9 @@ merge_message_chunks(const std::span<const message> chunks)
 /// Applies one message delta with optional audit log (linear scan path).
 template <typename MessageType>
   requires std::same_as<wh::core::remove_cvref_t<MessageType>, message>
-inline auto apply_message_update(
-    std::vector<message> &messages, MessageType &&delta,
-    const message_update_mode mode = message_update_mode::append,
-    std::vector<message_update_audit_entry> *const audit_log = nullptr)
+inline auto apply_message_update(std::vector<message> &messages, MessageType &&delta,
+                                 const message_update_mode mode = message_update_mode::append,
+                                 std::vector<message_update_audit_entry> *const audit_log = nullptr)
     -> wh::core::result<void> {
   const std::string delta_id = delta.message_id;
   const message_role delta_role = delta.role;
@@ -540,10 +510,8 @@ inline auto apply_message_update(
     return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
   }
 
-  const auto iter =
-      std::ranges::find_if(messages, [&](const message &existing) {
-        return existing.message_id == delta_id;
-      });
+  const auto iter = std::ranges::find_if(
+      messages, [&](const message &existing) { return existing.message_id == delta_id; });
   if (iter == messages.end()) {
     messages.push_back(std::forward<MessageType>(delta));
     push_audit(message_update_action::inserted);
@@ -563,10 +531,10 @@ inline auto apply_message_update(
 /// Applies one message delta with external id-index acceleration.
 template <typename MessageType>
   requires std::same_as<wh::core::remove_cvref_t<MessageType>, message>
-inline auto apply_message_update(
-    std::vector<message> &messages, MessageType &&delta, message_index &index,
-    const message_update_mode mode = message_update_mode::append,
-    std::vector<message_update_audit_entry> *const audit_log = nullptr)
+inline auto apply_message_update(std::vector<message> &messages, MessageType &&delta,
+                                 message_index &index,
+                                 const message_update_mode mode = message_update_mode::append,
+                                 std::vector<message_update_audit_entry> *const audit_log = nullptr)
     -> wh::core::result<void> {
   const std::string delta_id = delta.message_id;
   const message_role delta_role = delta.role;
@@ -622,8 +590,7 @@ inline auto apply_message_update(
     return {};
   }
 
-  auto iter =
-      messages.begin() + static_cast<std::ptrdiff_t>(index_iter->second);
+  auto iter = messages.begin() + static_cast<std::ptrdiff_t>(index_iter->second);
   if (iter->role != delta_role) {
     push_audit(message_update_action::rejected,
                wh::core::make_error(wh::core::errc::contract_violation));

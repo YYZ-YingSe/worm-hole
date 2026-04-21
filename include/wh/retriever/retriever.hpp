@@ -16,8 +16,8 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/callbacks/callbacks.hpp"
-#include "wh/core/component.hpp"
 #include "wh/core/compiler.hpp"
+#include "wh/core/component.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/stdexec.hpp"
@@ -48,26 +48,22 @@ struct retriever_request {
 namespace detail {
 
 /// Trims ASCII whitespace from both ends of the provided string view.
-[[nodiscard]] inline auto trim_ascii(const std::string_view value)
-    -> std::string_view {
+[[nodiscard]] inline auto trim_ascii(const std::string_view value) -> std::string_view {
   std::size_t begin = 0U;
-  while (begin < value.size() &&
-         std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
+  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
     ++begin;
   }
 
   std::size_t end = value.size();
-  while (end > begin &&
-         std::isspace(static_cast<unsigned char>(value[end - 1U])) != 0) {
+  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1U])) != 0) {
     --end;
   }
   return value.substr(begin, end - begin);
 }
 
 /// Evaluates whether document metadata satisfies the filter expression.
-[[nodiscard]] inline auto
-matches_filter_expression(const wh::schema::document &document,
-                          const std::string_view expression) -> bool {
+[[nodiscard]] inline auto matches_filter_expression(const wh::schema::document &document,
+                                                    const std::string_view expression) -> bool {
   const auto trimmed = trim_ascii(expression);
   if (trimmed.empty()) {
     return true;
@@ -97,16 +93,13 @@ matches_filter_expression(const wh::schema::document &document,
     return document.extra_info() == value;
   }
 
-  if (const auto *typed = document.metadata_ptr<std::string>(key);
-      typed != nullptr) {
+  if (const auto *typed = document.metadata_ptr<std::string>(key); typed != nullptr) {
     return *typed == value;
   }
-  if (const auto *typed = document.metadata_ptr<std::int64_t>(key);
-      typed != nullptr) {
+  if (const auto *typed = document.metadata_ptr<std::int64_t>(key); typed != nullptr) {
     return std::to_string(*typed) == value;
   }
-  if (const auto *typed = document.metadata_ptr<double>(key);
-      typed != nullptr) {
+  if (const auto *typed = document.metadata_ptr<double>(key); typed != nullptr) {
     return std::to_string(*typed) == value;
   }
   if (const auto *typed = document.metadata_ptr<bool>(key); typed != nullptr) {
@@ -132,16 +125,14 @@ using callback_sink = wh::callbacks::callback_sink;
 using wh::callbacks::borrow_callback_sink;
 using wh::callbacks::make_callback_sink;
 
-template <typename... args_t>
-inline auto emit_callback(args_t &&...args) -> void {
+template <typename... args_t> inline auto emit_callback(args_t &&...args) -> void {
   wh::callbacks::emit(std::forward<args_t>(args)...);
 }
 
 template <typename impl_t>
-concept sync_retriever_handler =
-    requires(const impl_t &impl, const retriever_request &request) {
-      { impl.retrieve(request) } -> std::same_as<retriever_result>;
-    };
+concept sync_retriever_handler = requires(const impl_t &impl, const retriever_request &request) {
+  { impl.retrieve(request) } -> std::same_as<retriever_result>;
+};
 
 template <typename impl_t>
 concept sender_retriever_handler_const =
@@ -150,25 +141,23 @@ concept sender_retriever_handler_const =
     };
 
 template <typename impl_t>
-concept sender_retriever_handler_move =
-    requires(const impl_t &impl, retriever_request &&request) {
-      { impl.retrieve_sender(std::move(request)) } -> stdexec::sender;
-    };
+concept sender_retriever_handler_move = requires(const impl_t &impl, retriever_request &&request) {
+  { impl.retrieve_sender(std::move(request)) } -> stdexec::sender;
+};
 
 template <typename impl_t>
-concept async_retriever_handler = sender_retriever_handler_const<impl_t> ||
-                                  sender_retriever_handler_move<impl_t>;
+concept async_retriever_handler =
+    sender_retriever_handler_const<impl_t> || sender_retriever_handler_move<impl_t>;
 
 template <typename impl_t>
 concept sender_retriever_handler = async_retriever_handler<impl_t>;
 
 template <typename impl_t>
-concept retriever_impl =
-    async_retriever_handler<impl_t> || sync_retriever_handler<impl_t>;
+concept retriever_impl = async_retriever_handler<impl_t> || sync_retriever_handler<impl_t>;
 
 template <typename impl_t>
-[[nodiscard]] inline auto
-run_sync_retriever_impl(const impl_t &impl, const retriever_request &request)
+[[nodiscard]] inline auto run_sync_retriever_impl(const impl_t &impl,
+                                                  const retriever_request &request)
     -> retriever_result {
   if constexpr (requires {
                   { impl.retrieve(request) } -> std::same_as<retriever_result>;
@@ -178,13 +167,10 @@ run_sync_retriever_impl(const impl_t &impl, const retriever_request &request)
 }
 
 template <typename impl_t>
-[[nodiscard]] inline auto run_sync_retriever_impl(const impl_t &impl,
-                                                  retriever_request &&request)
+[[nodiscard]] inline auto run_sync_retriever_impl(const impl_t &impl, retriever_request &&request)
     -> retriever_result {
   if constexpr (requires {
-                  {
-                    impl.retrieve(std::move(request))
-                  } -> std::same_as<retriever_result>;
+                  { impl.retrieve(std::move(request)) } -> std::same_as<retriever_result>;
                 }) {
     return impl.retrieve(std::move(request));
   } else {
@@ -198,8 +184,8 @@ template <typename impl_t>
   state.run_info.name = "Retriever";
   state.run_info.type = "Retriever";
   state.run_info.component = wh::core::component_kind::retriever;
-  state.run_info = wh::callbacks::apply_component_run_info(
-      std::move(state.run_info), request.options);
+  state.run_info =
+      wh::callbacks::apply_component_run_info(std::move(state.run_info), request.options);
 
   const auto options = request.options.resolve_view();
   state.event.top_k = options.top_k;
@@ -215,8 +201,7 @@ template <typename impl_t>
 }
 
 [[nodiscard]] inline auto apply_response_policy(retriever_result result,
-                                                const response_policy &policy)
-    -> retriever_result {
+                                                const response_policy &policy) -> retriever_result {
   if (result.has_error()) {
     return result;
   }
@@ -245,8 +230,7 @@ template <typename impl_t>
         if (document.score() < options.score_threshold) {
           return true;
         }
-        if (!policy.sub_index.empty() &&
-            document.sub_index() != policy.sub_index) {
+        if (!policy.sub_index.empty() && document.sub_index() != policy.sub_index) {
           return true;
         }
         if (!options.dsl.empty() && document.dsl() != options.dsl) {
@@ -265,36 +249,27 @@ template <typename impl_t>
 
 template <typename impl_t, typename request_t>
   requires async_retriever_handler<impl_t>
-[[nodiscard]] inline auto make_impl_sender(const impl_t &impl,
-                                           request_t &&request) {
+[[nodiscard]] inline auto make_impl_sender(const impl_t &impl, request_t &&request) {
   using request_value_t = std::remove_cvref_t<request_t>;
   static_assert(std::same_as<request_value_t, retriever_request>,
                 "retriever sender factory requires retriever_request input");
   return wh::core::detail::request_result_sender<retriever_result>(
-      std::forward<request_t>(request),
-      [&impl](auto &&forwarded_request) -> decltype(auto) {
-        return impl.retrieve_sender(
-            std::forward<decltype(forwarded_request)>(forwarded_request));
+      std::forward<request_t>(request), [&impl](auto &&forwarded_request) -> decltype(auto) {
+        return impl.retrieve_sender(std::forward<decltype(forwarded_request)>(forwarded_request));
       });
 }
 
-template <wh::core::resume_mode Resume, typename impl_t, typename request_t,
-          typename scheduler_t>
-[[nodiscard]] inline auto
-make_async_sender(const impl_t &impl, request_t &&request, callback_sink sink,
-                  scheduler_t scheduler) {
+template <wh::core::resume_mode Resume, typename impl_t, typename request_t, typename scheduler_t>
+[[nodiscard]] inline auto make_async_sender(const impl_t &impl, request_t &&request,
+                                            callback_sink sink, scheduler_t scheduler) {
   auto policy = make_response_policy(request);
   return wh::core::detail::component_async_entry<Resume>(
       std::forward<request_t>(request), std::move(sink), std::move(scheduler),
       [&impl](auto &&forwarded_request) {
-        return make_impl_sender(
-            impl, std::forward<decltype(forwarded_request)>(forwarded_request));
+        return make_impl_sender(impl, std::forward<decltype(forwarded_request)>(forwarded_request));
       },
-      [](const retriever_request &state_request) {
-        return make_callback_state(state_request);
-      },
-      [](const callback_sink &start_sink,
-         const retriever_callback_state &state) {
+      [](const retriever_request &state_request) { return make_callback_state(state_request); },
+      [](const callback_sink &start_sink, const retriever_callback_state &state) {
         emit_callback(start_sink, wh::callbacks::stage::start, state);
       },
       [policy = std::move(policy)](const callback_sink &success_sink,
@@ -304,8 +279,7 @@ make_async_sender(const impl_t &impl, request_t &&request, callback_sink sink,
         state.event.extra = std::to_string(status.value().size());
         emit_callback(success_sink, wh::callbacks::stage::end, state);
       },
-      [](const callback_sink &error_sink, retriever_callback_state &state,
-         retriever_result &) {
+      [](const callback_sink &error_sink, retriever_callback_state &state, retriever_result &) {
         emit_callback(error_sink, wh::callbacks::stage::error, state);
       });
 }
@@ -325,8 +299,7 @@ public:
       : impl_(impl) {}
 
   /// Stores one movable retriever implementation object by value.
-  explicit retriever(impl_t &&impl) noexcept(
-      std::is_nothrow_move_constructible_v<impl_t>)
+  explicit retriever(impl_t &&impl) noexcept(std::is_nothrow_move_constructible_v<impl_t>)
       : impl_(std::move(impl)) {}
 
   retriever(const retriever &) = default;
@@ -337,8 +310,7 @@ public:
 
   /// Returns static descriptor metadata for this component.
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{"Retriever",
-                                          wh::core::component_kind::retriever};
+    return wh::core::component_descriptor{"Retriever", wh::core::component_kind::retriever};
   }
 
   /// Retrieves matching documents and emits callbacks through the run context.
@@ -347,8 +319,7 @@ public:
       -> detail::retriever_result
     requires detail::sync_retriever_handler<impl_t>
   {
-    return retrieve_sync_impl(request,
-                              detail::borrow_callback_sink(callback_context));
+    return retrieve_sync_impl(request, detail::borrow_callback_sink(callback_context));
   }
 
   /// Retrieves matching documents for movable owning request and emits
@@ -358,8 +329,7 @@ public:
       -> detail::retriever_result
     requires detail::sync_retriever_handler<impl_t>
   {
-    return retrieve_sync_impl(std::move(request),
-                              detail::borrow_callback_sink(callback_context));
+    return retrieve_sync_impl(std::move(request), detail::borrow_callback_sink(callback_context));
   }
 
   /// Retrieves matching documents asynchronously and emits callbacks through
@@ -367,9 +337,8 @@ public:
   template <typename request_t>
     requires std::same_as<std::remove_cvref_t<request_t>, retriever_request> &&
              detail::async_retriever_handler<impl_t>
-  [[nodiscard]] auto
-  async_retrieve(request_t &&request,
-                 wh::core::run_context &callback_context) const -> auto {
+  [[nodiscard]] auto async_retrieve(request_t &&request,
+                                    wh::core::run_context &callback_context) const -> auto {
     return retrieve_async_impl(std::forward<request_t>(request),
                                detail::make_callback_sink(callback_context));
   }
@@ -381,17 +350,14 @@ private:
   template <typename request_t>
     requires std::same_as<std::remove_cvref_t<request_t>, retriever_request> &&
              detail::sync_retriever_handler<impl_t>
-  [[nodiscard]] auto retrieve_sync_impl(request_t &&request,
-                                        detail::callback_sink sink) const
+  [[nodiscard]] auto retrieve_sync_impl(request_t &&request, detail::callback_sink sink) const
       -> detail::retriever_result {
-    sink =
-        wh::callbacks::filter_callback_sink(std::move(sink), request.options);
+    sink = wh::callbacks::filter_callback_sink(std::move(sink), request.options);
     auto policy = detail::make_response_policy(request);
     auto callback_state = detail::make_callback_state(request);
     detail::emit_callback(sink, wh::callbacks::stage::start, callback_state);
 
-    auto output = detail::run_sync_retriever_impl(
-        impl_, std::forward<request_t>(request));
+    auto output = detail::run_sync_retriever_impl(impl_, std::forward<request_t>(request));
     output = detail::apply_response_policy(std::move(output), policy);
     if (output.has_error()) {
       detail::emit_callback(sink, wh::callbacks::stage::error, callback_state);
@@ -406,14 +372,13 @@ private:
   template <typename request_t>
     requires std::same_as<std::remove_cvref_t<request_t>, retriever_request> &&
              detail::async_retriever_handler<impl_t>
-  [[nodiscard]] auto retrieve_async_impl(request_t &&request,
-                                         detail::callback_sink sink) const
+  [[nodiscard]] auto retrieve_async_impl(request_t &&request, detail::callback_sink sink) const
       -> auto {
     return wh::core::detail::defer_resume_sender<Resume>(
         [this, request = retriever_request{std::forward<request_t>(request)},
          sink = std::move(sink)](auto scheduler) mutable {
-          return detail::make_async_sender<Resume>(
-              impl_, std::move(request), std::move(sink), std::move(scheduler));
+          return detail::make_async_sender<Resume>(impl_, std::move(request), std::move(sink),
+                                                   std::move(scheduler));
         });
   }
 
@@ -421,7 +386,6 @@ private:
   wh_no_unique_address impl_t impl_;
 };
 
-template <typename impl_t>
-retriever(impl_t &&) -> retriever<std::remove_cvref_t<impl_t>>;
+template <typename impl_t> retriever(impl_t &&) -> retriever<std::remove_cvref_t<impl_t>>;
 
 } // namespace wh::retriever

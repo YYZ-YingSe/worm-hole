@@ -19,8 +19,10 @@ TEST_CASE("graph snapshot types preserve compile visible metadata",
   REQUIRE(snapshot.branches.front().end_nodes.size() == 2U);
 }
 
-TEST_CASE("graph snapshot compile options default to stable graph metadata and empty optional timeout",
-          "[UT][wh/compose/graph/snapshot.hpp][graph_snapshot_compile_options][condition][branch][boundary]") {
+TEST_CASE(
+    "graph snapshot compile options default to stable graph metadata and empty optional timeout",
+    "[UT][wh/compose/graph/"
+    "snapshot.hpp][graph_snapshot_compile_options][condition][branch][boundary]") {
   wh::compose::graph_snapshot snapshot{};
 
   REQUIRE(snapshot.compile_options.name == "graph");

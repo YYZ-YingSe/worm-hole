@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/error.hpp"
 #include "wh/output/output_parser.hpp"
@@ -8,12 +8,10 @@
 
 namespace {
 
-struct int_parser final
-    : wh::output::output_parser_base<int_parser, std::string, int> {
+struct int_parser final : wh::output::output_parser_base<int_parser, std::string, int> {
   std::vector<wh::core::error_code> errors{};
 
-  auto parse_value_impl(const std::string &input,
-                        const wh::callbacks::event_payload &)
+  auto parse_value_impl(const std::string &input, const wh::callbacks::event_payload &)
       -> wh::core::result<int> {
     try {
       return std::stoi(input);
@@ -22,25 +20,22 @@ struct int_parser final
     }
   }
 
-  auto on_error_impl(const wh::core::error_code error,
-                     const wh::callbacks::event_payload &) -> void {
+  auto on_error_impl(const wh::core::error_code error, const wh::callbacks::event_payload &)
+      -> void {
     errors.push_back(error);
   }
 };
 
 struct int_parser_view_preferred final
-    : wh::output::output_parser_base<int_parser_view_preferred, std::string,
-                                     int> {
+    : wh::output::output_parser_base<int_parser_view_preferred, std::string, int> {
   bool view_used{false};
 
-  auto parse_value_impl(const std::string &,
-                        const wh::callbacks::event_payload &)
+  auto parse_value_impl(const std::string &, const wh::callbacks::event_payload &)
       -> wh::core::result<int> {
     return wh::core::result<int>::failure(wh::core::errc::parse_error);
   }
 
-  auto parse_value_view_impl(const std::string &input,
-                             const wh::callbacks::event_view &)
+  auto parse_value_view_impl(const std::string &input, const wh::callbacks::event_view &)
       -> wh::core::result<int> {
     view_used = true;
     try {
@@ -53,8 +48,7 @@ struct int_parser_view_preferred final
 
 } // namespace
 
-TEST_CASE("output parser base handles value and stream chunk paths",
-          "[core][output][functional]") {
+TEST_CASE("output parser base handles value and stream chunk paths", "[core][output][functional]") {
   int_parser parser{};
 
   auto value = parser.parse_value("42");
@@ -94,14 +88,14 @@ TEST_CASE("output parser parse_stream closes upstream on parse failure",
   REQUIRE(writer.try_write("bad").has_value());
 
   auto parsed_reader = parser.parse_stream(std::move(reader));
-  auto first = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(parsed_reader.try_read());
+  auto first = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      parsed_reader.try_read());
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
   REQUIRE(*first.value().value == 42);
 
-  auto second = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(parsed_reader.try_read());
+  auto second = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      parsed_reader.try_read());
   REQUIRE(second.has_value());
   REQUIRE(second.value().error == wh::core::errc::parse_error);
   REQUIRE(!parser.errors.empty());
@@ -120,8 +114,8 @@ TEST_CASE("output parser parse_stream_view prefers view implementation",
   REQUIRE(writer.close().has_value());
 
   auto parsed_reader = parser.parse_stream_view(std::move(reader));
-  auto first = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(parsed_reader.try_read());
+  auto first = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      parsed_reader.try_read());
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
   REQUIRE(*first.value().value == 11);

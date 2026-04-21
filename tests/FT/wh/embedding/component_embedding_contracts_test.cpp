@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/component_contract_support.hpp"
 #include "wh/embedding/embedding.hpp"
@@ -28,10 +28,8 @@ TEST_CASE("embedding callbacks keep partial-success batches on end path",
   wh::core::run_context callback_context{};
   callback_context.callbacks.emplace();
   auto registered = register_test_callbacks(
-      std::move(callback_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(callback_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::embedding::embedding_callback_event>();
         REQUIRE(typed != nullptr);
@@ -57,16 +55,15 @@ TEST_CASE("embedding callbacks keep partial-success batches on end path",
   REQUIRE(registered.has_value());
   callback_context = std::move(registered).value();
 
-  wh::embedding::embedding component{sync_embedding_impl{
-      [](const wh::embedding::embedding_request &request)
-          -> wh::core::result<wh::embedding::embedding_response> {
+  wh::embedding::embedding component{
+      sync_embedding_impl{[](const wh::embedding::embedding_request &request)
+                              -> wh::core::result<wh::embedding::embedding_response> {
         wh::embedding::embedding_response output{};
         output.reserve(request.inputs.size());
-        const auto options = request.options.resolve_view();
+        const auto request_options = request.options.resolve_view();
         for (const auto &input : request.inputs) {
           if (input == "bad") {
-            if (options.failure_policy ==
-                wh::embedding::batch_failure_policy::fail_fast) {
+            if (request_options.failure_policy == wh::embedding::batch_failure_policy::fail_fast) {
               return wh::core::result<wh::embedding::embedding_response>::failure(
                   wh::core::errc::invalid_argument);
             }
@@ -103,8 +100,7 @@ TEST_CASE("embedding batch function path reports usage in callbacks",
       [](const wh::core::callback_stage stage) noexcept {
         return stage == wh::core::callback_stage::end;
       },
-      [&](const wh::core::callback_stage,
-          const wh::core::callback_event_view event,
+      [&](const wh::core::callback_stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::embedding::embedding_callback_event>();
         if (typed == nullptr) {
@@ -121,9 +117,9 @@ TEST_CASE("embedding batch function path reports usage in callbacks",
   REQUIRE(registered.has_value());
   callback_context = std::move(registered).value();
 
-  wh::embedding::embedding component{sync_embedding_impl{
-      [](const wh::embedding::embedding_request &request)
-          -> wh::core::result<wh::embedding::embedding_response> {
+  wh::embedding::embedding component{
+      sync_embedding_impl{[](const wh::embedding::embedding_request &request)
+                              -> wh::core::result<wh::embedding::embedding_response> {
         wh::embedding::embedding_response output{};
         output.reserve(request.inputs.size());
         for (const auto &input : request.inputs) {

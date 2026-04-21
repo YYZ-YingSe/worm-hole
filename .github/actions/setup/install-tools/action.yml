@@ -1,5 +1,5 @@
-name: install-required-tools
-description: Install the toolchain required for the selected CI profile.
+name: install-ci-tools
+description: Install the selected CI tool profile on the current runner.
 
 inputs:
   profile:

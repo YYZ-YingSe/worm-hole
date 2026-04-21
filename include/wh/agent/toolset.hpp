@@ -39,46 +39,32 @@ namespace detail {
 
 template <typename tool_t>
 concept sync_invoke_tool_component =
-    requires(const tool_t &tool, wh::tool::tool_request request,
-             wh::core::run_context &context) {
-      {
-        tool.invoke(std::move(request), context)
-      } -> std::same_as<wh::tool::tool_invoke_result>;
-      {
-        tool.schema()
-      } -> std::same_as<const wh::schema::tool_schema_definition &>;
+    requires(const tool_t &tool, wh::tool::tool_request request, wh::core::run_context &context) {
+      { tool.invoke(std::move(request), context) } -> std::same_as<wh::tool::tool_invoke_result>;
+      { tool.schema() } -> std::same_as<const wh::schema::tool_schema_definition &>;
     };
 
 template <typename tool_t>
 concept async_invoke_tool_component =
-    requires(const tool_t &tool, wh::tool::tool_request request,
-             wh::core::run_context &context) {
+    requires(const tool_t &tool, wh::tool::tool_request request, wh::core::run_context &context) {
       { tool.async_invoke(std::move(request), context) } -> stdexec::sender;
-      {
-        tool.schema()
-      } -> std::same_as<const wh::schema::tool_schema_definition &>;
+      { tool.schema() } -> std::same_as<const wh::schema::tool_schema_definition &>;
     };
 
 template <typename tool_t>
 concept sync_stream_tool_component =
-    requires(const tool_t &tool, wh::tool::tool_request request,
-             wh::core::run_context &context) {
+    requires(const tool_t &tool, wh::tool::tool_request request, wh::core::run_context &context) {
       {
         tool.stream(std::move(request), context)
       } -> std::same_as<wh::tool::tool_output_stream_result>;
-      {
-        tool.schema()
-      } -> std::same_as<const wh::schema::tool_schema_definition &>;
+      { tool.schema() } -> std::same_as<const wh::schema::tool_schema_definition &>;
     };
 
 template <typename tool_t>
 concept async_stream_tool_component =
-    requires(const tool_t &tool, wh::tool::tool_request request,
-             wh::core::run_context &context) {
+    requires(const tool_t &tool, wh::tool::tool_request request, wh::core::run_context &context) {
       { tool.async_stream(std::move(request), context) } -> stdexec::sender;
-      {
-        tool.schema()
-      } -> std::same_as<const wh::schema::tool_schema_definition &>;
+      { tool.schema() } -> std::same_as<const wh::schema::tool_schema_definition &>;
     };
 
 template <typename tool_t>
@@ -90,23 +76,20 @@ concept stream_tool_component =
     sync_stream_tool_component<tool_t> || async_stream_tool_component<tool_t>;
 
 template <typename tool_t>
-concept registered_tool_component =
-    invoke_tool_component<tool_t> || stream_tool_component<tool_t>;
+concept registered_tool_component = invoke_tool_component<tool_t> || stream_tool_component<tool_t>;
 
 template <registered_tool_component tool_t>
-[[nodiscard]] inline auto make_tool_entry(const tool_t &tool,
-                                          const bool return_direct)
+[[nodiscard]] inline auto make_tool_entry(const tool_t &tool, const bool return_direct)
     -> wh::compose::tool_entry {
   wh::compose::tool_entry entry{};
   if constexpr (sync_invoke_tool_component<tool_t>) {
     entry.invoke = wh::compose::tool_invoke{
-        [tool](const wh::compose::tool_call &call, wh::tool::call_scope scope)
-            -> wh::core::result<wh::compose::graph_value> {
-          auto status = tool.invoke(
-              wh::tool::tool_request{.input_json = call.arguments}, scope.run);
+        [tool](const wh::compose::tool_call &call,
+               wh::tool::call_scope scope) -> wh::core::result<wh::compose::graph_value> {
+          auto status =
+              tool.invoke(wh::tool::tool_request{.input_json = call.arguments}, scope.run);
           if (status.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                status.error());
+            return wh::core::result<wh::compose::graph_value>::failure(status.error());
           }
           return wh::compose::graph_value{std::move(status).value()};
         }};
@@ -115,33 +98,25 @@ template <registered_tool_component tool_t>
     entry.async_invoke = wh::compose::tool_async_invoke{
         [tool](wh::compose::tool_call call,
                wh::tool::call_scope scope) -> wh::compose::tools_invoke_sender {
-          auto sender =
-              tool.async_invoke(wh::tool::tool_request{.input_json = std::move(
-                                                           call.arguments)},
-                                scope.run) |
-              stdexec::then([](wh::tool::tool_invoke_result status)
-                                -> wh::core::result<wh::compose::graph_value> {
-                if (status.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      status.error());
-                }
-                return wh::compose::graph_value{std::move(status).value()};
-              });
-          return wh::compose::tools_invoke_sender{
-              wh::core::detail::normalize_result_sender<
-                  wh::core::result<wh::compose::graph_value>>(
-                  std::move(sender))};
+          return tool.async_invoke(wh::tool::tool_request{.input_json = std::move(call.arguments)},
+                                   scope.run) |
+                 stdexec::then([](wh::tool::tool_invoke_result status)
+                                   -> wh::core::result<wh::compose::graph_value> {
+                   if (status.has_error()) {
+                     return wh::core::result<wh::compose::graph_value>::failure(status.error());
+                   }
+                   return wh::compose::graph_value{std::move(status).value()};
+                 });
         }};
   }
   if constexpr (sync_stream_tool_component<tool_t>) {
     entry.stream = wh::compose::tool_stream{
-        [tool](const wh::compose::tool_call &call, wh::tool::call_scope scope)
-            -> wh::core::result<wh::compose::graph_stream_reader> {
-          auto status = tool.stream(
-              wh::tool::tool_request{.input_json = call.arguments}, scope.run);
+        [tool](const wh::compose::tool_call &call,
+               wh::tool::call_scope scope) -> wh::core::result<wh::compose::graph_stream_reader> {
+          auto status =
+              tool.stream(wh::tool::tool_request{.input_json = call.arguments}, scope.run);
           if (status.has_error()) {
-            return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                status.error());
+            return wh::core::result<wh::compose::graph_stream_reader>::failure(status.error());
           }
           return wh::compose::to_graph_stream_reader(std::move(status).value());
         }};
@@ -150,25 +125,16 @@ template <registered_tool_component tool_t>
     entry.async_stream = wh::compose::tool_async_stream{
         [tool](wh::compose::tool_call call,
                wh::tool::call_scope scope) -> wh::compose::tools_stream_sender {
-          auto sender =
-              tool.async_stream(wh::tool::tool_request{.input_json = std::move(
-                                                           call.arguments)},
-                                scope.run) |
-              stdexec::then(
-                  [](wh::tool::tool_output_stream_result status)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                    if (status.has_error()) {
-                      return wh::core::
-                          result<wh::compose::graph_stream_reader>::failure(
-                              status.error());
-                    }
-                    return wh::compose::to_graph_stream_reader(
-                        std::move(status).value());
-                  });
-          return wh::compose::tools_stream_sender{
-              wh::core::detail::normalize_result_sender<
-                  wh::core::result<wh::compose::graph_stream_reader>>(
-                  std::move(sender))};
+          return tool.async_stream(wh::tool::tool_request{.input_json = std::move(call.arguments)},
+                                   scope.run) |
+                 stdexec::then([](wh::tool::tool_output_stream_result status)
+                                   -> wh::core::result<wh::compose::graph_stream_reader> {
+                   if (status.has_error()) {
+                     return wh::core::result<wh::compose::graph_stream_reader>::failure(
+                         status.error());
+                   }
+                   return wh::compose::to_graph_stream_reader(std::move(status).value());
+                 });
         }};
   }
   entry.return_direct = return_direct;
@@ -189,16 +155,13 @@ public:
   ~toolset() = default;
 
   /// Registers one raw compose tool entry plus its public tool schema.
-  auto add_entry(wh::schema::tool_schema_definition schema,
-                 wh::compose::tool_entry entry,
-                 const tool_registration registration = {})
-      -> wh::core::result<void> {
+  auto add_entry(wh::schema::tool_schema_definition schema, wh::compose::tool_entry entry,
+                 const tool_registration registration = {}) -> wh::core::result<void> {
     if (schema.name.empty() || schema.description.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     if (!static_cast<bool>(entry.invoke) && !static_cast<bool>(entry.stream) &&
-        !static_cast<bool>(entry.async_invoke) &&
-        !static_cast<bool>(entry.async_stream)) {
+        !static_cast<bool>(entry.async_invoke) && !static_cast<bool>(entry.async_stream)) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     if (registry_.contains(schema.name)) {
@@ -219,14 +182,12 @@ public:
   template <detail::registered_tool_component tool_t>
   auto add_tool(const tool_t &tool, const tool_registration registration = {})
       -> wh::core::result<void> {
-    return add_entry(tool.schema(),
-                     detail::make_tool_entry(tool, registration.return_direct),
+    return add_entry(tool.schema(), detail::make_tool_entry(tool, registration.return_direct),
                      registration);
   }
 
   /// Appends one shared tool middleware layer in declaration order.
-  auto add_middleware(wh::compose::tool_middleware middleware)
-      -> wh::core::result<void> {
+  auto add_middleware(wh::compose::tool_middleware middleware) -> wh::core::result<void> {
     runtime_options_.middleware.push_back(std::move(middleware));
     return {};
   }
@@ -235,9 +196,7 @@ public:
   [[nodiscard]] auto empty() const noexcept -> bool { return schemas_.empty(); }
 
   /// Returns the current registered tool count.
-  [[nodiscard]] auto size() const noexcept -> std::size_t {
-    return schemas_.size();
-  }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return schemas_.size(); }
 
   /// Returns the public tool schema set bound to the model request.
   [[nodiscard]] auto schemas() const noexcept
@@ -246,34 +205,29 @@ public:
   }
 
   /// Returns the compose tool registry used for tool dispatch.
-  [[nodiscard]] auto registry() const noexcept
-      -> const wh::compose::tool_registry & {
+  [[nodiscard]] auto registry() const noexcept -> const wh::compose::tool_registry & {
     return registry_;
   }
 
   /// Returns the compose tools-node runtime options used by this toolset.
-  [[nodiscard]] auto runtime_options() const noexcept
-      -> const wh::compose::tools_options & {
+  [[nodiscard]] auto runtime_options() const noexcept -> const wh::compose::tools_options & {
     return runtime_options_;
   }
 
   /// Pins the authored tools-node lowering options used by this toolset.
-  auto set_node_options(const tools_node_authoring_options options)
-      -> wh::core::result<void> {
+  auto set_node_options(const tools_node_authoring_options options) -> wh::core::result<void> {
     runtime_options_.sequential = options.sequential;
     node_options_ = options;
     return {};
   }
 
   /// Returns the authored tools-node lowering options when already pinned.
-  [[nodiscard]] auto node_options() const noexcept
-      -> std::optional<tools_node_authoring_options> {
+  [[nodiscard]] auto node_options() const noexcept -> std::optional<tools_node_authoring_options> {
     return node_options_;
   }
 
   /// Returns true when the named tool is configured as return-direct.
-  [[nodiscard]] auto
-  is_return_direct_tool(const std::string_view tool_name) const noexcept
+  [[nodiscard]] auto is_return_direct_tool(const std::string_view tool_name) const noexcept
       -> bool {
     return return_direct_names_.contains(tool_name);
   }

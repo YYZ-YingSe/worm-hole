@@ -30,8 +30,7 @@ public:
   }
 
   /// Builds address from one C-string array segment list.
-  template <std::size_t count_v>
-  explicit address(const char *const (&segments)[count_v]) {
+  template <std::size_t count_v> explicit address(const char *const (&segments)[count_v]) {
     segments_.reserve(count_v);
     for (const auto segment : segments) {
       append_segment(segment);
@@ -39,14 +38,13 @@ public:
   }
 
   /// Builds address from one string-view array segment list.
-  template <std::size_t count_v>
-  explicit address(const std::string_view (&segments)[count_v]) {
+  template <std::size_t count_v> explicit address(const std::string_view (&segments)[count_v]) {
     append_segments(std::span<const std::string_view>{segments});
   }
 
   /// Builds address from one pre-materialized segment span.
-  [[nodiscard]] static auto
-  from_segments(const std::span<const std::string_view> segments) -> address {
+  [[nodiscard]] static auto from_segments(const std::span<const std::string_view> segments)
+      -> address {
     address built{};
     built.append_segments(segments);
     return built;
@@ -55,8 +53,7 @@ public:
   /// Returns a new address with one segment appended.
   [[nodiscard]] auto append(std::string_view segment) const -> address {
     address next{*this};
-    [[maybe_unused]] auto &stored_segment =
-        next.segments_.emplace_back(segment);
+    [[maybe_unused]] auto &stored_segment = next.segments_.emplace_back(segment);
     return next;
   }
 
@@ -78,13 +75,11 @@ public:
     }
 
     return std::ranges::equal(prefix.segments_,
-                              segments_ |
-                                  std::views::take(prefix.segments_.size()));
+                              segments_ | std::views::take(prefix.segments_.size()));
   }
 
   /// Joins segments into string form with configurable separator.
-  [[nodiscard]] auto to_string(const std::string_view separator = "/") const
-      -> std::string {
+  [[nodiscard]] auto to_string(const std::string_view separator = "/") const -> std::string {
     std::string joined;
     if (segments_.empty()) {
       return joined;
@@ -109,14 +104,10 @@ public:
   }
 
   /// Number of segments in this address.
-  [[nodiscard]] auto size() const noexcept -> std::size_t {
-    return segments_.size();
-  }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return segments_.size(); }
 
   /// Returns true when address has no segments.
-  [[nodiscard]] auto empty() const noexcept -> bool {
-    return segments_.empty();
-  }
+  [[nodiscard]] auto empty() const noexcept -> bool { return segments_.empty(); }
 
   /// Returns read-only segment view.
   [[nodiscard]] auto segments() const noexcept -> std::span<const std::string> {
@@ -124,14 +115,12 @@ public:
   }
 
   /// Equality compares all segments in order.
-  [[nodiscard]] friend auto operator==(const address &lhs,
-                                       const address &rhs) noexcept -> bool {
+  [[nodiscard]] friend auto operator==(const address &lhs, const address &rhs) noexcept -> bool {
     return std::ranges::equal(lhs.segments_, rhs.segments_);
   }
 
   /// Inequality compares all segments in order.
-  [[nodiscard]] friend auto operator!=(const address &lhs,
-                                       const address &rhs) noexcept -> bool {
+  [[nodiscard]] friend auto operator!=(const address &lhs, const address &rhs) noexcept -> bool {
     return !(lhs == rhs);
   }
 
@@ -140,8 +129,7 @@ private:
     [[maybe_unused]] auto &stored_segment = segments_.emplace_back(segment);
   }
 
-  auto append_segments(const std::span<const std::string_view> segments)
-      -> void {
+  auto append_segments(const std::span<const std::string_view> segments) -> void {
     segments_.reserve(segments.size());
     for (const auto segment : segments) {
       append_segment(segment);
@@ -153,14 +141,13 @@ private:
 };
 
 /// Builds one address from one ordered span of path segments.
-[[nodiscard]] inline auto
-make_address(const std::span<const std::string_view> segments) -> address {
+[[nodiscard]] inline auto make_address(const std::span<const std::string_view> segments)
+    -> address {
   return address::from_segments(segments);
 }
 
 /// Builds one address from one ordered initializer-list of path segments.
-[[nodiscard]] inline auto
-make_address(const std::initializer_list<std::string_view> segments)
+[[nodiscard]] inline auto make_address(const std::initializer_list<std::string_view> segments)
     -> address {
   return address::from_segments(
       std::span<const std::string_view>{segments.begin(), segments.size()});

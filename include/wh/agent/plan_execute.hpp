@@ -55,13 +55,12 @@ struct plan_execute_decision {
   wh::schema::message response{};
 };
 
-using plan_execute_request_builder = wh::core::callback_function<
-    wh::core::result<std::vector<wh::schema::message>>(
+using plan_execute_request_builder =
+    wh::core::callback_function<wh::core::result<std::vector<wh::schema::message>>(
         const plan_execute_context &, wh::core::run_context &) const>;
 using plan_execute_plan_reader = wh::agent::output_reader<plan_execute_plan>;
 using plan_execute_step_reader = wh::agent::output_reader<std::string>;
-using plan_execute_decision_reader =
-    wh::agent::output_reader<plan_execute_decision>;
+using plan_execute_decision_reader = wh::agent::output_reader<plan_execute_decision>;
 
 /// Thin authored plan-execute shell that binds planner, executor, and optional
 /// replanner roles.
@@ -83,8 +82,7 @@ public:
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
   /// Replaces the maximum execute-replan iterations. Zero falls back to one.
-  auto set_max_iterations(const std::size_t max_iterations)
-      -> wh::core::result<void> {
+  auto set_max_iterations(const std::size_t max_iterations) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -104,8 +102,7 @@ public:
   }
 
   /// Installs the planner-request builder before freeze.
-  auto set_planner_request_builder(plan_execute_request_builder builder)
-      -> wh::core::result<void> {
+  auto set_planner_request_builder(plan_execute_request_builder builder) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -146,8 +143,7 @@ public:
   }
 
   /// Installs the planner output reader before freeze.
-  auto set_planner_plan_reader(plan_execute_plan_reader reader)
-      -> wh::core::result<void> {
+  auto set_planner_plan_reader(plan_execute_plan_reader reader) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -160,8 +156,7 @@ public:
   }
 
   /// Installs the executor output reader before freeze.
-  auto set_executor_step_reader(plan_execute_step_reader reader)
-      -> wh::core::result<void> {
+  auto set_executor_step_reader(plan_execute_step_reader reader) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -203,44 +198,37 @@ public:
   }
 
   /// Returns the frozen planner role.
-  [[nodiscard]] auto planner()
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto planner() -> wh::core::result<std::reference_wrapper<agent>> {
     return role_ref(planner_);
   }
 
   /// Returns the frozen planner role.
-  [[nodiscard]] auto planner() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto planner() const -> wh::core::result<std::reference_wrapper<const agent>> {
     return role_ref(planner_);
   }
 
   /// Returns the frozen executor role.
-  [[nodiscard]] auto executor()
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto executor() -> wh::core::result<std::reference_wrapper<agent>> {
     return role_ref(executor_);
   }
 
   /// Returns the frozen executor role.
-  [[nodiscard]] auto executor() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto executor() const -> wh::core::result<std::reference_wrapper<const agent>> {
     return role_ref(executor_);
   }
 
   /// Returns the optional replanner role when present.
-  [[nodiscard]] auto replanner()
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto replanner() -> wh::core::result<std::reference_wrapper<agent>> {
     return role_ref(replanner_);
   }
 
   /// Returns the optional replanner role when present.
-  [[nodiscard]] auto replanner() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto replanner() const -> wh::core::result<std::reference_wrapper<const agent>> {
     return role_ref(replanner_);
   }
 
   /// Returns the effective replanner role, falling back to planner.
-  [[nodiscard]] auto effective_replanner()
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto effective_replanner() -> wh::core::result<std::reference_wrapper<agent>> {
     if (replanner_.has_value()) {
       return std::ref(*replanner_);
     }
@@ -258,8 +246,7 @@ public:
 
   /// Returns the effective replanner name. When no explicit replanner is
   /// installed, the planner role is reused.
-  [[nodiscard]] auto effective_replanner_name() const
-      -> wh::core::result<std::string_view> {
+  [[nodiscard]] auto effective_replanner_name() const -> wh::core::result<std::string_view> {
     if (replanner_.has_value()) {
       return std::string_view{replanner_->name()};
     }
@@ -271,14 +258,10 @@ public:
   }
 
   /// Returns the configured iteration budget.
-  [[nodiscard]] auto max_iterations() const noexcept -> std::size_t {
-    return max_iterations_;
-  }
+  [[nodiscard]] auto max_iterations() const noexcept -> std::size_t { return max_iterations_; }
 
   /// Returns the configured output slot name.
-  [[nodiscard]] auto output_key() const noexcept -> std::string_view {
-    return output_key_;
-  }
+  [[nodiscard]] auto output_key() const noexcept -> std::string_view { return output_key_; }
 
   /// Returns the planner-request builder.
   [[nodiscard]] auto planner_request_builder() const noexcept
@@ -299,14 +282,12 @@ public:
   }
 
   /// Returns the planner output reader.
-  [[nodiscard]] auto planner_plan_reader() const noexcept
-      -> const plan_execute_plan_reader & {
+  [[nodiscard]] auto planner_plan_reader() const noexcept -> const plan_execute_plan_reader & {
     return planner_plan_reader_;
   }
 
   /// Returns the executor output reader.
-  [[nodiscard]] auto executor_step_reader() const noexcept
-      -> const plan_execute_step_reader & {
+  [[nodiscard]] auto executor_step_reader() const noexcept -> const plan_execute_step_reader & {
     return executor_step_reader_;
   }
 
@@ -325,23 +306,18 @@ public:
     if (name_.empty() || !planner_.has_value() || !executor_.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    if (!planner_request_builder_ || !executor_request_builder_ ||
-        !replanner_request_builder_ || !planner_plan_reader_ ||
-        !executor_step_reader_ || !replanner_decision_reader_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+    if (!planner_request_builder_ || !executor_request_builder_ || !replanner_request_builder_ ||
+        !planner_plan_reader_ || !executor_step_reader_ || !replanner_decision_reader_) {
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     if (planner_->name() == executor_->name()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     if (!planner_->executable() || !executor_->executable()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     if (replanner_.has_value() && !replanner_->executable()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     auto planner_frozen = planner_->freeze();
     if (planner_frozen.has_error()) {
@@ -361,13 +337,12 @@ public:
     return {};
   }
 
-  /// Converts this authored shell into the common executable agent surface.
+  /// Converts this frozen authored shell into the common executable agent surface.
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:
   /// Installs one role before freeze.
-  auto set_role(std::optional<agent> &slot, agent &&value)
-      -> wh::core::result<void> {
+  auto set_role(std::optional<agent> &slot, agent &&value) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -383,8 +358,7 @@ private:
   [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
       -> wh::core::result<std::reference_wrapper<agent>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
@@ -402,8 +376,7 @@ private:
   /// Rejects role mutation after freeze.
   [[nodiscard]] auto ensure_mutable() const -> wh::core::result<void> {
     if (frozen_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     return {};
   }

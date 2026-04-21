@@ -24,9 +24,7 @@ public:
     scripted_.enqueue_success(std::vector<std::string>{documents});
   }
 
-  auto enqueue_error(const wh::core::errc code) -> void {
-    scripted_.enqueue_error(code);
-  }
+  auto enqueue_error(const wh::core::errc code) -> void { scripted_.enqueue_error(code); }
 
   [[nodiscard]] auto retrieve([[maybe_unused]] const std::string &query)
       -> wh::core::result<std::vector<std::string>> {
@@ -34,9 +32,7 @@ public:
     return scripted_.next();
   }
 
-  [[nodiscard]] auto retrieve_count() const noexcept -> std::size_t {
-    return retrieve_count_;
-  }
+  [[nodiscard]] auto retrieve_count() const noexcept -> std::size_t { return retrieve_count_; }
 
 private:
   detail::scripted_result_queue<std::vector<std::string>> scripted_{};

@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/cursor_reader.hpp"
 #include "wh/schema/stream/pipe.hpp"
@@ -23,8 +23,9 @@ TEST_CASE("cursor reader facade exports top level reader and factory",
   REQUIRE(*value.value().value == 5);
 }
 
-TEST_CASE("cursor reader facade supports zero-reader boundary and default constructible cursor type",
-          "[UT][wh/core/cursor_reader.hpp][cursor_reader][condition][boundary]") {
+TEST_CASE(
+    "cursor reader facade supports zero-reader boundary and default constructible cursor type",
+    "[UT][wh/core/cursor_reader.hpp][cursor_reader][condition][boundary]") {
   auto [writer, source] = wh::schema::stream::make_pipe_stream<int>(1U);
   REQUIRE(writer.close().has_value());
 

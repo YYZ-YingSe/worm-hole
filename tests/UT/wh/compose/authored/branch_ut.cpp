@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/authored/branch.hpp"
 
@@ -23,10 +23,10 @@ TEST_CASE("value branch validates case descriptors and reports declared end node
   REQUIRE(invalid.has_error());
   REQUIRE(invalid.error() == wh::core::errc::invalid_argument);
 
-  auto added = branch.add_case(
-      "next",
-      [](const wh::compose::graph_value &, wh::core::run_context &)
-          -> wh::core::result<bool> { return true; });
+  auto added =
+      branch.add_case("next",
+                      [](const wh::compose::graph_value &,
+                         wh::core::run_context &) -> wh::core::result<bool> { return true; });
   REQUIRE(added.has_value());
   REQUIRE(branch.end_nodes() == std::vector<std::string>{"next"});
   REQUIRE(branch.cases().size() == 1U);
@@ -44,14 +44,13 @@ TEST_CASE("stream branch validates targets and selector installation",
   REQUIRE(branch.add_target("right").has_value());
   REQUIRE(branch.end_nodes() == std::vector<std::string>({"left", "right"}));
 
-  auto invalid_selector =
-      branch.set_selector(wh::compose::stream_branch_selector{nullptr});
+  auto invalid_selector = branch.set_selector(wh::compose::stream_branch_selector{nullptr});
   REQUIRE(invalid_selector.has_error());
   REQUIRE(invalid_selector.error() == wh::core::errc::invalid_argument);
 
   auto valid_selector = branch.set_selector(
-      [](wh::compose::graph_stream_reader, wh::core::run_context &)
-          -> wh::core::result<std::vector<std::string>> {
+      [](wh::compose::graph_stream_reader,
+         wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
         return std::vector<std::string>{"left"};
       });
   REQUIRE(valid_selector.has_value());

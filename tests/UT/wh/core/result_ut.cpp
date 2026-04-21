@@ -1,10 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/result.hpp"
 
@@ -36,22 +36,20 @@ struct move_only_box {
   std::unique_ptr<int> value{};
 };
 
-using wh::core::detail::callable_result_t;
-using wh::core::detail::callable_with;
-using wh::core::detail::remove_cvref_t;
 using wh::core::errc;
 using wh::core::failure;
 using wh::core::in_place_error;
 using wh::core::in_place_value;
 using wh::core::result;
 using wh::core::success;
+using wh::core::detail::callable_result_t;
+using wh::core::detail::callable_with;
+using wh::core::detail::remove_cvref_t;
 
 static_assert(std::same_as<remove_cvref_t<const int &>, int>);
 static_assert(callable_with<decltype([](int value) { return value + 1; }), int>);
-static_assert(std::same_as<
-              callable_result_t<decltype([](int value) { return value + 1; }),
-                                int>,
-              int>);
+static_assert(
+    std::same_as<callable_result_t<decltype([](int value) { return value + 1; }), int>, int>);
 static_assert(wh::core::detail::is_result<result<int>>::value);
 static_assert(wh::core::detail::result_like<result<int>>);
 static_assert(!wh::core::detail::result_like<pseudo_result_like>);
@@ -74,8 +72,7 @@ TEST_CASE("success and failure tags preserve payload access",
   REQUIRE(failed.error() == errc::timeout);
 
   const auto void_ok = success();
-  static_assert(
-      std::same_as<decltype(void_ok), const wh::core::success_type<void>>);
+  static_assert(std::same_as<decltype(void_ok), const wh::core::success_type<void>>);
 }
 
 TEST_CASE("result value specialization covers constructors observers and stream",
@@ -134,8 +131,7 @@ TEST_CASE("result value specialization supports conversion and move-only payload
   REQUIRE(move_only.has_value());
   REQUIRE(*move_only.value().value == 7);
 
-  auto moved_out =
-      std::move(move_only).value_or(move_only_box{9});
+  auto moved_out = std::move(move_only).value_or(move_only_box{9});
   REQUIRE(*moved_out.value == 7);
 
   const result<std::string> success_text{"safe"};
@@ -261,9 +257,8 @@ TEST_CASE("result and operators map values while preserving errors",
   REQUIRE(mapped_error.has_error());
   REQUIRE(mapped_error.error() == errc::canceled);
 
-  const auto as_result = ok_value & [](int value) {
-    return result<std::string>{std::to_string(value)};
-  };
+  const auto as_result =
+      ok_value & [](int value) { return result<std::string>{std::to_string(value)}; };
   REQUIRE(as_result.has_value());
   REQUIRE(as_result.value() == "5");
 
@@ -307,8 +302,8 @@ TEST_CASE("result static helpers and bool conversion distinguish success and fai
   REQUIRE(static_cast<bool>(ok));
   REQUIRE_FALSE(static_cast<bool>(failed));
   REQUIRE(ok.value_or(std::string{"fallback"}) == "ready");
-  REQUIRE(std::move(result<std::string>{errc::timeout})
-              .value_or(std::string{"fallback"}) == "fallback");
+  REQUIRE(std::move(result<std::string>{errc::timeout}).value_or(std::string{"fallback"}) ==
+          "fallback");
 
   const auto void_ok = result<void>::success();
   const auto void_failed = result<void>::failure(errc::canceled);

@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/component_contract_support.hpp"
 #include "wh/retriever/retriever.hpp"
@@ -12,8 +12,7 @@ using wh::testing::helper::sync_retriever_impl;
 
 } // namespace
 
-TEST_CASE("retriever callbacks bridge typed and payload paths",
-          "[core][retriever][functional]") {
+TEST_CASE("retriever callbacks bridge typed and payload paths", "[core][retriever][functional]") {
   std::atomic<bool> started{false};
   std::atomic<bool> ended{false};
   std::atomic<bool> failed{false};
@@ -28,10 +27,8 @@ TEST_CASE("retriever callbacks bridge typed and payload paths",
   wh::core::run_context callback_context{};
   callback_context.callbacks.emplace();
   auto registered = register_test_callbacks(
-      std::move(callback_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(callback_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::retriever::retriever_callback_event>();
         REQUIRE(typed != nullptr);
@@ -54,13 +51,12 @@ TEST_CASE("retriever callbacks bridge typed and payload paths",
   REQUIRE(registered.has_value());
   callback_context = std::move(registered).value();
 
-  wh::retriever::retriever component{sync_retriever_impl{
-      [](const wh::retriever::retriever_request &)
-          -> wh::core::result<wh::retriever::retriever_response> {
+  wh::retriever::retriever component{
+      sync_retriever_impl{[](const wh::retriever::retriever_request &)
+                              -> wh::core::result<wh::retriever::retriever_response> {
         return wh::retriever::retriever_response{wh::schema::document{"ok"}};
       }}};
-  auto status = component.retrieve({"query", "idx", "", {}, options},
-                                   callback_context);
+  auto status = component.retrieve({"query", "idx", "", {}, options}, callback_context);
   REQUIRE(status.has_value());
   REQUIRE(status.value().size() == 1U);
   REQUIRE(started.load(std::memory_order_acquire));
@@ -71,9 +67,9 @@ TEST_CASE("retriever callbacks bridge typed and payload paths",
 
 TEST_CASE("retriever applies score threshold filter dsl and sub-index constraints",
           "[core][retriever][functional]") {
-  wh::retriever::retriever component{sync_retriever_impl{
-      [](const wh::retriever::retriever_request &)
-          -> wh::core::result<wh::retriever::retriever_response> {
+  wh::retriever::retriever component{
+      sync_retriever_impl{[](const wh::retriever::retriever_request &)
+                              -> wh::core::result<wh::retriever::retriever_response> {
         wh::schema::document first{"keep-a"};
         first.with_score(0.91).with_dsl("dsl-a").with_sub_index("s1");
 
@@ -89,9 +85,9 @@ TEST_CASE("retriever applies score threshold filter dsl and sub-index constraint
         wh::schema::document fifth{"drop-sub-index"};
         fifth.with_score(0.99).with_dsl("dsl-a").with_sub_index("s2");
 
-        return wh::retriever::retriever_response{
-            std::move(first), std::move(second), std::move(third),
-            std::move(fourth), std::move(fifth)};
+        return wh::retriever::retriever_response{std::move(first), std::move(second),
+                                                 std::move(third), std::move(fourth),
+                                                 std::move(fifth)};
       }}};
 
   wh::retriever::retriever_options options{};
@@ -103,8 +99,7 @@ TEST_CASE("retriever applies score threshold filter dsl and sub-index constraint
   options.set_base(common);
   wh::core::run_context callback_context{};
 
-  auto status =
-      component.retrieve({"q", "idx", "s1", {}, options}, callback_context);
+  auto status = component.retrieve({"q", "idx", "s1", {}, options}, callback_context);
   REQUIRE(status.has_value());
   REQUIRE(status.value().size() == 1U);
   REQUIRE(status.value().front().content() == "keep-a");
@@ -112,8 +107,7 @@ TEST_CASE("retriever applies score threshold filter dsl and sub-index constraint
   common.filter = "keep";
   common.top_k = 1U;
   options.set_base(common);
-  auto relaxed =
-      component.retrieve({"q", "idx", "s1", {}, options}, callback_context);
+  auto relaxed = component.retrieve({"q", "idx", "s1", {}, options}, callback_context);
   REQUIRE(relaxed.has_value());
   REQUIRE(relaxed.value().size() == 1U);
 }
@@ -123,21 +117,19 @@ TEST_CASE("retriever strategy policies dedupe by content before top-k cut",
   wh::retriever::retriever_options retriever_options{};
   wh::retriever::retriever_common_options retriever_common{};
   retriever_common.top_k = 2U;
-  retriever_common.merge_policy =
-      wh::retriever::recall_merge_policy::dedupe_by_content;
+  retriever_common.merge_policy = wh::retriever::recall_merge_policy::dedupe_by_content;
   retriever_options.set_base(retriever_common);
 
-  wh::retriever::retriever merged_retriever{sync_retriever_impl{
-      [](const wh::retriever::retriever_request &)
-          -> wh::core::result<wh::retriever::retriever_response> {
-        return wh::retriever::retriever_response{wh::schema::document{"a"},
-                                                 wh::schema::document{"b"},
-                                                 wh::schema::document{"a"},
-                                                 wh::schema::document{"c"}};
+  wh::retriever::retriever merged_retriever{
+      sync_retriever_impl{[](const wh::retriever::retriever_request &)
+                              -> wh::core::result<wh::retriever::retriever_response> {
+        return wh::retriever::retriever_response{
+            wh::schema::document{"a"}, wh::schema::document{"b"}, wh::schema::document{"a"},
+            wh::schema::document{"c"}};
       }}};
   wh::core::run_context retriever_context{};
-  auto merged = merged_retriever.retrieve({"q", "idx", "", {}, retriever_options},
-                                          retriever_context);
+  auto merged =
+      merged_retriever.retrieve({"q", "idx", "", {}, retriever_options}, retriever_context);
   REQUIRE(merged.has_value());
   REQUIRE(merged.value().size() == 2U);
   REQUIRE(merged.value()[0].content() == "a");

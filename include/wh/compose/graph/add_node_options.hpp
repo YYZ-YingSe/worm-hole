@@ -23,37 +23,30 @@ namespace detail {
 
 template <typename payload_t, typename handler_t>
 concept typed_node_state_phase_handler =
-    requires(handler_t handler, const graph_state_cause &cause,
-             graph_process_state &process_state,
-             std::remove_cvref_t<payload_t> &payload,
-             wh::core::run_context &context) {
-      {
-        handler(cause, process_state, payload, context)
-      } -> std::same_as<wh::core::result<void>>;
+    requires(handler_t handler, const graph_state_cause &cause, graph_process_state &process_state,
+             std::remove_cvref_t<payload_t> &payload, wh::core::run_context &context) {
+      { handler(cause, process_state, payload, context) } -> std::same_as<wh::core::result<void>>;
     };
 
 template <typename payload_t, typename handler_t>
-[[nodiscard]] inline auto
-bind_typed_node_state_phase_handler(handler_t &&handler)
+[[nodiscard]] inline auto bind_typed_node_state_phase_handler(handler_t &&handler)
     -> graph_state_pre_handler {
   using stored_payload_t = std::remove_cvref_t<payload_t>;
   using stored_handler_t = std::remove_cvref_t<handler_t>;
-  return graph_state_pre_handler{
-      [handler = stored_handler_t{std::forward<handler_t>(handler)}](
-          const graph_state_cause &cause, graph_process_state &process_state,
-          graph_value &payload,
-          wh::core::run_context &context) -> wh::core::result<void> {
-        if constexpr (std::same_as<stored_payload_t, graph_value>) {
-          return handler(cause, process_state, payload, context);
-        } else {
-          auto *typed = wh::core::any_cast<stored_payload_t>(&payload);
-          if (typed == nullptr) {
-            return wh::core::result<void>::failure(
-                wh::core::errc::type_mismatch);
-          }
-          return handler(cause, process_state, *typed, context);
-        }
-      }};
+  return graph_state_pre_handler{[handler = stored_handler_t{std::forward<handler_t>(handler)}](
+                                     const graph_state_cause &cause,
+                                     graph_process_state &process_state, graph_value &payload,
+                                     wh::core::run_context &context) -> wh::core::result<void> {
+    if constexpr (std::same_as<stored_payload_t, graph_value>) {
+      return handler(cause, process_state, payload, context);
+    } else {
+      auto *typed = wh::core::any_cast<stored_payload_t>(&payload);
+      if (typed == nullptr) {
+        return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+      }
+      return handler(cause, process_state, *typed, context);
+    }
+  }};
 }
 
 } // namespace detail
@@ -132,8 +125,7 @@ public:
   }
 
   template <typename payload_t = graph_value, typename handler_t>
-    requires(!std::same_as<std::remove_cvref_t<payload_t>,
-                           graph_stream_reader>) &&
+    requires(!std::same_as<std::remove_cvref_t<payload_t>, graph_stream_reader>) &&
             detail::typed_node_state_phase_handler<payload_t, handler_t>
   auto bind_stream_pre(handler_t &&handler) -> graph_node_state_options & {
     stream_pre_.template bind<payload_t>(std::forward<handler_t>(handler));
@@ -142,8 +134,7 @@ public:
   }
 
   template <typename payload_t = graph_value, typename handler_t>
-    requires(!std::same_as<std::remove_cvref_t<payload_t>,
-                           graph_stream_reader>) &&
+    requires(!std::same_as<std::remove_cvref_t<payload_t>, graph_stream_reader>) &&
             detail::typed_node_state_phase_handler<payload_t, handler_t>
   auto bind_stream_post(handler_t &&handler) -> graph_node_state_options & {
     stream_post_.template bind<payload_t>(std::forward<handler_t>(handler));
@@ -172,12 +163,10 @@ public:
   }
 
   [[nodiscard]] auto any() const noexcept -> bool {
-    return pre_.active() || post_.active() || stream_pre_.active() ||
-           stream_post_.active();
+    return pre_.active() || post_.active() || stream_pre_.active() || stream_post_.active();
   }
 
-  [[nodiscard]] auto metadata() const noexcept
-      -> graph_compile_state_handler_metadata {
+  [[nodiscard]] auto metadata() const noexcept -> graph_compile_state_handler_metadata {
     return graph_compile_state_handler_metadata{
         .pre = pre_.active(),
         .post = post_.active(),
@@ -186,28 +175,21 @@ public:
     };
   }
 
-  [[nodiscard]] auto pre() const noexcept
-      -> const graph_node_state_phase_option & {
-    return pre_;
-  }
+  [[nodiscard]] auto pre() const noexcept -> const graph_node_state_phase_option & { return pre_; }
 
-  [[nodiscard]] auto post() const noexcept
-      -> const graph_node_state_phase_option & {
+  [[nodiscard]] auto post() const noexcept -> const graph_node_state_phase_option & {
     return post_;
   }
 
-  [[nodiscard]] auto stream_pre() const noexcept
-      -> const graph_node_state_phase_option & {
+  [[nodiscard]] auto stream_pre() const noexcept -> const graph_node_state_phase_option & {
     return stream_pre_;
   }
 
-  [[nodiscard]] auto stream_post() const noexcept
-      -> const graph_node_state_phase_option & {
+  [[nodiscard]] auto stream_post() const noexcept -> const graph_node_state_phase_option & {
     return stream_post_;
   }
 
-  [[nodiscard]] auto authored_handlers() const noexcept
-      -> const graph_node_state_handlers * {
+  [[nodiscard]] auto authored_handlers() const noexcept -> const graph_node_state_handlers * {
     if (!has_authored_handler()) {
       return nullptr;
     }
@@ -254,6 +236,8 @@ struct graph_add_node_options {
   bool allow_no_control{false};
   /// True means node may execute with no data predecessor.
   bool allow_no_data{false};
+  /// Dispatch policy for authored sync node execution.
+  sync_dispatch dispatch{sync_dispatch::work};
   /// Optional node-level retry budget override (falls back to graph default).
   std::optional<std::size_t> retry_budget_override{};
   /// Optional node-level timeout override (`nullopt` falls back to graph

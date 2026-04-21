@@ -1,11 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
-#include "wh/core/any.hpp"
 #include "wh/compose/node/passthrough.hpp"
+#include "wh/core/any.hpp"
 #include "wh/workflow/workflow.hpp"
 
 TEST_CASE("workflow facade authors compiles and invokes through public namespace",
@@ -24,8 +23,7 @@ TEST_CASE("workflow facade authors compiles and invokes through public namespace
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
 
-  auto *echo =
-      wh::core::any_cast<int>(&std::get<0>(*awaited).value().at("input"));
+  auto *echo = wh::core::any_cast<int>(&std::get<0>(*awaited).value().at("input"));
   REQUIRE(echo != nullptr);
   REQUIRE(*echo == 42);
 }
@@ -42,11 +40,10 @@ TEST_CASE("workflow facade supports public alias step refs and field mappings",
   const wh::workflow::workflow_step_ref target_ref = target.value();
   REQUIRE(source_ref.from_entry().has_value());
   REQUIRE(target_ref
-              .add_input(source_ref,
-                         {wh::workflow::field_mapping_rule{
-                             .from_path = "order.user.id",
-                             .to_path = "ctx.user_id",
-                         }})
+              .add_input(source_ref, {wh::workflow::field_mapping_rule{
+                                         .from_path = "order.user.id",
+                                         .to_path = "ctx.user_id",
+                                     }})
               .has_value());
   REQUIRE(workflow.compile().has_value());
 
@@ -65,8 +62,7 @@ TEST_CASE("workflow facade supports public alias step refs and field mappings",
   const auto &output = std::get<0>(*awaited).value();
   const auto ctx_iter = output.find("ctx");
   REQUIRE(ctx_iter != output.end());
-  const auto *ctx_map =
-      wh::core::any_cast<wh::compose::graph_value_map>(&ctx_iter->second);
+  const auto *ctx_map = wh::core::any_cast<wh::compose::graph_value_map>(&ctx_iter->second);
   REQUIRE(ctx_map != nullptr);
 
   const auto user_id_iter = ctx_map->find("user_id");

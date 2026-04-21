@@ -1,11 +1,11 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/component_contract_support.hpp"
 #include "wh/compose/graph.hpp"
@@ -19,11 +19,11 @@ namespace {
 
 using wh::testing::helper::make_user_message;
 using wh::testing::helper::read_any;
+using wh::testing::helper::register_test_callbacks;
 using wh::testing::helper::take_try_chunk;
 using wh::testing::helper::tool_binding_probe_model;
 using wh::testing::helper::tool_binding_probe_model_impl;
 using wh::testing::helper::tool_binding_probe_state;
-using wh::testing::helper::register_test_callbacks;
 
 } // namespace
 
@@ -36,11 +36,9 @@ TEST_CASE("echo chat model supports invoke stream and immutable tool binding",
 
   const auto invoke_result = model.invoke(request, callback_context);
   REQUIRE(invoke_result.has_value());
-  REQUIRE(invoke_result.value().message.role ==
-          wh::schema::message_role::assistant);
-  REQUIRE(std::get<wh::schema::text_part>(
-              invoke_result.value().message.parts.front())
-              .text == "hello");
+  REQUIRE(invoke_result.value().message.role == wh::schema::message_role::assistant);
+  REQUIRE(std::get<wh::schema::text_part>(invoke_result.value().message.parts.front()).text ==
+          "hello");
 
   auto stream_result = model.stream(request, callback_context);
   REQUIRE(stream_result.has_value());
@@ -55,8 +53,8 @@ TEST_CASE("echo chat model supports invoke stream and immutable tool binding",
 
   wh::schema::tool_schema_definition tool_schema{};
   tool_schema.name = "weather";
-  auto bound = model.bind_tools(
-      std::span<const wh::schema::tool_schema_definition>{&tool_schema, 1U});
+  auto bound =
+      model.bind_tools(std::span<const wh::schema::tool_schema_definition>{&tool_schema, 1U});
   REQUIRE(bound.bound_tools().size() == 1U);
   REQUIRE(model.bound_tools().empty());
 }
@@ -81,8 +79,7 @@ TEST_CASE("model fallback route freeze and structured output negotiation",
 
   wh::model::chat_request request{};
   request.messages.push_back(make_user_message("fallback"));
-  request.tools.push_back(
-      wh::schema::tool_schema_definition{"weather", "desc"});
+  request.tools.push_back(wh::schema::tool_schema_definition{"weather", "desc"});
   wh::model::chat_model_options request_options{};
   request_options.set_base(options);
   request.options = request_options;
@@ -93,13 +90,11 @@ TEST_CASE("model fallback route freeze and structured output negotiation",
   auto fallback_report = wh::model::invoke_with_fallback(
       std::span<const tool_binding_probe_model>{candidates}, request);
   REQUIRE(fallback_report.has_value());
-  REQUIRE(fallback_report.value().response.message.role ==
-          wh::schema::message_role::assistant);
+  REQUIRE(fallback_report.value().response.message.role == wh::schema::message_role::assistant);
   REQUIRE_FALSE(fallback_report.value().frozen_candidates.empty());
   REQUIRE(std::find(fallback_report.value().frozen_candidates.begin(),
                     fallback_report.value().frozen_candidates.end(),
-                    "ToolBindingProbeModel") !=
-          fallback_report.value().frozen_candidates.end());
+                    "ToolBindingProbeModel") != fallback_report.value().frozen_candidates.end());
   REQUIRE_FALSE(fallback_report.value().structured_output.use_provider_native);
   REQUIRE(fallback_report.value().structured_output.use_tool_call_fallback);
   REQUIRE(state->bind_calls == 1U);
@@ -111,10 +106,8 @@ TEST_CASE("model fallback report keeps failure chain and tool-choice semantics",
           "[core][model][functional]") {
   wh::model::chat_request request{};
   request.messages.push_back(make_user_message("fallback"));
-  request.tools.push_back(
-      wh::schema::tool_schema_definition{"weather", "desc"});
-  request.tools.push_back(
-      wh::schema::tool_schema_definition{"search", "desc"});
+  request.tools.push_back(wh::schema::tool_schema_definition{"weather", "desc"});
+  request.tools.push_back(wh::schema::tool_schema_definition{"search", "desc"});
 
   auto state = std::make_shared<tool_binding_probe_state>();
   const std::array<tool_binding_probe_model, 1U> candidates{
@@ -154,8 +147,7 @@ TEST_CASE("model fallback report keeps failure chain and tool-choice semantics",
   no_tools_request.tools.clear();
   no_tools_request.options.set_base(force_options);
   auto no_tools_forced = wh::model::invoke_with_fallback_report_only(
-      std::span<const tool_binding_probe_model>{candidates},
-      no_tools_request);
+      std::span<const tool_binding_probe_model>{candidates}, no_tools_request);
   REQUIRE(no_tools_forced.final_error.has_value());
   REQUIRE(*no_tools_forced.final_error == wh::core::errc::invalid_argument);
 
@@ -189,8 +181,7 @@ TEST_CASE("model stream fallback binds tools and exposes selected reader",
           "[core][model][functional]") {
   wh::model::chat_request request{};
   request.messages.push_back(make_user_message("fallback"));
-  request.tools.push_back(
-      wh::schema::tool_schema_definition{"weather", "desc"});
+  request.tools.push_back(wh::schema::tool_schema_definition{"weather", "desc"});
 
   auto state = std::make_shared<tool_binding_probe_state>();
   const std::array<tool_binding_probe_model, 1U> candidates{
@@ -208,8 +199,8 @@ TEST_CASE("model stream fallback binds tools and exposes selected reader",
   auto first = take_try_chunk(reader);
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front())
-              .text == "bound-stream");
+  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front()).text ==
+          "bound-stream");
   auto second = take_try_chunk(reader);
   REQUIRE(second.has_value());
   REQUIRE(second.value().eof);
@@ -224,15 +215,12 @@ TEST_CASE("fallback chat model resolves catalog tools for invoke and stream",
   std::size_t handshake_calls = 0U;
   std::size_t fetch_calls = 0U;
   wh::tool::tool_catalog_cache cache{wh::tool::tool_catalog_source{
-      .handshake =
-          [&handshake_calls]() -> wh::core::result<void> {
+      .handshake = [&handshake_calls]() -> wh::core::result<void> {
         ++handshake_calls;
         return {};
       },
-      .fetch_catalog =
-          [tool_schema, &fetch_calls]()
-              -> wh::core::result<
-                  std::vector<wh::schema::tool_schema_definition>> {
+      .fetch_catalog = [tool_schema, &fetch_calls]()
+          -> wh::core::result<std::vector<wh::schema::tool_schema_definition>> {
         ++fetch_calls;
         return std::vector<wh::schema::tool_schema_definition>{tool_schema};
       },
@@ -250,9 +238,7 @@ TEST_CASE("fallback chat model resolves catalog tools for invoke and stream",
 
   auto invoked = wrapper.invoke(request, context);
   REQUIRE(invoked.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(
-              invoked.value().message.parts.front())
-              .text == "bound");
+  REQUIRE(std::get<wh::schema::text_part>(invoked.value().message.parts.front()).text == "bound");
   REQUIRE(handshake_calls == 1U);
   REQUIRE(fetch_calls == 1U);
   REQUIRE(state->bind_calls == 1U);
@@ -269,8 +255,8 @@ TEST_CASE("fallback chat model resolves catalog tools for invoke and stream",
   auto first = take_try_chunk(reader);
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front())
-              .text == "bound-stream");
+  REQUIRE(std::get<wh::schema::text_part>(first.value().value->parts.front()).text ==
+          "bound-stream");
   auto second = take_try_chunk(reader);
   REQUIRE(second.has_value());
   REQUIRE(second.value().eof);
@@ -287,18 +273,19 @@ TEST_CASE("fallback chat model binds compose model nodes for value and stream",
       wh::model::fallback_chat_model<tool_binding_probe_model>{
           std::vector<tool_binding_probe_model>{
               tool_binding_probe_model{tool_binding_probe_model_impl{state}}}}
-          .bind_tools(std::span<const wh::schema::tool_schema_definition>{
-              &tool_schema, 1U});
+          .bind_tools(std::span<const wh::schema::tool_schema_definition>{&tool_schema, 1U});
 
   wh::model::chat_request request{};
   request.messages.push_back(make_user_message("compose fallback"));
 
-  auto invoke_node = wh::compose::make_component_node<
-      wh::compose::component_kind::model, wh::compose::node_contract::value,
-      wh::compose::node_contract::value>("fallback-invoke", wrapper);
-  auto stream_node = wh::compose::make_component_node<
-      wh::compose::component_kind::model, wh::compose::node_contract::value,
-      wh::compose::node_contract::stream>("fallback-stream", wrapper);
+  auto invoke_node = wh::compose::make_component_node<wh::compose::component_kind::model,
+                                                      wh::compose::node_contract::value,
+                                                      wh::compose::node_contract::value>(
+      "fallback-invoke", wrapper);
+  auto stream_node = wh::compose::make_component_node<wh::compose::component_kind::model,
+                                                      wh::compose::node_contract::value,
+                                                      wh::compose::node_contract::stream>(
+      "fallback-stream", wrapper);
 
   wh::compose::graph invoke_graph{};
   REQUIRE(invoke_graph.add_component(std::move(invoke_node)).has_value());
@@ -321,32 +308,26 @@ TEST_CASE("fallback chat model binds compose model nodes for value and stream",
   wh::compose::node_runtime runtime{};
 
   auto invoke_input = wh::compose::graph_value{wh::core::any(request)};
-  auto invoked = wh::compose::run_compiled_sync_node(
-      invoke_compiled.value().get(), invoke_input, context, runtime);
+  auto invoked = wh::compose::run_compiled_sync_node(invoke_compiled.value().get(), invoke_input,
+                                                     context, runtime);
   REQUIRE(invoked.has_value());
-  auto invoke_output = read_any<wh::model::chat_response>(
-      std::move(invoked).value());
+  auto invoke_output = read_any<wh::model::chat_response>(std::move(invoked).value());
   REQUIRE(invoke_output.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(
-              invoke_output.value().message.parts.front())
-              .text == "bound");
+  REQUIRE(std::get<wh::schema::text_part>(invoke_output.value().message.parts.front()).text ==
+          "bound");
 
-  auto stream_input =
-      wh::compose::graph_value{wh::core::any(std::move(request))};
-  auto streamed = wh::compose::run_compiled_sync_node(
-      stream_compiled.value().get(), stream_input, context, runtime);
+  auto stream_input = wh::compose::graph_value{wh::core::any(std::move(request))};
+  auto streamed = wh::compose::run_compiled_sync_node(stream_compiled.value().get(), stream_input,
+                                                      context, runtime);
   REQUIRE(streamed.has_value());
-  auto stream_output = read_any<wh::compose::graph_stream_reader>(
-      std::move(streamed).value());
+  auto stream_output = read_any<wh::compose::graph_stream_reader>(std::move(streamed).value());
   REQUIRE(stream_output.has_value());
   auto first = stream_output.value().read();
   REQUIRE(first.has_value());
   REQUIRE(first.value().value.has_value());
-  auto message =
-      read_any<wh::schema::message>(std::move(*first.value().value));
+  auto message = read_any<wh::schema::message>(std::move(*first.value().value));
   REQUIRE(message.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(message.value().parts.front()).text ==
-          "bound-stream");
+  REQUIRE(std::get<wh::schema::text_part>(message.value().parts.front()).text == "bound-stream");
 
   REQUIRE(state->bind_calls == 2U);
   REQUIRE(state->invoke_calls == 1U);
@@ -372,10 +353,8 @@ TEST_CASE("model callbacks bridge typed and payload for invoke and stream",
   wh::core::run_context callback_context{};
   callback_context.callbacks.emplace();
   auto registered = register_test_callbacks(
-      std::move(callback_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(callback_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::model::chat_model_callback_event>();
         REQUIRE(typed != nullptr);

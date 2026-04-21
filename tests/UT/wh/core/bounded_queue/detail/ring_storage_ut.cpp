@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <stdexcept>
 #include <utility>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/bounded_queue/detail/ring_storage.hpp"
 
@@ -28,7 +28,8 @@ struct ring_probe {
 } // namespace
 
 TEST_CASE("ring storage pushes pops wraps around and supports move transfer",
-          "[UT][wh/core/bounded_queue/detail/ring_storage.hpp][ring_storage::push_back][condition][branch][boundary]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "ring_storage.hpp][ring_storage::push_back][condition][branch][boundary]") {
   ring_probe::live_count = 0;
   ring_probe::destroy_count = 0;
 
@@ -66,16 +67,16 @@ TEST_CASE("ring storage pushes pops wraps around and supports move transfer",
 }
 
 TEST_CASE("ring storage destroys consumed slot even when sink throws",
-          "[UT][wh/core/bounded_queue/detail/ring_storage.hpp][ring_storage::consume_front][error][branch]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "ring_storage.hpp][ring_storage::consume_front][error][branch]") {
   ring_probe::live_count = 0;
   ring_probe::destroy_count = 0;
 
   wh::core::detail::ring_storage<ring_probe> storage{1U};
   storage.emplace_back(9);
 
-  REQUIRE_THROWS_AS(
-      storage.consume_front([](ring_probe &&) { throw std::runtime_error{"boom"}; }),
-      std::runtime_error);
+  REQUIRE_THROWS_AS(storage.consume_front([](ring_probe &&) { throw std::runtime_error{"boom"}; }),
+                    std::runtime_error);
   REQUIRE(storage.empty());
   REQUIRE(ring_probe::live_count == 0);
 }

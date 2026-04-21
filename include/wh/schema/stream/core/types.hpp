@@ -53,8 +53,7 @@ template <typename value_t> struct stream_chunk {
   template <typename source_name_t>
     requires std::constructible_from<std::string, source_name_t &&>
   /// Creates source-tagged EOF chunk.
-  [[nodiscard]] static auto make_source_eof(source_name_t &&source_name)
-      -> stream_chunk {
+  [[nodiscard]] static auto make_source_eof(source_name_t &&source_name) -> stream_chunk {
     stream_chunk chunk{};
     chunk.eof = true;
     chunk.source = std::forward<source_name_t>(source_name);
@@ -62,14 +61,10 @@ template <typename value_t> struct stream_chunk {
   }
 
   /// Returns true only for the terminal EOF of the whole stream.
-  [[nodiscard]] auto is_terminal_eof() const noexcept -> bool {
-    return eof && source.empty();
-  }
+  [[nodiscard]] auto is_terminal_eof() const noexcept -> bool { return eof && source.empty(); }
 
   /// Returns true for per-source EOF emitted by merged/select streams.
-  [[nodiscard]] auto is_source_eof() const noexcept -> bool {
-    return eof && !source.empty();
-  }
+  [[nodiscard]] auto is_source_eof() const noexcept -> bool { return eof && !source.empty(); }
 };
 
 template <typename value_t> struct stream_chunk_view {
@@ -83,8 +78,7 @@ template <typename value_t> struct stream_chunk_view {
   std::string_view source{};
 
   /// Creates a borrowed-value chunk view.
-  [[nodiscard]] static auto make_value(const value_t &value_ref)
-      -> stream_chunk_view {
+  [[nodiscard]] static auto make_value(const value_t &value_ref) -> stream_chunk_view {
     stream_chunk_view chunk{};
     chunk.value = std::addressof(value_ref);
     return chunk;
@@ -98,20 +92,15 @@ template <typename value_t> struct stream_chunk_view {
   }
 
   /// Returns true only for the terminal EOF of the whole stream.
-  [[nodiscard]] auto is_terminal_eof() const noexcept -> bool {
-    return eof && source.empty();
-  }
+  [[nodiscard]] auto is_terminal_eof() const noexcept -> bool { return eof && source.empty(); }
 
   /// Returns true for per-source EOF emitted by merged/select streams.
-  [[nodiscard]] auto is_source_eof() const noexcept -> bool {
-    return eof && !source.empty();
-  }
+  [[nodiscard]] auto is_source_eof() const noexcept -> bool { return eof && !source.empty(); }
 };
 
 /// Borrows view from owned chunk until next read/materialization boundary.
 template <typename value_t>
-[[nodiscard]] inline auto
-borrow_chunk_until_next(const stream_chunk<value_t> &chunk)
+[[nodiscard]] inline auto borrow_chunk_until_next(const stream_chunk<value_t> &chunk)
     -> stream_chunk_view<value_t> {
   stream_chunk_view<value_t> view{};
   if (chunk.value.has_value()) {
@@ -125,8 +114,7 @@ borrow_chunk_until_next(const stream_chunk<value_t> &chunk)
 
 /// Materializes owned chunk from borrowed chunk view.
 template <typename value_t>
-[[nodiscard]] inline auto
-materialize_chunk(const stream_chunk_view<value_t> &view)
+[[nodiscard]] inline auto materialize_chunk(const stream_chunk_view<value_t> &view)
     -> stream_chunk<value_t> {
   stream_chunk<value_t> chunk{};
   if (view.value != nullptr) {

@@ -13,8 +13,7 @@
 namespace wh::adk::detail {
 
 [[nodiscard]] inline auto
-history_request_has_tool_call_part(const wh::schema::message &message) noexcept
-    -> bool {
+history_request_has_tool_call_part(const wh::schema::message &message) noexcept -> bool {
   for (const auto &part : message.parts) {
     if (std::holds_alternative<wh::schema::tool_call_part>(part)) {
       return true;
@@ -65,8 +64,7 @@ struct history_request_payload_view {
     if (message.role == wh::schema::message_role::system) {
       continue;
     }
-    if (trailing_tool_call_index.has_value() &&
-        *trailing_tool_call_index == index) {
+    if (trailing_tool_call_index.has_value() && *trailing_tool_call_index == index) {
       continue;
     }
     auto rewritten = wh::agent::rewrite_history_message_as_context_prompt(message);
@@ -76,37 +74,30 @@ struct history_request_payload_view {
     request.messages.push_back(std::move(*rewritten));
   }
   if (request.messages.empty()) {
-    return wh::core::result<wh::model::chat_request>::failure(
-        wh::core::errc::not_found);
+    return wh::core::result<wh::model::chat_request>::failure(wh::core::errc::not_found);
   }
   return request;
 }
 
 /// Reads one shared history-request payload from a tool-call boundary payload.
-[[nodiscard]] inline auto
-read_history_request_payload_view(const wh::core::any &payload)
+[[nodiscard]] inline auto read_history_request_payload_view(const wh::core::any &payload)
     -> wh::core::result<history_request_payload_view> {
   if (!payload.has_value()) {
-    return wh::core::result<history_request_payload_view>::failure(
-        wh::core::errc::not_found);
+    return wh::core::result<history_request_payload_view>::failure(wh::core::errc::not_found);
   }
-  if (const auto *request =
-          wh::core::any_cast<wh::model::chat_request>(&payload);
+  if (const auto *request = wh::core::any_cast<wh::model::chat_request>(&payload);
       request != nullptr) {
     return history_request_payload_view{
         .history_request = request,
     };
   }
-  if (const auto *typed =
-          wh::core::any_cast<history_request_payload>(&payload);
-      typed != nullptr) {
+  if (const auto *typed = wh::core::any_cast<history_request_payload>(&payload); typed != nullptr) {
     return history_request_payload_view{
         .history_request = &typed->history_request,
         .state_payload = &typed->state_payload,
     };
   }
-  return wh::core::result<history_request_payload_view>::failure(
-      wh::core::errc::type_mismatch);
+  return wh::core::result<history_request_payload_view>::failure(wh::core::errc::type_mismatch);
 }
 
 /// Reads one shared history-request payload from a tool-call boundary payload.

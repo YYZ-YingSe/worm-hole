@@ -1,14 +1,13 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph.hpp"
 
-static_assert(std::same_as<wh::compose::dag,
-                           wh::compose::mode_graph<wh::compose::graph_runtime_mode::dag>>);
-static_assert(std::same_as<
-              wh::compose::pregel,
-              wh::compose::mode_graph<wh::compose::graph_runtime_mode::pregel>>);
+static_assert(
+    std::same_as<wh::compose::dag, wh::compose::mode_graph<wh::compose::graph_runtime_mode::dag>>);
+static_assert(std::same_as<wh::compose::pregel,
+                           wh::compose::mode_graph<wh::compose::graph_runtime_mode::pregel>>);
 
 TEST_CASE("compose graph facade exports reserved graph keys through the public header",
           "[UT][wh/compose/graph.hpp][graph_start_node_key][condition][branch][boundary]") {

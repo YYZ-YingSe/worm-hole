@@ -22,15 +22,12 @@ protected:
   /// Checks whether in-place construction is `noexcept`.
   template <typename fun_t, typename... args_t>
   [[nodiscard]] static consteval auto check_nothrow() noexcept -> bool {
-    return storage_t::template traits<fun_t>::template is_nothrow_constructible<
-        args_t...>;
+    return storage_t::template traits<fun_t>::template is_nothrow_constructible<args_t...>;
   }
 
   template <typename fun_t, typename... args_t>
-  explicit function_base(
-      std::in_place_type_t<fun_t>,
-      args_t
-          &&...args) noexcept(check_nothrow<std::decay_t<fun_t>, args_t...>()) {
+  explicit function_base(std::in_place_type_t<fun_t>, args_t &&...args) noexcept(
+      check_nothrow<std::decay_t<fun_t>, args_t...>()) {
     if constexpr (sizeof...(args_t) == 1U) {
       if constexpr (is_function_pointer_v<wh::core::remove_cvref_t<fun_t>> ||
                     std::is_member_pointer_v<std::decay_t<fun_t>>) {
@@ -42,24 +39,18 @@ protected:
       }
     }
 
-    storage_t::template create<fun_t>(local_buffer_,
-                                      std::forward<args_t>(args)...);
+    storage_t::template create<fun_t>(local_buffer_, std::forward<args_t>(args)...);
   }
 
   ~function_base() { storage_t::destroy(local_buffer_); }
 
-  function_base(const function_base &other) {
-    storage_t::copy(other.local_buffer_, local_buffer_);
-  }
+  function_base(const function_base &other) { storage_t::copy(other.local_buffer_, local_buffer_); }
 
-  function_base(function_base &&other) noexcept
-      : local_buffer_(std::move(other.local_buffer_)) {
+  function_base(function_base &&other) noexcept : local_buffer_(std::move(other.local_buffer_)) {
     storage_t::set_to_empty(other.local_buffer_);
   }
 
-  explicit function_base(std::nullptr_t) noexcept {
-    storage_t::set_to_empty(local_buffer_);
-  }
+  explicit function_base(std::nullptr_t) noexcept { storage_t::set_to_empty(local_buffer_); }
 
   auto operator=(const function_base &other) -> function_base & {
     function_base{other}.swap(*this);

@@ -6,8 +6,7 @@ TEST_CASE("compose types expose stable contract names and default origins",
           "[UT][wh/compose/types.hpp][to_string][condition][branch][boundary]") {
   REQUIRE(wh::compose::to_string(wh::compose::node_contract::value) == "value");
   REQUIRE(wh::compose::to_string(wh::compose::node_contract::stream) == "stream");
-  REQUIRE(wh::compose::to_string(static_cast<wh::compose::node_contract>(99)) ==
-          "value");
+  REQUIRE(wh::compose::to_string(static_cast<wh::compose::node_contract>(99)) == "value");
 
   REQUIRE(wh::compose::default_exec_origin(wh::compose::node_kind::component) ==
           wh::compose::node_exec_origin::authored);

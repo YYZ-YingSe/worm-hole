@@ -9,6 +9,7 @@ enum class pull_state : std::uint8_t {
   try_reading,
   blocking_reading,
   async_reading,
+  async_draining,
   closing,
   terminal,
 };

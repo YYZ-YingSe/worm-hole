@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/internal/serialization.hpp"
 
@@ -14,14 +14,12 @@ struct custom_codec_value {
 };
 
 auto wh_to_json(const custom_codec_value &input, wh::core::json_value &output,
-                wh::core::json_allocator &allocator)
-    -> wh::core::result<void> {
+                wh::core::json_allocator &allocator) -> wh::core::result<void> {
   output.SetObject();
   wh::core::json_value key{};
   key.SetString("text", allocator);
   wh::core::json_value value{};
-  value.SetString(input.text.data(),
-                  static_cast<wh::core::json_size_type>(input.text.size()),
+  value.SetString(input.text.data(), static_cast<wh::core::json_size_type>(input.text.size()),
                   allocator);
   output.AddMember(key.Move(), value.Move(), allocator);
   return {};
@@ -36,8 +34,7 @@ auto wh_from_json(const wh::core::json_value &input, custom_codec_value &output)
   if (!member.value()->IsString()) {
     return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
   }
-  output.text = std::string{member.value()->GetString(),
-                            member.value()->GetStringLength()};
+  output.text = std::string{member.value()->GetString(), member.value()->GetStringLength()};
   return {};
 }
 
@@ -73,36 +70,29 @@ TEST_CASE("internal serialization handles custom codecs containers and pointers"
   wh::core::json_document document{};
   auto &allocator = document.GetAllocator();
 
-  auto custom_json =
-      wh::internal::to_json_value(custom_codec_value{.text = "hello"}, allocator);
+  auto custom_json = wh::internal::to_json_value(custom_codec_value{.text = "hello"}, allocator);
   REQUIRE(custom_json.has_value());
-  auto decoded_custom =
-      wh::internal::from_json_value<custom_codec_value>(custom_json.value());
+  auto decoded_custom = wh::internal::from_json_value<custom_codec_value>(custom_json.value());
   REQUIRE(decoded_custom.has_value());
   REQUIRE(decoded_custom.value().text == "hello");
 
-  auto vector_json = wh::internal::to_json_value(
-      std::vector<int>{1, 2, 3}, allocator);
+  auto vector_json = wh::internal::to_json_value(std::vector<int>{1, 2, 3}, allocator);
   REQUIRE(vector_json.has_value());
-  auto decoded_vector =
-      wh::internal::from_json_value<std::vector<int>>(vector_json.value());
+  auto decoded_vector = wh::internal::from_json_value<std::vector<int>>(vector_json.value());
   REQUIRE(decoded_vector.has_value());
   REQUIRE(decoded_vector.value() == std::vector<int>{1, 2, 3});
 
-  auto map_json = wh::internal::to_json_value(
-      std::map<std::string, int>{{"a", 1}, {"b", 2}}, allocator);
+  auto map_json =
+      wh::internal::to_json_value(std::map<std::string, int>{{"a", 1}, {"b", 2}}, allocator);
   REQUIRE(map_json.has_value());
-  auto decoded_map =
-      wh::internal::from_json_value<std::map<std::string, int>>(map_json.value());
+  auto decoded_map = wh::internal::from_json_value<std::map<std::string, int>>(map_json.value());
   REQUIRE(decoded_map.has_value());
   REQUIRE(decoded_map.value().at("a") == 1);
   REQUIRE(decoded_map.value().at("b") == 2);
 
-  auto unique_json = wh::internal::to_json_value(
-      std::make_unique<int>(5), allocator);
+  auto unique_json = wh::internal::to_json_value(std::make_unique<int>(5), allocator);
   REQUIRE(unique_json.has_value());
-  auto decoded_unique =
-      wh::internal::from_json_value<std::unique_ptr<int>>(unique_json.value());
+  auto decoded_unique = wh::internal::from_json_value<std::unique_ptr<int>>(unique_json.value());
   REQUIRE(decoded_unique.has_value());
   REQUIRE(decoded_unique.value() != nullptr);
   REQUIRE(*decoded_unique.value() == 5);
@@ -118,21 +108,18 @@ TEST_CASE("internal serialization covers bool keys null pointers and unsupported
   REQUIRE(decoded_false.has_value());
   REQUIRE_FALSE(decoded_false.value());
 
-  auto unsupported =
-      wh::internal::detail::encode_json_key(std::vector<int>{1, 2, 3});
+  auto unsupported = wh::internal::detail::encode_json_key(std::vector<int>{1, 2, 3});
   REQUIRE(unsupported.has_error());
   REQUIRE(unsupported.error() == wh::core::errc::not_supported);
 
   wh::core::json_document document{};
   auto &allocator = document.GetAllocator();
 
-  auto null_shared =
-      wh::internal::to_json_value(std::shared_ptr<int>{}, allocator);
+  auto null_shared = wh::internal::to_json_value(std::shared_ptr<int>{}, allocator);
   REQUIRE(null_shared.has_value());
   REQUIRE(null_shared.value().IsNull());
 
-  auto decoded_shared =
-      wh::internal::from_json_value<std::shared_ptr<int>>(null_shared.value());
+  auto decoded_shared = wh::internal::from_json_value<std::shared_ptr<int>>(null_shared.value());
   REQUIRE(decoded_shared.has_value());
   REQUIRE(decoded_shared.value() == nullptr);
 }

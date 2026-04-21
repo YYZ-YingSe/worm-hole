@@ -1,8 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 #include <utility>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/document/document.hpp"
@@ -17,17 +16,14 @@ struct sync_document_impl {
   [[nodiscard]] auto process(const wh::document::document_request &request,
                              wh::core::run_context &) const
       -> wh::core::result<wh::document::document_batch> {
-    return wh::document::document_batch{
-        wh::schema::document{request.source + ":sync"}};
+    return wh::document::document_batch{wh::schema::document{request.source + ":sync"}};
   }
 };
 
 struct async_document_impl {
   [[nodiscard]] auto process_sender(const wh::document::document_request &request) const {
-    return stdexec::just(
-        wh::core::result<wh::document::document_batch>{
-            wh::document::document_batch{
-                wh::schema::document{request.source + ":async"}}});
+    return stdexec::just(wh::core::result<wh::document::document_batch>{
+        wh::document::document_batch{wh::schema::document{request.source + ":async"}}});
   }
 };
 

@@ -15,8 +15,7 @@ struct dynamic_bitset {
 
   dynamic_bitset() = default;
 
-  explicit dynamic_bitset(const std::size_t bit_count,
-                          const bool fill = false) {
+  explicit dynamic_bitset(const std::size_t bit_count, const bool fill = false) {
     reset(bit_count, fill);
   }
 
@@ -24,8 +23,7 @@ struct dynamic_bitset {
     bit_count_ = bit_count;
     const auto word_count = (bit_count + bits_per_word - 1U) / bits_per_word;
     words_.resize(word_count);
-    std::fill(words_.begin(), words_.end(),
-              fill ? ~std::uint64_t{0U} : std::uint64_t{0U});
+    std::fill(words_.begin(), words_.end(), fill ? ~std::uint64_t{0U} : std::uint64_t{0U});
     if (fill && !words_.empty() && (bit_count % bits_per_word) != 0U) {
       const auto used_bits = bit_count % bits_per_word;
       const auto mask = (std::uint64_t{1U} << used_bits) - 1U;

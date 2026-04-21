@@ -3,7 +3,8 @@
 #include "wh/compose/graph/detail/bitset.hpp"
 
 TEST_CASE("dynamic bitset resets tests sets clears and swaps runtime-sized words",
-          "[UT][wh/compose/graph/detail/bitset.hpp][dynamic_bitset::set_if_unset][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "bitset.hpp][dynamic_bitset::set_if_unset][condition][branch][boundary]") {
   wh::compose::detail::dynamic_bitset bits{};
   REQUIRE(bits.size() == 0U);
 
@@ -36,7 +37,8 @@ TEST_CASE("dynamic bitset resets tests sets clears and swaps runtime-sized words
 }
 
 TEST_CASE("dynamic bitset covers zero-sized resets and cross-word bit boundaries",
-          "[UT][wh/compose/graph/detail/bitset.hpp][dynamic_bitset::reset][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "bitset.hpp][dynamic_bitset::reset][condition][branch][boundary]") {
   wh::compose::detail::dynamic_bitset bits{65U, false};
   REQUIRE(bits.size() == 65U);
   REQUIRE_FALSE(bits.test(63U));

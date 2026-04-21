@@ -1,13 +1,14 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/bind.hpp"
 #include "wh/agent/supervisor.hpp"
 
-TEST_CASE("supervisor shell binds supervisor workers validates names and lowers into executable agent",
-          "[UT][wh/agent/supervisor.hpp][supervisor::freeze][condition][branch][boundary]") {
+TEST_CASE(
+    "supervisor shell binds supervisor workers validates names and lowers into executable agent",
+    "[UT][wh/agent/supervisor.hpp][supervisor::freeze][condition][branch][boundary]") {
   wh::agent::supervisor authored{"lead"};
   REQUIRE(authored.name() == "lead");
   REQUIRE_FALSE(authored.frozen());
@@ -53,8 +54,7 @@ TEST_CASE("supervisor shell rejects invalid role topology duplicates and late mu
   REQUIRE(duplicate_freeze.has_error());
   REQUIRE(duplicate_freeze.error() == wh::core::errc::already_exists);
 
-  auto configured =
-      wh::testing::helper::make_configured_supervisor("configured");
+  auto configured = wh::testing::helper::make_configured_supervisor("configured");
   REQUIRE(configured.has_value());
   REQUIRE(configured->freeze().has_value());
   REQUIRE(configured->set_supervisor(wh::agent::agent{"late"}).has_error());

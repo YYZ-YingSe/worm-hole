@@ -4,8 +4,10 @@
 #include "wh/agent/bind.hpp"
 #include "wh/agent/reviewer_executor.hpp"
 
-TEST_CASE("reviewer executor shell binds reviewer executor builders and lowers into executable agent",
-          "[UT][wh/agent/reviewer_executor.hpp][reviewer_executor::freeze][condition][branch][boundary]") {
+TEST_CASE(
+    "reviewer executor shell binds reviewer executor builders and lowers into executable agent",
+    "[UT][wh/agent/"
+    "reviewer_executor.hpp][reviewer_executor::freeze][condition][branch][boundary]") {
   wh::agent::reviewer_executor authored{"reviewer-executor"};
   REQUIRE(authored.name() == "reviewer-executor");
   REQUIRE_FALSE(authored.frozen());
@@ -25,14 +27,14 @@ TEST_CASE("reviewer executor shell binds reviewer executor builders and lowers i
   REQUIRE(authored.reviewer().has_value());
   REQUIRE(authored.executor().has_value());
 
-  REQUIRE(authored.set_executor_request_builder(
-              wh::testing::helper::make_revision_request_builder())
-              .has_value());
-  REQUIRE(authored.set_reviewer_request_builder(
-              wh::testing::helper::make_revision_request_builder())
-              .has_value());
-  REQUIRE(authored.set_review_decision_reader(
-              wh::testing::helper::make_review_decision_reader(
+  REQUIRE(
+      authored.set_executor_request_builder(wh::testing::helper::make_revision_request_builder())
+          .has_value());
+  REQUIRE(
+      authored.set_reviewer_request_builder(wh::testing::helper::make_revision_request_builder())
+          .has_value());
+  REQUIRE(authored
+              .set_review_decision_reader(wh::testing::helper::make_review_decision_reader(
                   wh::agent::review_decision_kind::accept))
               .has_value());
   REQUIRE(authored.freeze().has_value());
@@ -42,52 +44,48 @@ TEST_CASE("reviewer executor shell binds reviewer executor builders and lowers i
   REQUIRE(lowered.value().executable());
 }
 
-TEST_CASE("reviewer executor shell rejects missing duplicate non executable roles and late mutation",
-          "[UT][wh/agent/reviewer_executor.hpp][reviewer_executor::set_executor_request_builder][condition][branch][boundary]") {
+TEST_CASE(
+    "reviewer executor shell rejects missing duplicate non executable roles and late mutation",
+    "[UT][wh/agent/"
+    "reviewer_executor.hpp][reviewer_executor::set_executor_request_builder][condition][branch]["
+    "boundary]") {
   wh::agent::reviewer_executor missing{"missing"};
   auto missing_freeze = missing.freeze();
   REQUIRE(missing_freeze.has_error());
   REQUIRE(missing_freeze.error() == wh::core::errc::invalid_argument);
 
-  REQUIRE(missing
-              .set_executor_request_builder(
-                  wh::agent::revision_request_builder{nullptr})
+  REQUIRE(missing.set_executor_request_builder(wh::agent::revision_request_builder{nullptr})
               .has_error());
-  REQUIRE(missing
-              .set_reviewer_request_builder(
-                  wh::agent::revision_request_builder{nullptr})
+  REQUIRE(missing.set_reviewer_request_builder(wh::agent::revision_request_builder{nullptr})
               .has_error());
-  REQUIRE(missing
-              .set_review_decision_reader(
-                  wh::agent::review_decision_reader{nullptr})
-              .has_error());
+  REQUIRE(
+      missing.set_review_decision_reader(wh::agent::review_decision_reader{nullptr}).has_error());
   REQUIRE(missing.set_reviewer(wh::agent::agent{""}).has_error());
   REQUIRE(missing.set_executor(wh::agent::agent{""}).has_error());
 
   wh::agent::reviewer_executor duplicate{"duplicate"};
   REQUIRE(duplicate.set_reviewer(wh::agent::agent{"same"}).has_value());
   REQUIRE(duplicate.set_executor(wh::agent::agent{"same"}).has_value());
-  REQUIRE(duplicate.set_executor_request_builder(
-              wh::testing::helper::make_revision_request_builder())
-              .has_value());
-  REQUIRE(duplicate.set_reviewer_request_builder(
-              wh::testing::helper::make_revision_request_builder())
-              .has_value());
-  REQUIRE(duplicate.set_review_decision_reader(
-              wh::testing::helper::make_review_decision_reader(
+  REQUIRE(
+      duplicate.set_executor_request_builder(wh::testing::helper::make_revision_request_builder())
+          .has_value());
+  REQUIRE(
+      duplicate.set_reviewer_request_builder(wh::testing::helper::make_revision_request_builder())
+          .has_value());
+  REQUIRE(duplicate
+              .set_review_decision_reader(wh::testing::helper::make_review_decision_reader(
                   wh::agent::review_decision_kind::accept))
               .has_value());
   auto duplicate_freeze = duplicate.freeze();
   REQUIRE(duplicate_freeze.has_error());
   REQUIRE(duplicate_freeze.error() == wh::core::errc::contract_violation);
 
-  auto configured =
-      wh::testing::helper::make_configured_reviewer_executor("configured");
+  auto configured = wh::testing::helper::make_configured_reviewer_executor("configured");
   REQUIRE(configured.has_value());
   REQUIRE(configured->freeze().has_value());
   REQUIRE(configured->set_max_iterations(3U).has_error());
-  REQUIRE(configured->set_executor_request_builder(
-              wh::testing::helper::make_revision_request_builder())
-              .has_error());
+  REQUIRE(
+      configured->set_executor_request_builder(wh::testing::helper::make_revision_request_builder())
+          .has_error());
   REQUIRE(configured->set_reviewer(wh::agent::agent{"late"}).has_error());
 }

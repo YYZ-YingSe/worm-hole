@@ -1,0 +1,56 @@
+name: reusable-coverage-aggregate
+
+on:
+  workflow_call:
+    inputs:
+      runner_os:
+        required: false
+        type: string
+        default: ubuntu-latest
+      coverage_min_lines:
+        required: false
+        type: number
+        default: 0.7
+      timeout_minutes:
+        required: false
+        type: number
+        default: 45
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-aggregate:
+    runs-on: ${{ inputs.runner_os }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: coverage
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-artifact-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/coverage-artifacts
+
+      - name: Run coverage gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" scripts/toolchain.py ci coverage-aggregate \
+            --artifact-dir "${RUNNER_TEMP}/coverage-artifacts" \
+            --coverage-min-lines "${{ inputs.coverage_min_lines }}"

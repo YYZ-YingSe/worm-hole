@@ -8,14 +8,12 @@ TEST_CASE("pregel aliases the fixed pregel mode facade",
           "[UT][wh/compose/graph/pregel.hpp][pregel][condition][boundary]") {
   STATIC_REQUIRE(std::is_default_constructible_v<wh::compose::pregel>);
   STATIC_REQUIRE(std::same_as<wh::compose::pregel,
-                              wh::compose::mode_graph<
-                                  wh::compose::graph_runtime_mode::pregel>>);
+                              wh::compose::mode_graph<wh::compose::graph_runtime_mode::pregel>>);
 
   wh::compose::pregel graph{};
   REQUIRE(graph.options().mode == wh::compose::graph_runtime_mode::pregel);
   REQUIRE(graph.options().name == "pregel");
-  REQUIRE(graph.graph_view().boundary().input ==
-          wh::compose::node_contract::value);
+  REQUIRE(graph.graph_view().boundary().input == wh::compose::node_contract::value);
 }
 
 TEST_CASE("pregel constructor normalizes runtime mode and preserves caller naming",

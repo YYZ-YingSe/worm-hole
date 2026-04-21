@@ -22,8 +22,8 @@ namespace wh::compose {
 /// One value-branch case descriptor.
 struct value_branch_case {
   /// Value-condition predicate type.
-  using predicate = wh::core::callback_function<
-      wh::core::result<bool>(const graph_value &, wh::core::run_context &) const>;
+  using predicate = wh::core::callback_function<wh::core::result<bool>(
+      const graph_value &, wh::core::run_context &) const>;
 
   /// Branch destination node key.
   std::string to{};
@@ -60,8 +60,8 @@ public:
   auto add_case(to_t &&to, predicate_t &&predicate) -> wh::core::result<void> {
     return add_case(value_branch_case{
         .to = std::forward<to_t>(to),
-        .match = [fn = std::forward<predicate_t>(predicate)](
-                     const graph_value &value, wh::core::run_context &context)
+        .match = [fn = std::forward<predicate_t>(predicate)](const graph_value &value,
+                                                             wh::core::run_context &context)
             -> wh::core::result<bool> { return fn(value, context); },
     });
   }
@@ -70,29 +70,27 @@ public:
   [[nodiscard]] auto end_nodes() const -> std::vector<std::string> {
     std::vector<std::string> keys{};
     keys.reserve(cases_.size());
-    std::ranges::copy(cases_ | std::views::transform([](const value_branch_case &entry)
-                                                      -> const std::string & {
-                        return entry.to;
-                      }),
-                      std::back_inserter(keys));
+    std::ranges::copy(
+        cases_ | std::views::transform([](const value_branch_case &entry) -> const std::string & {
+          return entry.to;
+        }),
+        std::back_inserter(keys));
     return keys;
   }
 
   /// Returns immutable branch cases.
-  [[nodiscard]] auto cases() const noexcept
-      -> const std::vector<value_branch_case> & {
+  [[nodiscard]] auto cases() const noexcept -> const std::vector<value_branch_case> & {
     return cases_;
   }
 
   /// Applies value-branch declaration by expanding to graph branch edges.
-  auto apply(graph &target_graph, const std::string &from_node_key) const &
-      -> wh::core::result<void> {
+  auto apply(graph &target_graph,
+             const std::string &from_node_key) const & -> wh::core::result<void> {
     return apply_impl(target_graph, from_node_key, cases_);
   }
 
   /// Move-enabled apply path that avoids extra case copies.
-  auto apply(graph &target_graph, const std::string &from_node_key) &&
-      -> wh::core::result<void> {
+  auto apply(graph &target_graph, const std::string &from_node_key) && -> wh::core::result<void> {
     return apply_impl(target_graph, from_node_key, std::move(cases_));
   }
 
@@ -137,15 +135,13 @@ private:
     graph_value_branch_selector_ids selector_ids =
         [cases = std::move(resolved_cases)](
             const graph_value &input, wh::core::run_context &context,
-            const graph_call_scope &)
-            -> wh::core::result<std::vector<std::uint32_t>> {
+            const graph_call_scope &) -> wh::core::result<std::vector<std::uint32_t>> {
       std::vector<std::uint32_t> selected{};
       selected.reserve(cases.size());
       for (const auto &entry : cases) {
         auto matched = entry.match(input, context);
         if (matched.has_error()) {
-          return wh::core::result<std::vector<std::uint32_t>>::failure(
-              matched.error());
+          return wh::core::result<std::vector<std::uint32_t>>::failure(matched.error());
         }
         if (!matched.value()) {
           continue;
@@ -155,12 +151,11 @@ private:
       return selected;
     };
 
-    return target_graph.add_value_branch(
-        graph_value_branch{
-            .from = from_node_key,
-            .end_nodes = std::move(end_nodes),
-            .selector_ids = std::move(selector_ids),
-        });
+    return target_graph.add_value_branch(graph_value_branch{
+        .from = from_node_key,
+        .end_nodes = std::move(end_nodes),
+        .selector_ids = std::move(selector_ids),
+    });
   }
 
   /// Ordered value-branch case list.

@@ -1,0 +1,139 @@
+name: reusable-build-test
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        required: false
+        type: string
+        default: build-test
+      runner_os:
+        required: true
+        type: string
+      install_profile:
+        required: false
+        type: string
+        default: build
+      configure_preset:
+        required: true
+        type: string
+      build_preset:
+        required: false
+        type: string
+        default: ""
+      shard_count:
+        required: false
+        type: number
+        default: 1
+      shard_index:
+        required: false
+        type: number
+        default: 0
+      include_label:
+        required: false
+        type: string
+        default: ""
+      exclude_label:
+        required: false
+        type: string
+        default: ""
+      timeout_minutes:
+        required: false
+        type: number
+        default: 45
+      always_upload_diagnostics:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ${{ inputs.runner_os }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: ${{ inputs.install_profile }}
+
+      - name: Setup sccache
+        uses: ./.github/actions/setup/sccache
+
+      - name: Write environment summary
+        shell: bash
+        run: |
+          artifact_dir="${RUNNER_TEMP}/ci-diagnostics"
+          mkdir -p "$artifact_dir"
+          {
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "job=${GITHUB_JOB}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "mode=${{ inputs.mode }}"
+            echo "configure_preset=${{ inputs.configure_preset }}"
+            echo "build_preset=${{ inputs.build_preset }}"
+            echo "shard=${{ inputs.shard_index }}/${{ inputs.shard_count }}"
+            echo "include_label=${{ inputs.include_label }}"
+            echo "exclude_label=${{ inputs.exclude_label }}"
+          } > "$artifact_dir/context.txt"
+          for tool in cmake ninja clang++ clang g++ gcc cl sccache python3 python; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "== $tool ==" >> "$artifact_dir/tool-versions.txt"
+              "$tool" --version >> "$artifact_dir/tool-versions.txt" 2>&1 || true
+              echo >> "$artifact_dir/tool-versions.txt"
+            fi
+          done
+
+      - name: Run build and test lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_bin="$(command -v python3 || command -v python)"
+          args=(
+            "$python_bin" scripts/toolchain.py ci "${{ inputs.mode }}"
+            --configure-preset "${{ inputs.configure_preset }}"
+            --shard-count "${{ inputs.shard_count }}"
+            --shard-index "${{ inputs.shard_index }}"
+          )
+          if [[ -n "${{ inputs.build_preset }}" ]]; then
+            args+=(--build-preset "${{ inputs.build_preset }}")
+          fi
+          if [[ -n "${{ inputs.include_label }}" ]]; then
+            args+=(--include-label "${{ inputs.include_label }}")
+          fi
+          if [[ -n "${{ inputs.exclude_label }}" ]]; then
+            args+=(--exclude-label "${{ inputs.exclude_label }}")
+          fi
+          "${args[@]}" 2>&1 | tee "${RUNNER_TEMP}/ci-diagnostics/run.log"
+
+      - name: Collect diagnostics
+        if: always()
+        shell: bash
+        run: |
+          artifact_dir="${RUNNER_TEMP}/ci-diagnostics"
+          build_dir="build/${{ inputs.configure_preset }}"
+          mkdir -p "$artifact_dir"
+          if [[ -d "$build_dir" ]]; then
+            cp -f "$build_dir/CMakeCache.txt" "$artifact_dir/" 2>/dev/null || true
+            cp -f "$build_dir/wh_test_manifest.tsv" "$artifact_dir/" 2>/dev/null || true
+            cp -f "$build_dir/compile_commands.json" "$artifact_dir/compile_commands.${{ inputs.configure_preset }}.json" 2>/dev/null || true
+          fi
+          cp -f compile_commands.json "$artifact_dir/compile_commands.root.json" 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: failure() || inputs.always_upload_diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ inputs.mode }}-${{ inputs.runner_os }}-${{ inputs.configure_preset }}-${{ inputs.shard_index }}
+          path: ${{ runner.temp }}/ci-diagnostics
+          if-no-files-found: error
+          retention-days: 5

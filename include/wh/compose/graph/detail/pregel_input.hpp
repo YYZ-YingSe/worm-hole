@@ -5,9 +5,9 @@
 
 namespace wh::compose {
 
-inline auto graph::classify_pregel_node_readiness(
-    const std::uint32_t node_id,
-    const pregel_node_inputs &inputs) const -> pregel_ready_state {
+inline auto graph::classify_pregel_node_readiness(const std::uint32_t node_id,
+                                                  const pregel_node_inputs &inputs) const
+    -> pregel_ready_state {
   const auto *node = core().compiled_execution_index_.index.nodes_by_id[node_id];
   if (node == nullptr) {
     return pregel_ready_state::skipped;
@@ -28,30 +28,25 @@ inline auto graph::classify_pregel_node_readiness(
     ready_by_control = true;
   }
 
-  if (!ready_by_control && total_control_edges == 0U &&
-      node->meta.options.allow_no_control) {
+  if (!ready_by_control && total_control_edges == 0U && node->meta.options.allow_no_control) {
     ready_by_control = true;
   }
 
-  return ready_by_control ? pregel_ready_state::ready
-                          : pregel_ready_state::skipped;
+  return ready_by_control ? pregel_ready_state::ready : pregel_ready_state::skipped;
 }
 
-inline auto graph::reset_pregel_source_caches(
-    const std::uint32_t source_node_id,
-    io_storage &io_storage) const -> void {
-  io_storage.reader_copy_ready.clear(source_node_id);
-  for (const auto edge_id :
-       core().compiled_execution_index_.index.outgoing_data(source_node_id)) {
-    io_storage.edge_value_valid.clear(edge_id);
-    io_storage.edge_reader_valid.clear(edge_id);
+inline auto graph::reset_pregel_source_caches(const std::uint32_t source_node_id,
+                                              io_storage &storage) const -> void {
+  for (const auto edge_id : core().compiled_execution_index_.index.outgoing_data(source_node_id)) {
+    storage.edge_value_valid.clear(edge_id);
+    storage.edge_reader_valid.clear(edge_id);
   }
 }
 
-inline auto graph::seed_pregel_successors(
-    const std::uint32_t source_node_id,
-    const std::optional<std::vector<std::uint32_t>> &selection,
-    pregel_delivery_store &deliveries) const -> void {
+inline auto
+graph::seed_pregel_successors(const std::uint32_t source_node_id,
+                              const std::optional<std::vector<std::uint32_t>> &selection,
+                              pregel_delivery_store &deliveries) const -> void {
   const auto selected = [&selection](const std::uint32_t target_id) noexcept {
     if (!selection.has_value()) {
       return true;
@@ -68,8 +63,7 @@ inline auto graph::seed_pregel_successors(
     deliveries.stage_current_control(edge.to, edge_id);
   }
 
-  for (const auto edge_id :
-       core().compiled_execution_index_.index.outgoing_data(source_node_id)) {
+  for (const auto edge_id : core().compiled_execution_index_.index.outgoing_data(source_node_id)) {
     const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
     if (!selected(edge.to)) {
       continue;
@@ -80,10 +74,10 @@ inline auto graph::seed_pregel_successors(
   }
 }
 
-inline auto graph::stage_pregel_successors(
-    const std::uint32_t source_node_id,
-    const std::optional<std::vector<std::uint32_t>> &selection,
-    pregel_delivery_store &deliveries) const -> void {
+inline auto
+graph::stage_pregel_successors(const std::uint32_t source_node_id,
+                               const std::optional<std::vector<std::uint32_t>> &selection,
+                               pregel_delivery_store &deliveries) const -> void {
   const auto selected = [&selection](const std::uint32_t target_id) noexcept {
     if (!selection.has_value()) {
       return true;
@@ -100,8 +94,7 @@ inline auto graph::stage_pregel_successors(
     deliveries.stage_next_control(edge.to, edge_id);
   }
 
-  for (const auto edge_id :
-       core().compiled_execution_index_.index.outgoing_data(source_node_id)) {
+  for (const auto edge_id : core().compiled_execution_index_.index.outgoing_data(source_node_id)) {
     const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
     if (!selected(edge.to)) {
       continue;
@@ -113,12 +106,10 @@ inline auto graph::stage_pregel_successors(
 }
 
 inline auto graph::build_pregel_node_input_sender(
-    const std::uint32_t node_id, const pregel_node_inputs &inputs,
-    io_storage &io_storage, wh::core::run_context &context,
-    node_frame *frame,
+    const std::uint32_t node_id, const pregel_node_inputs &inputs, io_storage &storage,
+    wh::core::run_context &context, attempt_slot *slot,
     [[maybe_unused]] const detail::runtime_state::invoke_config &config,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const
-    -> graph_sender {
+    const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const -> graph_sender {
   if (node_id >= core().compiled_execution_index_.index.nodes_by_id.size()) {
     return detail::failure_graph_sender(wh::core::errc::not_found);
   }
@@ -128,16 +119,15 @@ inline auto graph::build_pregel_node_input_sender(
   }
 
   const auto finalize_input =
-      [this, node, &context](wh::core::result<resolved_input> resolved)
-      -> wh::core::result<graph_value> {
+      [this, node,
+       &context](wh::core::result<resolved_input> resolved) -> wh::core::result<graph_value> {
     if (resolved.has_error() && resolved.error() == wh::core::errc::not_found &&
         context.resume_info.has_value()) {
-      auto fallback = resolve_missing_rerun_input(node->meta.input_contract);
+      auto fallback = resolve_missing_pending_input(node->meta.input_contract);
       if (fallback.has_error()) {
         return wh::core::result<graph_value>::failure(fallback.error());
       }
-      auto lifted = own_input(std::move(fallback).value(),
-                              node->meta.input_contract);
+      auto lifted = own_input(std::move(fallback).value(), node->meta.input_contract);
       if (lifted.has_error()) {
         return wh::core::result<graph_value>::failure(lifted.error());
       }
@@ -153,7 +143,7 @@ inline auto graph::build_pregel_node_input_sender(
     return std::move(materialized).value();
   };
 
-  std::vector<input_lane> lanes{};
+  input_lane_vector lanes{};
   lanes.reserve(inputs.data_edges.size());
   for (const auto edge_id : inputs.data_edges) {
     const auto &edge = core().compiled_execution_index_.index.indexed_edges[edge_id];
@@ -171,31 +161,28 @@ inline auto graph::build_pregel_node_input_sender(
     if (lanes.empty()) {
       resolved = build_missing_input(*node);
     } else if (lanes.size() == 1U) {
-      auto reader = take_edge_reader(lanes.front().edge_id, io_storage, context);
+      auto reader = take_edge_reader(lanes.front().edge_id, storage);
       if (reader.has_error()) {
         resolved = wh::core::result<resolved_input>::failure(reader.error());
       } else {
         resolved = resolved_input::own_reader(std::move(reader).value());
       }
     } else {
-      std::vector<wh::schema::stream::named_stream_reader<graph_stream_reader>>
-          readers{};
+      std::vector<wh::schema::stream::named_stream_reader<graph_stream_reader>> readers{};
       readers.reserve(lanes.size());
       for (const auto &lane : lanes) {
-        auto reader = take_edge_reader(lane.edge_id, io_storage, context);
+        auto reader = take_edge_reader(lane.edge_id, storage);
         if (reader.has_error()) {
           resolved = wh::core::result<resolved_input>::failure(reader.error());
           break;
         }
-        readers.push_back(wh::schema::stream::named_stream_reader<
-                          graph_stream_reader>{
+        readers.push_back(wh::schema::stream::named_stream_reader<graph_stream_reader>{
             .source = core().compiled_execution_index_.index.id_to_key[lane.source_id],
             .reader = std::move(reader).value(),
         });
       }
       if (readers.size() == lanes.size()) {
-        resolved = resolved_input::own_reader(
-            detail::make_graph_merge_reader(std::move(readers)));
+        resolved = resolved_input::own_reader(detail::make_graph_merge_reader(std::move(readers)));
       }
     }
 
@@ -207,14 +194,12 @@ inline auto graph::build_pregel_node_input_sender(
   }
 
   const bool preserve_stream_pre =
-      frame != nullptr &&
-      detail::state_runtime::has_stream_phase(
-          frame->state_handlers, detail::state_runtime::state_phase::pre);
+      slot != nullptr && detail::state_runtime::has_stream_phase(
+                             slot->state_handlers, detail::state_runtime::state_phase::pre);
   if (preserve_stream_pre && lanes.size() == 1U) {
-    const auto &edge =
-        core().compiled_execution_index_.index.indexed_edges[lanes.front().edge_id];
+    const auto &edge = core().compiled_execution_index_.index.indexed_edges[lanes.front().edge_id];
     if (needs_reader_lowering(edge)) {
-      auto reader = take_edge_reader(lanes.front().edge_id, io_storage, context);
+      auto reader = take_edge_reader(lanes.front().edge_id, storage);
       if (reader.has_error()) {
         return detail::failure_graph_sender(reader.error());
       }
@@ -222,9 +207,12 @@ inline auto graph::build_pregel_node_input_sender(
       if (lowering.has_error()) {
         return detail::failure_graph_sender(lowering.error());
       }
-      frame->pre_state_reader.emplace(std::move(reader).value());
-      frame->input_lowering = std::move(lowering).value();
-      return detail::ready_graph_sender(wh::core::result<graph_value>{});
+      if (!slot->input.has_value()) {
+        slot->input.emplace();
+      }
+      slot->input->lowering = std::move(lowering).value();
+      return detail::ready_graph_sender(
+          wh::core::result<graph_value>{graph_value{std::move(reader).value()}});
     }
   }
 
@@ -238,13 +226,12 @@ inline auto graph::build_pregel_node_input_sender(
   async_edges.reserve(lanes.size());
   for (const auto &lane : lanes) {
     const auto &edge = core().compiled_execution_index_.index.indexed_edges[lane.edge_id];
-    if (!io_storage.edge_value_valid.test(lane.edge_id) &&
-        needs_reader_lowering(edge)) {
+    if (!storage.edge_value_valid.test(lane.edge_id) && needs_reader_lowering(edge)) {
       async_edges.push_back(lane.edge_id);
       continue;
     }
 
-    auto edge_output = resolve_edge_value(lane.edge_id, io_storage, context);
+    auto edge_output = resolve_edge_value(lane.edge_id, storage, context);
     if (edge_output.has_error()) {
       return detail::failure_graph_sender(edge_output.error());
     }
@@ -252,12 +239,11 @@ inline auto graph::build_pregel_node_input_sender(
     entry.source_id = lane.source_id;
     entry.edge_id = lane.edge_id;
     entry.borrowed = edge_output.value();
-    if (io_storage.edge_value_valid.test(lane.edge_id)) {
-      entry.owned.emplace(std::move(io_storage.edge_values[lane.edge_id]));
-      io_storage.edge_value_valid.clear(lane.edge_id);
+    if (storage.edge_value_valid.test(lane.edge_id)) {
+      entry.owned.emplace(std::move(storage.edge_values[lane.edge_id]));
+      storage.edge_value_valid.clear(lane.edge_id);
     }
-    auto appended =
-        detail::input_runtime::append_value_input(base_batch, std::move(entry));
+    auto appended = detail::input_runtime::append_value_input(base_batch, std::move(entry));
     if (appended.has_error()) {
       return detail::failure_graph_sender(appended.error());
     }
@@ -282,7 +268,7 @@ inline auto graph::build_pregel_node_input_sender(
     std::vector<std::uint32_t> edge_ids{};
   };
 
-  input_stage stage{
+  input_stage input_state{
       .owner = this,
       .node = node,
       .batch = std::move(base_batch),
@@ -290,9 +276,9 @@ inline auto graph::build_pregel_node_input_sender(
   };
 
   std::vector<graph_sender> senders{};
-  senders.reserve(stage.edge_ids.size());
-  for (const auto edge_id : stage.edge_ids) {
-    auto reader = take_edge_reader(edge_id, io_storage, context);
+  senders.reserve(input_state.edge_ids.size());
+  for (const auto edge_id : input_state.edge_ids) {
+    auto reader = take_edge_reader(edge_id, storage);
     if (reader.has_error()) {
       return detail::failure_graph_sender(reader.error());
     }
@@ -301,16 +287,15 @@ inline auto graph::build_pregel_node_input_sender(
     if (lowering.has_error()) {
       return detail::failure_graph_sender(lowering.error());
     }
-    senders.push_back(lower_reader(std::move(reader).value(),
-                                   std::move(lowering).value(), context,
+    senders.push_back(lower_reader(std::move(reader).value(), std::move(lowering).value(), context,
                                    graph_scheduler));
   }
 
   return detail::bridge_graph_sender(detail::make_child_batch_sender(
-      std::move(senders), std::move(stage),
-      [](input_stage &stage, const std::size_t index,
+      std::move(senders), std::move(input_state),
+      [](input_stage &stage_state, const std::size_t index,
          wh::core::result<graph_value> current) -> wh::core::result<void> {
-        if (index >= stage.edge_ids.size()) {
+        if (index >= stage_state.edge_ids.size()) {
           return wh::core::result<void>::failure(wh::core::errc::internal_error);
         }
         if (current.has_error()) {
@@ -319,20 +304,18 @@ inline auto graph::build_pregel_node_input_sender(
 
         value_input entry{};
         entry.source_id =
-            stage.owner->core().compiled_execution_index_.index.indexed_edges
-                [stage.edge_ids[index]]
-                    .from;
-        entry.edge_id = stage.edge_ids[index];
+            stage_state.owner->core()
+                .compiled_execution_index_.index.indexed_edges[stage_state.edge_ids[index]]
+                .from;
+        entry.edge_id = stage_state.edge_ids[index];
         entry.owned.emplace(std::move(current).value());
-        return detail::input_runtime::append_value_input(stage.batch,
-                                                         std::move(entry));
+        return detail::input_runtime::append_value_input(stage_state.batch, std::move(entry));
       },
-      [finalize_input](input_stage &&stage) -> wh::core::result<graph_value> {
+      [finalize_input](input_stage &&stage_state) -> wh::core::result<graph_value> {
         auto resolved =
-            stage.owner->finish_value_input(*stage.node, std::move(stage.batch));
-        if (resolved.has_error() &&
-            resolved.error() == wh::core::errc::not_found) {
-          resolved = stage.owner->build_missing_input(*stage.node);
+            stage_state.owner->finish_value_input(*stage_state.node, std::move(stage_state.batch));
+        if (resolved.has_error() && resolved.error() == wh::core::errc::not_found) {
+          resolved = stage_state.owner->build_missing_input(*stage_state.node);
         }
         auto finalized = finalize_input(std::move(resolved));
         if (finalized.has_error()) {

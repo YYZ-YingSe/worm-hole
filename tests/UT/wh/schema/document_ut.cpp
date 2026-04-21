@@ -23,8 +23,7 @@ TEST_CASE("document facade exposes document metadata and vector helpers",
   REQUIRE(doc.dsl() == "dsl");
   REQUIRE(doc.extra_info() == "extra");
   REQUIRE(doc.get_dense_vector() == wh::schema::dense_vector{1.0, 2.0});
-  REQUIRE(doc.get_sparse_vector() ==
-          wh::schema::sparse_vector{{3U, 4.0}});
+  REQUIRE(doc.get_sparse_vector() == wh::schema::sparse_vector{{3U, 4.0}});
 
   auto missing = doc.metadata_cref<std::string>("missing");
   REQUIRE(missing.has_error());

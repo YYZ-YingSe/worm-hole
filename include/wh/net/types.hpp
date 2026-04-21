@@ -12,8 +12,7 @@ namespace wh::net {
 
 /// Typed bundle of host-provided transport services.
 template <typename http_client_t, typename sse_parser_t = std::nullptr_t,
-          typename connection_pool_t = std::nullptr_t,
-          typename dns_cache_t = std::nullptr_t,
+          typename connection_pool_t = std::nullptr_t, typename dns_cache_t = std::nullptr_t,
           typename memory_pool_t = std::nullptr_t>
 struct transport_services {
   /// Required HTTP client implementation.

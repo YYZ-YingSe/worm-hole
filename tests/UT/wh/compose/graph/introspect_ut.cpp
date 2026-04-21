@@ -15,8 +15,9 @@ TEST_CASE("graph introspect event keeps stable default state",
   REQUIRE(event.message.empty());
 }
 
-TEST_CASE("to_graph_diagnostic omits root cause suffix when event root cause is empty",
-          "[UT][wh/compose/graph/introspect.hpp][to_graph_diagnostic][condition][branch][boundary]") {
+TEST_CASE(
+    "to_graph_diagnostic omits root cause suffix when event root cause is empty",
+    "[UT][wh/compose/graph/introspect.hpp][to_graph_diagnostic][condition][branch][boundary]") {
   wh::compose::graph_introspect_event event{};
   event.path = wh::compose::make_node_path({"graph", "compile"});
   event.phase = wh::compose::compose_error_phase::compile;
@@ -27,8 +28,7 @@ TEST_CASE("to_graph_diagnostic omits root cause suffix when event root cause is 
   REQUIRE(diagnostic.code == wh::core::errc::invalid_argument);
   REQUIRE(diagnostic.message.find("phase=compile") != std::string::npos);
   REQUIRE(diagnostic.message.find("node=graph/compile") != std::string::npos);
-  REQUIRE(diagnostic.message.find("message=compile failed") !=
-          std::string::npos);
+  REQUIRE(diagnostic.message.find("message=compile failed") != std::string::npos);
   REQUIRE(diagnostic.message.find("bad-input") == std::string::npos);
 }
 
@@ -46,6 +46,5 @@ TEST_CASE("to_graph_diagnostic appends root cause text into diagnostic message",
   REQUIRE(diagnostic.message.find("phase=checkpoint") != std::string::npos);
   REQUIRE(diagnostic.message.find("node=graph/run") != std::string::npos);
   REQUIRE(diagnostic.message.find("checkpoint failed") != std::string::npos);
-  REQUIRE(diagnostic.message.find("root_cause=upstream-timeout") !=
-          std::string::npos);
+  REQUIRE(diagnostic.message.find("root_cause=upstream-timeout") != std::string::npos);
 }

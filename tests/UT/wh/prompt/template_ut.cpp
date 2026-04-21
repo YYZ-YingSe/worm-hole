@@ -10,9 +10,7 @@ TEST_CASE("render text template resolves placeholder paths and reports missing b
                                            wh::prompt::template_value{"second"}}},
   };
 
-  auto rendered =
-      wh::prompt::render_text_template("Hello {{ user.name }} {{ items.1 }}",
-                                       context);
+  auto rendered = wh::prompt::render_text_template("Hello {{ user.name }} {{ items.1 }}", context);
   REQUIRE(rendered.has_value());
   REQUIRE(rendered.value() == "Hello Ada second");
 
@@ -27,19 +25,20 @@ TEST_CASE("render text template supports jinja mode and surfaces parse failures"
       {"name", "WormHole"},
   };
 
-  auto rendered = wh::prompt::render_text_template(
-      "Hello {{ name }}", context, wh::prompt::template_syntax::jinja_compatible);
+  auto rendered = wh::prompt::render_text_template("Hello {{ name }}", context,
+                                                   wh::prompt::template_syntax::jinja_compatible);
   REQUIRE(rendered.has_value());
   REQUIRE(rendered.value() == "Hello WormHole");
 
-  auto broken = wh::prompt::render_text_template(
-      "{% if name %}", context, wh::prompt::template_syntax::jinja_compatible);
+  auto broken = wh::prompt::render_text_template("{% if name %}", context,
+                                                 wh::prompt::template_syntax::jinja_compatible);
   REQUIRE(broken.has_error());
   REQUIRE(broken.error() == wh::core::errc::parse_error);
 }
 
-TEST_CASE("template detail helpers parse indexes map runtime errors and reject malformed placeholders",
-          "[UT][wh/prompt/template.hpp][detail::parse_index][condition][branch][boundary]") {
+TEST_CASE(
+    "template detail helpers parse indexes map runtime errors and reject malformed placeholders",
+    "[UT][wh/prompt/template.hpp][detail::parse_index][condition][branch][boundary]") {
   auto index = wh::prompt::detail::parse_index("12");
   REQUIRE(index.has_value());
   REQUIRE(index.value() == 12U);
@@ -56,8 +55,7 @@ TEST_CASE("template detail helpers parse indexes map runtime errors and reject m
           wh::core::errc::type_mismatch);
 
   wh::prompt::template_context context{{"name", "Ada"}};
-  auto malformed =
-      wh::prompt::detail::placeholder_render("Hello {{ name", context);
+  auto malformed = wh::prompt::detail::placeholder_render("Hello {{ name", context);
   REQUIRE(malformed.has_error());
   REQUIRE(malformed.error() == wh::core::errc::parse_error);
 }

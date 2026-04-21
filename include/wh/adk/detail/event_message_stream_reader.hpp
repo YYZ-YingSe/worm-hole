@@ -19,11 +19,8 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/stdexec.hpp"
-#include "wh/core/stdexec/detail/callback_guard.hpp"
-#include "wh/core/stdexec/detail/inline_drive_loop.hpp"
-#include "wh/core/stdexec/detail/receiver_completion.hpp"
-#include "wh/core/stdexec/detail/single_completion_slot.hpp"
-#include "wh/core/stdexec/manual_lifetime_box.hpp"
+#include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 #include "wh/schema/stream/core/stream_base.hpp"
 
 namespace wh::adk::detail {
@@ -32,11 +29,9 @@ namespace wh::adk::detail {
 /// order without first collecting a second owned vector.
 template <typename visitor_t>
   requires std::invocable<visitor_t &, wh::schema::message>
-inline auto consume_message_event_messages(message_event event,
-                                           visitor_t &&visitor)
+inline auto consume_message_event_messages(message_event event, visitor_t &&visitor)
     -> wh::core::result<void> {
-  if (auto *value = std::get_if<wh::schema::message>(&event.content);
-      value != nullptr) {
+  if (auto *value = std::get_if<wh::schema::message>(&event.content); value != nullptr) {
     return std::invoke(visitor, std::move(*value));
   }
 
@@ -72,24 +67,21 @@ inline auto consume_message_event_messages(message_event event,
 /// Shared reader that flattens `agent_event_stream_reader` into one pure
 /// message stream while preserving event-stream EOF and error semantics.
 class event_message_stream_reader final
-    : public wh::schema::stream::stream_base<event_message_stream_reader,
-                                             wh::schema::message> {
+    : public wh::schema::stream::stream_base<event_message_stream_reader, wh::schema::message> {
 public:
   using value_type = wh::schema::message;
   using chunk_type = wh::schema::stream::stream_chunk<value_type>;
   using result_type = wh::schema::stream::stream_result<chunk_type>;
   using try_result_type = wh::schema::stream::stream_try_result<chunk_type>;
-  using message_result_t = wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<wh::schema::message>>;
+  using message_result_t =
+      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<wh::schema::message>>;
   using event_result_t = wh::adk::agent_event_stream_result;
   using active_try_result =
-      std::variant<std::monostate, wh::schema::stream::stream_signal,
-                   result_type>;
+      std::variant<std::monostate, wh::schema::stream::stream_signal, result_type>;
 
   event_message_stream_reader() = default;
 
-  explicit event_message_stream_reader(
-      wh::adk::agent_event_stream_reader reader) noexcept
+  explicit event_message_stream_reader(wh::adk::agent_event_stream_reader reader) noexcept
       : reader_(std::move(reader)) {}
 
   [[nodiscard]] auto read_impl() -> result_type {
@@ -128,8 +120,8 @@ public:
         return wh::schema::stream::stream_pending;
       }
 
-      auto mapped = process_event_result(
-          std::move(std::get<wh::adk::agent_event_stream_result>(next)));
+      auto mapped =
+          process_event_result(std::move(std::get<wh::adk::agent_event_stream_result>(next)));
       if (mapped.has_value()) {
         return std::move(*mapped);
       }
@@ -139,29 +131,30 @@ public:
   class read_sender {
   public:
     using sender_concept = stdexec::sender_t;
-    using completion_signatures = stdexec::completion_signatures<
-        stdexec::set_value_t(result_type),
-        stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t(result_type),
+                                       stdexec::set_error_t(std::exception_ptr),
+                                       stdexec::set_stopped_t()>;
 
-    explicit read_sender(event_message_stream_reader &owner) noexcept
-        : owner_(&owner) {}
+    explicit read_sender(event_message_stream_reader &owner) noexcept : owner_(&owner) {}
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
-    class operation
-        : public wh::core::detail::inline_drive_loop<operation<receiver_t>> {
-      using drive_loop_t =
-          wh::core::detail::inline_drive_loop<operation<receiver_t>>;
-      friend drive_loop_t;
-      friend class wh::core::detail::callback_guard<operation>;
-      using receiver_env_t = std::remove_cvref_t<
-          decltype(stdexec::get_env(std::declval<const receiver_t &>()))>;
-      using final_completion_t =
-          wh::core::detail::receiver_completion<receiver_t, result_type>;
+      requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
+    class operation {
+      using self_t = operation;
+      using receiver_env_t =
+          std::remove_cvref_t<decltype(stdexec::get_env(std::declval<const receiver_t &>()))>;
+      using resume_scheduler_t = wh::core::detail::resume_scheduler_t<receiver_env_t>;
+      friend class wh::core::detail::scheduled_resume_turn<self_t, resume_scheduler_t>;
 
       struct stopped_tag {};
       using child_completion_t =
-          std::variant<event_result_t, message_result_t, std::exception_ptr,
-                       stopped_tag>;
+          std::variant<event_result_t, message_result_t, wh::core::error_code, stopped_tag>;
+
+      struct final_completion {
+        std::optional<result_type> value{};
+        bool stopped{false};
+      };
 
       struct child_receiver {
         using receiver_concept = stdexec::receiver_t;
@@ -170,49 +163,52 @@ public:
         receiver_env_t env_{};
 
         auto set_value(event_result_t status) && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          self->finish_child(child_completion_t{std::move(status)});
+          complete(child_completion_t{std::move(status)});
         }
 
         auto set_value(message_result_t status) && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          self->finish_child(child_completion_t{std::move(status)});
+          complete(child_completion_t{std::move(status)});
         }
 
+        template <typename error_t> auto set_error(error_t &&error) && noexcept -> void {
+          complete(map_async_error(std::forward<error_t>(error)));
+        }
+
+        auto set_stopped() && noexcept -> void { complete(child_completion_t{stopped_tag{}}); }
+
+        [[nodiscard]] auto get_env() const noexcept -> receiver_env_t { return env_; }
+
+      private:
         template <typename error_t>
-        auto set_error(error_t &&error) && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          if constexpr (std::same_as<std::remove_cvref_t<error_t>,
-                                     std::exception_ptr>) {
-            self->finish_child(
-                child_completion_t{std::forward<error_t>(error)});
+        [[nodiscard]] static auto map_async_error(error_t &&error) noexcept -> child_completion_t {
+          if constexpr (std::same_as<std::remove_cvref_t<error_t>, wh::core::error_code>) {
+            return child_completion_t{std::forward<error_t>(error)};
           } else {
-            try {
-              throw std::forward<error_t>(error);
-            } catch (...) {
-              self->finish_child(child_completion_t{std::current_exception()});
+            if constexpr (std::same_as<std::remove_cvref_t<error_t>, std::exception_ptr>) {
+              try {
+                std::rethrow_exception(std::forward<error_t>(error));
+              } catch (...) {
+                return child_completion_t{wh::core::map_current_exception()};
+              }
+            } else {
+              return child_completion_t{wh::core::make_error(wh::core::errc::internal_error)};
             }
           }
         }
 
-        auto set_stopped() && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          self->finish_child(child_completion_t{stopped_tag{}});
-        }
-
-        [[nodiscard]] auto get_env() const noexcept -> receiver_env_t {
-          return env_;
+        auto complete(child_completion_t completion) noexcept -> void {
+          self->publish_child_completion(std::move(completion));
+          self->request_resume();
+          self->arrive();
         }
       };
 
-      using event_child_sender_t = decltype(
-          std::declval<wh::adk::agent_event_stream_reader &>().read_async());
-      using message_child_sender_t = decltype(
-          std::declval<wh::adk::agent_message_stream_reader &>().read_async());
-      using event_child_op_t =
-          stdexec::connect_result_t<event_child_sender_t, child_receiver>;
-      using message_child_op_t =
-          stdexec::connect_result_t<message_child_sender_t, child_receiver>;
+      using event_child_sender_t =
+          decltype(std::declval<wh::adk::agent_event_stream_reader &>().read_async());
+      using message_child_sender_t =
+          decltype(std::declval<wh::adk::agent_message_stream_reader &>().read_async());
+      using event_child_op_t = stdexec::connect_result_t<event_child_sender_t, child_receiver>;
+      using message_child_op_t = stdexec::connect_result_t<message_child_sender_t, child_receiver>;
 
       enum class child_kind : std::uint8_t { none = 0U, event, message };
 
@@ -220,188 +216,259 @@ public:
       using operation_state_concept = stdexec::operation_state_t;
 
       operation(event_message_stream_reader *owner, receiver_t receiver)
-          : owner_(owner), receiver_(std::move(receiver)),
-            env_(stdexec::get_env(receiver_)) {}
+          : owner_(owner), receiver_(std::move(receiver)), env_(stdexec::get_env(receiver_)),
+            scheduler_(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env_)),
+            resume_turn_(scheduler_) {}
 
-      auto start() & noexcept -> void { request_drive(); }
+      operation(const operation &) = delete;
+      auto operator=(const operation &) -> operation & = delete;
+      operation(operation &&) = delete;
+      auto operator=(operation &&) -> operation & = delete;
+
+      ~operation() {
+        resume_turn_.destroy();
+        destroy_child();
+      }
+
+      auto start() & noexcept -> void {
+        request_resume();
+        arrive();
+      }
 
     private:
-      [[nodiscard]] auto finished() const noexcept -> bool {
-        return delivered_.load(std::memory_order_acquire);
+      [[nodiscard]] auto completed() const noexcept -> bool {
+        return completed_.load(std::memory_order_acquire);
       }
 
-      [[nodiscard]] auto completion_pending() const noexcept -> bool {
-        return pending_completion_.has_value();
+      [[nodiscard]] auto terminal_pending() const noexcept -> bool { return terminal_.has_value(); }
+
+      [[nodiscard]] auto child_active() const noexcept -> bool {
+        return child_kind_ != child_kind::none;
       }
 
-      [[nodiscard]] auto take_completion() noexcept
-          -> std::optional<final_completion_t> {
-        if (!pending_completion_.has_value()) {
-          return std::nullopt;
+      [[nodiscard]] auto child_completion_ready() const noexcept -> bool {
+        return child_completion_ready_.load(std::memory_order_acquire);
+      }
+
+      [[nodiscard]] auto resume_turn_completed() const noexcept -> bool { return completed(); }
+
+      auto request_resume() noexcept -> void { resume_turn_.request(this); }
+
+      auto arrive() noexcept -> void {
+        if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+          maybe_complete();
         }
-        auto completion = std::move(pending_completion_);
-        pending_completion_.reset();
-        return completion;
       }
 
-      auto on_callback_exit() noexcept -> void {
-        if (completion_.ready()) {
-          request_drive();
-        }
+      auto resume_turn_arrive() noexcept -> void { arrive(); }
+
+      auto resume_turn_add_ref() noexcept -> void {
+        count_.fetch_add(1U, std::memory_order_relaxed);
       }
 
-      auto request_drive() noexcept -> void { drive_loop_t::request_drive(); }
+      auto resume_turn_schedule_error(const wh::core::error_code error) noexcept -> void {
+        set_terminal_failure(error);
+      }
 
-      auto drive() noexcept -> void {
-        while (!finished()) {
-          if (callbacks_.active()) {
-            return;
-          }
+      auto resume_turn_run() noexcept -> void {
+        resume();
+        maybe_complete();
+      }
 
-          if (auto current = completion_.take(); current.has_value()) {
-            reset_child();
-            if (auto *event = std::get_if<event_result_t>(&*current);
-                event != nullptr) {
-              auto mapped = owner_->process_event_result(std::move(*event));
-              if (mapped.has_value()) {
-                complete_value(std::move(*mapped));
-                return;
-              }
-              continue;
-            }
+      auto resume_turn_idle() noexcept -> void { maybe_complete(); }
 
-            if (auto *message = std::get_if<message_result_t>(&*current);
-                message != nullptr) {
-              auto mapped =
-                  owner_->process_active_message_result(std::move(*message));
-              if (mapped.has_value()) {
-                complete_value(std::move(*mapped));
-                return;
-              }
-              continue;
-            }
-
-            if (auto *error = std::get_if<std::exception_ptr>(&*current);
-                error != nullptr) {
-              complete_error(std::move(*error));
-              return;
-            }
-
-            complete_stopped();
-            return;
-          }
-
-          if (owner_->active_message_reader_.has_value()) {
-            start_message_child();
-            return;
-          }
-
-          start_event_child();
+      auto maybe_complete() noexcept -> void {
+        if (completed()) {
           return;
         }
+        if (count_.load(std::memory_order_acquire) != 0U || !should_complete()) {
+          return;
+        }
+        complete();
       }
 
-      auto reset_child() noexcept -> void {
+      [[nodiscard]] auto should_complete() const noexcept -> bool {
+        return terminal_pending() && !child_active() && !child_completion_ready() &&
+               !resume_turn_.running();
+      }
+
+      auto destroy_child() noexcept -> void {
         switch (child_kind_) {
         case child_kind::none:
           return;
         case child_kind::event:
-          event_child_op_.reset();
+          event_child_op_.template destruct<event_child_op_t>();
           break;
         case child_kind::message:
-          message_child_op_.reset();
+          message_child_op_.template destruct<message_child_op_t>();
           break;
         }
         child_kind_ = child_kind::none;
       }
 
-      auto start_event_child() noexcept -> void {
+      auto publish_child_completion(child_completion_t completion) noexcept -> void {
+        if (completed()) {
+          return;
+        }
+        wh_invariant(!child_completion_ready());
+        child_completion_.emplace(std::move(completion));
+        child_completion_ready_.store(true, std::memory_order_release);
+      }
+
+      [[nodiscard]] auto drain_child_completion() noexcept -> bool {
+        if (!child_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+          return false;
+        }
+        wh_invariant(child_completion_.has_value());
+        auto current = std::move(*child_completion_);
+        child_completion_.reset();
+        destroy_child();
+
+        if (auto *event = std::get_if<event_result_t>(&current); event != nullptr) {
+          auto mapped = owner_->process_event_result(std::move(*event));
+          if (mapped.has_value()) {
+            set_terminal_value(std::move(*mapped));
+          }
+          return true;
+        }
+        if (auto *message = std::get_if<message_result_t>(&current); message != nullptr) {
+          auto mapped = owner_->process_active_message_result(std::move(*message));
+          if (mapped.has_value()) {
+            set_terminal_value(std::move(*mapped));
+          }
+          return true;
+        }
+        if (auto *error = std::get_if<wh::core::error_code>(&current); error != nullptr) {
+          set_terminal_failure(*error);
+          return true;
+        }
+        set_terminal_stopped();
+        return true;
+      }
+
+      [[nodiscard]] auto start_event_child() noexcept -> bool {
         try {
-          event_child_op_.emplace_from(stdexec::connect,
-                                       owner_->reader_.read_async(),
-                                       child_receiver{this, env_});
+          [[maybe_unused]] auto &child_op =
+              event_child_op_.template construct_with<event_child_op_t>([&]() -> event_child_op_t {
+                return stdexec::connect(owner_->reader_.read_async(), child_receiver{this, env_});
+              });
           child_kind_ = child_kind::event;
-          stdexec::start(event_child_op_.get());
+          count_.fetch_add(1U, std::memory_order_relaxed);
+          stdexec::start(event_child_op_.template get<event_child_op_t>());
+          return false;
         } catch (...) {
-          complete_error(std::current_exception());
+          destroy_child();
+          set_terminal_failure(wh::core::map_current_exception());
+          return true;
         }
       }
 
-      auto start_message_child() noexcept -> void {
-        if (!owner_->active_message_reader_.has_value()) {
-          child_kind_ = child_kind::none;
-          request_drive();
-          return;
-        }
-
+      [[nodiscard]] auto start_message_child() noexcept -> bool {
         try {
-          message_child_op_.emplace_from(
-              stdexec::connect, owner_->active_message_reader_->read_async(),
-              child_receiver{this, env_});
+          [[maybe_unused]] auto &child_op =
+              message_child_op_.template construct_with<message_child_op_t>(
+                  [&]() -> message_child_op_t {
+                    return stdexec::connect(owner_->active_message_reader_->read_async(),
+                                            child_receiver{this, env_});
+                  });
           child_kind_ = child_kind::message;
-          stdexec::start(message_child_op_.get());
+          count_.fetch_add(1U, std::memory_order_relaxed);
+          stdexec::start(message_child_op_.template get<message_child_op_t>());
+          return false;
         } catch (...) {
-          complete_error(std::current_exception());
+          destroy_child();
+          set_terminal_failure(wh::core::map_current_exception());
+          return true;
         }
       }
 
-      auto finish_child(child_completion_t completion) noexcept -> void {
-        if (finished()) {
+      auto set_terminal(final_completion completion) noexcept -> void {
+        if (terminal_pending()) {
           return;
         }
-        if (!completion_.publish(std::move(completion))) {
-          std::terminate();
-        }
-        request_drive();
+        terminal_.emplace(std::move(completion));
+        maybe_complete();
       }
 
-      auto complete_value(result_type status) noexcept -> void {
-        if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-          return;
-        }
-        pending_completion_.emplace(
-            final_completion_t::set_value(std::move(receiver_),
-                                          std::move(status)));
+      auto set_terminal_value(result_type status) noexcept -> void {
+        set_terminal(final_completion{.value = std::move(status)});
       }
 
-      auto complete_error(std::exception_ptr error) noexcept -> void {
-        if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-          return;
-        }
-        pending_completion_.emplace(
-            final_completion_t::set_error(std::move(receiver_),
-                                          std::move(error)));
+      auto set_terminal_failure(const wh::core::error_code error) noexcept -> void {
+        set_terminal_value(result_type::failure(error));
       }
 
-      auto complete_stopped() noexcept -> void {
-        if (delivered_.exchange(true, std::memory_order_acq_rel)) {
+      auto set_terminal_stopped() noexcept -> void {
+        set_terminal(final_completion{.stopped = true});
+      }
+
+      auto complete() noexcept -> void {
+        if (!terminal_pending() || completed_.exchange(true, std::memory_order_acq_rel)) {
           return;
         }
-        pending_completion_.emplace(
-            final_completion_t::set_stopped(std::move(receiver_)));
+
+        auto completion = std::move(*terminal_);
+        terminal_.reset();
+        if (completion.stopped) {
+          stdexec::set_stopped(std::move(receiver_));
+          return;
+        }
+        wh_invariant(completion.value.has_value());
+        stdexec::set_value(std::move(receiver_), std::move(*completion.value));
+      }
+
+      auto resume() noexcept -> void {
+        while (!completed()) {
+          if (drain_child_completion()) {
+            continue;
+          }
+
+          if (terminal_pending()) {
+            return;
+          }
+
+          if (child_active()) {
+            return;
+          }
+
+          if (owner_->active_message_reader_.has_value()) {
+            if (start_message_child()) {
+              continue;
+            }
+            return;
+          }
+
+          if (start_event_child()) {
+            continue;
+          }
+          return;
+        }
       }
 
       event_message_stream_reader *owner_{nullptr};
       receiver_t receiver_;
       receiver_env_t env_{};
-      wh::core::detail::manual_lifetime_box<event_child_op_t> event_child_op_{};
-      wh::core::detail::manual_lifetime_box<message_child_op_t>
+      resume_scheduler_t scheduler_{};
+      wh::core::detail::manual_storage<sizeof(event_child_op_t), alignof(event_child_op_t)>
+          event_child_op_{};
+      wh::core::detail::manual_storage<sizeof(message_child_op_t), alignof(message_child_op_t)>
           message_child_op_{};
-      wh::core::detail::single_completion_slot<child_completion_t> completion_{};
-      wh::core::detail::callback_guard<operation> callbacks_{};
-      std::optional<final_completion_t> pending_completion_{};
-      std::atomic<bool> delivered_{false};
+      std::optional<child_completion_t> child_completion_{};
+      std::optional<final_completion> terminal_{};
+      std::atomic<std::size_t> count_{1U};
+      std::atomic<bool> child_completion_ready_{false};
+      std::atomic<bool> completed_{false};
+      wh::core::detail::scheduled_resume_turn<self_t, resume_scheduler_t> resume_turn_;
       child_kind child_kind_{child_kind::none};
     };
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
-    [[nodiscard]] auto connect(receiver_t receiver) &&
-        -> operation<receiver_t> {
+      requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
+    [[nodiscard]] auto connect(receiver_t receiver) && -> operation<receiver_t> {
       return operation<receiver_t>{owner_, std::move(receiver)};
     }
 
-    [[nodiscard]] auto get_env() const noexcept
-        -> wh::core::detail::async_completion_env {
+    [[nodiscard]] auto get_env() const noexcept -> wh::core::detail::async_completion_env {
       return {};
     }
 
@@ -428,8 +495,7 @@ public:
   }
 
 private:
-  [[nodiscard]] auto process_event_result(event_result_t next)
-      -> std::optional<result_type> {
+  [[nodiscard]] auto process_event_result(event_result_t next) -> std::optional<result_type> {
     if (next.has_error() && next.error() == wh::core::errc::not_found) {
       closed_ = true;
       return result_type{chunk_type::make_eof()};
@@ -480,22 +546,18 @@ private:
   }
 
   auto map_event(wh::adk::agent_event event) -> std::optional<result_type> {
-    if (auto *message = std::get_if<wh::adk::message_event>(&event.payload);
-        message != nullptr) {
-      if (auto *value = std::get_if<wh::schema::message>(&message->content);
-          value != nullptr) {
+    if (auto *message = std::get_if<wh::adk::message_event>(&event.payload); message != nullptr) {
+      if (auto *value = std::get_if<wh::schema::message>(&message->content); value != nullptr) {
         return result_type{chunk_type::make_value(std::move(*value))};
       }
-      if (auto *reader =
-              std::get_if<wh::adk::agent_message_stream_reader>(&message->content);
+      if (auto *reader = std::get_if<wh::adk::agent_message_stream_reader>(&message->content);
           reader != nullptr) {
         active_message_reader_.emplace(std::move(*reader));
       }
       return std::nullopt;
     }
 
-    if (auto *error = std::get_if<wh::adk::error_event>(&event.payload);
-        error != nullptr) {
+    if (auto *error = std::get_if<wh::adk::error_event>(&event.payload); error != nullptr) {
       return result_type{chunk_type{.error = error->code}};
     }
 
@@ -520,8 +582,7 @@ private:
         return wh::schema::stream::stream_pending;
       }
 
-      auto mapped = process_active_message_result(
-          std::move(std::get<message_result_t>(next)));
+      auto mapped = process_active_message_result(std::move(std::get<message_result_t>(next)));
       if (mapped.has_value()) {
         return std::move(*mapped);
       }

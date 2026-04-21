@@ -14,8 +14,7 @@ TEST_CASE("make_node_path builds node paths from initializer lists",
 TEST_CASE("make_node_path builds node paths from spans",
           "[UT][wh/compose/node/path.hpp][make_node_path][condition][boundary]") {
   constexpr std::array<std::string_view, 2U> segments{"root", "child"};
-  const auto path =
-      wh::compose::make_node_path(std::span<const std::string_view>{segments});
+  const auto path = wh::compose::make_node_path(std::span<const std::string_view>{segments});
   REQUIRE(path.to_string() == "root/child");
 }
 

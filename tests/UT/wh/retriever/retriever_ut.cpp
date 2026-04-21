@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/retriever/retriever.hpp"
@@ -24,10 +23,8 @@ struct sync_retriever_impl {
 
 struct async_retriever_impl {
   [[nodiscard]] auto retrieve_sender(const wh::retriever::retriever_request &request) const {
-    return stdexec::just(
-        wh::core::result<wh::retriever::retriever_response>{
-            wh::retriever::retriever_response{
-                wh::schema::document{request.query + "-async"}}});
+    return stdexec::just(wh::core::result<wh::retriever::retriever_response>{
+        wh::retriever::retriever_response{wh::schema::document{request.query + "-async"}}});
   }
 };
 
@@ -69,7 +66,8 @@ TEST_CASE("retriever wrapper normalizes async sender outputs",
 }
 
 TEST_CASE("retriever detail filters dedupes truncates and exposes callback state",
-          "[UT][wh/retriever/retriever.hpp][detail::apply_response_policy][condition][branch][boundary]") {
+          "[UT][wh/retriever/"
+          "retriever.hpp][detail::apply_response_policy][condition][branch][boundary]") {
   wh::schema::document first{"same"};
   first.with_score(0.9).with_sub_index("sub").with_dsl("dsl");
   first.set_metadata("lang", "zh");

@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string_view>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/node/tools_contract.hpp"
@@ -17,21 +16,20 @@ TEST_CASE("tools contract types store dispatch payloads middleware and rerun met
   wh::compose::tool_entry entry{};
   entry.return_direct = true;
   entry.invoke = [](const wh::compose::tool_call &request,
-                    wh::tool::call_scope scope)
-      -> wh::core::result<wh::compose::graph_value> {
+                    wh::tool::call_scope scope) -> wh::core::result<wh::compose::graph_value> {
     REQUIRE(scope.tool_name == request.tool_name);
     return wh::compose::graph_value{request.arguments};
   };
-  entry.stream = [](const wh::compose::tool_call &request,
-                    wh::tool::call_scope scope)
-      -> wh::core::result<wh::compose::graph_stream_reader> {
+  entry.stream =
+      [](const wh::compose::tool_call &request,
+         wh::tool::call_scope scope) -> wh::core::result<wh::compose::graph_stream_reader> {
     REQUIRE(scope.call_id == request.call_id);
     return wh::compose::make_single_value_stream_reader(request.arguments);
   };
   entry.async_invoke = [](wh::compose::tool_call request, wh::tool::call_scope scope) {
     REQUIRE(scope.tool_name == request.tool_name);
-    return stdexec::just(wh::core::result<wh::compose::graph_value>{
-        wh::compose::graph_value{request.call_id}});
+    return stdexec::just(
+        wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{request.call_id}});
   };
   entry.async_stream = [](wh::compose::tool_call request, wh::tool::call_scope scope) {
     REQUIRE(scope.call_id == request.call_id);
@@ -53,28 +51,24 @@ TEST_CASE("tools contract types store dispatch payloads middleware and rerun met
 
   auto streamed = entry.stream(call, scope);
   REQUIRE(streamed.has_value());
-  auto stream_values =
-      wh::compose::collect_graph_stream_reader(std::move(streamed).value());
+  auto stream_values = wh::compose::collect_graph_stream_reader(std::move(streamed).value());
   REQUIRE(stream_values.has_value());
   REQUIRE(stream_values.value().size() == 1U);
-  REQUIRE(*wh::core::any_cast<std::string>(&stream_values.value()[0]) ==
-          R"({"x":1})");
+  REQUIRE(*wh::core::any_cast<std::string>(&stream_values.value()[0]) == R"({"x":1})");
 
   auto async_invoked = stdexec::sync_wait(entry.async_invoke(call, scope));
   REQUIRE(async_invoked.has_value());
   REQUIRE(std::get<0>(*async_invoked).has_value());
-  REQUIRE(*wh::core::any_cast<std::string>(
-              &std::get<0>(*async_invoked).value()) == "call-1");
+  REQUIRE(*wh::core::any_cast<std::string>(&std::get<0>(*async_invoked).value()) == "call-1");
 
   auto async_streamed = stdexec::sync_wait(entry.async_stream(call, scope));
   REQUIRE(async_streamed.has_value());
   REQUIRE(std::get<0>(*async_streamed).has_value());
-  auto async_stream_values = wh::compose::collect_graph_stream_reader(
-      std::get<0>(std::move(*async_streamed)).value());
+  auto async_stream_values =
+      wh::compose::collect_graph_stream_reader(std::get<0>(std::move(*async_streamed)).value());
   REQUIRE(async_stream_values.has_value());
   REQUIRE(async_stream_values.value().size() == 1U);
-  REQUIRE(*wh::core::any_cast<std::string>(&async_stream_values.value()[0]) ==
-          "echo");
+  REQUIRE(*wh::core::any_cast<std::string>(&async_stream_values.value()[0]) == "echo");
 
   REQUIRE(entry.return_direct);
 
@@ -88,8 +82,7 @@ TEST_CASE("tools contract types store dispatch payloads middleware and rerun met
     request.call_id = "rewritten";
     return {};
   };
-  middleware.after = [](const wh::compose::tool_call &request,
-                        wh::compose::graph_value &value,
+  middleware.after = [](const wh::compose::tool_call &request, wh::compose::graph_value &value,
                         const wh::tool::call_scope &) -> wh::core::result<void> {
     value = wh::compose::graph_value{request.call_id};
     return {};

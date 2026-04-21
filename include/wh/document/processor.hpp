@@ -21,10 +21,9 @@
 
 namespace wh::document {
 
-using loader_function = wh::core::function<wh::core::result<std::string>(
-    std::string, const loader_options &) const>;
-using transformer_function =
-    wh::core::function<wh::core::result<std::string>(std::string) const>;
+using loader_function =
+    wh::core::function<wh::core::result<std::string>(std::string, const loader_options &) const>;
+using transformer_function = wh::core::function<wh::core::result<std::string>(std::string) const>;
 
 namespace detail {
 
@@ -33,15 +32,13 @@ using wh::callbacks::borrow_callback_sink;
 using wh::callbacks::make_callback_sink;
 
 template <typename payload_t>
-inline auto
-emit_callback(const callback_sink &sink, const wh::callbacks::stage stage,
-              const payload_t &payload, const loader_options &options) -> void {
+inline auto emit_callback(const callback_sink &sink, const wh::callbacks::stage stage,
+                          const payload_t &payload, const loader_options &options) -> void {
   wh::callbacks::run_info run_info{};
   run_info.name = "DocumentProcessor";
   run_info.type = "DocumentProcessor";
   run_info.component = wh::core::component_kind::document;
-  run_info =
-      wh::callbacks::apply_component_run_info(std::move(run_info), options);
+  run_info = wh::callbacks::apply_component_run_info(std::move(run_info), options);
   wh::callbacks::emit(sink, stage, payload, run_info);
 }
 
@@ -51,8 +48,7 @@ class document_processor {
 public:
   document_processor() : parser_(parser::ext_parser{}) {}
   explicit document_processor(const parser::parser &parser) : parser_(parser) {}
-  explicit document_processor(parser::parser &&parser)
-      : parser_(std::move(parser)) {}
+  explicit document_processor(parser::parser &&parser) : parser_(std::move(parser)) {}
 
   template <typename parser_t>
     requires parser::parser_like<std::remove_cvref_t<parser_t>> &&
@@ -86,13 +82,11 @@ public:
     return *this;
   }
 
-  auto operator=(document_processor &&) noexcept
-      -> document_processor & = default;
+  auto operator=(document_processor &&) noexcept -> document_processor & = default;
   ~document_processor() = default;
 
   [[nodiscard]] static auto descriptor() -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{"DocumentProcessor",
-                                          wh::core::component_kind::document};
+    return wh::core::component_descriptor{"DocumentProcessor", wh::core::component_kind::document};
   }
 
   template <typename loader_t>
@@ -110,8 +104,7 @@ public:
   template <typename transformer_t>
     requires std::constructible_from<transformer_function, transformer_t &&>
   auto set_transformer(transformer_t &&transformer) -> document_processor & {
-    transformer_ =
-        transformer_function{std::forward<transformer_t>(transformer)};
+    transformer_ = transformer_function{std::forward<transformer_t>(transformer)};
     return *this;
   }
 
@@ -140,36 +133,30 @@ public:
   [[nodiscard]] auto process(const document_request &request,
                              wh::core::run_context &callback_context) const
       -> wh::core::result<document_batch> {
-    return process_impl(request,
-                        detail::borrow_callback_sink(callback_context));
+    return process_impl(request, detail::borrow_callback_sink(callback_context));
   }
 
   [[nodiscard]] auto process(document_request &&request,
                              wh::core::run_context &callback_context) const
       -> wh::core::result<document_batch> {
-    return process_impl(std::move(request),
-                        detail::borrow_callback_sink(callback_context));
+    return process_impl(std::move(request), detail::borrow_callback_sink(callback_context));
   }
 
 private:
   template <typename request_t>
     requires std::same_as<std::remove_cvref_t<request_t>, document_request>
-  [[nodiscard]] auto process_impl(request_t &&request,
-                                  detail::callback_sink sink) const
+  [[nodiscard]] auto process_impl(request_t &&request, detail::callback_sink sink) const
       -> wh::core::result<document_batch> {
     document_request stored{std::forward<request_t>(request)};
     sink = wh::callbacks::filter_callback_sink(std::move(sink), stored.options);
     std::string source_uri = stored.source;
     detail::emit_callback(sink, wh::callbacks::stage::start,
-                          parser_callback_event{source_uri, 0U, 0U},
-                          stored.options);
+                          parser_callback_event{source_uri, 0U, 0U}, stored.options);
 
     if (!parser_.has_value()) {
       detail::emit_callback(sink, wh::callbacks::stage::error,
-                            parser_callback_event{source_uri, 0U, 0U},
-                            stored.options);
-      return wh::core::result<document_batch>::failure(
-          wh::core::errc::not_supported);
+                            parser_callback_event{source_uri, 0U, 0U}, stored.options);
+      return wh::core::result<document_batch>::failure(wh::core::errc::not_supported);
     }
 
     const auto resolved_options = stored.options.resolve_view();
@@ -178,14 +165,12 @@ private:
       auto loaded = loader_(source_uri, stored.options);
       if (loaded.has_error()) {
         detail::emit_callback(sink, wh::callbacks::stage::error,
-                              parser_callback_event{source_uri, 0U, 0U},
-                              stored.options);
+                              parser_callback_event{source_uri, 0U, 0U}, stored.options);
         return wh::core::result<document_batch>::failure(loaded.error());
       }
       content = std::move(loaded).value();
       detail::emit_callback(sink, wh::callbacks::stage::end,
-                            loader_callback_event{source_uri, content.size()},
-                            stored.options);
+                            loader_callback_event{source_uri, content.size()}, stored.options);
     } else {
       content = source_uri;
     }
@@ -194,28 +179,24 @@ private:
       auto transformed = transformer_(content);
       if (transformed.has_error()) {
         detail::emit_callback(sink, wh::callbacks::stage::error,
-                              parser_callback_event{source_uri, 0U, 0U},
-                              stored.options);
+                              parser_callback_event{source_uri, 0U, 0U}, stored.options);
         return wh::core::result<document_batch>::failure(transformed.error());
       }
       content = std::move(transformed).value();
-      detail::emit_callback(sink, wh::callbacks::stage::end,
-                            transformer_callback_event{1U, 1U}, stored.options);
+      detail::emit_callback(sink, wh::callbacks::stage::end, transformer_callback_event{1U, 1U},
+                            stored.options);
     }
 
-    const std::string_view parse_source_uri =
-        resolved_options.parser_uri().empty() ? std::string_view{source_uri}
-                                              : resolved_options.parser_uri();
+    const std::string_view parse_source_uri = resolved_options.parser_uri().empty()
+                                                  ? std::string_view{source_uri}
+                                                  : resolved_options.parser_uri();
     parser::parse_options_view parse_options_view{};
     parse_options_view.uri = parse_source_uri;
-    parse_options_view.extra_meta_base =
-        &resolved_options.base_parser->extra_meta;
-    parse_options_view.extra_meta_override =
-        resolved_options.override_parser == nullptr
-            ? nullptr
-            : &resolved_options.override_parser->extra_meta;
-    parse_options_view.format_options_base =
-        &resolved_options.base_parser->format_options;
+    parse_options_view.extra_meta_base = &resolved_options.base_parser->extra_meta;
+    parse_options_view.extra_meta_override = resolved_options.override_parser == nullptr
+                                                 ? nullptr
+                                                 : &resolved_options.override_parser->extra_meta;
+    parse_options_view.format_options_base = &resolved_options.base_parser->format_options;
     parse_options_view.format_options_override =
         resolved_options.override_parser == nullptr
             ? nullptr
@@ -227,10 +208,10 @@ private:
     const auto parser_input_bytes = parse_request.content.size();
     auto parsed = parser_.parse(parse_request);
     if (parsed.has_error()) {
-      detail::emit_callback(sink, wh::callbacks::stage::error,
-                            parser_callback_event{std::string{parse_source_uri},
-                                                  parser_input_bytes, 0U},
-                            stored.options);
+      detail::emit_callback(
+          sink, wh::callbacks::stage::error,
+          parser_callback_event{std::string{parse_source_uri}, parser_input_bytes, 0U},
+          stored.options);
       return parsed;
     }
 
@@ -241,16 +222,13 @@ private:
       }
       doc.set_metadata("_source", std::string{parse_source_uri});
       parse_request.options.for_each_extra_meta(
-          [&](const std::string &key, const std::string &value) {
-            doc.set_metadata(key, value);
-          });
+          [&](const std::string &key, const std::string &value) { doc.set_metadata(key, value); });
     }
 
-    detail::emit_callback(sink, wh::callbacks::stage::end,
-                          parser_callback_event{std::string{parse_source_uri},
-                                                parser_input_bytes,
-                                                documents.size()},
-                          stored.options);
+    detail::emit_callback(
+        sink, wh::callbacks::stage::end,
+        parser_callback_event{std::string{parse_source_uri}, parser_input_bytes, documents.size()},
+        stored.options);
     return documents;
   }
 

@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <utility>
 #include <variant>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/stream/core/stream_base.hpp"
 
@@ -13,8 +13,7 @@ using chunk_t = wh::schema::stream::stream_chunk<int>;
 using chunk_result_t = wh::schema::stream::stream_result<chunk_t>;
 using chunk_try_result_t = wh::schema::stream::stream_try_result<chunk_t>;
 
-struct scripted_stream
-    : wh::schema::stream::stream_base<scripted_stream, int> {
+struct scripted_stream : wh::schema::stream::stream_base<scripted_stream, int> {
   std::vector<chunk_result_t> reads{};
   std::size_t read_index{0U};
   std::vector<chunk_try_result_t> polls{};
@@ -47,8 +46,9 @@ struct scripted_stream
 
 } // namespace
 
-TEST_CASE("stream base read and borrowed read clear caches and forward terminal results",
-          "[UT][wh/schema/stream/core/stream_base.hpp][stream_base::read_borrowed][branch][boundary]") {
+TEST_CASE(
+    "stream base read and borrowed read clear caches and forward terminal results",
+    "[UT][wh/schema/stream/core/stream_base.hpp][stream_base::read_borrowed][branch][boundary]") {
   scripted_stream stream{};
   stream.reads.push_back(chunk_result_t{chunk_t::make_value(7)});
   stream.reads.push_back(chunk_result_t::failure(wh::core::errc::timeout));
@@ -69,7 +69,8 @@ TEST_CASE("stream base read and borrowed read clear caches and forward terminal 
 }
 
 TEST_CASE("stream base try_read_borrowed preserves pending and close delegates to derived state",
-          "[UT][wh/schema/stream/core/stream_base.hpp][stream_base::try_read_borrowed][condition][branch]") {
+          "[UT][wh/schema/stream/core/"
+          "stream_base.hpp][stream_base::try_read_borrowed][condition][branch]") {
   scripted_stream stream{};
   stream.polls.push_back(wh::schema::stream::stream_pending);
   stream.polls.push_back(chunk_result_t{chunk_t::make_value(11)});
@@ -82,22 +83,20 @@ TEST_CASE("stream base try_read_borrowed preserves pending and close delegates t
 
   auto borrowed = stream.try_read_borrowed();
   REQUIRE(std::holds_alternative<
-          wh::schema::stream::stream_result<
-              wh::schema::stream::stream_chunk_view<int>>>(borrowed));
-  const auto &borrowed_result = std::get<
-      wh::schema::stream::stream_result<
-          wh::schema::stream::stream_chunk_view<int>>>(borrowed);
+          wh::schema::stream::stream_result<wh::schema::stream::stream_chunk_view<int>>>(borrowed));
+  const auto &borrowed_result =
+      std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk_view<int>>>(
+          borrowed);
   REQUIRE(borrowed_result.has_value());
   REQUIRE(borrowed_result.value().value != nullptr);
   REQUIRE(*borrowed_result.value().value == 11);
 
   auto failed = stream.try_read_borrowed();
   REQUIRE(std::holds_alternative<
-          wh::schema::stream::stream_result<
-              wh::schema::stream::stream_chunk_view<int>>>(failed));
-  const auto &failed_result = std::get<
-      wh::schema::stream::stream_result<
-          wh::schema::stream::stream_chunk_view<int>>>(failed);
+          wh::schema::stream::stream_result<wh::schema::stream::stream_chunk_view<int>>>(failed));
+  const auto &failed_result =
+      std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk_view<int>>>(
+          failed);
   REQUIRE(failed_result.has_error());
   REQUIRE(failed_result.error() == wh::core::errc::invalid_argument);
 

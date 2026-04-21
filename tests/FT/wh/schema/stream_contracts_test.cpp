@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/stream.hpp"
 
@@ -17,15 +17,13 @@ TEST_CASE("schema stream public facade builds pipe streams and collects value an
   REQUIRE(collected.has_value());
   REQUIRE(collected.value() == std::vector<int>{1, 2, 3});
 
-  auto [text_writer, text_reader] =
-      wh::schema::stream::make_pipe_stream<std::string>(4U);
+  auto [text_writer, text_reader] = wh::schema::stream::make_pipe_stream<std::string>(4U);
   REQUIRE(text_writer.try_write(std::string{"a"}).has_value());
   REQUIRE(text_writer.try_write(std::string{"b"}).has_value());
   REQUIRE(text_writer.try_write(std::string{"c"}).has_value());
   REQUIRE(text_writer.close().has_value());
 
-  auto text =
-      wh::schema::stream::collect_text_stream_reader(std::move(text_reader));
+  auto text = wh::schema::stream::collect_text_stream_reader(std::move(text_reader));
   REQUIRE(text.has_value());
   REQUIRE(text.value() == "abc");
 }

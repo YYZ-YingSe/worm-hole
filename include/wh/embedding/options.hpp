@@ -41,8 +41,7 @@ public:
   embedding_options() = default;
 
   /// Sets baseline options used when no per-call override is provided.
-  auto set_base(const embedding_common_options &options)
-      -> embedding_options & {
+  auto set_base(const embedding_common_options &options) -> embedding_options & {
     base_ = options;
     return *this;
   }
@@ -54,22 +53,19 @@ public:
   }
 
   /// Sets per-call option overrides merged on top of the baseline options.
-  auto set_call_override(const embedding_common_options &options)
-      -> embedding_options & {
+  auto set_call_override(const embedding_common_options &options) -> embedding_options & {
     override_ = options;
     return *this;
   }
 
   /// Sets per-call option overrides merged on top of the baseline options.
-  auto set_call_override(embedding_common_options &&options)
-      -> embedding_options & {
+  auto set_call_override(embedding_common_options &&options) -> embedding_options & {
     override_ = std::move(options);
     return *this;
   }
 
   /// Resolves effective options into a borrowed view without deep copies.
-  [[nodiscard]] auto resolve_view() const noexcept
-      -> resolved_embedding_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept -> resolved_embedding_options_view {
     resolved_embedding_options_view view{};
     view.model_id = base_.model_id;
     view.failure_policy = base_.failure_policy;
@@ -113,14 +109,12 @@ public:
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept
-      -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
     return component_options_;
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() const noexcept
-      -> const wh::core::component_options & {
+  [[nodiscard]] auto component_options() const noexcept -> const wh::core::component_options & {
     return component_options_;
   }
 

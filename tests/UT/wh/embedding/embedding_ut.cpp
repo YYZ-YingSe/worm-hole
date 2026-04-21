@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/embedding/embedding.hpp"
@@ -19,9 +18,8 @@ struct sync_embedding_impl {
 struct async_embedding_impl {
   [[nodiscard]] auto embed_sender(const wh::embedding::embedding_request &request) const {
     return stdexec::just(
-        wh::core::result<wh::embedding::embedding_response>{
-            wh::embedding::embedding_response{
-                std::vector<double>{static_cast<double>(request.inputs.size() + 1U)}}});
+        wh::core::result<wh::embedding::embedding_response>{wh::embedding::embedding_response{
+            std::vector<double>{static_cast<double>(request.inputs.size() + 1U)}}});
   }
 };
 
@@ -79,8 +77,8 @@ TEST_CASE(
   REQUIRE(state.event.usage.prompt_tokens == 3);
   REQUIRE(state.event.usage.total_tokens == 3);
 
-  auto moved = wh::embedding::detail::run_sync_embedding_impl(
-      move_embedding_impl{}, std::move(request));
+  auto moved =
+      wh::embedding::detail::run_sync_embedding_impl(move_embedding_impl{}, std::move(request));
   REQUIRE(moved.has_value());
   REQUIRE(moved.value().size() == 2U);
   REQUIRE(moved.value().front() == std::vector<double>{3.0});

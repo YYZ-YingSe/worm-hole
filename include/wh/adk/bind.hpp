@@ -18,18 +18,17 @@ namespace wh::adk {
   return detail::bind_react_agent(std::move(authored));
 }
 
-[[nodiscard]] inline auto bind_plan_execute_agent(
-    wh::agent::plan_execute authored) -> wh::core::result<wh::agent::agent> {
+[[nodiscard]] inline auto bind_plan_execute_agent(wh::agent::plan_execute authored)
+    -> wh::core::result<wh::agent::agent> {
   return detail::bind_plan_execute_agent(std::move(authored));
 }
 
-[[nodiscard]] inline auto bind_self_refine_agent(
-    wh::agent::self_refine authored) -> wh::core::result<wh::agent::agent> {
+[[nodiscard]] inline auto bind_self_refine_agent(wh::agent::self_refine authored)
+    -> wh::core::result<wh::agent::agent> {
   return detail::bind_self_refine_agent(std::move(authored));
 }
 
-[[nodiscard]] inline auto bind_reviewer_executor_agent(
-    wh::agent::reviewer_executor authored)
+[[nodiscard]] inline auto bind_reviewer_executor_agent(wh::agent::reviewer_executor authored)
     -> wh::core::result<wh::agent::agent> {
   return detail::bind_reviewer_executor_agent(std::move(authored));
 }

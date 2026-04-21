@@ -12,8 +12,9 @@ TEST_CASE("stream writer facade exports pipe writer through public header",
   REQUIRE(writer.is_closed());
 }
 
-TEST_CASE("stream writer facade exports erased writer defaults through public header",
-          "[UT][wh/schema/stream/writer.hpp][any_stream_writer::close][condition][branch][boundary]") {
+TEST_CASE(
+    "stream writer facade exports erased writer defaults through public header",
+    "[UT][wh/schema/stream/writer.hpp][any_stream_writer::close][condition][branch][boundary]") {
   wh::schema::stream::any_stream_writer<int> writer{};
 
   auto write_status = writer.try_write(3);

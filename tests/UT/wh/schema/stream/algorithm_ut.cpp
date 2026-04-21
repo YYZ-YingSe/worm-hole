@@ -22,9 +22,7 @@ template <typename value_t> struct test_chunk {
     return chunk;
   }
 
-  [[nodiscard]] auto is_terminal_eof() const noexcept -> bool {
-    return eof && !source_eof;
-  }
+  [[nodiscard]] auto is_terminal_eof() const noexcept -> bool { return eof && !source_eof; }
 
   [[nodiscard]] auto is_source_eof() const noexcept -> bool { return source_eof; }
 };
@@ -45,9 +43,7 @@ template <typename value_t> struct test_reader {
     return chunk_type::make_value(std::move(values[index++]));
   }
 
-  [[nodiscard]] auto try_read() -> wh::core::result<chunk_type> {
-    return read();
-  }
+  [[nodiscard]] auto try_read() -> wh::core::result<chunk_type> { return read(); }
 
   auto close() -> wh::core::result<void> {
     closed = true;
@@ -62,8 +58,7 @@ template <typename value_t> struct test_reader {
 TEST_CASE("stream algorithm facade collects values and concatenates text",
           "[UT][wh/schema/stream/algorithm.hpp][collect_stream_reader][branch][boundary]") {
   test_reader<int> values_reader{{1, 2, 3}};
-  auto collected =
-      wh::schema::stream::collect_stream_reader(std::move(values_reader));
+  auto collected = wh::schema::stream::collect_stream_reader(std::move(values_reader));
   REQUIRE(collected.has_value());
   REQUIRE(collected.value() == std::vector<int>({1, 2, 3}));
 
@@ -76,14 +71,12 @@ TEST_CASE("stream algorithm facade collects values and concatenates text",
 TEST_CASE("stream algorithm facade preserves empty collection boundaries",
           "[UT][wh/schema/stream/algorithm.hpp][collect_text_stream_reader][condition][boundary]") {
   test_reader<int> empty_values{};
-  auto collected =
-      wh::schema::stream::collect_stream_reader(std::move(empty_values));
+  auto collected = wh::schema::stream::collect_stream_reader(std::move(empty_values));
   REQUIRE(collected.has_value());
   REQUIRE(collected.value().empty());
 
   test_reader<std::string> empty_text{};
-  auto text =
-      wh::schema::stream::collect_text_stream_reader(std::move(empty_text));
+  auto text = wh::schema::stream::collect_text_stream_reader(std::move(empty_text));
   REQUIRE(text.has_value());
   REQUIRE(text.value().empty());
 }

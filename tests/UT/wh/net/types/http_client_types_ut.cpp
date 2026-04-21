@@ -3,7 +3,8 @@
 #include "wh/net/types/http_client_types.hpp"
 
 TEST_CASE("http client types project owned requests into borrowed views",
-          "[UT][wh/net/types/http_client_types.hpp][make_http_request_view][condition][branch][boundary]") {
+          "[UT][wh/net/types/"
+          "http_client_types.hpp][make_http_request_view][condition][branch][boundary]") {
   wh::net::http_request request{};
   request.method = wh::net::http_method::post;
   request.url = "https://example.com";
@@ -31,8 +32,9 @@ TEST_CASE("http client types project owned requests into borrowed views",
   REQUIRE(stream_view.protocol == wh::net::http_stream_protocol::sse);
 }
 
-TEST_CASE("http client transport types default errors methods and responses stay stable",
-          "[UT][wh/net/types/http_client_types.hpp][transport_error][condition][branch][boundary]") {
+TEST_CASE(
+    "http client transport types default errors methods and responses stay stable",
+    "[UT][wh/net/types/http_client_types.hpp][transport_error][condition][branch][boundary]") {
   wh::net::transport_error error{};
   REQUIRE(error.kind == wh::net::transport_error_kind::unknown);
   REQUIRE(error.code == wh::core::error_code{});
@@ -48,6 +50,5 @@ TEST_CASE("http client transport types default errors methods and responses stay
   REQUIRE(response.body.empty());
 
   REQUIRE(wh::net::http_method::get != wh::net::http_method::post);
-  REQUIRE(wh::net::http_stream_protocol::sse !=
-          wh::net::http_stream_protocol::raw);
+  REQUIRE(wh::net::http_stream_protocol::sse != wh::net::http_stream_protocol::raw);
 }

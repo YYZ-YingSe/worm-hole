@@ -362,6 +362,7 @@ function(wh_add_catch_test_bundle out_var)
     target_include_directories("${ARG_TARGET_NAME}" PRIVATE
                                ${ARG_INCLUDE_DIRECTORIES})
   endif()
+  wh_apply_target_build_policies("${ARG_TARGET_NAME}")
 
   catch_discover_tests(
     "${ARG_TARGET_NAME}"

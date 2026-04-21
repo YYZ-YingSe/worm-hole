@@ -1,11 +1,12 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/serialization.hpp"
 
 TEST_CASE("serialization facade exposes fast codecs and default registry",
-          "[UT][wh/schema/serialization.hpp][make_default_serialization_registry][condition][branch][boundary]") {
+          "[UT][wh/schema/"
+          "serialization.hpp][make_default_serialization_registry][condition][branch][boundary]") {
   const auto encoded = wh::schema::serialize_fast(std::string{"alpha"});
   REQUIRE(encoded.has_value());
 

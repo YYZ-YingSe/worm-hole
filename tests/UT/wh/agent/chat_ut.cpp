@@ -26,8 +26,7 @@ TEST_CASE("chat shell binds model instruction output controls and lowers into ex
   REQUIRE(authored.output_mode() == wh::agent::chat_output_mode::text);
 
   auto model_state = std::make_shared<wh::testing::helper::probe_model_state>();
-  REQUIRE(authored.set_model(wh::testing::helper::sync_probe_model{model_state})
-              .has_value());
+  REQUIRE(authored.set_model(wh::testing::helper::sync_probe_model{model_state}).has_value());
   REQUIRE(authored.model_node().has_value());
   REQUIRE(authored.freeze().has_value());
   REQUIRE(authored.frozen());
@@ -46,20 +45,17 @@ TEST_CASE("chat shell validates required fields and rejects mutation after freez
   REQUIRE(missing_model_freeze.error() == wh::core::errc::not_found);
 
   wh::agent::chat missing_description{"chat", ""};
-  REQUIRE(missing_description.set_model(wh::testing::helper::sync_probe_model{})
-              .has_value());
+  REQUIRE(missing_description.set_model(wh::testing::helper::sync_probe_model{}).has_value());
   auto missing_description_freeze = missing_description.freeze();
   REQUIRE(missing_description_freeze.has_error());
   REQUIRE(missing_description_freeze.error() == wh::core::errc::invalid_argument);
 
-  wh::agent::chat frozen = wh::testing::helper::make_configured_chat(
-      "frozen-chat", "assistant");
+  wh::agent::chat frozen = wh::testing::helper::make_configured_chat("frozen-chat", "assistant");
   REQUIRE(frozen.freeze().has_value());
   REQUIRE(frozen.append_instruction("late").has_error());
   REQUIRE(frozen.replace_instruction("late").has_error());
   REQUIRE(frozen.set_output_key("late").has_error());
   REQUIRE(frozen.set_output_mode(wh::agent::chat_output_mode::value).has_error());
   REQUIRE(frozen.set_model(wh::testing::helper::sync_probe_model{}).has_error());
-  REQUIRE(frozen.append_instruction("late").error() ==
-          wh::core::errc::contract_violation);
+  REQUIRE(frozen.append_instruction("late").error() == wh::core::errc::contract_violation);
 }

@@ -4,6 +4,7 @@
     "os": "ubuntu-latest",
     "configure_preset": "ci-linux-debug",
     "build_preset": "ci-linux-debug",
+    "planning_preset": "ci-linux-debug",
     "min_shards": 4,
     "include_labels": ["ci.pr"],
     "exclude_labels": ["ci.nightly"]
@@ -13,6 +14,7 @@
     "os": "ubuntu-latest",
     "configure_preset": "ci-linux-release",
     "build_preset": "ci-linux-release",
+    "planning_preset": "ci-linux-release",
     "min_shards": 4,
     "include_labels": ["ci.pr"],
     "exclude_labels": ["ci.nightly"]
@@ -22,6 +24,7 @@
     "os": "macos-latest",
     "configure_preset": "ci-macos-release",
     "build_preset": "ci-macos-release",
+    "planning_preset": "ci-linux-release",
     "min_shards": 2,
     "include_labels": ["ci.pr"],
     "exclude_labels": ["ci.nightly"]
@@ -31,6 +34,7 @@
     "os": "windows-latest",
     "configure_preset": "ci-windows-release",
     "build_preset": "ci-windows-release",
+    "planning_preset": "ci-linux-release",
     "min_shards": 2,
     "include_labels": ["ci.pr"],
     "exclude_labels": ["ci.nightly"]

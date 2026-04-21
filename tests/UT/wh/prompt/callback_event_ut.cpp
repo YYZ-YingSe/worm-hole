@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
 #include <utility>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/prompt/callback_event.hpp"
 
@@ -19,14 +19,15 @@ TEST_CASE("prompt callback event defaults names counts and failure metadata",
   REQUIRE(event.failed_variable.empty());
 }
 
-TEST_CASE("prompt callback event aggregate initialization preserves render and failure fields across moves",
-          "[UT][wh/prompt/callback_event.hpp][prompt_callback_event][condition][branch][boundary]") {
-  const wh::prompt::prompt_callback_event source{
-      .template_name = "chat",
-      .variable_count = 2U,
-      .rendered_message_count = 1U,
-      .failed_template = "step",
-      .failed_variable = "name"};
+TEST_CASE(
+    "prompt callback event aggregate initialization preserves render and failure fields across "
+    "moves",
+    "[UT][wh/prompt/callback_event.hpp][prompt_callback_event][condition][branch][boundary]") {
+  const wh::prompt::prompt_callback_event source{.template_name = "chat",
+                                                 .variable_count = 2U,
+                                                 .rendered_message_count = 1U,
+                                                 .failed_template = "step",
+                                                 .failed_variable = "name"};
   const auto copied = source;
   auto moved = std::move(copied);
 

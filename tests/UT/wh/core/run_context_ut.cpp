@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/run_context.hpp"
 
@@ -12,8 +12,7 @@ TEST_CASE("run_context session helpers cover set lookup mutation and consume",
   REQUIRE(wh::core::set_session_value(context, "count", 7).has_value());
   REQUIRE(wh::core::set_session_value(context, "name", std::string{"alpha"}).has_value());
 
-  const auto count_const =
-      wh::core::session_value_ref<int>(std::as_const(context), "count");
+  const auto count_const = wh::core::session_value_ref<int>(std::as_const(context), "count");
   REQUIRE(count_const.has_value());
   REQUIRE(count_const.value().get() == 7);
 
@@ -25,12 +24,10 @@ TEST_CASE("run_context session helpers cover set lookup mutation and consume",
   REQUIRE(moved.has_value());
   REQUIRE(moved.value() == "alpha");
 
-  REQUIRE(
-      wh::core::session_value_ref<std::string>(context, "name").error() ==
-      wh::core::errc::not_found);
-  REQUIRE(
-      wh::core::session_value_ref<double>(context, "count").error() ==
-      wh::core::errc::type_mismatch);
+  REQUIRE(wh::core::session_value_ref<std::string>(context, "name").error() ==
+          wh::core::errc::not_found);
+  REQUIRE(wh::core::session_value_ref<double>(context, "count").error() ==
+          wh::core::errc::type_mismatch);
 }
 
 TEST_CASE("run_context callback registration and injection respect availability",
@@ -71,10 +68,10 @@ TEST_CASE("run_context callback registration and injection respect availability"
       callbacks, "local");
   REQUIRE(updated.has_value());
 
-  wh::core::inject_callback_event(updated.value(), wh::core::callback_stage::start,
-                                  1, wh::core::callback_run_info{});
-  wh::core::inject_callback_event(updated.value(), wh::core::callback_stage::end,
-                                  7, wh::core::callback_run_info{});
+  wh::core::inject_callback_event(updated.value(), wh::core::callback_stage::start, 1,
+                                  wh::core::callback_run_info{});
+  wh::core::inject_callback_event(updated.value(), wh::core::callback_stage::end, 7,
+                                  wh::core::callback_run_info{});
   REQUIRE(observed == std::vector<int>{7});
 }
 
@@ -93,9 +90,8 @@ TEST_CASE("run_context fatal helpers capture errors and optionally emit callback
   const auto ok = wh::core::run_with_fatal_error_capture([] {});
   REQUIRE(ok.has_value());
 
-  const auto failed = wh::core::run_with_fatal_error_capture([] {
-    throw std::runtime_error{"broken"};
-  });
+  const auto failed =
+      wh::core::run_with_fatal_error_capture([] { throw std::runtime_error{"broken"}; });
   REQUIRE(failed.has_error());
   REQUIRE(failed.error().code == wh::core::errc::internal_error);
   REQUIRE(failed.error().exception_message == "broken");
@@ -104,26 +100,26 @@ TEST_CASE("run_context fatal helpers capture errors and optionally emit callback
   context.callbacks.emplace();
   std::vector<std::string> seen{};
   wh::core::stage_callbacks callbacks{};
-  callbacks.on_error = [&seen](wh::core::callback_stage,
-                               const wh::core::callback_event_view event,
+  callbacks.on_error = [&seen](wh::core::callback_stage, const wh::core::callback_event_view event,
                                const wh::core::callback_run_info &) {
     const auto *typed = event.get_if<wh::core::callback_fatal_error>();
     REQUIRE(typed != nullptr);
     seen.push_back(typed->exception_message);
   };
   context.callbacks->manager.register_local_callbacks(
-      wh::core::callback_config{
-          .timing_checker = [](wh::core::callback_stage stage) noexcept {
-            return stage == wh::core::callback_stage::error;
-          },
-          .name = "fatal"},
+      wh::core::callback_config{.timing_checker =
+                                    [](wh::core::callback_stage stage) noexcept {
+                                      return stage == wh::core::callback_stage::error;
+                                    },
+                                .name = "fatal"},
       callbacks);
 
   wh::core::run_with_fatal_event(context, [] { throw std::runtime_error{"fatal"}; });
   REQUIRE(seen == std::vector<std::string>{"fatal"});
 }
 
-TEST_CASE("run_context const callback registration returns copied context and missing injection is a no-op",
+TEST_CASE("run_context const callback registration returns copied context and missing injection is "
+          "a no-op",
           "[UT][wh/core/run_context.hpp][register_local_callbacks][condition][boundary]") {
   wh::core::run_context context{};
   context.callbacks.emplace();
@@ -150,8 +146,8 @@ TEST_CASE("run_context const callback registration returns copied context and mi
                                   wh::core::callback_run_info{});
   REQUIRE(observed.empty());
 
-  wh::core::inject_callback_event(copied.value(), wh::core::callback_stage::start,
-                                  3, wh::core::callback_run_info{});
+  wh::core::inject_callback_event(copied.value(), wh::core::callback_stage::start, 3,
+                                  wh::core::callback_run_info{});
   REQUIRE(observed == std::vector<int>{3});
 
   wh::core::run_context missing{};

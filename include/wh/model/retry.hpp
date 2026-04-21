@@ -40,8 +40,7 @@ struct retry_exhausted_error {
 };
 
 /// Predicate used to decide whether the wrapper should retry the last error.
-using retry_predicate =
-    wh::core::callback_function<bool(wh::core::error_code) const>;
+using retry_predicate = wh::core::callback_function<bool(wh::core::error_code) const>;
 
 /// Function used to compute the next backoff duration from the one-based
 /// failed attempt index.
@@ -60,8 +59,7 @@ struct retry_chat_model_options {
 
 namespace detail {
 
-[[nodiscard]] inline auto default_retry_predicate(
-    const wh::core::error_code) noexcept -> bool {
+[[nodiscard]] inline auto default_retry_predicate(const wh::core::error_code) noexcept -> bool {
   return true;
 }
 
@@ -71,14 +69,11 @@ namespace detail {
   const auto capped_attempt = std::min<std::size_t>(attempt, 8U);
   const auto base = std::chrono::duration_cast<std::chrono::milliseconds>(
       100ms * (1ULL << (capped_attempt - 1U)));
-  const auto jitter = std::chrono::milliseconds{
-      static_cast<std::int64_t>((attempt * 17U) % 97U)};
-  return std::min(base + jitter,
-                  std::chrono::duration_cast<std::chrono::milliseconds>(10s));
+  const auto jitter = std::chrono::milliseconds{static_cast<std::int64_t>((attempt * 17U) % 97U)};
+  return std::min(base + jitter, std::chrono::duration_cast<std::chrono::milliseconds>(10s));
 }
 
-[[nodiscard]] inline auto make_retry_run_info(
-    const wh::core::component_descriptor &descriptor)
+[[nodiscard]] inline auto make_retry_run_info(const wh::core::component_descriptor &descriptor)
     -> wh::core::callback_run_info {
   wh::core::callback_run_info info{};
   info.name = descriptor.type_name;
@@ -89,53 +84,48 @@ namespace detail {
 
 inline auto emit_will_retry(wh::core::run_context &context,
                             const wh::core::component_descriptor &descriptor,
-                            const std::size_t attempt,
-                            const wh::core::error_code error,
+                            const std::size_t attempt, const wh::core::error_code error,
                             const std::chrono::milliseconds backoff) -> void {
-  wh::core::inject_callback_event(
-      context, wh::core::callback_stage::error,
-      will_retry_error{
-          .attempt = attempt,
-          .error = error,
-          .error_text = error.message(),
-          .backoff = backoff,
-      },
-      make_retry_run_info(descriptor));
+  wh::core::inject_callback_event(context, wh::core::callback_stage::error,
+                                  will_retry_error{
+                                      .attempt = attempt,
+                                      .error = error,
+                                      .error_text = error.message(),
+                                      .backoff = backoff,
+                                  },
+                                  make_retry_run_info(descriptor));
 }
 
-inline auto emit_retry_exhausted(
-    wh::core::run_context &context,
-    const wh::core::component_descriptor &descriptor, const std::size_t attempts,
-    const wh::core::error_code last_error) -> void {
-  wh::core::inject_callback_event(
-      context, wh::core::callback_stage::error,
-      retry_exhausted_error{
-          .attempts = attempts,
-          .last_error = last_error,
-      },
-      make_retry_run_info(descriptor));
+inline auto emit_retry_exhausted(wh::core::run_context &context,
+                                 const wh::core::component_descriptor &descriptor,
+                                 const std::size_t attempts, const wh::core::error_code last_error)
+    -> void {
+  wh::core::inject_callback_event(context, wh::core::callback_stage::error,
+                                  retry_exhausted_error{
+                                      .attempts = attempts,
+                                      .last_error = last_error,
+                                  },
+                                  make_retry_run_info(descriptor));
 }
 
-[[nodiscard]] inline auto should_retry(
-    const retry_chat_model_options &options,
-    const wh::core::error_code error) -> bool {
+[[nodiscard]] inline auto should_retry(const retry_chat_model_options &options,
+                                       const wh::core::error_code error) -> bool {
   if (static_cast<bool>(options.should_retry)) {
     return options.should_retry(error);
   }
   return default_retry_predicate(error);
 }
 
-[[nodiscard]] inline auto compute_backoff(
-    const retry_chat_model_options &options, const std::size_t attempt)
-    -> std::chrono::milliseconds {
+[[nodiscard]] inline auto compute_backoff(const retry_chat_model_options &options,
+                                          const std::size_t attempt) -> std::chrono::milliseconds {
   if (static_cast<bool>(options.backoff)) {
     return options.backoff(attempt);
   }
   return default_retry_backoff(attempt);
 }
 
-[[nodiscard]] inline auto consume_stream_probe(
-    wh::model::chat_message_stream_reader &reader) -> wh::core::result<void> {
+[[nodiscard]] inline auto consume_stream_probe(wh::model::chat_message_stream_reader &reader)
+    -> wh::core::result<void> {
   while (true) {
     auto next = reader.read();
     if (next.has_error()) {
@@ -151,11 +141,11 @@ inline auto emit_retry_exhausted(
 }
 
 template <typename success_t>
-[[nodiscard]] inline auto finish_retry_failure(
-    wh::core::run_context &context,
-    const wh::core::component_descriptor &descriptor,
-    const std::size_t attempt, const bool retryable,
-    const wh::core::error_code error) -> wh::core::result<success_t> {
+[[nodiscard]] inline auto finish_retry_failure(wh::core::run_context &context,
+                                               const wh::core::component_descriptor &descriptor,
+                                               const std::size_t attempt, const bool retryable,
+                                               const wh::core::error_code error)
+    -> wh::core::result<success_t> {
   if (retryable) {
     emit_retry_exhausted(context, descriptor, attempt, error);
     return wh::core::result<success_t>::failure(wh::core::errc::retry_exhausted);
@@ -167,14 +157,12 @@ template <typename success_t>
 
 /// Retry wrapper that preserves the chat-model contract while retrying invoke
 /// and stream startup or consumption failures.
-template <wh::model::chat_model_like model_t>
-class retry_chat_model {
+template <wh::model::chat_model_like model_t> class retry_chat_model {
 public:
   retry_chat_model() = default;
 
   /// Stores the wrapped model plus one retry policy.
-  explicit retry_chat_model(model_t model,
-                            retry_chat_model_options options = {}) noexcept
+  explicit retry_chat_model(model_t model, retry_chat_model_options options = {}) noexcept
       : model_(std::move(model)), options_(std::move(options)) {}
 
   retry_chat_model(const retry_chat_model &) = default;
@@ -185,18 +173,14 @@ public:
 
   /// Returns stable descriptor metadata for the retry wrapper.
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{"RetryChatModel",
-                                          wh::core::component_kind::model};
+    return wh::core::component_descriptor{"RetryChatModel", wh::core::component_kind::model};
   }
 
   /// Exposes the wrapped model for diagnostics and tests.
-  [[nodiscard]] auto wrapped_model() const noexcept -> const model_t & {
-    return model_;
-  }
+  [[nodiscard]] auto wrapped_model() const noexcept -> const model_t & { return model_; }
 
   /// Exposes the retry policy for diagnostics and tests.
-  [[nodiscard]] auto options() const noexcept
-      -> const retry_chat_model_options & {
+  [[nodiscard]] auto options() const noexcept -> const retry_chat_model_options & {
     return options_;
   }
 
@@ -214,16 +198,14 @@ public:
 
       const auto retryable = detail::should_retry(options_, status.error());
       if (!retryable || attempt >= max_attempts) {
-        return detail::finish_retry_failure<wh::model::chat_response>(
-            context, descriptor, attempt, retryable, status.error());
+        return detail::finish_retry_failure<wh::model::chat_response>(context, descriptor, attempt,
+                                                                      retryable, status.error());
       }
 
       const auto backoff = detail::compute_backoff(options_, attempt);
-      detail::emit_will_retry(context, descriptor, attempt, status.error(),
-                              backoff);
+      detail::emit_will_retry(context, descriptor, attempt, status.error(), backoff);
     }
-    return wh::core::result<wh::model::chat_response>::failure(
-        wh::core::errc::retry_exhausted);
+    return wh::core::result<wh::model::chat_response>::failure(wh::core::errc::retry_exhausted);
   }
 
   /// Retries stream startup failures and mid-stream terminal errors by probing
@@ -238,18 +220,15 @@ public:
       if (status.has_error()) {
         const auto retryable = detail::should_retry(options_, status.error());
         if (!retryable || attempt >= max_attempts) {
-          return detail::finish_retry_failure<
-              wh::model::chat_message_stream_reader>(
+          return detail::finish_retry_failure<wh::model::chat_message_stream_reader>(
               context, descriptor, attempt, retryable, status.error());
         }
         const auto backoff = detail::compute_backoff(options_, attempt);
-        detail::emit_will_retry(context, descriptor, attempt, status.error(),
-                                backoff);
+        detail::emit_will_retry(context, descriptor, attempt, status.error(), backoff);
         continue;
       }
 
-      auto copies =
-          wh::schema::stream::make_copy_stream_readers(std::move(status).value(), 2U);
+      auto copies = wh::schema::stream::make_copy_stream_readers(std::move(status).value(), 2U);
       if (copies.size() != 2U) {
         return wh::core::result<wh::model::chat_message_stream_reader>::failure(
             wh::core::errc::internal_error);
@@ -264,16 +243,14 @@ public:
       }
 
       consumer.close();
-      const auto retryable =
-          detail::should_retry(options_, probe_status.error());
+      const auto retryable = detail::should_retry(options_, probe_status.error());
       if (!retryable || attempt >= max_attempts) {
         return detail::finish_retry_failure<wh::model::chat_message_stream_reader>(
             context, descriptor, attempt, retryable, probe_status.error());
       }
 
       const auto backoff = detail::compute_backoff(options_, attempt);
-      detail::emit_will_retry(context, descriptor, attempt, probe_status.error(),
-                              backoff);
+      detail::emit_will_retry(context, descriptor, attempt, probe_status.error(), backoff);
     }
 
     return wh::core::result<wh::model::chat_message_stream_reader>::failure(
@@ -281,8 +258,8 @@ public:
   }
 
   /// Binds tools on the wrapped model first, then reapplies the retry wrapper.
-  [[nodiscard]] auto bind_tools(
-      const std::span<const wh::schema::tool_schema_definition> tools) const
+  [[nodiscard]] auto
+  bind_tools(const std::span<const wh::schema::tool_schema_definition> tools) const
       -> retry_chat_model<model_t> {
     return retry_chat_model<model_t>{model_.bind_tools(tools), options_};
   }

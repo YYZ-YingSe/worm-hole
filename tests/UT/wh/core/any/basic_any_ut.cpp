@@ -1,5 +1,6 @@
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -158,4 +159,20 @@ TEST_CASE("basic_any handles empty aliases key queries and compatible assignment
   REQUIRE(cref.borrowed());
   REQUIRE(cref.data<std::string>() == nullptr);
   REQUIRE(std::as_const(cref).data<std::string>() == &constant);
+}
+
+TEST_CASE("basic_any copies vector payloads without recursively wrapping the source vector",
+          "[UT][wh/core/any/basic_any.hpp][basic_any::copy][vector][boundary]") {
+  std::vector<basic_any_t> values{};
+  values.emplace_back(3);
+  values.emplace_back(4);
+
+  basic_any_t source{std::move(values)};
+  basic_any_t copied{source};
+
+  auto *typed = copied.data<std::vector<basic_any_t>>();
+  REQUIRE(typed != nullptr);
+  REQUIRE(typed->size() == 2U);
+  REQUIRE(*(*typed)[0].data<int>() == 3);
+  REQUIRE(*(*typed)[1].data<int>() == 4);
 }

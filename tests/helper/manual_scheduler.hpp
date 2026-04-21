@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstddef>
 #include <concepts>
+#include <cstddef>
 #include <type_traits>
 #include <utility>
 
@@ -35,9 +35,7 @@ public:
     ++pending_;
   }
 
-  [[nodiscard]] auto pending_count() const noexcept -> std::size_t {
-    return pending_;
-  }
+  [[nodiscard]] auto pending_count() const noexcept -> std::size_t { return pending_; }
 
   auto run_one() noexcept -> bool {
     if (head_ == nullptr) {
@@ -84,39 +82,31 @@ public:
 
     auto start() noexcept -> void { state->enqueue(this); }
 
-    auto execute() noexcept -> void override {
-      stdexec::set_value(std::move(receiver));
-    }
+    auto execute() noexcept -> void override { stdexec::set_value(std::move(receiver)); }
   };
 
   struct schedule_sender {
     manual_scheduler_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
-    [[nodiscard]] auto connect(receiver_t receiver) const noexcept
-        -> schedule_op<receiver_t> {
+    [[nodiscard]] auto connect(receiver_t receiver) const noexcept -> schedule_op<receiver_t> {
       return schedule_op<receiver_t>{state, std::move(receiver)};
     }
 
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
   };
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return {state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return {state}; }
 
-  [[nodiscard]] auto query(
-      wh::core::detail::scheduler_handoff::same_scheduler_t) const noexcept
+  [[nodiscard]] auto query(wh::core::detail::scheduler_handoff::same_scheduler_t) const noexcept
       -> bool {
     return state != nullptr && state->same_scheduler;
   }
 
-  [[nodiscard]] auto operator==(const manual_scheduler &) const noexcept
-      -> bool = default;
+  [[nodiscard]] auto operator==(const manual_scheduler &) const noexcept -> bool = default;
 };
 
 template <typename would_block_t>
@@ -138,21 +128,17 @@ public:
 
     auto start() noexcept -> void { state->enqueue(this); }
 
-    auto execute() noexcept -> void override {
-      stdexec::set_value(std::move(receiver));
-    }
+    auto execute() noexcept -> void override { stdexec::set_value(std::move(receiver)); }
   };
 
   struct schedule_sender {
     manual_scheduler_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
-    [[nodiscard]] auto connect(receiver_t receiver) const noexcept
-        -> schedule_op<receiver_t> {
+    [[nodiscard]] auto connect(receiver_t receiver) const noexcept -> schedule_op<receiver_t> {
       return schedule_op<receiver_t>{state, std::move(receiver)};
     }
 
@@ -165,8 +151,7 @@ public:
     manual_scheduler_state *state{nullptr};
     receiver_t receiver;
 
-    try_schedule_op(manual_scheduler_state *state_ptr,
-                    receiver_t receiver_value)
+    try_schedule_op(manual_scheduler_state *state_ptr, receiver_t receiver_value)
         : state(state_ptr), receiver(std::move(receiver_value)) {}
 
     auto start() noexcept -> void {
@@ -182,43 +167,34 @@ public:
       state->enqueue(this);
     }
 
-    auto execute() noexcept -> void override {
-      stdexec::set_value(std::move(receiver));
-    }
+    auto execute() noexcept -> void override { stdexec::set_value(std::move(receiver)); }
   };
 
   struct try_schedule_sender {
     manual_scheduler_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures = stdexec::completion_signatures<
-        stdexec::set_value_t(), stdexec::set_error_t(would_block_t)>;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t(), stdexec::set_error_t(would_block_t)>;
 
     template <typename receiver_t>
-    [[nodiscard]] auto connect(receiver_t receiver) const noexcept
-        -> try_schedule_op<receiver_t> {
+    [[nodiscard]] auto connect(receiver_t receiver) const noexcept -> try_schedule_op<receiver_t> {
       return try_schedule_op<receiver_t>{state, std::move(receiver)};
     }
 
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
   };
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return {state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return {state}; }
 
-  [[nodiscard]] auto try_schedule() const noexcept -> try_schedule_sender {
-    return {state};
-  }
+  [[nodiscard]] auto try_schedule() const noexcept -> try_schedule_sender { return {state}; }
 
-  [[nodiscard]] auto query(
-      wh::core::detail::scheduler_handoff::same_scheduler_t) const noexcept
+  [[nodiscard]] auto query(wh::core::detail::scheduler_handoff::same_scheduler_t) const noexcept
       -> bool {
     return state != nullptr && state->same_scheduler;
   }
 
-  [[nodiscard]] auto operator==(const manual_scheduler &) const noexcept
-      -> bool = default;
+  [[nodiscard]] auto operator==(const manual_scheduler &) const noexcept -> bool = default;
 };
 
 } // namespace wh::testing::helper

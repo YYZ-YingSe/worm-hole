@@ -2,13 +2,13 @@
 
 #include <concepts>
 #include <cstddef>
-#include <memory>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "wh/core/cursor_reader/detail/read_sender.hpp"
 #include "wh/core/cursor_reader/detail/source.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 
 namespace wh::core {
 
@@ -62,16 +62,14 @@ public:
 
   /// Creates a fixed set of cursor readers from one source.
   template <typename source_u>
-    requires std::constructible_from<source_t, source_u &&> &&
-             std::copy_constructible<result_type>
-  [[nodiscard]] static auto make_readers(source_u &&source,
-                                         const std::size_t count)
+    requires std::constructible_from<source_t, source_u &&> && std::copy_constructible<result_type>
+  [[nodiscard]] static auto make_readers(source_u &&source, const std::size_t count)
       -> std::vector<cursor_reader> {
     if (count == 0U) {
       return {};
     }
 
-    auto state = std::make_shared<shared_state_t>(
+    auto state = wh::core::detail::make_intrusive<shared_state_t>(
         source_t{std::forward<source_u>(source)}, count);
     std::vector<cursor_reader> readers{};
     readers.reserve(count);
@@ -111,8 +109,7 @@ public:
   [[nodiscard]] auto read_async() const
     requires cursor_reader_detail::async_source<source_t>
   {
-    return cursor_reader_detail::read_sender<source_t, policy_t>{
-        state_, reader_index_, released_};
+    return cursor_reader_detail::read_sender<source_t, policy_t>{state_, reader_index_, released_};
   }
 
   /// Closes this cursor only.
@@ -151,7 +148,7 @@ private:
     state_->close_reader(reader_index_);
   }
 
-  std::shared_ptr<shared_state_t> state_{};
+  wh::core::detail::intrusive_ptr<shared_state_t> state_{};
   std::size_t reader_index_{0U};
   bool released_{true};
 };
@@ -159,11 +156,9 @@ private:
 template <cursor_reader_source source_t,
           typename policy_t = cursor_reader_detail::default_policy<source_t>>
   requires cursor_reader_detail::policy_for<source_t, policy_t>
-[[nodiscard]] inline auto make_cursor_readers(source_t &&source,
-                                              const std::size_t count)
+[[nodiscard]] inline auto make_cursor_readers(source_t &&source, const std::size_t count)
     -> std::vector<cursor_reader<std::remove_cvref_t<source_t>, policy_t>>
-  requires std::copy_constructible<
-      cursor_reader_result_t<std::remove_cvref_t<source_t>>>
+  requires std::copy_constructible<cursor_reader_result_t<std::remove_cvref_t<source_t>>>
 {
   return cursor_reader<std::remove_cvref_t<source_t>, policy_t>::make_readers(
       std::forward<source_t>(source), count);

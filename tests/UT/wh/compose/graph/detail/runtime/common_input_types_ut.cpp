@@ -41,6 +41,33 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
   auto reader_value = std::move(reader_input).materialize();
   REQUIRE(reader_value.has_value());
   REQUIRE(wh::core::any_cast<wh::compose::graph_stream_reader>(&reader_value.value()) != nullptr);
+  REQUIRE_FALSE(reader_value.value().borrowed());
+
+  auto borrowed_reader = wh::compose::make_single_value_stream_reader(wh::compose::graph_value{21});
+  REQUIRE(borrowed_reader.has_value());
+  auto borrowed_reader_input = resolved_input::borrow_reader(borrowed_reader.value());
+  auto borrowed_reader_value = std::move(borrowed_reader_input).materialize();
+  REQUIRE(borrowed_reader_value.has_value());
+  REQUIRE_FALSE(borrowed_reader_value.value().borrowed());
+  auto *borrowed_reader_copy =
+      wh::core::any_cast<wh::compose::graph_stream_reader>(&borrowed_reader_value.value());
+  REQUIRE(borrowed_reader_copy != nullptr);
+
+  auto borrowed_reader_values =
+      wh::compose::collect_graph_stream_reader(std::move(borrowed_reader).value());
+  REQUIRE(borrowed_reader_values.has_value());
+  REQUIRE(borrowed_reader_values.value().size() == 1U);
+  auto *borrowed_reader_chunk = wh::core::any_cast<int>(&borrowed_reader_values.value().front());
+  REQUIRE(borrowed_reader_chunk != nullptr);
+  REQUIRE(*borrowed_reader_chunk == 21);
+
+  auto copied_reader_values =
+      wh::compose::collect_graph_stream_reader(std::move(*borrowed_reader_copy));
+  REQUIRE(copied_reader_values.has_value());
+  REQUIRE(copied_reader_values.value().size() == 1U);
+  auto *copied_reader_chunk = wh::core::any_cast<int>(&copied_reader_values.value().front());
+  REQUIRE(copied_reader_chunk != nullptr);
+  REQUIRE(*copied_reader_chunk == 21);
 
   auto empty = resolved_input{};
   auto empty_value = std::move(empty).materialize();
@@ -61,11 +88,10 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
   REQUIRE(moved_int != nullptr);
   REQUIRE(*moved_int == 17);
 
-  runtime_progress_state progress{};
-  progress.reset(3U);
-  REQUIRE(progress.node_states.size() >= 3U);
+  std::vector<dag_node_phase> progress(3U, dag_node_phase::pending);
+  REQUIRE(progress.size() >= 3U);
   for (std::size_t index = 0U; index < 3U; ++index) {
-    REQUIRE(progress.node_states[index] == runtime_node_state::pending);
+    REQUIRE(progress[index] == dag_node_phase::pending);
   }
 
   runtime_io_storage storage{};
@@ -82,8 +108,9 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
 
   auto output_reader = wh::compose::make_single_value_stream_reader(wh::compose::graph_value{21});
   REQUIRE(output_reader.has_value());
-  storage.mark_reader_output(1U, std::move(output_reader).value());
+  storage.mark_final_output_reader(1U, std::move(output_reader).value());
   REQUIRE(storage.output_valid.test(1U));
+  REQUIRE(storage.final_output_reader.has_value());
 }
 
 TEST_CASE("common input runtime helper structs reset flags and preserve default sentinel states",
@@ -109,24 +136,24 @@ TEST_CASE("common input runtime helper structs reset flags and preserve default 
   runtime_io_storage storage{};
   storage.reset(2U, 2U);
   storage.mark_value_output(0U, wh::compose::graph_value{5});
+  storage.mark_final_output_reader(1U, wh::compose::graph_stream_reader{});
   REQUIRE(storage.output_valid.test(0U));
+  REQUIRE(storage.final_output_reader.has_value());
   storage.edge_value_valid.set(1U);
   storage.edge_reader_valid.set(1U);
-  storage.reader_copy_ready.set(1U);
   storage.merged_reader_valid.set(1U);
   storage.merged_reader_lane_states[1U] = reader_lane_state::attached;
 
   storage.reset(1U, 1U);
   REQUIRE_FALSE(storage.output_valid.test(0U));
+  REQUIRE_FALSE(storage.final_output_reader.has_value());
   REQUIRE_FALSE(storage.edge_value_valid.test(0U));
   REQUIRE_FALSE(storage.edge_reader_valid.test(0U));
-  REQUIRE_FALSE(storage.reader_copy_ready.test(0U));
   REQUIRE_FALSE(storage.merged_reader_valid.test(0U));
   REQUIRE(storage.merged_reader_lane_states[0U] == reader_lane_state::unseen);
 
-  runtime_progress_state progress{};
-  progress.reset(2U);
-  progress.node_states[1U] = runtime_node_state::executed;
-  progress.reset(1U);
-  REQUIRE(progress.node_states[0U] == runtime_node_state::pending);
+  std::vector<dag_node_phase> progress(2U, dag_node_phase::pending);
+  progress[1U] = dag_node_phase::executed;
+  progress.resize(1U);
+  REQUIRE(progress[0U] == dag_node_phase::pending);
 }

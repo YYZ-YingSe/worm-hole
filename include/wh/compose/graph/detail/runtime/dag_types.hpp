@@ -34,8 +34,8 @@ struct dag_schedule_state {
     decided_branch_nodes.clear();
   }
 
-  auto mark_branch_decided(const std::uint32_t node_id,
-                           std::vector<std::uint32_t> &&selected) -> void {
+  auto mark_branch_decided(const std::uint32_t node_id, std::vector<std::uint32_t> &&selected)
+      -> void {
     auto &state = branch_states[node_id];
     if (!state.decided) {
       decided_branch_nodes.push_back(node_id);

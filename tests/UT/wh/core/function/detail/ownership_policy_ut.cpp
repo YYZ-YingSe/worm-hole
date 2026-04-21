@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/function/detail/ownership_policy.hpp"
 
@@ -17,9 +17,7 @@ struct tracked_value {
 
   tracked_value() = default;
   explicit tracked_value(int next) : value(next) {}
-  tracked_value(const tracked_value &other) : value(other.value) {
-    copies.fetch_add(1);
-  }
+  tracked_value(const tracked_value &other) : value(other.value) { copies.fetch_add(1); }
   auto operator=(const tracked_value &) -> tracked_value & = default;
   ~tracked_value() { destructions.fetch_add(1); }
 
@@ -33,13 +31,12 @@ struct local_probe : wh::core::fn_detail::local_ownership<target_t, std::allocat
   using typename base::stored_type;
 
   template <typename... args_t>
-  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args)
-      -> void {
+  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args) -> void {
     base::create(alloc, target, std::forward<args_t>(args)...);
   }
 
-  static auto copy(allocator_type &alloc, const stored_type &source,
-                   stored_type *destination) -> void {
+  static auto copy(allocator_type &alloc, const stored_type &source, stored_type *destination)
+      -> void {
     base::copy(alloc, source, destination);
   }
 
@@ -52,20 +49,18 @@ struct local_probe : wh::core::fn_detail::local_ownership<target_t, std::allocat
   }
 };
 
-template <typename target_t>
-struct deep_probe : wh::core::fn::deep_copy<target_t, std::allocator> {
+template <typename target_t> struct deep_probe : wh::core::fn::deep_copy<target_t, std::allocator> {
   using base = wh::core::fn::deep_copy<target_t, std::allocator>;
   using typename base::allocator_type;
   using typename base::stored_type;
 
   template <typename... args_t>
-  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args)
-      -> void {
+  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args) -> void {
     base::create(alloc, target, std::forward<args_t>(args)...);
   }
 
-  static auto copy(allocator_type &alloc, const stored_type &source,
-                   stored_type *destination) -> void {
+  static auto copy(allocator_type &alloc, const stored_type &source, stored_type *destination)
+      -> void {
     base::copy(alloc, source, destination);
   }
 
@@ -85,13 +80,12 @@ struct ref_probe : wh::core::fn::reference_counting<target_t, std::allocator> {
   using typename base::stored_type;
 
   template <typename... args_t>
-  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args)
-      -> void {
+  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args) -> void {
     base::create(alloc, target, std::forward<args_t>(args)...);
   }
 
-  static auto copy(allocator_type &alloc, const stored_type &source,
-                   stored_type *destination) -> void {
+  static auto copy(allocator_type &alloc, const stored_type &source, stored_type *destination)
+      -> void {
     base::copy(alloc, source, destination);
   }
 
@@ -107,9 +101,9 @@ struct ref_probe : wh::core::fn::reference_counting<target_t, std::allocator> {
 } // namespace
 
 TEST_CASE("reference_counting_wrapper keeps object alive until last destroy",
-          "[UT][wh/core/function/detail/ownership_policy.hpp][reference_counting_wrapper][branch][concurrency]") {
-  using wrapper =
-      wh::core::fn_detail::reference_counting_wrapper<tracked_value, std::allocator>;
+          "[UT][wh/core/function/detail/"
+          "ownership_policy.hpp][reference_counting_wrapper][branch][concurrency]") {
+  using wrapper = wh::core::fn_detail::reference_counting_wrapper<tracked_value, std::allocator>;
 
   tracked_value::reset();
   auto alloc = wrapper::allocator_type{};
@@ -165,8 +159,9 @@ TEST_CASE("local and deep_copy ownership policies create independent targets",
   REQUIRE(tracked_value::copies.load() >= 1);
 }
 
-TEST_CASE("reference_counting ownership policy shares a single target across copies",
-          "[UT][wh/core/function/detail/ownership_policy.hpp][reference_counting][branch][boundary]") {
+TEST_CASE(
+    "reference_counting ownership policy shares a single target across copies",
+    "[UT][wh/core/function/detail/ownership_policy.hpp][reference_counting][branch][boundary]") {
   tracked_value::reset();
   {
     auto alloc = ref_probe<tracked_value>::allocator_type{};
@@ -175,8 +170,7 @@ TEST_CASE("reference_counting ownership policy shares a single target across cop
 
     ref_probe<tracked_value>::create(alloc, &first, 11);
     ref_probe<tracked_value>::copy(alloc, first, &second);
-    REQUIRE(&ref_probe<tracked_value>::get(first) ==
-            &ref_probe<tracked_value>::get(second));
+    REQUIRE(&ref_probe<tracked_value>::get(first) == &ref_probe<tracked_value>::get(second));
     ref_probe<tracked_value>::destroy(alloc, &first);
     REQUIRE(tracked_value::destructions.load() == 0);
     ref_probe<tracked_value>::destroy(alloc, &second);
@@ -184,10 +178,11 @@ TEST_CASE("reference_counting ownership policy shares a single target across cop
   REQUIRE(tracked_value::destructions.load() == 1);
 }
 
-TEST_CASE("ownership policy identity trait distinguishes matching and different templates",
-          "[UT][wh/core/function/detail/ownership_policy.hpp][is_same_ownership_policy_v][branch]") {
-  REQUIRE(wh::core::fn::is_same_ownership_policy_v<wh::core::fn::deep_copy,
-                                                   wh::core::fn::deep_copy>);
-  REQUIRE_FALSE(wh::core::fn::is_same_ownership_policy_v<
-                wh::core::fn::deep_copy, wh::core::fn::reference_counting>);
+TEST_CASE(
+    "ownership policy identity trait distinguishes matching and different templates",
+    "[UT][wh/core/function/detail/ownership_policy.hpp][is_same_ownership_policy_v][branch]") {
+  REQUIRE(
+      wh::core::fn::is_same_ownership_policy_v<wh::core::fn::deep_copy, wh::core::fn::deep_copy>);
+  REQUIRE_FALSE(wh::core::fn::is_same_ownership_policy_v<wh::core::fn::deep_copy,
+                                                         wh::core::fn::reference_counting>);
 }

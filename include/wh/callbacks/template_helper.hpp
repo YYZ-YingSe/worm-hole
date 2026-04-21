@@ -11,11 +11,10 @@
 namespace wh::callbacks {
 
 template <typename callback_t, typename event_t>
-concept TypedStageCallbackWithStage =
-    requires(callback_t callback, const stage current_stage,
-             const event_t &event, const run_info &info) {
-      { callback(current_stage, event, info) } -> std::same_as<void>;
-    };
+concept TypedStageCallbackWithStage = requires(callback_t callback, const stage current_stage,
+                                               const event_t &event, const run_info &info) {
+  { callback(current_stage, event, info) } -> std::same_as<void>;
+};
 
 template <typename callback_t, typename event_t>
 concept TypedStageCallbackWithoutStage =
@@ -27,11 +26,9 @@ template <typename event_t, typename callback_t>
   requires(TypedStageCallbackWithStage<callback_t, event_t> ||
            TypedStageCallbackWithoutStage<callback_t, event_t>)
 /// Builds one typed stage callback that only fires on matching payload type.
-[[nodiscard]] inline auto make_typed_stage_callback(callback_t &&callback)
-    -> stage_view_callback {
+[[nodiscard]] inline auto make_typed_stage_callback(callback_t &&callback) -> stage_view_callback {
   using stored_callback_t = std::decay_t<callback_t>;
-  auto stored_callback =
-      std::make_shared<stored_callback_t>(std::forward<callback_t>(callback));
+  auto stored_callback = std::make_shared<stored_callback_t>(std::forward<callback_t>(callback));
 
   return [stored_callback](const stage current_stage, const event_view event,
                            const run_info &info) -> void {
@@ -52,10 +49,8 @@ template <typename event_t, typename callback_t>
   requires(TypedStageCallbackWithStage<callback_t, event_t> ||
            TypedStageCallbackWithoutStage<callback_t, event_t>)
 /// Builds typed stage-callback table that only fires on matching payload type.
-[[nodiscard]] inline auto make_typed_stage_callbacks(callback_t &&callback)
-    -> stage_callbacks {
-  auto callback_fn =
-      make_typed_stage_callback<event_t>(std::forward<callback_t>(callback));
+[[nodiscard]] inline auto make_typed_stage_callbacks(callback_t &&callback) -> stage_callbacks {
+  auto callback_fn = make_typed_stage_callback<event_t>(std::forward<callback_t>(callback));
 
   stage_callbacks callbacks{};
   callbacks.on_start = callback_fn;
@@ -71,9 +66,8 @@ template <typename event_t, typename config_t, typename callback_t>
            TypedStageCallbackWithoutStage<callback_t, event_t>) &&
           wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>>
 /// Registers one typed local stage-callback table on context callback manager.
-[[nodiscard]] inline auto
-register_typed_local_callbacks(wh::core::run_context &&context,
-                               config_t &&config, callback_t &&callback)
+[[nodiscard]] inline auto register_typed_local_callbacks(wh::core::run_context &&context,
+                                                         config_t &&config, callback_t &&callback)
     -> wh::core::result<wh::core::run_context> {
   return wh::core::register_local_callbacks(
       std::move(context), std::forward<config_t>(config),
@@ -85,9 +79,8 @@ template <typename event_t, typename config_t, typename callback_t>
            TypedStageCallbackWithoutStage<callback_t, event_t>) &&
           wh::core::CallbackConfigLike<wh::core::remove_cvref_t<config_t>>
 /// Registers one typed local stage-callback table using copied run context.
-[[nodiscard]] inline auto
-register_typed_local_callbacks(const wh::core::run_context &context,
-                               config_t &&config, callback_t &&callback)
+[[nodiscard]] inline auto register_typed_local_callbacks(const wh::core::run_context &context,
+                                                         config_t &&config, callback_t &&callback)
     -> wh::core::result<wh::core::run_context> {
   return wh::core::register_local_callbacks(
       context, std::forward<config_t>(config),

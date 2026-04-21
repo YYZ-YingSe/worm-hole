@@ -11,15 +11,13 @@ struct descriptor_probe {
 };
 
 struct invoke_probe {
-  [[nodiscard]] auto invoke(const int &value, wh::core::run_context &)
-      -> wh::core::result<int> {
+  [[nodiscard]] auto invoke(const int &value, wh::core::run_context &) -> wh::core::result<int> {
     return value + 1;
   }
 };
 
 struct stream_probe {
-  [[nodiscard]] auto stream(const int &value, wh::core::run_context &)
-      -> wh::core::result<long> {
+  [[nodiscard]] auto stream(const int &value, wh::core::run_context &) -> wh::core::result<long> {
     return static_cast<long>(value * 2);
   }
 };
@@ -32,7 +30,8 @@ static_assert(!wh::core::component_descriptor_provider<int>);
 } // namespace
 
 TEST_CASE("component concepts validate descriptor invoke and stream shapes",
-          "[UT][wh/core/component/concepts.hpp][component_descriptor_provider][condition][branch][boundary]") {
+          "[UT][wh/core/component/"
+          "concepts.hpp][component_descriptor_provider][condition][branch][boundary]") {
   STATIC_REQUIRE(wh::core::component_descriptor_provider<descriptor_probe>);
   STATIC_REQUIRE_FALSE(wh::core::component_descriptor_provider<int>);
 

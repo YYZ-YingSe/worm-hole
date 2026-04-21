@@ -32,18 +32,13 @@ struct parse_request {
 template <typename parser_t>
 concept parser_like =
     wh::core::component_descriptor_provider<parser_t> &&
-    requires(const parser_t &parser, const parse_request &request,
-             parse_request &&movable_request,
+    requires(const parser_t &parser, const parse_request &request, parse_request &&movable_request,
              const parse_request_view request_view) {
-      {
-        parser.parse(request)
-      } -> std::same_as<wh::core::result<document_batch>>;
+      { parser.parse(request) } -> std::same_as<wh::core::result<document_batch>>;
       {
         parser.parse(std::move(movable_request))
       } -> std::same_as<wh::core::result<document_batch>>;
-      {
-        parser.parse(request_view)
-      } -> std::same_as<wh::core::result<document_batch>>;
+      { parser.parse(request_view) } -> std::same_as<wh::core::result<document_batch>>;
     };
 
 class parser {
@@ -83,9 +78,7 @@ public:
 
   ~parser() { reset(); }
 
-  [[nodiscard]] auto has_value() const noexcept -> bool {
-    return vtable_ != nullptr;
-  }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return vtable_ != nullptr; }
 
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
     if (!has_value()) {
@@ -94,20 +87,16 @@ public:
     return vtable_->descriptor(*this);
   }
 
-  [[nodiscard]] auto parse(const parse_request &request) const
-      -> wh::core::result<document_batch> {
+  [[nodiscard]] auto parse(const parse_request &request) const -> wh::core::result<document_batch> {
     if (!has_value()) {
-      return wh::core::result<document_batch>::failure(
-          wh::core::errc::not_supported);
+      return wh::core::result<document_batch>::failure(wh::core::errc::not_supported);
     }
     return vtable_->parse_const(*this, request);
   }
 
-  [[nodiscard]] auto parse(parse_request &&request) const
-      -> wh::core::result<document_batch> {
+  [[nodiscard]] auto parse(parse_request &&request) const -> wh::core::result<document_batch> {
     if (!has_value()) {
-      return wh::core::result<document_batch>::failure(
-          wh::core::errc::not_supported);
+      return wh::core::result<document_batch>::failure(wh::core::errc::not_supported);
     }
     return vtable_->parse_move(*this, std::move(request));
   }
@@ -115,8 +104,7 @@ public:
   [[nodiscard]] auto parse(const parse_request_view request) const
       -> wh::core::result<document_batch> {
     if (!has_value()) {
-      return wh::core::result<document_batch>::failure(
-          wh::core::errc::not_supported);
+      return wh::core::result<document_batch>::failure(wh::core::errc::not_supported);
     }
     return vtable_->parse_view(*this, request);
   }
@@ -126,12 +114,9 @@ private:
 
   struct parser_vtable {
     wh::core::component_descriptor (*descriptor)(const parser &);
-    wh::core::result<document_batch> (*parse_const)(const parser &,
-                                                    const parse_request &);
-    wh::core::result<document_batch> (*parse_move)(const parser &,
-                                                   parse_request &&);
-    wh::core::result<document_batch> (*parse_view)(const parser &,
-                                                   parse_request_view);
+    wh::core::result<document_batch> (*parse_const)(const parser &, const parse_request &);
+    wh::core::result<document_batch> (*parse_move)(const parser &, parse_request &&);
+    wh::core::result<document_batch> (*parse_view)(const parser &, parse_request_view);
     void (*copy_into)(const parser &, parser &);
     void (*move_into)(parser &, parser &) noexcept;
     void (*destroy)(parser &) noexcept;
@@ -139,8 +124,7 @@ private:
 
   template <typename stored_t>
   static constexpr bool use_inline_storage_ =
-      sizeof(stored_t) <= inline_storage_size_ &&
-      alignof(stored_t) <= alignof(std::max_align_t) &&
+      sizeof(stored_t) <= inline_storage_size_ && alignof(stored_t) <= alignof(std::max_align_t) &&
       std::is_nothrow_move_constructible_v<stored_t>;
 
   template <typename stored_t>
@@ -152,19 +136,16 @@ private:
   }
 
   template <typename stored_t>
-  [[nodiscard]] static auto storage_ptr(const parser &self) noexcept
-      -> const stored_t * {
+  [[nodiscard]] static auto storage_ptr(const parser &self) noexcept -> const stored_t * {
     if constexpr (use_inline_storage_<stored_t>) {
-      return std::launder(
-          reinterpret_cast<const stored_t *>(self.inline_storage_));
+      return std::launder(reinterpret_cast<const stored_t *>(self.inline_storage_));
     }
     return static_cast<const stored_t *>(self.heap_storage_);
   }
 
   template <typename stored_t> static const parser_vtable vtable_for;
 
-  template <typename stored_t, typename impl_t>
-  auto emplace_impl(impl_t &&impl) -> void {
+  template <typename stored_t, typename impl_t> auto emplace_impl(impl_t &&impl) -> void {
     if constexpr (use_inline_storage_<stored_t>) {
       new (inline_storage_) stored_t(std::forward<impl_t>(impl));
       inline_storage_used_ = true;
@@ -208,16 +189,13 @@ inline constexpr parser::parser_vtable parser::vtable_for{
     [](const parser &self) -> wh::core::component_descriptor {
       return storage_ptr<stored_t>(self)->descriptor();
     },
-    [](const parser &self,
-       const parse_request &request) -> wh::core::result<document_batch> {
+    [](const parser &self, const parse_request &request) -> wh::core::result<document_batch> {
       return storage_ptr<stored_t>(self)->parse(request);
     },
-    [](const parser &self,
-       parse_request &&request) -> wh::core::result<document_batch> {
+    [](const parser &self, parse_request &&request) -> wh::core::result<document_batch> {
       return storage_ptr<stored_t>(self)->parse(std::move(request));
     },
-    [](const parser &self,
-       const parse_request_view request) -> wh::core::result<document_batch> {
+    [](const parser &self, const parse_request_view request) -> wh::core::result<document_batch> {
       return storage_ptr<stored_t>(self)->parse(request);
     },
     [](const parser &from, parser &to) {
@@ -233,8 +211,7 @@ inline constexpr parser::parser_vtable parser::vtable_for{
     },
     [](parser &from, parser &to) noexcept {
       if constexpr (use_inline_storage_<stored_t>) {
-        new (to.inline_storage_)
-            stored_t(std::move(*storage_ptr<stored_t>(from)));
+        new (to.inline_storage_) stored_t(std::move(*storage_ptr<stored_t>(from)));
         std::destroy_at(storage_ptr<stored_t>(from));
         to.inline_storage_used_ = true;
         to.heap_storage_ = nullptr;

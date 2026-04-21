@@ -1,9 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <tuple>
 #include <type_traits>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/core/bounded_queue/single_ended.hpp"
@@ -14,10 +13,8 @@ TEST_CASE("single ended queue factories expose producer and consumer views over 
   auto producer = wh::core::make_producer(queue);
   auto consumer = wh::core::make_consumer(queue);
 
-  STATIC_REQUIRE(std::same_as<decltype(producer)::queue_type,
-                              wh::core::bounded_queue<int>>);
-  STATIC_REQUIRE(std::same_as<decltype(consumer)::queue_type,
-                              wh::core::bounded_queue<int>>);
+  STATIC_REQUIRE(std::same_as<decltype(producer)::queue_type, wh::core::bounded_queue<int>>);
+  STATIC_REQUIRE(std::same_as<decltype(consumer)::queue_type, wh::core::bounded_queue<int>>);
 
   REQUIRE(producer.capacity() == 2U);
   REQUIRE(consumer.capacity() == 2U);
@@ -28,7 +25,8 @@ TEST_CASE("single ended queue factories expose producer and consumer views over 
 }
 
 TEST_CASE("single ended producer and consumer forward sync push pop and close branches",
-          "[UT][wh/core/bounded_queue/single_ended.hpp][bounded_queue_producer::try_push][condition][branch][boundary]") {
+          "[UT][wh/core/bounded_queue/"
+          "single_ended.hpp][bounded_queue_producer::try_push][condition][branch][boundary]") {
   wh::core::bounded_queue<int> queue{2U};
   auto [producer, consumer] = wh::core::split_endpoints(queue);
   REQUIRE(producer.push(1));
@@ -46,8 +44,9 @@ TEST_CASE("single ended producer and consumer forward sync push pop and close br
   REQUIRE(consumer.try_pop().error() == wh::core::bounded_queue_status::closed);
 }
 
-TEST_CASE("single ended endpoints forward async producer consumer operations",
-          "[UT][wh/core/bounded_queue/single_ended.hpp][bounded_queue_producer::async_push][branch]") {
+TEST_CASE(
+    "single ended endpoints forward async producer consumer operations",
+    "[UT][wh/core/bounded_queue/single_ended.hpp][bounded_queue_producer::async_push][branch]") {
   wh::core::bounded_queue<int> queue{2U};
   auto [producer, consumer] = wh::core::split_endpoints(queue);
   auto waited_push = stdexec::sync_wait(producer.async_push(7));

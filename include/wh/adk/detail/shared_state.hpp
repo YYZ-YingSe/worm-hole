@@ -9,8 +9,8 @@
 
 namespace wh::adk::detail {
 
-[[nodiscard]] inline auto shared_process_state(
-    wh::compose::graph_process_state &process_state) noexcept
+[[nodiscard]] inline auto
+shared_process_state(wh::compose::graph_process_state &process_state) noexcept
     -> wh::compose::graph_process_state & {
   if (process_state.parent() != nullptr) {
     return *process_state.parent();
@@ -19,15 +19,13 @@ namespace wh::adk::detail {
 }
 
 template <typename state_t>
-[[nodiscard]] inline auto shared_state_ref(
-    wh::compose::graph_process_state &process_state)
+[[nodiscard]] inline auto shared_state_ref(wh::compose::graph_process_state &process_state)
     -> wh::core::result<std::reference_wrapper<state_t>> {
   return shared_process_state(process_state).template get<state_t>();
 }
 
 template <typename state_t, typename... args_t>
-inline auto emplace_shared_state(wh::compose::graph_process_state &process_state,
-                                 args_t &&...args)
+inline auto emplace_shared_state(wh::compose::graph_process_state &process_state, args_t &&...args)
     -> wh::core::result<std::reference_wrapper<state_t>> {
   return shared_process_state(process_state)
       .template emplace<state_t>(std::forward<args_t>(args)...);

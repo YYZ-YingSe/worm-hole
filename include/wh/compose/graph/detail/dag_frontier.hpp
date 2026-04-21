@@ -58,6 +58,30 @@ public:
     return true;
   }
 
+  auto restore(const std::size_t node_count, std::vector<std::uint32_t> current_nodes,
+               std::vector<std::uint32_t> next_nodes, const std::size_t current_head) -> void {
+    current_nodes_ = std::move(current_nodes);
+    next_nodes_ = std::move(next_nodes);
+    current_head_ = std::min(current_head, current_nodes_.size());
+    queued_.reset(node_count, false);
+    for (std::size_t index = current_head_; index < current_nodes_.size(); ++index) {
+      queued_.set(current_nodes_[index]);
+    }
+    for (const auto node_id : next_nodes_) {
+      queued_.set(node_id);
+    }
+  }
+
+  [[nodiscard]] auto current_nodes() const noexcept -> const std::vector<std::uint32_t> & {
+    return current_nodes_;
+  }
+
+  [[nodiscard]] auto next_nodes() const noexcept -> const std::vector<std::uint32_t> & {
+    return next_nodes_;
+  }
+
+  [[nodiscard]] auto current_head() const noexcept -> std::size_t { return current_head_; }
+
 private:
   std::vector<std::uint32_t> current_nodes_{};
   std::vector<std::uint32_t> next_nodes_{};

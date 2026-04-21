@@ -146,8 +146,7 @@ enum class error_kind : std::uint8_t {
 }
 
 /// Returns a stable string representation for an error code.
-[[nodiscard]] constexpr auto to_string(const errc code) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto to_string(const errc code) noexcept -> std::string_view {
   switch (code) {
   case errc::ok:
     return "ok";
@@ -211,8 +210,7 @@ auto operator<<(std::basic_ostream<char_t, traits_t> &stream, const errc code)
 namespace detail {
 
 /// Validates whether an integer maps to a defined `errc` value.
-[[nodiscard]] constexpr auto is_known_errc_value(const int value) noexcept
-    -> bool {
+[[nodiscard]] constexpr auto is_known_errc_value(const int value) noexcept -> bool {
   switch (static_cast<errc>(value)) {
   case errc::ok:
   case errc::invalid_argument:
@@ -265,8 +263,7 @@ class error_code {
 public:
   constexpr error_code() noexcept = default;
   constexpr error_code(const errc code) noexcept : code_(code) {}
-  constexpr error_code(const errc code, std::source_location) noexcept
-      : code_(code) {}
+  constexpr error_code(const errc code, std::source_location) noexcept : code_(code) {}
 
   /// Returns the raw `errc` value.
   [[nodiscard]] constexpr auto code() const noexcept -> errc { return code_; }
@@ -278,18 +275,13 @@ public:
 
   /// Returns the category for this error code.
   [[nodiscard]] constexpr auto kind() const noexcept -> error_kind {
-    return detail::is_known_errc_value(value()) ? classify(code_)
-                                                : error_kind::internal;
+    return detail::is_known_errc_value(value()) ? classify(code_) : error_kind::internal;
   }
 
   /// Returns true when the code is not `errc::ok`.
-  [[nodiscard]] constexpr auto failed() const noexcept -> bool {
-    return code_ != errc::ok;
-  }
+  [[nodiscard]] constexpr auto failed() const noexcept -> bool { return code_ != errc::ok; }
 
-  [[nodiscard]] constexpr explicit operator bool() const noexcept {
-    return failed();
-  }
+  [[nodiscard]] constexpr explicit operator bool() const noexcept { return failed(); }
 
   /// Materializes the message into a `std::string`.
   [[nodiscard]] auto message() const -> std::string {
@@ -297,8 +289,7 @@ public:
   }
 
   /// Writes the message into an external C-style buffer.
-  [[nodiscard]] auto message(char *const buffer,
-                             const std::size_t len) const noexcept -> const
+  [[nodiscard]] auto message(char *const buffer, const std::size_t len) const noexcept -> const
       char * {
     return detail::write_cstr_buffer(wh::core::to_string(code_), buffer, len);
   }
@@ -312,43 +303,36 @@ public:
   [[nodiscard]] auto what() const -> std::string { return to_string(); }
 
   [[nodiscard]] friend constexpr auto operator==(const error_code &lhs,
-                                                 const error_code &rhs) noexcept
-      -> bool {
+                                                 const error_code &rhs) noexcept -> bool {
     return lhs.code_ == rhs.code_;
   }
 
   [[nodiscard]] friend constexpr auto operator!=(const error_code &lhs,
-                                                 const error_code &rhs) noexcept
-      -> bool {
+                                                 const error_code &rhs) noexcept -> bool {
     return !(lhs == rhs);
   }
 
   [[nodiscard]] friend constexpr auto operator<(const error_code &lhs,
-                                                const error_code &rhs) noexcept
-      -> bool {
+                                                const error_code &rhs) noexcept -> bool {
     return lhs.value() < rhs.value();
   }
 
-  [[nodiscard]] friend constexpr auto operator==(const error_code &lhs,
-                                                 const errc rhs) noexcept
+  [[nodiscard]] friend constexpr auto operator==(const error_code &lhs, const errc rhs) noexcept
       -> bool {
     return lhs.code_ == rhs;
   }
 
-  [[nodiscard]] friend constexpr auto operator==(const errc lhs,
-                                                 const error_code &rhs) noexcept
+  [[nodiscard]] friend constexpr auto operator==(const errc lhs, const error_code &rhs) noexcept
       -> bool {
     return lhs == rhs.code_;
   }
 
-  [[nodiscard]] friend constexpr auto operator!=(const error_code &lhs,
-                                                 const errc rhs) noexcept
+  [[nodiscard]] friend constexpr auto operator!=(const error_code &lhs, const errc rhs) noexcept
       -> bool {
     return !(lhs == rhs);
   }
 
-  [[nodiscard]] friend constexpr auto operator!=(const errc lhs,
-                                                 const error_code &rhs) noexcept
+  [[nodiscard]] friend constexpr auto operator!=(const errc lhs, const error_code &rhs) noexcept
       -> bool {
     return !(lhs == rhs);
   }
@@ -359,27 +343,24 @@ private:
 };
 
 /// Creates an `error_code` from `errc`.
-[[nodiscard]] constexpr auto make_error(const errc value) noexcept
-    -> error_code {
+[[nodiscard]] constexpr auto make_error(const errc value) noexcept -> error_code {
   return error_code{value};
 }
 
 /// Alias of `make_error`.
-[[nodiscard]] constexpr auto make_error_code(const errc value) noexcept
-    -> error_code {
+[[nodiscard]] constexpr auto make_error_code(const errc value) noexcept -> error_code {
   return make_error(value);
 }
 
 /// Creates an `error_code` with source-location context.
-[[nodiscard]] constexpr auto
-make_error_code(const errc value, const std::source_location location) noexcept
+[[nodiscard]] constexpr auto make_error_code(const errc value,
+                                             const std::source_location location) noexcept
     -> error_code {
   return error_code{value, location};
 }
 
 /// Categorizes an existing `error_code`.
-[[nodiscard]] constexpr auto classify(const error_code code) noexcept
-    -> error_kind {
+[[nodiscard]] constexpr auto classify(const error_code code) noexcept -> error_kind {
   return code.kind();
 }
 
@@ -394,20 +375,17 @@ make_error_code(const errc value, const std::source_location location) noexcept
 }
 
 /// Returns true when code indicates timeout.
-[[nodiscard]] constexpr auto is_timeout(const error_code code) noexcept
-    -> bool {
+[[nodiscard]] constexpr auto is_timeout(const error_code code) noexcept -> bool {
   return code == errc::timeout;
 }
 
 /// Returns true when code indicates cancellation.
-[[nodiscard]] constexpr auto is_canceled(const error_code code) noexcept
-    -> bool {
+[[nodiscard]] constexpr auto is_canceled(const error_code code) noexcept -> bool {
   return code == errc::canceled;
 }
 
 /// Returns true when retry is typically meaningful.
-[[nodiscard]] constexpr auto is_retryable(const error_code code) noexcept
-    -> bool {
+[[nodiscard]] constexpr auto is_retryable(const error_code code) noexcept -> bool {
   const auto kind = classify(code);
   return kind == error_kind::timeout || kind == error_kind::unavailable ||
          kind == error_kind::network || kind == error_kind::resource;
@@ -427,41 +405,37 @@ struct error_info_view {
   const error_info_view *cause{nullptr};
 
   /// Returns true if there is a chained cause.
-  [[nodiscard]] auto has_cause() const noexcept -> bool {
-    return cause != nullptr;
-  }
+  [[nodiscard]] auto has_cause() const noexcept -> bool { return cause != nullptr; }
 };
 
 using error_info = error_info_view;
 
 /// Builds an `error_info_view` from `error_code`.
-[[nodiscard]] inline auto make_error_info(
-    const error_code code, const std::string_view operation = {},
-    const std::string_view detail = {},
-    const std::source_location location = std::source_location::current(),
-    const error_info_view *cause = nullptr) noexcept -> error_info_view {
+[[nodiscard]] inline auto
+make_error_info(const error_code code, const std::string_view operation = {},
+                const std::string_view detail = {},
+                const std::source_location location = std::source_location::current(),
+                const error_info_view *cause = nullptr) noexcept -> error_info_view {
   return {code, operation, detail, location, cause};
 }
 
 /// Builds an `error_info_view` from `errc`.
-[[nodiscard]] inline auto make_error_info(
-    const errc code, const std::string_view operation = {},
-    const std::string_view detail = {},
-    const std::source_location location = std::source_location::current(),
-    const error_info_view *cause = nullptr) noexcept -> error_info_view {
+[[nodiscard]] inline auto
+make_error_info(const errc code, const std::string_view operation = {},
+                const std::string_view detail = {},
+                const std::source_location location = std::source_location::current(),
+                const error_info_view *cause = nullptr) noexcept -> error_info_view {
   return make_error_info(make_error(code), operation, detail, location, cause);
 }
 
 /// Hash helper for associative containers.
-[[nodiscard]] constexpr auto hash_value(const error_code code) noexcept
-    -> std::size_t {
+[[nodiscard]] constexpr auto hash_value(const error_code code) noexcept -> std::size_t {
   return static_cast<std::size_t>(code.value());
 }
 
 /// Streams `error_code` symbolic name into standard output streams.
 template <typename char_t, typename traits_t>
-auto operator<<(std::basic_ostream<char_t, traits_t> &stream,
-                const error_code code)
+auto operator<<(std::basic_ostream<char_t, traits_t> &stream, const error_code code)
     -> std::basic_ostream<char_t, traits_t> & {
   stream << code.to_string();
   return stream;
@@ -473,8 +447,7 @@ namespace std {
 
 template <> struct hash<wh::core::error_code> {
   /// Hashes `error_code` by numeric value.
-  [[nodiscard]] auto operator()(const wh::core::error_code code) const noexcept
-      -> std::size_t {
+  [[nodiscard]] auto operator()(const wh::core::error_code code) const noexcept -> std::size_t {
     return wh::core::hash_value(code);
   }
 };

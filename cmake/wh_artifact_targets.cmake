@@ -1,5 +1,6 @@
 include_guard(GLOBAL)
 
+include(wh_release_optimizations)
 include(wh_support_targets)
 include(wh_source_targets)
 
@@ -61,8 +62,9 @@ function(wh_ensure_catch2_amalgamated_target)
   add_library("${WH_TARGET_CATCH2_AMALGAMATED}" STATIC
               "${catch2_amalgamated_cpp}")
   target_include_directories("${WH_TARGET_CATCH2_AMALGAMATED}"
-                             PUBLIC "${WH_CATCH2_DIR}/src"
-                                    "${PROJECT_BINARY_DIR}/generated-includes")
+                             PRIVATE "${WH_CATCH2_DIR}/src"
+                             PUBLIC "${PROJECT_BINARY_DIR}/generated-includes")
+  wh_apply_target_build_policies("${WH_TARGET_CATCH2_AMALGAMATED}")
 endfunction()
 
 function(wh_register_project_artifact group target_name)
@@ -93,7 +95,8 @@ function(wh_setup_test_support_targets)
 
   wh_define_support_target(
     "${WH_TARGET_TEST_SUPPORT}"
-    LINK_LIBRARIES wh::core "${WH_TARGET_CATCH2_AMALGAMATED}"
+    LINK_LIBRARIES wh::module_policy_tests wh::catch2_headers wh::core
+                   "${WH_TARGET_CATCH2_AMALGAMATED}"
     INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/tests")
 
   wh_define_support_target(
@@ -107,10 +110,15 @@ function(wh_setup_test_support_targets)
 endfunction()
 
 function(wh_setup_example_support_target)
-  wh_define_support_target("${WH_TARGET_EXAMPLE_SUPPORT}" LINK_LIBRARIES wh::core)
+  wh_define_support_target("${WH_TARGET_EXAMPLE_SUPPORT}"
+                           LINK_LIBRARIES wh::module_policy_examples wh::core)
 endfunction()
 
 function(wh_setup_benchmark_support_target)
-  wh_define_support_target("${WH_TARGET_BENCHMARK_SUPPORT}"
-                           LINK_LIBRARIES wh::core)
+  set(benchmark_support_link_libraries wh::module_policy_benchmarks
+                                       wh::benchmark_headers wh::core
+                                       benchmark::benchmark_main)
+  wh_define_support_target(
+    "${WH_TARGET_BENCHMARK_SUPPORT}"
+    LINK_LIBRARIES ${benchmark_support_link_libraries})
 endfunction()

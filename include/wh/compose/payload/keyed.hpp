@@ -11,8 +11,7 @@
 namespace wh::compose {
 
 /// Reads one key from payload-map input.
-[[nodiscard]] inline auto keyed_input(const graph_value &input,
-                                      const std::string_view key)
+[[nodiscard]] inline auto keyed_input(const graph_value &input, const std::string_view key)
     -> wh::core::result<graph_value> {
   auto map_input = payload_to_value_map_cref(input);
   if (map_input.has_error()) {
@@ -22,8 +21,7 @@ namespace wh::compose {
 }
 
 /// Reads one key from movable payload-map input.
-[[nodiscard]] inline auto keyed_input(graph_value &&input,
-                                      const std::string_view key)
+[[nodiscard]] inline auto keyed_input(graph_value &&input, const std::string_view key)
     -> wh::core::result<graph_value> {
   auto map_input = payload_to_value_map(std::move(input));
   if (map_input.has_error()) {
@@ -36,17 +34,14 @@ template <typename key_t, typename value_t>
   requires std::constructible_from<std::string, key_t &&> &&
            std::constructible_from<graph_value, value_t &&>
 /// Wraps one payload as map output under target key.
-[[nodiscard]] inline auto keyed_output(key_t &&key, value_t &&value)
-    -> graph_value {
+[[nodiscard]] inline auto keyed_output(key_t &&key, value_t &&value) -> graph_value {
   graph_value_map output{};
-  write_keyed_output(output, std::forward<key_t>(key),
-                     std::forward<value_t>(value));
+  write_keyed_output(output, std::forward<key_t>(key), std::forward<value_t>(value));
   return value_map_to_payload(std::move(output));
 }
 
 /// Packs scalar payload into keyed map payload for keyed contracts.
-[[nodiscard]] inline auto pack_keyed_payload(const std::string_view key,
-                                             const graph_value &value)
+[[nodiscard]] inline auto pack_keyed_payload(const std::string_view key, const graph_value &value)
     -> graph_value {
   graph_value_map output{};
   write_keyed_output(output, key, value);
@@ -54,8 +49,7 @@ template <typename key_t, typename value_t>
 }
 
 /// Packs movable payload into keyed map payload for keyed contracts.
-[[nodiscard]] inline auto pack_keyed_payload(const std::string_view key,
-                                             graph_value &&value)
+[[nodiscard]] inline auto pack_keyed_payload(const std::string_view key, graph_value &&value)
     -> graph_value {
   graph_value_map output{};
   write_keyed_output(output, key, std::move(value));
@@ -74,8 +68,7 @@ template <typename key_t, typename value_t>
 }
 
 /// Unpacks one keyed payload from movable map payload.
-[[nodiscard]] inline auto unpack_keyed_payload(graph_value &&payload,
-                                               const std::string_view key)
+[[nodiscard]] inline auto unpack_keyed_payload(graph_value &&payload, const std::string_view key)
     -> wh::core::result<graph_value> {
   auto map_payload = payload_to_value_map(std::move(payload));
   if (map_payload.has_error()) {

@@ -1,12 +1,13 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <span>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/internal/reduce_registry.hpp"
 
 TEST_CASE("reduce registry registers typed reducers and bridges dynamic reduction",
-          "[UT][wh/internal/reduce_registry.hpp][reduce_registry_core::register_reducer][branch][boundary]") {
+          "[UT][wh/internal/"
+          "reduce_registry.hpp][reduce_registry_core::register_reducer][branch][boundary]") {
   wh::internal::reduce_registry_core registry{};
 
   auto registered = registry.register_reducer<int>(
@@ -39,7 +40,8 @@ TEST_CASE("reduce registry registers typed reducers and bridges dynamic reductio
 }
 
 TEST_CASE("reduce registry pointer reducers freeze and reject invalid registrations",
-          "[UT][wh/internal/reduce_registry.hpp][reduce_registry_core::register_reducer_from_ptrs][branch]") {
+          "[UT][wh/internal/"
+          "reduce_registry.hpp][reduce_registry_core::register_reducer_from_ptrs][branch]") {
   wh::internal::reduce_registry_core registry{};
 
   auto invalid = registry.register_reducer<int>(nullptr);
@@ -47,8 +49,7 @@ TEST_CASE("reduce registry pointer reducers freeze and reject invalid registrati
   REQUIRE(invalid.error() == wh::core::errc::invalid_argument);
 
   auto pointer_registered = registry.register_reducer_from_ptrs<std::string>(
-      [](const std::span<const std::string *> values)
-          -> wh::core::result<std::string> {
+      [](const std::span<const std::string *> values) -> wh::core::result<std::string> {
         std::string joined{};
         for (const auto *value : values) {
           joined += *value;
@@ -65,7 +66,8 @@ TEST_CASE("reduce registry pointer reducers freeze and reject invalid registrati
 }
 
 TEST_CASE("reduce registry reports empty and unsupported dynamic reduction requests",
-          "[UT][wh/internal/reduce_registry.hpp][reduce_registry_core::reduce][condition][branch][boundary]") {
+          "[UT][wh/internal/"
+          "reduce_registry.hpp][reduce_registry_core::reduce][condition][branch][boundary]") {
   wh::internal::reduce_registry_core registry{};
 
   auto empty = registry.reduce(wh::core::any_type_key_v<int>,
@@ -74,8 +76,7 @@ TEST_CASE("reduce registry reports empty and unsupported dynamic reduction reque
   REQUIRE(empty.error() == wh::core::errc::invalid_argument);
 
   const std::array unsupported = {wh::core::any{1}, wh::core::any{2}};
-  auto no_handler =
-      registry.reduce(wh::core::any_type_key_v<int>, unsupported);
+  auto no_handler = registry.reduce(wh::core::any_type_key_v<int>, unsupported);
   REQUIRE(no_handler.has_error());
   REQUIRE(no_handler.error() == wh::core::errc::not_supported);
 }

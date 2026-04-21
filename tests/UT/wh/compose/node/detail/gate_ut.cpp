@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string_view>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/node/detail/gate.hpp"
 
@@ -55,25 +55,16 @@ TEST_CASE("output_gate factories distinguish dynamic exact passthrough and reade
 
 TEST_CASE("gate_name covers all known gate enums and unknown fallbacks",
           "[UT][wh/compose/node/detail/gate.hpp][gate_name][condition][branch]") {
-  REQUIRE(wh::compose::gate_name(wh::compose::input_gate_kind::value_open) ==
-          "value_open");
-  REQUIRE(wh::compose::gate_name(wh::compose::input_gate_kind::value_exact) ==
-          "value_exact");
-  REQUIRE(wh::compose::gate_name(wh::compose::input_gate_kind::reader) ==
-          "reader");
-  REQUIRE(wh::compose::gate_name(
-              static_cast<wh::compose::input_gate_kind>(255)) == "value_open");
+  REQUIRE(wh::compose::gate_name(wh::compose::input_gate_kind::value_open) == "value_open");
+  REQUIRE(wh::compose::gate_name(wh::compose::input_gate_kind::value_exact) == "value_exact");
+  REQUIRE(wh::compose::gate_name(wh::compose::input_gate_kind::reader) == "reader");
+  REQUIRE(wh::compose::gate_name(static_cast<wh::compose::input_gate_kind>(255)) == "value_open");
 
-  REQUIRE(wh::compose::gate_name(wh::compose::output_gate_kind::value_dynamic) ==
-          "value_dynamic");
-  REQUIRE(wh::compose::gate_name(wh::compose::output_gate_kind::value_exact) ==
-          "value_exact");
-  REQUIRE(
-      wh::compose::gate_name(wh::compose::output_gate_kind::value_passthrough) ==
-      "value_passthrough");
-  REQUIRE(wh::compose::gate_name(wh::compose::output_gate_kind::reader) ==
-          "reader");
-  REQUIRE(wh::compose::gate_name(
-              static_cast<wh::compose::output_gate_kind>(255)) ==
+  REQUIRE(wh::compose::gate_name(wh::compose::output_gate_kind::value_dynamic) == "value_dynamic");
+  REQUIRE(wh::compose::gate_name(wh::compose::output_gate_kind::value_exact) == "value_exact");
+  REQUIRE(wh::compose::gate_name(wh::compose::output_gate_kind::value_passthrough) ==
+          "value_passthrough");
+  REQUIRE(wh::compose::gate_name(wh::compose::output_gate_kind::reader) == "reader");
+  REQUIRE(wh::compose::gate_name(static_cast<wh::compose::output_gate_kind>(255)) ==
           "value_dynamic");
 }

@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <span>
 #include <string_view>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/address.hpp"
 
@@ -33,10 +33,10 @@ TEST_CASE("address factories build from spans and initializer lists",
           "[UT][wh/core/address.hpp][make_address][branch]") {
   constexpr std::array<std::string_view, 3> segments{"alpha", "beta", "gamma"};
 
-  const auto from_span = address::from_segments(std::span<const std::string_view>{
-      segments.data(), segments.size()});
-  const auto built_from_span = make_address(std::span<const std::string_view>{
-      segments.data(), segments.size()});
+  const auto from_span =
+      address::from_segments(std::span<const std::string_view>{segments.data(), segments.size()});
+  const auto built_from_span =
+      make_address(std::span<const std::string_view>{segments.data(), segments.size()});
   const auto built_from_list = make_address({"alpha", "beta", "gamma"});
 
   REQUIRE(from_span == built_from_span);

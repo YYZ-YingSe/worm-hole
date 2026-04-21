@@ -5,7 +5,7 @@
 `worm-hole` keeps third-party dependencies in-tree. Start by syncing submodules:
 
 ```bash
-./build.sh sync-thirdy-party
+./build.sh sync-third-party
 ```
 
 ## I want a clean local state
@@ -46,6 +46,18 @@ Those are now explicit CMake defines passed through the toolchain entrypoint:
 ./build.sh build --preset dev-release --define WH_BUILD_BENCHMARKS=ON
 ```
 
+## My editor or clangd shows missing headers
+
+Configure the dedicated full-surface editor preset once:
+
+```bash
+./build.sh editor
+```
+
+That preset enables tests, examples, and benchmarks together so the compile
+database covers headers such as `catch2/catch_test_macros.hpp` and
+`benchmark/benchmark.h`.
+
 ## A local compiler is blocked by warnings-as-errors
 
 For local investigation only, reconfigure with warnings-as-errors disabled:
@@ -66,7 +78,10 @@ The tracked CI surface currently covers:
 - macOS
 - Windows
 - debug and release build shards where they materially add signal
-- Linux sanitizer and nightly heavy-test jobs
+- Linux sanitizer, coverage, and nightly stress jobs
+
+Repository CodeQL scanning is handled by GitHub's default Code Scanning setup
+rather than a repo-local workflow.
 
 ## Where to look next
 

@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <ranges>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/authored.hpp"
@@ -12,10 +12,8 @@
 namespace {
 
 template <typename value_t>
-[[nodiscard]] auto read_any(const wh::core::any &value)
-    -> wh::core::result<value_t> {
-  if (const auto *typed = wh::core::any_cast<value_t>(&value);
-      typed != nullptr) {
+[[nodiscard]] auto read_any(const wh::core::any &value) -> wh::core::result<value_t> {
+  if (const auto *typed = wh::core::any_cast<value_t>(&value); typed != nullptr) {
     if constexpr (std::copy_constructible<value_t>) {
       return *typed;
     } else {
@@ -26,8 +24,7 @@ template <typename value_t>
 }
 
 template <typename value_t>
-[[nodiscard]] auto any_get(const wh::core::any &value) noexcept
-    -> const value_t * {
+[[nodiscard]] auto any_get(const wh::core::any &value) noexcept -> const value_t * {
   return wh::core::any_cast<value_t>(&value);
 }
 
@@ -36,8 +33,8 @@ template <typename workflow_t, typename input_t>
                                    wh::core::run_context &context)
     -> wh::core::result<wh::compose::graph_value_map> {
   auto sender = workflow.invoke(context, std::forward<input_t>(input));
-  return wh::testing::helper::wait_sender_result<
-      wh::core::result<wh::compose::graph_value_map>>(std::move(sender));
+  return wh::testing::helper::wait_sender_result<wh::core::result<wh::compose::graph_value_map>>(
+      std::move(sender));
 }
 
 struct graph_copy_probe {
@@ -49,9 +46,7 @@ struct graph_copy_probe {
   graph_copy_probe() = default;
   explicit graph_copy_probe(const int value) : payload(value) {}
 
-  graph_copy_probe(const graph_copy_probe &other) : payload(other.payload) {
-    ++copy_count;
-  }
+  graph_copy_probe(const graph_copy_probe &other) : payload(other.payload) { ++copy_count; }
 
   auto operator=(const graph_copy_probe &other) -> graph_copy_probe & {
     payload = other.payload;
@@ -59,9 +54,7 @@ struct graph_copy_probe {
     return *this;
   }
 
-  graph_copy_probe(graph_copy_probe &&other) noexcept : payload(other.payload) {
-    ++move_count;
-  }
+  graph_copy_probe(graph_copy_probe &&other) noexcept : payload(other.payload) { ++move_count; }
 
   auto operator=(graph_copy_probe &&other) noexcept -> graph_copy_probe & {
     payload = other.payload;
@@ -70,36 +63,28 @@ struct graph_copy_probe {
   }
 };
 
-[[nodiscard]] auto make_uid_workflow()
-    -> wh::core::result<wh::compose::workflow> {
+[[nodiscard]] auto make_uid_workflow() -> wh::core::result<wh::compose::workflow> {
   wh::compose::workflow workflow{};
-  auto added_source =
-      workflow.add_step(wh::compose::make_passthrough_node("source"));
+  auto added_source = workflow.add_step(wh::compose::make_passthrough_node("source"));
   if (added_source.has_error()) {
-    return wh::core::result<wh::compose::workflow>::failure(
-        added_source.error());
+    return wh::core::result<wh::compose::workflow>::failure(added_source.error());
   }
-  auto added_target =
-      workflow.add_step(wh::compose::make_passthrough_node("target"));
+  auto added_target = workflow.add_step(wh::compose::make_passthrough_node("target"));
   if (added_target.has_error()) {
-    return wh::core::result<wh::compose::workflow>::failure(
-        added_target.error());
+    return wh::core::result<wh::compose::workflow>::failure(added_target.error());
   }
   auto linked_start = added_source.value().from_entry();
   if (linked_start.has_error()) {
-    return wh::core::result<wh::compose::workflow>::failure(
-        linked_start.error());
+    return wh::core::result<wh::compose::workflow>::failure(linked_start.error());
   }
   auto linked_target = added_target.value().add_input(
-      added_source.value(),
-      {wh::compose::field_mapping_rule{
-          .from_path = "order.user.id",
-          .to_path = "ctx.uid",
-          .missing_policy = wh::compose::field_missing_policy::fail,
-      }});
+      added_source.value(), {wh::compose::field_mapping_rule{
+                                .from_path = "order.user.id",
+                                .to_path = "ctx.uid",
+                                .missing_policy = wh::compose::field_missing_policy::fail,
+                            }});
   if (linked_target.has_error()) {
-    return wh::core::result<wh::compose::workflow>::failure(
-        linked_target.error());
+    return wh::core::result<wh::compose::workflow>::failure(linked_target.error());
   }
   auto compiled = workflow.compile();
   if (compiled.has_error()) {
@@ -123,8 +108,7 @@ TEST_CASE("workflow compiles dependency mapping and applies nested path writes",
                          {wh::compose::field_mapping_rule{
                              .from_path = "order.user.id",
                              .to_path = "ctx.uid",
-                             .missing_policy =
-                                 wh::compose::field_missing_policy::fail}})
+                             .missing_policy = wh::compose::field_missing_policy::fail}})
               .has_value());
   REQUIRE(workflow.compile().has_value());
 
@@ -162,21 +146,22 @@ TEST_CASE("workflow plain add_input reuses direct graph value-map fan-in",
   auto route = workflow.add_step(wh::compose::make_lambda_node(
       "route",
       [](wh::compose::graph_value_map &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value_map> { return input; }));
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value_map> {
+        return input;
+      }));
   REQUIRE(route.has_value());
-  auto count = workflow.add_step(
-      wh::compose::make_component_node<wh::compose::component_kind::custom,
-                                       wh::compose::node_contract::value,
-                                       wh::compose::node_contract::value,
-                                       wh::compose::graph_value_map, int>(
+  auto count =
+      workflow.add_step(wh::compose::make_component_node<
+                        wh::compose::component_kind::custom, wh::compose::node_contract::value,
+                        wh::compose::node_contract::value, wh::compose::graph_value_map, int>(
           "count", exact_int_component{}));
   REQUIRE(count.has_value());
   auto join = workflow.add_step(wh::compose::make_lambda_node(
       "join",
       [](wh::compose::graph_value_map &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value_map> { return input; }));
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value_map> {
+        return input;
+      }));
   REQUIRE(join.has_value());
 
   REQUIRE(route.value().from_entry().has_value());
@@ -186,10 +171,9 @@ TEST_CASE("workflow plain add_input reuses direct graph value-map fan-in",
   REQUIRE(workflow.compile().has_value());
 
   const auto snapshot = workflow.graph_view().snapshot();
-  REQUIRE(std::ranges::none_of(
-      snapshot.nodes, [](const wh::compose::graph_snapshot_node &node) {
-        return node.key == wh::compose::workflow_input_node_key("join");
-      }));
+  REQUIRE(std::ranges::none_of(snapshot.nodes, [](const wh::compose::graph_snapshot_node &node) {
+    return node.key == wh::compose::workflow_input_node_key("join");
+  }));
 
   wh::compose::graph_value_map input{};
   input.insert_or_assign("payload", wh::core::any(9));
@@ -199,8 +183,7 @@ TEST_CASE("workflow plain add_input reuses direct graph value-map fan-in",
 
   const auto route_iter = invoked.value().find("route");
   REQUIRE(route_iter != invoked.value().end());
-  const auto *route_map =
-      any_get<wh::compose::graph_value_map>(route_iter->second);
+  const auto *route_map = any_get<wh::compose::graph_value_map>(route_iter->second);
   REQUIRE(route_map != nullptr);
   const auto payload_iter = route_map->find("payload");
   REQUIRE(payload_iter != route_map->end());
@@ -215,56 +198,46 @@ TEST_CASE("workflow plain add_input reuses direct graph value-map fan-in",
   REQUIRE(count_value.value() == 7);
 }
 
-TEST_CASE("workflow rejects unknown authored step lookup",
-          "[core][compose][workflow][branch]") {
+TEST_CASE("workflow rejects unknown authored step lookup", "[core][compose][workflow][branch]") {
   wh::compose::workflow workflow{};
-  REQUIRE(
-      workflow.add_step(wh::compose::make_passthrough_node("a")).has_value());
+  REQUIRE(workflow.add_step(wh::compose::make_passthrough_node("a")).has_value());
   auto missing = workflow.step("ghost");
   REQUIRE(missing.has_error());
   REQUIRE(missing.error() == wh::core::errc::not_found);
 }
 
-TEST_CASE(
-    "workflow validates data-only dependencies and mapping path conflicts",
-    "[core][compose][workflow][branch]") {
+TEST_CASE("workflow validates data-only dependencies and mapping path conflicts",
+          "[core][compose][workflow][branch]") {
   wh::compose::workflow no_control_workflow{};
-  auto a =
-      no_control_workflow.add_step(wh::compose::make_passthrough_node("a"));
+  auto a = no_control_workflow.add_step(wh::compose::make_passthrough_node("a"));
   REQUIRE(a.has_value());
-  auto b =
-      no_control_workflow.add_step(wh::compose::make_passthrough_node("b"));
+  auto b = no_control_workflow.add_step(wh::compose::make_passthrough_node("b"));
   REQUIRE(b.has_value());
   REQUIRE(b.value()
               .add_input_without_control(
                   a.value(), {wh::compose::field_mapping_rule{
                                  .from_path = "order.id",
                                  .to_path = "ctx.id",
-                                 .missing_policy =
-                                     wh::compose::field_missing_policy::fail}})
+                                 .missing_policy = wh::compose::field_missing_policy::fail}})
               .has_value());
   auto no_control_compiled = no_control_workflow.compile();
   REQUIRE(no_control_compiled.has_error());
   REQUIRE(no_control_compiled.error() == wh::core::errc::contract_violation);
 
   wh::compose::workflow conflict_workflow{};
-  auto conflict_a =
-      conflict_workflow.add_step(wh::compose::make_passthrough_node("a"));
+  auto conflict_a = conflict_workflow.add_step(wh::compose::make_passthrough_node("a"));
   REQUIRE(conflict_a.has_value());
-  auto conflict_b =
-      conflict_workflow.add_step(wh::compose::make_passthrough_node("b"));
+  auto conflict_b = conflict_workflow.add_step(wh::compose::make_passthrough_node("b"));
   REQUIRE(conflict_b.has_value());
   REQUIRE(conflict_a.value().from_entry().has_value());
   auto conflict_added = conflict_b.value().add_input(
       conflict_a.value(),
-      {wh::compose::field_mapping_rule{
-           .from_path = "source.user",
-           .to_path = "ctx",
-           .missing_policy = wh::compose::field_missing_policy::fail},
-       wh::compose::field_mapping_rule{
-           .from_path = "source.user.id",
-           .to_path = "ctx.user_id",
-           .missing_policy = wh::compose::field_missing_policy::fail}});
+      {wh::compose::field_mapping_rule{.from_path = "source.user",
+                                       .to_path = "ctx",
+                                       .missing_policy = wh::compose::field_missing_policy::fail},
+       wh::compose::field_mapping_rule{.from_path = "source.user.id",
+                                       .to_path = "ctx.user_id",
+                                       .missing_policy = wh::compose::field_missing_policy::fail}});
   REQUIRE(conflict_added.has_error());
   REQUIRE(conflict_added.error() == wh::core::errc::already_exists);
 }
@@ -288,8 +261,7 @@ TEST_CASE("workflow authored value-branch convenience lowers through graph "
           "branch api",
           "[core][compose][workflow][branch]") {
   wh::compose::workflow workflow{};
-  auto route_step =
-      workflow.add_step(wh::compose::make_passthrough_node("route"));
+  auto route_step = workflow.add_step(wh::compose::make_passthrough_node("route"));
   REQUIRE(route_step.has_value());
   auto left = workflow.add_step(wh::compose::make_passthrough_node("left"));
   REQUIRE(left.has_value());
@@ -297,48 +269,42 @@ TEST_CASE("workflow authored value-branch convenience lowers through graph "
 
   wh::compose::value_branch branch{};
   REQUIRE(branch
-              .add_case(
-                  "left",
-                  [](const wh::compose::graph_value &input,
-                     wh::core::run_context &) -> wh::core::result<bool> {
-                    auto mapped = wh::compose::payload_to_value_map_cref(input);
-                    if (mapped.has_error()) {
-                      return wh::core::result<bool>::failure(mapped.error());
-                    }
-                    const auto iter = mapped.value().get().find("route_left");
-                    if (iter == mapped.value().get().end()) {
-                      return wh::core::result<bool>::failure(
-                          wh::core::errc::not_found);
-                    }
-                    const auto *route = any_get<bool>(iter->second);
-                    if (route == nullptr) {
-                      return wh::core::result<bool>::failure(
-                          wh::core::errc::type_mismatch);
-                    }
-                    return *route;
-                  })
+              .add_case("left",
+                        [](const wh::compose::graph_value &input,
+                           wh::core::run_context &) -> wh::core::result<bool> {
+                          auto mapped = wh::compose::payload_to_value_map_cref(input);
+                          if (mapped.has_error()) {
+                            return wh::core::result<bool>::failure(mapped.error());
+                          }
+                          const auto iter = mapped.value().get().find("route_left");
+                          if (iter == mapped.value().get().end()) {
+                            return wh::core::result<bool>::failure(wh::core::errc::not_found);
+                          }
+                          const auto *route = any_get<bool>(iter->second);
+                          if (route == nullptr) {
+                            return wh::core::result<bool>::failure(wh::core::errc::type_mismatch);
+                          }
+                          return *route;
+                        })
               .has_value());
   REQUIRE(branch
-              .add_case(
-                  std::string{wh::compose::graph_end_node_key},
-                  [](const wh::compose::graph_value &input,
-                     wh::core::run_context &) -> wh::core::result<bool> {
-                    auto mapped = wh::compose::payload_to_value_map_cref(input);
-                    if (mapped.has_error()) {
-                      return wh::core::result<bool>::failure(mapped.error());
-                    }
-                    const auto iter = mapped.value().get().find("route_left");
-                    if (iter == mapped.value().get().end()) {
-                      return wh::core::result<bool>::failure(
-                          wh::core::errc::not_found);
-                    }
-                    const auto *route = any_get<bool>(iter->second);
-                    if (route == nullptr) {
-                      return wh::core::result<bool>::failure(
-                          wh::core::errc::type_mismatch);
-                    }
-                    return !*route;
-                  })
+              .add_case(std::string{wh::compose::graph_end_node_key},
+                        [](const wh::compose::graph_value &input,
+                           wh::core::run_context &) -> wh::core::result<bool> {
+                          auto mapped = wh::compose::payload_to_value_map_cref(input);
+                          if (mapped.has_error()) {
+                            return wh::core::result<bool>::failure(mapped.error());
+                          }
+                          const auto iter = mapped.value().get().find("route_left");
+                          if (iter == mapped.value().get().end()) {
+                            return wh::core::result<bool>::failure(wh::core::errc::not_found);
+                          }
+                          const auto *route = any_get<bool>(iter->second);
+                          if (route == nullptr) {
+                            return wh::core::result<bool>::failure(wh::core::errc::type_mismatch);
+                          }
+                          return !*route;
+                        })
               .has_value());
   REQUIRE(route_step.value().add_value_branch(std::move(branch)).has_value());
   REQUIRE(workflow.compile().has_value());
@@ -372,26 +338,23 @@ TEST_CASE("workflow authored stream-branch explicit end route compiles through "
 
   wh::compose::workflow workflow{options};
   auto route_step = workflow.add_step(
-      wh::compose::make_passthrough_node<wh::compose::node_contract::stream>(
-          "route"));
+      wh::compose::make_passthrough_node<wh::compose::node_contract::stream>("route"));
   REQUIRE(route_step.has_value());
   auto left = workflow.add_step(
-      wh::compose::make_passthrough_node<wh::compose::node_contract::stream>(
-          "left"));
+      wh::compose::make_passthrough_node<wh::compose::node_contract::stream>("left"));
   REQUIRE(left.has_value());
   REQUIRE(route_step.value().from_entry().has_value());
 
   wh::compose::stream_branch branch{};
   REQUIRE(branch.add_target("left").has_value());
-  REQUIRE(branch.add_target(std::string{wh::compose::graph_end_node_key})
-              .has_value());
-  REQUIRE(branch
-              .set_selector(
-                  [](wh::compose::graph_stream_reader, wh::core::run_context &)
-                      -> wh::core::result<std::vector<std::string>> {
-                    return std::vector<std::string>{"left"};
-                  })
-              .has_value());
+  REQUIRE(branch.add_target(std::string{wh::compose::graph_end_node_key}).has_value());
+  REQUIRE(
+      branch
+          .set_selector([](wh::compose::graph_stream_reader,
+                           wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
+            return std::vector<std::string>{"left"};
+          })
+          .has_value());
   REQUIRE(route_step.value().add_stream_branch(std::move(branch)).has_value());
   REQUIRE(workflow.compile().has_value());
 }
@@ -406,10 +369,8 @@ TEST_CASE("workflow authored parallel convenience lowers through step api",
   REQUIRE(source.value().from_entry().has_value());
 
   wh::compose::parallel group{};
-  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("left"))
-              .has_value());
-  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("right"))
-              .has_value());
+  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("left")).has_value());
+  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("right")).has_value());
 
   auto branches = source.value().add_parallel(std::move(group));
   REQUIRE(branches.has_value());
@@ -425,8 +386,7 @@ TEST_CASE("workflow authored parallel convenience lowers through step api",
   REQUIRE(invoked.has_value());
   const auto left_iter = invoked.value().find("left");
   REQUIRE(left_iter != invoked.value().end());
-  const auto *left_map =
-      any_get<wh::compose::graph_value_map>(left_iter->second);
+  const auto *left_map = any_get<wh::compose::graph_value_map>(left_iter->second);
   REQUIRE(left_map != nullptr);
   const auto left_payload_iter = left_map->find("payload");
   REQUIRE(left_payload_iter != left_map->end());
@@ -436,8 +396,7 @@ TEST_CASE("workflow authored parallel convenience lowers through step api",
 
   const auto right_iter = invoked.value().find("right");
   REQUIRE(right_iter != invoked.value().end());
-  const auto *right_map =
-      any_get<wh::compose::graph_value_map>(right_iter->second);
+  const auto *right_map = any_get<wh::compose::graph_value_map>(right_iter->second);
   REQUIRE(right_map != nullptr);
   const auto right_payload_iter = right_map->find("payload");
   REQUIRE(right_payload_iter != right_map->end());
@@ -449,25 +408,21 @@ TEST_CASE("workflow authored parallel convenience lowers through step api",
 TEST_CASE("workflow supports static value mapping dependency",
           "[core][compose][workflow][condition]") {
   wh::compose::workflow workflow{};
-  auto added_source =
-      workflow.add_step(wh::compose::make_passthrough_node("source"));
+  auto added_source = workflow.add_step(wh::compose::make_passthrough_node("source"));
   REQUIRE(added_source.has_value());
-  auto added_target =
-      workflow.add_step(wh::compose::make_passthrough_node("target"));
+  auto added_target = workflow.add_step(wh::compose::make_passthrough_node("target"));
   REQUIRE(added_target.has_value());
   REQUIRE(added_source.value().from_entry().has_value());
   REQUIRE(added_target.value()
-              .add_input(
-                  added_source.value(),
-                  {wh::compose::field_mapping_rule{
-                      .from_path = "foo",
-                      .to_path = "ctx.foo",
-                      .missing_policy = wh::compose::field_missing_policy::fail,
-                  }})
+              .add_input(added_source.value(),
+                         {wh::compose::field_mapping_rule{
+                             .from_path = "foo",
+                             .to_path = "ctx.foo",
+                             .missing_policy = wh::compose::field_missing_policy::fail,
+                         }})
               .has_value());
   REQUIRE(added_target.value()
-              .set_static_value("ctx.static_id",
-                                wh::core::any(std::string{"ORD-001"}))
+              .set_static_value("ctx.static_id", wh::core::any(std::string{"ORD-001"}))
               .has_value());
   REQUIRE(workflow.compile().has_value());
 
@@ -495,28 +450,25 @@ TEST_CASE("workflow supports static value mapping dependency",
 TEST_CASE("workflow supports data-only mapped input with indirect control path",
           "[core][compose][workflow][condition]") {
   wh::compose::workflow workflow{};
-  auto added_source =
-      workflow.add_step(wh::compose::make_passthrough_node("source"));
+  auto added_source = workflow.add_step(wh::compose::make_passthrough_node("source"));
   REQUIRE(added_source.has_value());
-  auto added_gate =
-      workflow.add_step(wh::compose::make_passthrough_node("gate"));
+  auto added_gate = workflow.add_step(wh::compose::make_passthrough_node("gate"));
   REQUIRE(added_gate.has_value());
-  auto added_target =
-      workflow.add_step(wh::compose::make_passthrough_node("target"));
+  auto added_target = workflow.add_step(wh::compose::make_passthrough_node("target"));
   REQUIRE(added_target.has_value());
 
   REQUIRE(added_source.value().from_entry().has_value());
   REQUIRE(added_gate.value().add_input(added_source.value()).has_value());
   REQUIRE(added_target.value().add_dependency(added_gate.value()).has_value());
-  REQUIRE(added_target.value()
-              .add_input_without_control(
-                  added_source.value(),
-                  {wh::compose::field_mapping_rule{
-                      .from_path = "order.id",
-                      .to_path = "ctx.id",
-                      .missing_policy = wh::compose::field_missing_policy::fail,
-                  }})
-              .has_value());
+  REQUIRE(
+      added_target.value()
+          .add_input_without_control(added_source.value(),
+                                     {wh::compose::field_mapping_rule{
+                                         .from_path = "order.id",
+                                         .to_path = "ctx.id",
+                                         .missing_policy = wh::compose::field_missing_policy::fail,
+                                     }})
+          .has_value());
   REQUIRE(workflow.compile().has_value());
 
   wh::compose::graph_value_map input{};
@@ -539,15 +491,12 @@ TEST_CASE("workflow supports data-only mapped input with indirect control path",
   REQUIRE(id.value() == 42);
 }
 
-TEST_CASE("compiled workflow can be nested as subgraph",
-          "[core][compose][workflow][condition]") {
+TEST_CASE("compiled workflow can be nested as subgraph", "[core][compose][workflow][condition]") {
   auto child = make_uid_workflow();
   REQUIRE(child.has_value());
 
   wh::compose::graph parent{};
-  REQUIRE(parent
-              .add_subgraph(wh::compose::make_subgraph_node(
-                  "child", std::move(child).value()))
+  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("child", std::move(child).value()))
               .has_value());
   REQUIRE(parent.add_entry_edge("child").has_value());
   REQUIRE(parent.add_exit_edge("child").has_value());
@@ -587,12 +536,11 @@ TEST_CASE("field mapping in place does not copy unrelated payloads",
   order_map.insert_or_assign("user", wh::core::any(std::move(user_map)));
   input.insert_or_assign("order", wh::core::any(std::move(order_map)));
 
-  auto compiled_rule =
-      wh::compose::compile_field_mapping_rule(wh::compose::field_mapping_rule{
-          .from_path = "order.user.id",
-          .to_path = "ctx.uid",
-          .missing_policy = wh::compose::field_missing_policy::fail,
-      });
+  auto compiled_rule = wh::compose::compile_field_mapping_rule(wh::compose::field_mapping_rule{
+      .from_path = "order.user.id",
+      .to_path = "ctx.uid",
+      .missing_policy = wh::compose::field_missing_policy::fail,
+  });
   REQUIRE(compiled_rule.has_value());
   std::vector<wh::compose::compiled_field_mapping_rule> rules{};
   rules.push_back(std::move(compiled_rule).value());
@@ -601,8 +549,7 @@ TEST_CASE("field mapping in place does not copy unrelated payloads",
   graph_copy_probe::move_count = 0;
 
   wh::core::run_context context{};
-  auto updated =
-      wh::compose::apply_field_mappings_in_place(input, rules, context);
+  auto updated = wh::compose::apply_field_mappings_in_place(input, rules, context);
   REQUIRE(updated.has_value());
   REQUIRE(graph_copy_probe::copy_count == 0);
   const auto heavy_iter = input.find("heavy");

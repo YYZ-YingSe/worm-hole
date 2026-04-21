@@ -1,5 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
-
+#include <atomic>
 #include <chrono>
 #include <optional>
 #include <stop_token>
@@ -7,6 +6,7 @@
 #include <tuple>
 #include <type_traits>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/sender_env.hpp"
@@ -26,7 +26,7 @@ template <typename result_t> struct cursor_read_receiver_state {
 
 template <typename scheduler_t = stdexec::inline_scheduler>
 using cursor_read_receiver_env =
-    wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+    wh::testing::helper::scheduler_env<scheduler_t, wh::testing::helper::stop_token>;
 
 template <typename result_t, typename scheduler_t = stdexec::inline_scheduler>
 struct cursor_read_receiver {
@@ -47,10 +47,29 @@ struct cursor_read_receiver {
 
   auto set_stopped() noexcept -> void { state->stopped_called = true; }
 
-  [[nodiscard]] auto get_env() const noexcept
-      -> cursor_read_receiver_env<scheduler_t> {
+  [[nodiscard]] auto get_env() const noexcept -> cursor_read_receiver_env<scheduler_t> {
     return env;
   }
+};
+
+struct retained_cursor_probe {
+  static inline std::atomic<int> live_count{0};
+
+  int value{0};
+
+  retained_cursor_probe() noexcept { live_count.fetch_add(1, std::memory_order_relaxed); }
+  explicit retained_cursor_probe(const int next) noexcept : value(next) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  retained_cursor_probe(const retained_cursor_probe &other) noexcept : value(other.value) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  retained_cursor_probe(retained_cursor_probe &&other) noexcept : value(other.value) {
+    live_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  auto operator=(const retained_cursor_probe &) -> retained_cursor_probe & = default;
+  auto operator=(retained_cursor_probe &&) noexcept -> retained_cursor_probe & = default;
+  ~retained_cursor_probe() { live_count.fetch_sub(1, std::memory_order_relaxed); }
 };
 
 } // namespace
@@ -63,22 +82,19 @@ TEST_CASE("cursor reader retains one source for many fixed cursors",
   REQUIRE(writer.try_write("gamma").has_value());
   REQUIRE(writer.close().has_value());
 
-  auto empty = wh::core::cursor_reader<decltype(source)>::make_readers(
-      std::move(source), 0U);
+  auto empty = wh::core::cursor_reader<decltype(source)>::make_readers(std::move(source), 0U);
   REQUIRE(empty.empty());
 
-  auto [writer_two, source_two] =
-      wh::schema::stream::make_pipe_stream<std::string>(8U);
+  auto [writer_two, source_two] = wh::schema::stream::make_pipe_stream<std::string>(8U);
   REQUIRE(writer_two.try_write("alpha").has_value());
   REQUIRE(writer_two.try_write("beta").has_value());
   REQUIRE(writer_two.try_write("gamma").has_value());
   REQUIRE(writer_two.close().has_value());
 
-  auto cursors = wh::core::cursor_reader<decltype(source_two)>::make_readers(
-      std::move(source_two), 2U);
+  auto cursors =
+      wh::core::cursor_reader<decltype(source_two)>::make_readers(std::move(source_two), 2U);
   REQUIRE(cursors.size() == 2U);
-  STATIC_REQUIRE(
-      !std::copy_constructible<std::remove_cvref_t<decltype(cursors.front())>>);
+  STATIC_REQUIRE(!std::copy_constructible<std::remove_cvref_t<decltype(cursors.front())>>);
 
   auto first_left = cursors[0].read();
   auto first_right = cursors[1].read();
@@ -110,25 +126,24 @@ TEST_CASE("cursor reader retains one source for many fixed cursors",
 }
 
 TEST_CASE("cursor reader async read exposes sender surface and supports stop",
-          "[UT][wh/core/cursor_reader/cursor_reader.hpp][cursor_reader::read_async][condition][branch][concurrency]") {
+          "[UT][wh/core/cursor_reader/"
+          "cursor_reader.hpp][cursor_reader::read_async][condition][branch][concurrency]") {
   auto [writer, source] = wh::schema::stream::make_pipe_stream<int>(1U);
   auto cursors = wh::core::make_cursor_readers(std::move(source), 1U);
   REQUIRE(cursors.size() == 1U);
 
   using cursor_t = decltype(cursors)::value_type;
   using result_t = decltype(cursors.front().read());
-  static_assert(
-      stdexec::sender<std::remove_cvref_t<decltype(std::declval<const cursor_t &>()
-                                                       .read_async())>>);
+  static_assert(stdexec::sender<
+                std::remove_cvref_t<decltype(std::declval<const cursor_t &>().read_async())>>);
 
   cursor_read_receiver_state<result_t> stopped_state{};
-  std::stop_source stop_source{};
-  auto stopped_operation = stdexec::connect(
-      cursors.front().read_async(),
-      cursor_read_receiver<result_t>{
-          &stopped_state,
-          {.scheduler = stdexec::inline_scheduler{},
-           .stop_token = stop_source.get_token()}});
+  wh::testing::helper::stop_source stop_source{};
+  auto stopped_operation =
+      stdexec::connect(cursors.front().read_async(),
+                       cursor_read_receiver<result_t>{&stopped_state,
+                                                      {.scheduler = stdexec::inline_scheduler{},
+                                                       .stop_token = stop_source.get_token()}});
 
   stdexec::start(stopped_operation);
   REQUIRE_FALSE(stopped_state.value_called);
@@ -142,14 +157,14 @@ TEST_CASE("cursor reader async read exposes sender surface and supports stop",
   REQUIRE_FALSE(stopped_state.error_called);
 
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
-  std::jthread producer([stream_writer = std::move(writer)]() mutable {
+  wh::testing::helper::joining_thread producer([stream_writer = std::move(writer)]() mutable {
     std::this_thread::sleep_for(std::chrono::milliseconds{10});
     REQUIRE(stream_writer.try_write(17).has_value());
     REQUIRE(stream_writer.close().has_value());
   });
 
-  auto waited = stdexec::sync_wait(
-      stdexec::starts_on(scheduler.scheduler(), cursors.front().read_async()));
+  auto waited =
+      stdexec::sync_wait(stdexec::starts_on(scheduler.scheduler(), cursors.front().read_async()));
   REQUIRE(waited.has_value());
 
   auto value = std::move(std::get<0>(waited.value()));
@@ -170,4 +185,29 @@ TEST_CASE("cursor reader close reports not found after release",
   REQUIRE(cursors.front().close().error() == wh::core::errc::not_found);
 
   REQUIRE(writer.close().has_value());
+}
+
+TEST_CASE("cursor reader destroys retained unread values when all cursors leave scope",
+          "[UT][wh/core/cursor_reader/cursor_reader.hpp][make_readers][lifetime][regression]") {
+  retained_cursor_probe::live_count.store(0, std::memory_order_release);
+
+  {
+    auto [writer, source] = wh::schema::stream::make_pipe_stream<retained_cursor_probe>(2U);
+    REQUIRE(writer.try_write(retained_cursor_probe{17}).has_value());
+    REQUIRE(writer.close().has_value());
+
+    auto cursors = wh::core::make_cursor_readers(std::move(source), 2U);
+    REQUIRE(cursors.size() == 2U);
+
+    auto first = cursors[0].read();
+    REQUIRE(first.has_value());
+    REQUIRE(first.value().value.has_value());
+    REQUIRE(first.value().value->value == 17);
+
+    // Leave the sibling cursor unread so the retained slot must be released
+    // during shared-state teardown rather than normal reclamation.
+    REQUIRE(retained_cursor_probe::live_count.load(std::memory_order_acquire) >= 1);
+  }
+
+  REQUIRE(retained_cursor_probe::live_count.load(std::memory_order_acquire) == 0);
 }

@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/authored/chain.hpp"
@@ -12,8 +11,7 @@ namespace {
 
 [[nodiscard]] auto make_subgraph() -> wh::compose::graph {
   wh::compose::graph graph{};
-  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("inner"))
-              .has_value());
+  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("inner")).has_value());
   REQUIRE(graph.add_entry_edge("inner").has_value());
   REQUIRE(graph.add_exit_edge("inner").has_value());
   REQUIRE(graph.compile().has_value());
@@ -33,12 +31,10 @@ TEST_CASE("chain compiles invokes and releases lowered graph",
   wh::compose::graph_value_map input{};
   input.insert_or_assign("value", wh::compose::graph_value{7});
   wh::core::run_context context{};
-  auto awaited =
-      stdexec::sync_wait(chain.invoke(context, wh::compose::graph_value{input}));
+  auto awaited = stdexec::sync_wait(chain.invoke(context, wh::compose::graph_value{input}));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
-  auto *output =
-      wh::core::any_cast<wh::compose::graph_value_map>(&std::get<0>(*awaited).value());
+  auto *output = wh::core::any_cast<wh::compose::graph_value_map>(&std::get<0>(*awaited).value());
   REQUIRE(output != nullptr);
   REQUIRE(*wh::core::any_cast<int>(&output->at("value")) == 7);
 
@@ -62,14 +58,14 @@ TEST_CASE("chain validates empty compile contract and fail fast behavior",
   REQUIRE(repeated.error() == wh::core::errc::invalid_argument);
 }
 
-TEST_CASE("chain routes branches parallel and subgraphs with tail validation",
-          "[UT][wh/compose/authored/chain.hpp][chain::append_branch][condition][branch][boundary]") {
+TEST_CASE(
+    "chain routes branches parallel and subgraphs with tail validation",
+    "[UT][wh/compose/authored/chain.hpp][chain::append_branch][condition][branch][boundary]") {
   wh::compose::value_branch branch{};
-  REQUIRE(branch.add_case("left",
-                          [](const wh::compose::graph_value &,
-                             wh::core::run_context &) -> wh::core::result<bool> {
-                            return true;
-                          })
+  REQUIRE(branch
+              .add_case("left",
+                        [](const wh::compose::graph_value &,
+                           wh::core::run_context &) -> wh::core::result<bool> { return true; })
               .has_value());
   wh::compose::chain no_tail{};
   auto missing_tail = no_tail.append_branch(branch);
@@ -80,10 +76,8 @@ TEST_CASE("chain routes branches parallel and subgraphs with tail validation",
   REQUIRE(chain.append(wh::compose::make_passthrough_node("source")).has_value());
 
   wh::compose::parallel group{};
-  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("left"))
-              .has_value());
-  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("right"))
-              .has_value());
+  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("left")).has_value());
+  REQUIRE(group.add_passthrough(wh::compose::make_passthrough_node("right")).has_value());
   REQUIRE(chain.append_parallel(group).has_value());
 
   auto branch_on_multiple_tails = chain.append_branch(branch);

@@ -13,17 +13,14 @@ struct non_nothrow_value {
   non_nothrow_value() = default;
   explicit non_nothrow_value(const int input) noexcept : value(input) {}
 
-  non_nothrow_value(const non_nothrow_value &other) noexcept(false)
-      : value(other.value) {}
-  non_nothrow_value(non_nothrow_value &&other) noexcept(false)
-      : value(other.value) {}
+  non_nothrow_value(const non_nothrow_value &other) noexcept(false) : value(other.value) {}
+  non_nothrow_value(non_nothrow_value &&other) noexcept(false) : value(other.value) {}
 
   auto operator=(const non_nothrow_value &) -> non_nothrow_value & = default;
   auto operator=(non_nothrow_value &&) -> non_nothrow_value & = default;
 
   [[nodiscard]] friend auto operator==(const non_nothrow_value &lhs,
-                                       const non_nothrow_value &rhs) noexcept
-      -> bool {
+                                       const non_nothrow_value &rhs) noexcept -> bool {
     return lhs.value == rhs.value;
   }
 };

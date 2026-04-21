@@ -2,8 +2,10 @@
 
 #include "wh/compose/graph/detail/runtime/pregel_types.hpp"
 
-TEST_CASE("pregel runtime delivery store stages current and next superstep frontier safely",
-          "[UT][wh/compose/graph/detail/runtime/pregel_types.hpp][pregel_delivery_store::advance_superstep][condition][branch][boundary]") {
+TEST_CASE(
+    "pregel runtime delivery store stages current and next superstep frontier safely",
+    "[UT][wh/compose/graph/detail/runtime/"
+    "pregel_types.hpp][pregel_delivery_store::advance_superstep][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   REQUIRE(pregel_ready_state::ready != pregel_ready_state::skipped);
@@ -48,7 +50,8 @@ TEST_CASE("pregel runtime delivery store stages current and next superstep front
 }
 
 TEST_CASE("pregel runtime delivery store advances into an empty next frontier and can be reused",
-          "[UT][wh/compose/graph/detail/runtime/pregel_types.hpp][pregel_delivery_store::reset][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "pregel_types.hpp][pregel_delivery_store::reset][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   pregel_delivery_store store{};

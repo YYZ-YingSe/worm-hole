@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/middlewares/skill/skill.hpp"
@@ -25,10 +25,8 @@ struct scoped_directory {
   return std::move(*typed);
 }
 
-[[nodiscard]] auto make_call_scope(wh::core::run_context &context,
-                                   const std::string_view tool_name,
-                                   const std::string_view call_id)
-    -> wh::tool::call_scope {
+[[nodiscard]] auto make_call_scope(wh::core::run_context &context, const std::string_view tool_name,
+                                   const std::string_view call_id) -> wh::tool::call_scope {
   return wh::tool::call_scope{
       .run = context,
       .component = "skill_ut",
@@ -41,16 +39,16 @@ struct scoped_directory {
 } // namespace
 
 TEST_CASE("skill detail helpers trim parse render and decode local skill documents",
-          "[UT][wh/agent/middlewares/skill/skill.hpp][detail::parse_skill_document][condition][branch][boundary]") {
+          "[UT][wh/agent/middlewares/skill/"
+          "skill.hpp][detail::parse_skill_document][condition][branch][boundary]") {
   REQUIRE(wh::agent::middlewares::skill::detail::trim_copy("  abc \n") == "abc");
   REQUIRE(wh::agent::middlewares::skill::detail::trim_copy("   ") == "");
   REQUIRE(wh::agent::middlewares::skill::detail::strip_quotes("\"abc\"") == "abc");
   REQUIRE(wh::agent::middlewares::skill::detail::strip_quotes("'abc'") == "abc");
   REQUIRE(wh::agent::middlewares::skill::detail::strip_quotes("abc") == "abc");
 
-  scoped_directory temp{
-      .path = std::filesystem::temp_directory_path() /
-              "worm_hole_skill_detail_ut"};
+  scoped_directory temp{.path =
+                            std::filesystem::temp_directory_path() / "worm_hole_skill_detail_ut"};
   std::filesystem::create_directories(temp.path / "good");
   std::filesystem::create_directories(temp.path / "bad");
   std::filesystem::create_directories(temp.path / "missing_fields");
@@ -83,9 +81,8 @@ TEST_CASE("skill detail helpers trim parse render and decode local skill documen
       temp.path / "bad", temp.path / "bad" / "SKILL.md");
   REQUIRE(bad.has_error());
   REQUIRE(bad.error() == wh::core::errc::parse_error);
-  auto missing_fields =
-      wh::agent::middlewares::skill::detail::parse_skill_document(
-          temp.path / "missing_fields", temp.path / "missing_fields" / "SKILL.md");
+  auto missing_fields = wh::agent::middlewares::skill::detail::parse_skill_document(
+      temp.path / "missing_fields", temp.path / "missing_fields" / "SKILL.md");
   REQUIRE(missing_fields.has_error());
   REQUIRE(missing_fields.error() == wh::core::errc::parse_error);
 
@@ -96,22 +93,19 @@ TEST_CASE("skill detail helpers trim parse render and decode local skill documen
               {}, wh::agent::middlewares::skill::skill_language::chinese) ==
           "按名称读取一个本地技能指南。可用技能：\n（无）");
   REQUIRE(wh::agent::middlewares::skill::detail::render_skill_list(
-              {parsed.value().info},
-              wh::agent::middlewares::skill::skill_language::english)
+              {parsed.value().info}, wh::agent::middlewares::skill::skill_language::english)
               .find("brainstorming") != std::string::npos);
   REQUIRE(wh::agent::middlewares::skill::detail::default_instruction(
               wh::agent::middlewares::skill::skill_language::chinese)
               .find("skill 工具") != std::string::npos);
 
-  auto skill_name = wh::agent::middlewares::skill::detail::read_skill_name(
-      R"({"name":"brainstorming"})");
+  auto skill_name =
+      wh::agent::middlewares::skill::detail::read_skill_name(R"({"name":"brainstorming"})");
   REQUIRE(skill_name.has_value());
   REQUIRE(skill_name.value() == "brainstorming");
-  auto missing_name = wh::agent::middlewares::skill::detail::read_skill_name(
-      R"({"other":"x"})");
+  auto missing_name = wh::agent::middlewares::skill::detail::read_skill_name(R"({"other":"x"})");
   REQUIRE(missing_name.has_error());
-  auto wrong_name = wh::agent::middlewares::skill::detail::read_skill_name(
-      R"({"name":1})");
+  auto wrong_name = wh::agent::middlewares::skill::detail::read_skill_name(R"({"name":1})");
   REQUIRE(wrong_name.has_error());
   REQUIRE(wrong_name.error() == wh::core::errc::type_mismatch);
 
@@ -121,26 +115,27 @@ TEST_CASE("skill detail helpers trim parse render and decode local skill documen
   REQUIRE(wh::agent::middlewares::skill::detail::render_loaded_skill(
               parsed.value(), wh::agent::middlewares::skill::skill_language::chinese)
               .find("技能：") == 0U);
-  auto graph_value =
-      wh::agent::middlewares::skill::detail::graph_string_value("hello");
+  auto graph_value = wh::agent::middlewares::skill::detail::graph_string_value("hello");
   REQUIRE(graph_value.has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&graph_value.value()) == "hello");
 }
 
 TEST_CASE("skill middleware lists loads renders mounts and refreshes skill tools",
-          "[UT][wh/agent/middlewares/skill/skill.hpp][make_skill_tool_binding][condition][branch][boundary]") {
-  scoped_directory temp{
-      .path = std::filesystem::temp_directory_path() /
-              "worm_hole_skill_public_ut"};
+          "[UT][wh/agent/middlewares/skill/"
+          "skill.hpp][make_skill_tool_binding][condition][branch][boundary]") {
+  scoped_directory temp{.path =
+                            std::filesystem::temp_directory_path() / "worm_hole_skill_public_ut"};
   std::filesystem::create_directories(temp.path / "brainstorming");
   std::filesystem::create_directories(temp.path / "review");
   {
     std::ofstream out{temp.path / "brainstorming" / "SKILL.md"};
-    out << "---\nname: brainstorming\ndescription: Explore design options\n---\nUse this to design before implementation.\n";
+    out << "---\nname: brainstorming\ndescription: Explore design options\n---\nUse this to design "
+           "before implementation.\n";
   }
   {
     std::ofstream out{temp.path / "review" / "SKILL.md"};
-    out << "---\nname: review\ndescription: Review implemented work\n---\nUse this to review a finished change.\n";
+    out << "---\nname: review\ndescription: Review implemented work\n---\nUse this to review a "
+           "finished change.\n";
   }
 
   wh::agent::middlewares::skill::skill_local_backend invalid_relative{"relative"};
@@ -166,20 +161,15 @@ TEST_CASE("skill middleware lists loads renders mounts and refreshes skill tools
   REQUIRE(description.value().find("brainstorming") != std::string::npos);
 
   wh::agent::middlewares::skill::skill_backend invalid_backend{};
-  REQUIRE(wh::agent::middlewares::skill::render_skill_tool_description(
-              invalid_backend)
-              .has_error());
-  REQUIRE(wh::agent::middlewares::skill::make_skill_request_middleware(
-              invalid_backend)
-              .has_error());
-  REQUIRE(wh::agent::middlewares::skill::make_skill_tool_binding(
-              invalid_backend)
-              .has_error());
+  REQUIRE(
+      wh::agent::middlewares::skill::render_skill_tool_description(invalid_backend).has_error());
+  REQUIRE(
+      wh::agent::middlewares::skill::make_skill_request_middleware(invalid_backend).has_error());
+  REQUIRE(wh::agent::middlewares::skill::make_skill_tool_binding(invalid_backend).has_error());
+  REQUIRE(wh::agent::middlewares::skill::make_skill_instruction({.instruction = "custom"}) ==
+          "custom");
   REQUIRE(wh::agent::middlewares::skill::make_skill_instruction(
-              {.instruction = "custom"}) == "custom");
-  REQUIRE(wh::agent::middlewares::skill::make_skill_instruction(
-              {.language =
-                   wh::agent::middlewares::skill::skill_language::english})
+              {.language = wh::agent::middlewares::skill::skill_language::english})
               .find("skill tool") != std::string::npos);
 
   auto binding = wh::agent::middlewares::skill::make_skill_tool_binding(
@@ -201,32 +191,30 @@ TEST_CASE("skill middleware lists loads renders mounts and refreshes skill tools
   REQUIRE(loaded_text.find("brainstorming") != std::string::npos);
   REQUIRE(loaded_text.find("SKILL.md") != std::string::npos);
 
-  auto bad_call = binding.value().entry.invoke(
-      wh::compose::tool_call{.call_id = "call-bad",
-                             .tool_name = "load_skill",
-                             .arguments = R"({"name":1})"},
-      make_call_scope(context, "load_skill", "call-bad"));
+  auto bad_call = binding.value().entry.invoke(wh::compose::tool_call{.call_id = "call-bad",
+                                                                      .tool_name = "load_skill",
+                                                                      .arguments = R"({"name":1})"},
+                                               make_call_scope(context, "load_skill", "call-bad"));
   REQUIRE(bad_call.has_error());
   REQUIRE(bad_call.error() == wh::core::errc::type_mismatch);
 
-  auto middleware =
-      wh::agent::middlewares::skill::make_skill_request_middleware(
-          backend, wh::agent::middlewares::skill::skill_tool_options{
-                       .tool_name = "load_skill",
-                       .instruction = "Read local skills before acting.",
-                       .language =
-                           wh::agent::middlewares::skill::skill_language::english});
+  auto middleware = wh::agent::middlewares::skill::make_skill_request_middleware(
+      backend, wh::agent::middlewares::skill::skill_tool_options{
+                   .tool_name = "load_skill",
+                   .instruction = "Read local skills before acting.",
+                   .language = wh::agent::middlewares::skill::skill_language::english});
   REQUIRE(middleware.has_value());
 
   std::filesystem::create_directories(temp.path / "dynamic");
   {
     std::ofstream out{temp.path / "dynamic" / "SKILL.md"};
-    out << "---\nname: dynamic\ndescription: Added after middleware creation\n---\nFresh skill body.\n";
+    out << "---\nname: dynamic\ndescription: Added after middleware creation\n---\nFresh skill "
+           "body.\n";
   }
 
   wh::model::chat_request request{};
-  request.messages.push_back(wh::testing::helper::make_text_message(
-      wh::schema::message_role::user, "hello"));
+  request.messages.push_back(
+      wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello"));
   request.tools.push_back(wh::schema::tool_schema_definition{
       .name = "load_skill",
       .description = "stale",
@@ -234,8 +222,8 @@ TEST_CASE("skill middleware lists loads renders mounts and refreshes skill tools
   auto mutated = middleware.value()(request);
   REQUIRE(mutated.has_value());
   REQUIRE(request.messages.front().role == wh::schema::message_role::system);
-  REQUIRE(std::get<wh::schema::text_part>(request.messages.front().parts.front())
-              .text == "Read local skills before acting.");
+  REQUIRE(std::get<wh::schema::text_part>(request.messages.front().parts.front()).text ==
+          "Read local skills before acting.");
   REQUIRE(request.tools.front().description.find("dynamic") != std::string::npos);
 
   wh::agent::toolset toolset{};

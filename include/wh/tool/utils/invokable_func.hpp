@@ -29,8 +29,7 @@ struct result_value<wh::core::result<value_t, error_t>> {
 
 template <typename value_t>
 /// Serializes tool output value into response text.
-[[nodiscard]] inline auto serialize_tool_value(value_t &&value)
-    -> wh::core::result<std::string> {
+[[nodiscard]] inline auto serialize_tool_value(value_t &&value) -> wh::core::result<std::string> {
   using normalized_t = wh::core::remove_cvref_t<value_t>;
 
   if constexpr (std::same_as<normalized_t, std::string>) {
@@ -39,8 +38,7 @@ template <typename value_t>
     return std::string{std::string_view{std::forward<value_t>(value)}};
   } else {
     wh::core::json_document document;
-    auto encoded =
-        wh::internal::to_json(value, document, document.GetAllocator());
+    auto encoded = wh::internal::to_json(value, document, document.GetAllocator());
     if (encoded.has_error()) {
       return wh::core::result<std::string>::failure(encoded.error());
     }
@@ -65,8 +63,7 @@ template <typename output_t>
       return serialize_tool_value(std::move(status).value());
     }
   } else if constexpr (std::same_as<normalized_t, void>) {
-    return wh::core::result<std::string>::failure(
-        wh::core::errc::contract_violation);
+    return wh::core::result<std::string>::failure(wh::core::errc::contract_violation);
   } else {
     return serialize_tool_value(std::forward<output_t>(output));
   }
@@ -75,14 +72,13 @@ template <typename output_t>
 } // namespace detail
 
 template <typename params_t>
-using input_deserializer =
-    wh::core::function<wh::core::result<params_t>(std::string_view) const>;
+using input_deserializer = wh::core::function<wh::core::result<params_t>(std::string_view) const>;
 
 template <typename params_t>
 /// Decodes tool input text into typed params.
-[[nodiscard]] inline auto decode_tool_input(
-    const std::string_view input,
-    const input_deserializer<params_t> &custom_deserializer = nullptr)
+[[nodiscard]] inline auto
+decode_tool_input(const std::string_view input,
+                  const input_deserializer<params_t> &custom_deserializer = nullptr)
     -> wh::core::result<params_t> {
   if (custom_deserializer) {
     auto decoded = custom_deserializer(input);
@@ -113,20 +109,18 @@ template <typename function_t>
              const std::string_view input,
              const tool_options &options) -> wh::core::result<std::string> {
     using output_t =
-        wh::core::callable_result_t<stored_function_t, std::string_view,
-                                    const tool_options &>;
+        wh::core::callable_result_t<stored_function_t, std::string_view, const tool_options &>;
     static_assert(!std::same_as<wh::core::remove_cvref_t<output_t>, void>,
                   "invokable function must return value or result<value>");
-    return detail::normalize_invokable_output(
-        std::invoke(function, input, options));
+    return detail::normalize_invokable_output(std::invoke(function, input, options));
   };
 }
 
 template <typename params_t, typename function_t>
 /// Adapts typed invoke function into one invoke-compatible callable.
-[[nodiscard]] inline auto make_invokable_func(
-    function_t &&function,
-    input_deserializer<params_t> custom_deserializer = nullptr) {
+[[nodiscard]] inline auto
+make_invokable_func(function_t &&function,
+                    input_deserializer<params_t> custom_deserializer = nullptr) {
   using stored_function_t = wh::core::remove_cvref_t<function_t>;
   return [function = stored_function_t{std::forward<function_t>(function)},
           custom_deserializer = std::move(custom_deserializer)](
@@ -140,23 +134,18 @@ template <typename params_t, typename function_t>
     if constexpr (wh::core::callable_with<stored_function_t, const params_t &,
                                           const tool_options &>) {
       using output_t =
-          wh::core::callable_result_t<stored_function_t, const params_t &,
-                                      const tool_options &>;
-      static_assert(
-          !std::same_as<wh::core::remove_cvref_t<output_t>, void>,
-          "typed invokable function must return value or result<value>");
-      return detail::normalize_invokable_output(
-          std::invoke(function, decoded.value(), options));
+          wh::core::callable_result_t<stored_function_t, const params_t &, const tool_options &>;
+      static_assert(!std::same_as<wh::core::remove_cvref_t<output_t>, void>,
+                    "typed invokable function must return value or result<value>");
+      return detail::normalize_invokable_output(std::invoke(function, decoded.value(), options));
     } else if constexpr (wh::core::callable_with<stored_function_t, params_t,
                                                  const tool_options &>) {
-      using output_t = wh::core::callable_result_t<stored_function_t, params_t,
-                                                   const tool_options &>;
+      using output_t =
+          wh::core::callable_result_t<stored_function_t, params_t, const tool_options &>;
       auto value = std::move(decoded).value();
-      static_assert(
-          !std::same_as<wh::core::remove_cvref_t<output_t>, void>,
-          "typed invokable function must return value or result<value>");
-      return detail::normalize_invokable_output(
-          std::invoke(function, std::move(value), options));
+      static_assert(!std::same_as<wh::core::remove_cvref_t<output_t>, void>,
+                    "typed invokable function must return value or result<value>");
+      return detail::normalize_invokable_output(std::invoke(function, std::move(value), options));
     } else {
       static_assert(detail::always_false_v<stored_function_t>,
                     "typed invokable function must accept (params_t, options)");

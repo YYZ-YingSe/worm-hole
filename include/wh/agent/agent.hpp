@@ -39,8 +39,7 @@ struct agent_output {
   /// Optional normalized transfer action emitted by the lowered agent run.
   std::optional<agent_transfer> transfer{};
   /// Explicit output slots materialized by the lowered agent graph.
-  std::unordered_map<std::string, wh::core::any,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, wh::core::any, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       output_values{};
 };
@@ -57,9 +56,8 @@ public:
   /// Freeze hook used by executable authored agents before graph lowering.
   using freeze_hook = wh::core::move_only_function<wh::core::result<void>()>;
 
-  /// Lower hook that materializes one authored agent into one compose graph.
-  using lower_graph_hook =
-      wh::core::move_only_function<wh::core::result<wh::compose::graph>()>;
+  /// Lower hook that materializes one frozen executable agent into one graph.
+  using lower_hook = wh::core::move_only_function<wh::core::result<wh::compose::graph>()>;
 
   /// Stores one authored agent name.
   explicit agent(std::string name) noexcept : name_(std::move(name)) {}
@@ -74,8 +72,7 @@ public:
   [[nodiscard]] auto name() const noexcept -> std::string_view { return name_; }
 
   /// Returns the stable parent agent name when this agent is attached.
-  [[nodiscard]] auto parent_name() const noexcept
-      -> std::optional<std::string_view> {
+  [[nodiscard]] auto parent_name() const noexcept -> std::optional<std::string_view> {
     if (!parent_name_.has_value()) {
       return std::nullopt;
     }
@@ -86,14 +83,10 @@ public:
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
   /// Returns the optional human-readable agent description.
-  [[nodiscard]] auto description() const noexcept -> std::string_view {
-    return description_;
-  }
+  [[nodiscard]] auto description() const noexcept -> std::string_view { return description_; }
 
   /// Returns true when this authored agent can lower into one compose graph.
-  [[nodiscard]] auto executable() const noexcept -> bool {
-    return static_cast<bool>(lower_graph_);
-  }
+  [[nodiscard]] auto executable() const noexcept -> bool { return static_cast<bool>(lower_); }
 
   /// Replaces the current agent description before freeze.
   auto set_description(std::string description) -> wh::core::result<void> {
@@ -128,8 +121,7 @@ public:
   }
 
   /// Renders the authored instruction string.
-  [[nodiscard]] auto
-  render_instruction(const std::string_view separator = "\n") const
+  [[nodiscard]] auto render_instruction(const std::string_view separator = "\n") const
       -> std::string {
     return instruction_.render(separator);
   }
@@ -156,8 +148,7 @@ public:
   }
 
   /// Whitelists one downward transfer target by child name before freeze.
-  auto allow_transfer_to_child(std::string child_name)
-      -> wh::core::result<void> {
+  auto allow_transfer_to_child(std::string child_name) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -180,8 +171,7 @@ public:
   }
 
   /// Returns true when the named child exists.
-  [[nodiscard]] auto has_child(const std::string_view child_name) const noexcept
-      -> bool {
+  [[nodiscard]] auto has_child(const std::string_view child_name) const noexcept -> bool {
     for (const auto &child : children_) {
       if (child->name_ == child_name) {
         return true;
@@ -191,8 +181,7 @@ public:
   }
 
   /// Returns true when transfer to the named child is whitelisted.
-  [[nodiscard]] auto
-  allows_transfer_to_child(const std::string_view child_name) const noexcept
+  [[nodiscard]] auto allows_transfer_to_child(const std::string_view child_name) const noexcept
       -> bool {
     return allowed_transfer_children_.contains(child_name);
   }
@@ -215,9 +204,7 @@ public:
   }
 
   /// Returns the current child count.
-  [[nodiscard]] auto child_count() const noexcept -> std::size_t {
-    return children_.size();
-  }
+  [[nodiscard]] auto child_count() const noexcept -> std::size_t { return children_.size(); }
 
   /// Returns one copied child-name list for diagnostics and tests.
   [[nodiscard]] auto child_names() const -> std::vector<std::string> {
@@ -230,8 +217,7 @@ public:
   }
 
   /// Returns one copied transfer-child whitelist for diagnostics and tests.
-  [[nodiscard]] auto allowed_transfer_children() const
-      -> std::vector<std::string> {
+  [[nodiscard]] auto allowed_transfer_children() const -> std::vector<std::string> {
     std::vector<std::string> names{};
     names.reserve(allowed_transfer_children_.size());
     for (const auto &entry : allowed_transfer_children_) {
@@ -270,8 +256,7 @@ public:
   }
 
   /// Installs executable lowering hooks before freeze.
-  auto bind_execution(freeze_hook freeze, lower_graph_hook lower)
-      -> wh::core::result<void> {
+  auto bind_execution(freeze_hook freeze, lower_hook lower) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -280,29 +265,26 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     freeze_ = std::move(freeze);
-    lower_graph_ = std::move(lower);
+    lower_ = std::move(lower);
     return {};
   }
 
-  /// Lowers this authored agent into one compose graph after freeze.
-  [[nodiscard]] auto lower_graph() -> wh::core::result<wh::compose::graph> {
-    auto frozen = freeze();
-    if (frozen.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(frozen.error());
+  /// Lowers this frozen executable agent into one compose graph.
+  [[nodiscard]] auto lower() const -> wh::core::result<wh::compose::graph> {
+    if (!frozen_) {
+      return wh::core::result<wh::compose::graph>::failure(wh::core::errc::contract_violation);
     }
-    if (!lower_graph_) {
-      return wh::core::result<wh::compose::graph>::failure(
-          wh::core::errc::not_supported);
+    if (!lower_) {
+      return wh::core::result<wh::compose::graph>::failure(wh::core::errc::not_supported);
     }
-    return lower_graph_();
+    return lower_();
   }
 
 private:
   /// Rejects topology mutation after freeze.
   [[nodiscard]] auto ensure_mutable() const -> wh::core::result<void> {
     if (frozen_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     return {};
   }
@@ -326,7 +308,7 @@ private:
   /// Optional freeze hook owned by executable authored agents.
   freeze_hook freeze_{nullptr};
   /// Optional lowering hook owned by executable authored agents.
-  lower_graph_hook lower_graph_{nullptr};
+  mutable lower_hook lower_{nullptr};
   /// True after topology and transfer rules are frozen.
   bool frozen_{false};
 };

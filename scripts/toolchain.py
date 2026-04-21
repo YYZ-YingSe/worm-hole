@@ -17,15 +17,15 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parent.parent
-THIRD_PARTY_DIR = ROOT / "thirdy_party"
+THIRD_PARTY_ROOT = ROOT / "thirdy_party"
 BUILD_ROOT = ROOT / "build"
 TESTS_DIR = ROOT / "tests"
 DEFAULT_REPORTER = "compact"
 DEFAULT_LOCAL_PRESET = "dev-debug"
+DEFAULT_EDITOR_PRESET = "dev-editor"
 DEFAULT_ANALYSIS_PRESET = "ci-static-analysis"
 DEFAULT_SANITIZER_PRESET = "ci-asan-ubsan"
 DEFAULT_COVERAGE_PRESET = "ci-coverage"
-DEFAULT_CODEQL_PRESET = "ci-codeql"
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,7 @@ class MatrixLane:
     name: str
     configure_preset: str
     build_preset: str
+    planning_preset: str
     min_shards: int
     suites: tuple[str, ...]
     include_labels: tuple[str, ...]
@@ -75,6 +76,13 @@ class TestBuildCostModel:
             + target_count * self.per_target_compile_actions
             + target_count * self.per_target_link_actions
         )
+
+
+@dataclass(frozen=True)
+class TestRunResult:
+    entry: TestEntry
+    returncode: int
+    elapsed_seconds: float
 
 
 def print_step(tag: str, message: str) -> None:
@@ -146,7 +154,7 @@ def is_project_path_in_scope(
         return False
     if not under(path, ROOT):
         return False
-    if not include_third_party and under(path, THIRD_PARTY_DIR):
+    if not include_third_party and under(path, THIRD_PARTY_ROOT):
         return False
     if under(path, BUILD_ROOT):
         return False
@@ -180,6 +188,56 @@ def sync_compile_commands(build_dir: Path) -> None:
         return
     shutil.copyfile(source, target)
     print_step("compile-commands", f"SYNC {source} -> {target}")
+
+
+def editor_compile_database_is_stale() -> bool:
+    editor_build_dir = build_dir_for_preset(DEFAULT_EDITOR_PRESET)
+    compile_db = editor_build_dir / "compile_commands.json"
+    if not compile_db.exists():
+        return True
+
+    compile_db_mtime = compile_db.stat().st_mtime
+    watched_roots = [
+        ROOT / "CMakeLists.txt",
+        ROOT / "CMakePresets.json",
+        ROOT / ".clangd",
+        ROOT / "cmake",
+        ROOT / "tests",
+        ROOT / "example",
+        ROOT / "benchmark",
+    ]
+
+    for path in watched_roots:
+        if not path.exists():
+            continue
+        if path.is_file():
+            if path.stat().st_mtime > compile_db_mtime:
+                return True
+            continue
+
+        for child in path.rglob("*"):
+            if not child.is_file():
+                continue
+            if child.stat().st_mtime > compile_db_mtime:
+                return True
+    return False
+
+
+def ensure_editor_compile_database(tag: str) -> None:
+    if os.environ.get("WH_SKIP_EDITOR_SYNC") == "1":
+        print_step("editor", "SKIP disabled by WH_SKIP_EDITOR_SYNC=1")
+        return
+
+    if not editor_compile_database_is_stale():
+        print_step("editor", f"READY {build_dir_for_preset(DEFAULT_EDITOR_PRESET)}")
+        return
+
+    print_step("editor", f"CONFIGURE {DEFAULT_EDITOR_PRESET}")
+    build_dir = configure_preset(
+        DEFAULT_EDITOR_PRESET,
+        f"{tag}-editor",
+    )
+    print_step("editor", f"PASS {build_dir}")
 
 
 def compiler_cache_bin() -> str | None:
@@ -388,7 +446,7 @@ def collect_source_files(scope_mode: str) -> tuple[list[Path], str]:
     filtered = [
         file
         for file in files
-        if under(file, ROOT) and not under(file, THIRD_PARTY_DIR) and not under(file, BUILD_ROOT)
+        if under(file, ROOT) and not under(file, THIRD_PARTY_ROOT) and not under(file, BUILD_ROOT)
     ]
     return filtered, scope_label
 
@@ -407,7 +465,7 @@ def collect_shell_files(scope_mode: str) -> tuple[list[Path], str]:
     filtered = [
         file
         for file in files
-        if under(file, ROOT) and not under(file, THIRD_PARTY_DIR) and not under(file, BUILD_ROOT)
+        if under(file, ROOT) and not under(file, THIRD_PARTY_ROOT) and not under(file, BUILD_ROOT)
     ]
     return filtered, scope_label
 
@@ -479,6 +537,7 @@ def load_matrix_lanes(path: Path) -> list[MatrixLane]:
             )
 
         build_preset = str(item.get("build_preset") or configure_preset)
+        planning_preset = str(item.get("planning_preset") or configure_preset)
         min_shards = max(1, int(item.get("min_shards") or 1))
         suites = tuple(str(value) for value in (item.get("suites") or []))
         include_labels = tuple(str(value) for value in (item.get("include_labels") or []))
@@ -489,6 +548,7 @@ def load_matrix_lanes(path: Path) -> list[MatrixLane]:
                 name=name,
                 configure_preset=configure_preset,
                 build_preset=build_preset,
+                planning_preset=planning_preset,
                 min_shards=min_shards,
                 suites=suites,
                 include_labels=include_labels,
@@ -583,45 +643,84 @@ def run_test_entries(
     reporter: str,
     default_timeout_seconds: int,
     env: dict[str, str] | None = None,
+    fail_fast: bool = True,
 ) -> None:
+    failures: list[TestRunResult] = []
+    for entry in entries:
+        result = run_test_entry(
+            entry,
+            reporter=reporter,
+            default_timeout_seconds=default_timeout_seconds,
+            env=env,
+        )
+        if result.returncode != 0:
+            failures.append(result)
+            if fail_fast:
+                raise SystemExit(result.returncode)
+
+    if failures:
+        print_step("test-shard", f"FAIL {len(failures)}/{len(entries)} test targets failed")
+        for failure in failures:
+            print_step(
+                "test-shard",
+                f"FAILED {failure.entry.target} exited with {failure.returncode}",
+            )
+        raise SystemExit(failures[0].returncode)
+
+    print_step("test-shard", f"PASS {len(entries)} test targets")
+
+
+def run_test_entry(
+    entry: TestEntry,
+    *,
+    reporter: str,
+    default_timeout_seconds: int,
+    env: dict[str, str] | None = None,
+) -> TestRunResult:
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
 
-    for entry in entries:
-        timeout_seconds = (
-            entry.timeout_seconds if entry.timeout_seconds > 0 else default_timeout_seconds
+    timeout_seconds = (
+        entry.timeout_seconds if entry.timeout_seconds > 0 else default_timeout_seconds
+    )
+    print_step(
+        "test-shard",
+        "RUN "
+        f"{entry.target} ({entry.suite}, weight={entry.weight}, timeout={timeout_seconds}s, "
+        f"labels={','.join(entry.labels)})",
+    )
+    start = time.monotonic()
+    try:
+        completed = subprocess.run(
+            [
+                str(entry.executable),
+                "--reporter",
+                reporter,
+                "--allow-running-no-tests",
+            ],
+            cwd=str(ROOT),
+            env=merged_env,
+            check=False,
+            text=True,
+            timeout=timeout_seconds,
         )
-        print_step(
-            "test-shard",
-            "RUN "
-            f"{entry.target} ({entry.suite}, weight={entry.weight}, timeout={timeout_seconds}s, "
-            f"labels={','.join(entry.labels)})",
-        )
-        start = time.monotonic()
-        try:
-            completed = subprocess.run(
-                [
-                    str(entry.executable),
-                    "--reporter",
-                    reporter,
-                    "--allow-running-no-tests",
-                ],
-                cwd=str(ROOT),
-                env=merged_env,
-                check=False,
-                text=True,
-                timeout=timeout_seconds,
-            )
-        except subprocess.TimeoutExpired:
-            fail("test-shard", f"target {entry.target} timed out after {timeout_seconds}s", code=124)
+    except FileNotFoundError as error:
+        fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
+    except OSError as error:
+        fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
+    except subprocess.TimeoutExpired:
+        fail("test-shard", f"target {entry.target} timed out after {timeout_seconds}s", code=124)
 
-        elapsed = time.monotonic() - start
-        print_step("test-shard", f"DONE {entry.target} elapsed={elapsed:.2f}s")
-        if completed.returncode != 0:
-            raise SystemExit(completed.returncode)
-
-    print_step("test-shard", f"PASS {len(entries)} test targets")
+    elapsed = time.monotonic() - start
+    print_step("test-shard", f"DONE {entry.target} elapsed={elapsed:.2f}s")
+    if completed.returncode != 0:
+        print_step("test-shard", f"FAIL {entry.target} exited with {completed.returncode}")
+    return TestRunResult(
+        entry=entry,
+        returncode=completed.returncode,
+        elapsed_seconds=elapsed,
+    )
 
 
 def filter_compile_commands_to_project_scope(
@@ -811,6 +910,265 @@ def filter_coverage_report_to_project_scope(
     return payload
 
 
+def coverage_tools() -> tuple[str, str]:
+    llvm_cov_bin = os.environ.get("WH_LLVM_COV_BIN", "llvm-cov")
+    llvm_profdata_bin = os.environ.get("WH_LLVM_PROFDATA_BIN", "llvm-profdata")
+    require_commands("coverage", "cmake", llvm_cov_bin, llvm_profdata_bin)
+    return llvm_cov_bin, llvm_profdata_bin
+
+
+def merge_coverage_profiles(
+    tag: str,
+    llvm_profdata_bin: str,
+    profile_inputs: Sequence[Path],
+    output_file: Path,
+) -> None:
+    if not profile_inputs:
+        fail(tag, "no coverage profiles to merge")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    run(
+        [
+            llvm_profdata_bin,
+            "merge",
+            "-sparse",
+            *[str(path) for path in profile_inputs],
+            "-o",
+            str(output_file),
+        ]
+    )
+    print_step(tag, f"MERGED profiles={len(profile_inputs)} -> {output_file}")
+
+
+def export_coverage_summary(
+    tag: str,
+    llvm_cov_bin: str,
+    profdata_file: Path,
+    binaries: Sequence[str],
+    report_json: Path,
+) -> None:
+    report_json.parent.mkdir(parents=True, exist_ok=True)
+    export_result = run(
+        [
+            llvm_cov_bin,
+            "export",
+            "--summary-only",
+            "--instr-profile",
+            str(profdata_file),
+            *binaries,
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if export_result.stdout:
+        report_json.write_text(export_result.stdout, encoding="utf-8")
+    else:
+        report_json.write_text("", encoding="utf-8")
+    if export_result.stderr:
+        sys.stderr.write(export_result.stderr)
+    if export_result.returncode != 0:
+        fail(tag, f"llvm-cov export failed with status {export_result.returncode}")
+    if "mismatched data" in export_result.stderr:
+        fail(
+            tag,
+            "llvm-cov reported mismatched data across coverage binaries; "
+            "aggregate line coverage is unreliable",
+        )
+
+
+def export_coverage_lcov(
+    tag: str,
+    llvm_cov_bin: str,
+    profdata_file: Path,
+    binary: Path,
+    report_file: Path,
+) -> None:
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    export_result = run(
+        [
+            llvm_cov_bin,
+            "export",
+            "--format=lcov",
+            "--instr-profile",
+            str(profdata_file),
+            str(binary),
+        ],
+        check=False,
+        capture_output=True,
+    )
+    report_file.write_text(export_result.stdout or "", encoding="utf-8")
+    if export_result.stderr:
+        sys.stderr.write(export_result.stderr)
+    if export_result.returncode != 0:
+        fail(tag, f"llvm-cov lcov export failed with status {export_result.returncode}")
+    if "mismatched data" in export_result.stderr:
+        fail(
+            tag,
+            f"llvm-cov reported mismatched data for {binary.name}; "
+            "coverage aggregation requires per-binary profile isolation",
+        )
+
+
+def parse_lcov_line_hits(report_file: Path) -> dict[str, dict[int, int]]:
+    merged: dict[str, dict[int, int]] = {}
+    current_file: str | None = None
+
+    for raw_line in report_file.read_text(encoding="utf-8").splitlines():
+        if raw_line.startswith("SF:"):
+            current_file = raw_line[3:]
+            merged.setdefault(current_file, {})
+            continue
+        if current_file is None:
+            continue
+        if raw_line.startswith("DA:"):
+            line_part, count_part = raw_line[3:].split(",", 1)
+            line_number = int(line_part)
+            hit_count = int(count_part.split(",", 1)[0])
+            merged[current_file][line_number] = (
+                merged[current_file].get(line_number, 0) + hit_count
+            )
+            continue
+        if raw_line == "end_of_record":
+            current_file = None
+
+    return merged
+
+
+def merge_lcov_reports(
+    tag: str,
+    report_inputs: Sequence[Path],
+    output_file: Path,
+) -> dict[str, dict[int, int]]:
+    if not report_inputs:
+        fail(tag, "no lcov reports to merge")
+
+    merged: dict[str, dict[int, int]] = {}
+    for report_file in report_inputs:
+        for file_name, line_hits in parse_lcov_line_hits(report_file).items():
+            merged_file = merged.setdefault(file_name, {})
+            for line_number, hit_count in line_hits.items():
+                merged_file[line_number] = merged_file.get(line_number, 0) + hit_count
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as handle:
+        for file_name in sorted(merged):
+            line_hits = merged[file_name]
+            handle.write(f"SF:{file_name}\n")
+            for line_number in sorted(line_hits):
+                handle.write(f"DA:{line_number},{line_hits[line_number]}\n")
+            covered_lines = sum(1 for hit_count in line_hits.values() if hit_count > 0)
+            handle.write(f"LF:{len(line_hits)}\n")
+            handle.write(f"LH:{covered_lines}\n")
+            handle.write("end_of_record\n")
+
+    print_step(tag, f"MERGED lcov={len(report_inputs)} -> {output_file}")
+    return merged
+
+
+def write_lcov_summary_json(
+    tag: str,
+    merged_line_hits: dict[str, dict[int, int]],
+    report_json: Path,
+) -> None:
+    files: list[dict[str, object]] = []
+    for file_name in sorted(merged_line_hits):
+        line_hits = merged_line_hits[file_name]
+        line_count = len(line_hits)
+        covered_lines = sum(1 for hit_count in line_hits.values() if hit_count > 0)
+        files.append(
+            {
+                "filename": file_name,
+                "summary": {
+                    "lines": {
+                        "count": line_count,
+                        "covered": covered_lines,
+                        "percent": (float(covered_lines) * 100.0 / float(line_count))
+                        if line_count
+                        else 0.0,
+                    }
+                },
+            }
+        )
+
+    payload = {
+        "data": [
+            {
+                "files": files,
+                "totals": recompute_coverage_totals(files),
+            }
+        ]
+    }
+    report_json.parent.mkdir(parents=True, exist_ok=True)
+    report_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print_step(tag, f"SUMMARY {report_json}")
+
+
+def check_coverage_gate(tag: str, report_json: Path, minimum_lines: float) -> None:
+    payload = filter_coverage_report_to_project_scope(
+        report_json,
+        include_tests=True,
+    )
+    data = payload.get("data") or []
+    totals = data[0].get("totals", {}) if data else {}
+    lines = totals.get("lines", {}) if isinstance(totals, dict) else {}
+    percent = lines.get("percent")
+    if percent is None:
+        fail(tag, "coverage export did not contain line percentage")
+
+    line_pct = float(percent)
+    min_pct = float(minimum_lines) * 100.0
+    if line_pct + 1e-9 < min_pct:
+        fail(tag, f"line coverage {line_pct:.2f}% below threshold {min_pct:.2f}%")
+    print_step(tag, f"PASS line coverage {line_pct:.2f}% (threshold {min_pct:.2f}%)")
+
+
+def collect_coverage_profiles(tag: str, profile_dir: Path) -> list[Path]:
+    if not profile_dir.exists():
+        fail(tag, f"missing coverage profile directory: {profile_dir}")
+
+    profdata_files = sorted(path for path in profile_dir.rglob("*.profdata") if path.is_file())
+    if profdata_files:
+        return profdata_files
+
+    profraw_files = sorted(path for path in profile_dir.rglob("*.profraw") if path.is_file())
+    if profraw_files:
+        return profraw_files
+
+    fail(tag, f"no coverage profiles found under {profile_dir}")
+
+
+def collect_coverage_binaries(tag: str, binaries_dir: Path) -> list[Path]:
+    if not binaries_dir.exists():
+        fail(tag, f"missing coverage binaries directory: {binaries_dir}")
+
+    binaries = sorted(path for path in binaries_dir.rglob("*") if path.is_file())
+    if not binaries:
+        fail(tag, f"no coverage binaries found under {binaries_dir}")
+    return binaries
+
+
+def coverage_profile_pattern(entry: TestEntry, profile_dir: Path) -> str:
+    # Keep LLVM's module signature in the filename so one test process can emit
+    # separate raw profiles for each instrumented coverage mapping it loads.
+    return str(profile_dir / f"{entry.target}-%m-%p.profraw")
+
+
+def collect_entry_coverage_profiles(tag: str, profile_dir: Path, entry: TestEntry) -> list[Path]:
+    profiles = sorted(profile_dir.glob(f"{entry.target}-*.profraw"))
+    if not profiles:
+        fail(tag, f"no coverage profiles found for target {entry.target} under {profile_dir}")
+    return profiles
+
+
+def collect_lcov_reports(tag: str, reports_dir: Path) -> list[Path]:
+    if not reports_dir.exists():
+        fail(tag, f"missing lcov directory: {reports_dir}")
+
+    reports = sorted(path for path in reports_dir.rglob("*.info") if path.is_file())
+    if not reports:
+        fail(tag, f"no lcov reports found under {reports_dir}")
+    return reports
+
+
 def shard_compile_entries(
     entries: Sequence[CompileEntry], shard_count: int, shard_index: int
 ) -> list[CompileEntry]:
@@ -886,6 +1244,7 @@ def run_build_test_mode(
     default_timeout_seconds: int,
     reporter: str,
     env: dict[str, str] | None = None,
+    fail_fast_tests: bool = True,
     cache_entries: Sequence[str] = (),
 ) -> None:
     manifest_path = configure_and_validate_manifest(
@@ -917,6 +1276,7 @@ def run_build_test_mode(
         reporter=reporter,
         default_timeout_seconds=default_timeout_seconds,
         env=env,
+        fail_fast=fail_fast_tests,
     )
     print_step(tag, "PASS")
 
@@ -932,16 +1292,16 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
     matrix_include: list[dict[str, object]] = []
 
     for lane in lanes:
-        if lane.configure_preset not in manifest_cache:
-            manifest_path = configure_and_validate_manifest(lane.configure_preset, "matrix")
-            manifest_cache[lane.configure_preset] = load_manifest(manifest_path)
-            cost_model_cache[lane.configure_preset] = build_cost_model_for_manifest(
-                lane.configure_preset,
-                manifest_cache[lane.configure_preset],
+        if lane.planning_preset not in manifest_cache:
+            manifest_path = configure_and_validate_manifest(lane.planning_preset, "matrix")
+            manifest_cache[lane.planning_preset] = load_manifest(manifest_path)
+            cost_model_cache[lane.planning_preset] = build_cost_model_for_manifest(
+                lane.planning_preset,
+                manifest_cache[lane.planning_preset],
             )
 
         filtered_entries = filter_test_entries(
-            manifest_cache[lane.configure_preset],
+            manifest_cache[lane.planning_preset],
             suites=lane.suites,
             include_labels=lane.include_labels,
             exclude_labels=lane.exclude_labels,
@@ -957,23 +1317,23 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
             filtered_entries,
             min_shards=lane.min_shards,
             max_build_actions_per_shard=args.max_build_actions_per_shard,
-            cost_model=cost_model_cache[lane.configure_preset],
+            cost_model=cost_model_cache[lane.planning_preset],
         )
         largest_shard = max(len(shard) for shard in shards)
         largest_actions = max(
-            cost_model_cache[lane.configure_preset].estimate_actions_for_targets(len(shard))
+            cost_model_cache[lane.planning_preset].estimate_actions_for_targets(len(shard))
             for shard in shards
         )
         print_step(
             "matrix",
             f"{lane.name}: targets={len(filtered_entries)} resolved_shards={shard_count} "
             f"largest_shard={largest_shard} estimated_actions={largest_actions} "
-            f"limit={args.max_build_actions_per_shard}",
+            f"limit={args.max_build_actions_per_shard} planning_preset={lane.planning_preset}",
         )
 
         for shard_index, shard in enumerate(shards):
             estimated_build_actions = cost_model_cache[
-                lane.configure_preset
+                lane.planning_preset
             ].estimate_actions_for_targets(len(shard))
             payload: dict[str, object] = {
                 "name": lane.name,
@@ -1012,6 +1372,7 @@ def ci_build_test(args: argparse.Namespace) -> None:
         exclude_labels=args.exclude_label,
         default_timeout_seconds=args.default_timeout_seconds,
         reporter=args.reporter,
+        fail_fast_tests=False,
     )
 
 
@@ -1222,25 +1583,8 @@ def ci_codechecker(args: argparse.Namespace) -> None:
     print_step("codechecker", "PASS")
 
 
-def ci_codeql_build(args: argparse.Namespace) -> None:
-    if not (ROOT / "CMakeLists.txt").exists():
-        print_step("codeql-build", "SKIP no CMakeLists.txt")
-        return
-
-    build_dir = configure_preset(args.configure_preset, "codeql-build")
-    build_preset(
-        args.build_preset or args.configure_preset,
-        "codeql-build",
-        targets=[build_artifact_target("tests")],
-    )
-    print_compiler_cache_stats()
-    print_step("codeql-build", f"PASS {build_dir}")
-
-
 def ci_coverage(args: argparse.Namespace) -> None:
-    llvm_cov_bin = os.environ.get("WH_LLVM_COV_BIN", "llvm-cov")
-    llvm_profdata_bin = os.environ.get("WH_LLVM_PROFDATA_BIN", "llvm-profdata")
-    require_commands("coverage", "cmake", llvm_cov_bin, llvm_profdata_bin)
+    llvm_cov_bin, llvm_profdata_bin = coverage_tools()
 
     manifest_path = configure_and_validate_manifest(args.configure_preset, "coverage")
     build_dir = build_dir_for_preset(args.configure_preset)
@@ -1265,89 +1609,167 @@ def ci_coverage(args: argparse.Namespace) -> None:
 
     profile_dir = build_dir / "profiles"
     report_dir = build_dir / "reports"
-    profdata_file = profile_dir / "coverage.profdata"
+    profdata_dir = report_dir / "profdata"
+    lcov_dir = report_dir / "lcov"
+    lcov_file = report_dir / "coverage.info"
     report_json = report_dir / "coverage-summary.json"
     profile_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
+    profdata_dir.mkdir(parents=True, exist_ok=True)
+    lcov_dir.mkdir(parents=True, exist_ok=True)
 
     for file in profile_dir.glob("*.profraw"):
         file.unlink()
+    for file in profdata_dir.glob("*.profdata"):
+        file.unlink()
+    for file in lcov_dir.glob("*.info"):
+        file.unlink()
+    if lcov_file.exists():
+        lcov_file.unlink()
 
-    run_test_entries(
-        shard,
-        reporter=args.reporter,
-        default_timeout_seconds=args.default_timeout_seconds,
-        env={"LLVM_PROFILE_FILE": str(profile_dir / "%m-%p.profraw")},
-    )
-
-    profraw_files = sorted(profile_dir.glob("*.profraw"))
-    if not profraw_files:
-        fail("coverage", f"no profile data produced under {profile_dir}")
-
-    binaries = [str(entry.executable) for entry in shard]
-    run(
-        [
-            llvm_profdata_bin,
-            "merge",
-            "-sparse",
-            *map(str, profraw_files),
-            "-o",
-            str(profdata_file),
-        ]
-    )
-
-    export_result = run(
-        [
-            llvm_cov_bin,
-            "export",
-            "--summary-only",
-            "--instr-profile",
-            str(profdata_file),
-            *binaries,
-        ],
-        check=False,
-        capture_output=True,
-    )
-    if export_result.stdout:
-        report_json.write_text(export_result.stdout, encoding="utf-8")
-    else:
-        report_json.write_text("", encoding="utf-8")
-    if export_result.stderr:
-        sys.stderr.write(export_result.stderr)
-    if export_result.returncode != 0:
-        fail("coverage", f"llvm-cov export failed with status {export_result.returncode}")
-    if "mismatched data" in export_result.stderr:
-        fail(
-            "coverage",
-            "llvm-cov reported mismatched data across coverage binaries; "
-            "aggregate line coverage is unreliable",
+    for entry in shard:
+        run_test_entry(
+            entry,
+            reporter=args.reporter,
+            default_timeout_seconds=args.default_timeout_seconds,
+            env={"LLVM_PROFILE_FILE": coverage_profile_pattern(entry, profile_dir)},
         )
 
-    # llvm-cov may still surface generated/build-tree paths in summary exports.
-    # Re-scope the exported JSON with the same first-party path rules used by
-    # the rest of the CI toolchain before evaluating the gate.
-    payload = filter_coverage_report_to_project_scope(
-        report_json,
-        include_tests=True,
+    lcov_reports: list[Path] = []
+    for entry in shard:
+        target_profdata = profdata_dir / f"{entry.target}.profdata"
+        merge_coverage_profiles(
+            "coverage",
+            llvm_profdata_bin,
+            collect_entry_coverage_profiles("coverage", profile_dir, entry),
+            target_profdata,
+        )
+        target_lcov = lcov_dir / f"{entry.target}.info"
+        export_coverage_lcov(
+            "coverage",
+            llvm_cov_bin,
+            target_profdata,
+            entry.executable,
+            target_lcov,
+        )
+        lcov_reports.append(target_lcov)
+
+    merged_line_hits = merge_lcov_reports("coverage", lcov_reports, lcov_file)
+    write_lcov_summary_json("coverage", merged_line_hits, report_json)
+    check_coverage_gate("coverage", report_json, args.coverage_min_lines)
+
+
+def ci_coverage_shard(args: argparse.Namespace) -> None:
+    llvm_cov_bin, llvm_profdata_bin = coverage_tools()
+    if args.profile_output is None and args.artifact_dir is None:
+        fail("coverage-shard", "either --profile-output or --artifact-dir is required", code=2)
+
+    manifest_path = configure_and_validate_manifest(args.configure_preset, "coverage-shard")
+    build_dir = build_dir_for_preset(args.configure_preset)
+    shard = manifest_shard(
+        manifest_path,
+        shard_count=args.shard_count,
+        shard_index=args.shard_index,
+        suites=args.suite,
+        include_labels=args.include_label or ["ci.pr"],
+        exclude_labels=args.exclude_label,
     )
-    data = payload.get("data") or []
-    totals = data[0].get("totals", {}) if data else {}
-    lines = totals.get("lines", {}) if isinstance(totals, dict) else {}
-    percent = lines.get("percent")
-    if percent is None:
-        fail("coverage", "coverage export did not contain line percentage")
+    if not shard:
+        fail("coverage-shard", "coverage shard selected no tests")
 
-    line_pct = float(percent)
-    min_pct = float(args.coverage_min_lines) * 100.0
-    if line_pct + 1e-9 < min_pct:
-        fail("coverage", f"line coverage {line_pct:.2f}% below threshold {min_pct:.2f}%")
-    print_step("coverage", f"PASS line coverage {line_pct:.2f}% (threshold {min_pct:.2f}%)")
+    targets = [entry.target for entry in shard]
+    print_step(
+        "coverage-shard",
+        f"preset={args.configure_preset} shard={args.shard_index}/{args.shard_count} "
+        f"targets={len(targets)}",
+    )
+    build_targets_in_batches(
+        args.build_preset or args.configure_preset,
+        "coverage-shard",
+        targets=targets,
+    )
+    print_compiler_cache_stats()
+
+    profile_dir = build_dir / "profiles" / f"shard-{args.shard_index}"
+    profdata_dir = build_dir / "reports" / f"coverage-shard-{args.shard_index}-profdata"
+    lcov_dir = build_dir / "reports" / f"coverage-shard-{args.shard_index}-lcov"
+    if profile_dir.exists():
+        shutil.rmtree(profile_dir)
+    if profdata_dir.exists():
+        shutil.rmtree(profdata_dir)
+    if lcov_dir.exists():
+        shutil.rmtree(lcov_dir)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    profdata_dir.mkdir(parents=True, exist_ok=True)
+    lcov_dir.mkdir(parents=True, exist_ok=True)
+
+    for entry in shard:
+        run_test_entry(
+            entry,
+            reporter=args.reporter,
+            default_timeout_seconds=args.default_timeout_seconds,
+            env={"LLVM_PROFILE_FILE": coverage_profile_pattern(entry, profile_dir)},
+        )
+
+    lcov_reports: list[Path] = []
+    for entry in shard:
+        target_profdata = profdata_dir / f"{entry.target}.profdata"
+        merge_coverage_profiles(
+            "coverage-shard",
+            llvm_profdata_bin,
+            collect_entry_coverage_profiles("coverage-shard", profile_dir, entry),
+            target_profdata,
+        )
+        target_lcov = lcov_dir / f"{entry.target}.info"
+        export_coverage_lcov(
+            "coverage-shard",
+            llvm_cov_bin,
+            target_profdata,
+            entry.executable,
+            target_lcov,
+        )
+        lcov_reports.append(target_lcov)
+
+    merged_lcov = build_dir / "reports" / f"coverage-shard-{args.shard_index}.info"
+    merged_line_hits = merge_lcov_reports("coverage-shard", lcov_reports, merged_lcov)
+    summary_output = build_dir / "reports" / f"coverage-shard-{args.shard_index}.json"
+    write_lcov_summary_json("coverage-shard", merged_line_hits, summary_output)
+    if args.artifact_dir is not None:
+        artifact_dir = args.artifact_dir.resolve()
+        if artifact_dir.exists():
+            shutil.rmtree(artifact_dir)
+        reports_dir = artifact_dir / "lcov"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(
+            merged_lcov,
+            reports_dir / f"coverage-shard-{args.shard_index}.info",
+        )
+        print_step("coverage-shard", f"ARTIFACT {artifact_dir}")
+    elif args.profile_output is not None:
+        shutil.copy2(merged_lcov, args.profile_output.resolve())
+    print_step("coverage-shard", f"PASS {merged_lcov}")
 
 
-def local_sync_thirdy_party(_: argparse.Namespace) -> None:
-    require_commands("sync-thirdy-party", "git")
+def ci_coverage_aggregate(args: argparse.Namespace) -> None:
+    artifact_dir = args.artifact_dir.resolve()
+    report_dir = artifact_dir / "reports"
+    lcov_file = report_dir / "coverage.info"
+    report_json = report_dir / "coverage-summary.json"
+
+    merged_line_hits = merge_lcov_reports(
+        "coverage",
+        collect_lcov_reports("coverage", artifact_dir / "lcov"),
+        lcov_file,
+    )
+    write_lcov_summary_json("coverage", merged_line_hits, report_json)
+    check_coverage_gate("coverage", report_json, args.coverage_min_lines)
+
+
+def local_sync_third_party(_: argparse.Namespace) -> None:
+    require_commands("sync-third-party", "git")
+    run(["git", "submodule", "sync", "--recursive"])
     run(["git", "submodule", "update", "--init", "--recursive"])
-    print_step("sync-thirdy-party", "PASS")
+    print_step("sync-third-party", "PASS")
 
 
 def local_clean(args: argparse.Namespace) -> None:
@@ -1361,11 +1783,15 @@ def local_clean(args: argparse.Namespace) -> None:
 
 def local_configure(args: argparse.Namespace) -> None:
     build_dir = configure_preset(args.preset, "configure", cache_entries=args.define)
+    if args.preset != DEFAULT_EDITOR_PRESET:
+        ensure_editor_compile_database("configure")
     print_step("configure", f"PASS {build_dir}")
 
 
 def local_build(args: argparse.Namespace) -> None:
     configure_preset(args.preset, "build", cache_entries=args.define)
+    if args.preset != DEFAULT_EDITOR_PRESET:
+        ensure_editor_compile_database("build")
     targets = list(args.target) if args.target else [build_artifact_target(args.artifacts)]
     build_preset(args.preset, "build", targets=targets, jobs=args.jobs)
     print_compiler_cache_stats()
@@ -1385,6 +1811,8 @@ def local_test(args: argparse.Namespace) -> None:
         )
     else:
         configure_preset(args.preset, "test", cache_entries=args.define)
+        if args.preset != DEFAULT_EDITOR_PRESET:
+            ensure_editor_compile_database("test")
 
     manifest_path = build_dir_for_preset(args.preset) / "wh_test_manifest.tsv"
     shard = manifest_shard(
@@ -1403,11 +1831,14 @@ def local_test(args: argparse.Namespace) -> None:
         shard,
         reporter=args.reporter,
         default_timeout_seconds=args.default_timeout_seconds,
+        fail_fast=False,
     )
     print_step("test", f"PASS {build_dir_for_preset(args.preset)}")
 
 
 def local_verify(args: argparse.Namespace) -> None:
+    if args.configure_preset != DEFAULT_EDITOR_PRESET:
+        ensure_editor_compile_database("verify")
     run_build_test_mode(
         "verify",
         configure_preset_name=args.configure_preset,
@@ -1419,8 +1850,13 @@ def local_verify(args: argparse.Namespace) -> None:
         exclude_labels=args.exclude_label,
         default_timeout_seconds=args.default_timeout_seconds,
         reporter=args.reporter,
+        fail_fast_tests=False,
         cache_entries=args.define,
     )
+
+
+def local_editor(_: argparse.Namespace) -> None:
+    ensure_editor_compile_database("editor")
 
 
 def add_define_args(parser: argparse.ArgumentParser) -> None:
@@ -1450,13 +1886,22 @@ def build_parser() -> argparse.ArgumentParser:
     local = subparsers.add_parser("local", help="Local configure/build/test entrypoints.")
     local_sub = local.add_subparsers(dest="local_mode", required=True)
 
-    local_sync_parser = local_sub.add_parser("sync-thirdy-party")
-    local_sync_parser.set_defaults(func=local_sync_thirdy_party)
+    local_sync_parser = local_sub.add_parser(
+        "sync-third-party",
+        help="Sync in-tree third-party submodules.",
+    )
+    local_sync_parser.set_defaults(func=local_sync_third_party)
 
     local_clean_parser = local_sub.add_parser("clean")
     local_clean_parser.add_argument("--preset", default=DEFAULT_LOCAL_PRESET)
     local_clean_parser.add_argument("--all", action="store_true")
     local_clean_parser.set_defaults(func=local_clean)
+
+    local_editor_parser = local_sub.add_parser(
+        "editor",
+        help="Configure the full editor/clangd preset and refresh the root compile database.",
+    )
+    local_editor_parser.set_defaults(func=local_editor)
 
     local_configure_parser = local_sub.add_parser("configure")
     local_configure_parser.add_argument("--preset", default=DEFAULT_LOCAL_PRESET)
@@ -1533,17 +1978,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     codechecker_parser.set_defaults(func=ci_codechecker)
 
-    codeql_parser = ci_sub.add_parser("codeql-build")
-    codeql_parser.add_argument("--configure-preset", default=DEFAULT_CODEQL_PRESET)
-    codeql_parser.add_argument("--build-preset")
-    codeql_parser.set_defaults(func=ci_codeql_build)
-
     coverage_parser = ci_sub.add_parser("coverage")
     coverage_parser.add_argument("--configure-preset", default=DEFAULT_COVERAGE_PRESET)
     coverage_parser.add_argument("--build-preset")
     coverage_parser.add_argument("--coverage-min-lines", type=float, default=0.70)
     add_shard_args(coverage_parser)
     coverage_parser.set_defaults(func=ci_coverage)
+
+    coverage_shard_parser = ci_sub.add_parser("coverage-shard")
+    coverage_shard_parser.add_argument("--configure-preset", default=DEFAULT_COVERAGE_PRESET)
+    coverage_shard_parser.add_argument("--build-preset")
+    coverage_shard_parser.add_argument("--profile-output", type=Path)
+    coverage_shard_parser.add_argument("--artifact-dir", type=Path)
+    add_shard_args(coverage_shard_parser)
+    coverage_shard_parser.set_defaults(func=ci_coverage_shard)
+
+    coverage_aggregate_parser = ci_sub.add_parser("coverage-aggregate")
+    coverage_aggregate_parser.add_argument("--artifact-dir", type=Path, required=True)
+    coverage_aggregate_parser.add_argument("--coverage-min-lines", type=float, default=0.70)
+    coverage_aggregate_parser.set_defaults(func=ci_coverage_aggregate)
 
     return parser
 

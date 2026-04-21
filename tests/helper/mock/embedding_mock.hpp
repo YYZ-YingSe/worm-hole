@@ -20,9 +20,7 @@ public:
     scripted_.enqueue_success(std::forward<embedding_t>(embedding));
   }
 
-  auto enqueue_error(const wh::core::errc code) -> void {
-    scripted_.enqueue_error(code);
-  }
+  auto enqueue_error(const wh::core::errc code) -> void { scripted_.enqueue_error(code); }
 
   [[nodiscard]] auto embed([[maybe_unused]] const std::string &text)
       -> wh::core::result<std::vector<float>> {
@@ -30,9 +28,7 @@ public:
     return scripted_.next();
   }
 
-  [[nodiscard]] auto embed_count() const noexcept -> std::size_t {
-    return embed_count_;
-  }
+  [[nodiscard]] auto embed_count() const noexcept -> std::size_t { return embed_count_; }
 
 private:
   detail::scripted_result_queue<std::vector<float>> scripted_{};

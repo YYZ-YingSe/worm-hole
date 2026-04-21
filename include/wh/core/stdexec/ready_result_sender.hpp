@@ -11,11 +11,9 @@
 
 namespace wh::core::detail {
 
-template <typename value_t>
-using ready_sender_t = decltype(stdexec::just(std::declval<value_t>()));
+template <typename value_t> using ready_sender_t = decltype(stdexec::just(std::declval<value_t>()));
 
-template <typename value_t>
-[[nodiscard]] constexpr auto ready_sender(value_t &&value) {
+template <typename value_t> [[nodiscard]] constexpr auto ready_sender(value_t &&value) {
   return stdexec::just(std::forward<value_t>(value));
 }
 

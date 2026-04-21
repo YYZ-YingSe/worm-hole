@@ -24,8 +24,7 @@ template <typename t> using remove_cvref_t = wh::core::remove_cvref_t<t>;
 }
 
 /// Trims leading and trailing ASCII spaces/tabs.
-[[nodiscard]] constexpr std::string_view
-trim_ascii_spaces(std::string_view value) noexcept {
+[[nodiscard]] constexpr std::string_view trim_ascii_spaces(std::string_view value) noexcept {
   while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
     value.remove_prefix(1U);
   }
@@ -36,8 +35,7 @@ trim_ascii_spaces(std::string_view value) noexcept {
 }
 
 /// Detects compiler-generated numeric suffixes in unstable symbol names.
-[[nodiscard]] constexpr bool
-has_numeric_suffix(std::string_view value) noexcept {
+[[nodiscard]] constexpr bool has_numeric_suffix(std::string_view value) noexcept {
   if (value.empty()) {
     return false;
   }
@@ -60,8 +58,7 @@ has_numeric_suffix(std::string_view value) noexcept {
 }
 
 /// Returns compiler-specific pretty-function string for type extraction.
-template <typename t>
-[[nodiscard]] constexpr std::string_view raw_type_name() noexcept {
+template <typename t> [[nodiscard]] constexpr std::string_view raw_type_name() noexcept {
 #if defined(__clang__)
   return __PRETTY_FUNCTION__;
 #elif defined(__GNUC__)
@@ -74,8 +71,7 @@ template <typename t>
 }
 
 /// Extracts readable type name from compiler pretty-function output.
-template <typename t>
-[[nodiscard]] constexpr std::string_view extract_pretty_name() noexcept {
+template <typename t> [[nodiscard]] constexpr std::string_view extract_pretty_name() noexcept {
   std::string_view raw = raw_type_name<t>();
 
 #if defined(__clang__)
@@ -86,8 +82,7 @@ template <typename t>
   constexpr std::string_view prefix =
       "constexpr std::string_view wh::internal::detail::raw_type_name() [with "
       "t = ";
-  constexpr std::string_view suffix =
-      "; std::string_view = std::basic_string_view<char>]";
+  constexpr std::string_view suffix = "; std::string_view = std::basic_string_view<char>]";
 #elif defined(_MSC_VER)
   constexpr std::string_view prefix =
       "class std::basic_string_view<char,struct std::char_traits<char> > "
@@ -120,8 +115,7 @@ template <typename t>
 } // namespace detail
 
 /// Returns stable diagnostic type name for `t`.
-template <typename t>
-[[nodiscard]] constexpr std::string_view stable_type_name() noexcept {
+template <typename t> [[nodiscard]] constexpr std::string_view stable_type_name() noexcept {
   using normalized_t = detail::remove_cvref_t<t>;
   return detail::extract_pretty_name<normalized_t>();
 }
@@ -138,8 +132,7 @@ inline constexpr bool has_explicit_type_alias_v =
 
 /// Returns preferred diagnostic alias (explicit alias if present, else type
 /// name).
-template <typename t>
-[[nodiscard]] constexpr std::string_view diagnostic_type_alias() noexcept {
+template <typename t> [[nodiscard]] constexpr std::string_view diagnostic_type_alias() noexcept {
   using normalized_t = detail::remove_cvref_t<t>;
   if constexpr (has_explicit_type_alias_v<normalized_t>) {
     return type_alias<normalized_t>::value;
@@ -148,8 +141,7 @@ template <typename t>
 }
 
 /// Returns explicit persistent alias and enforces explicit registration.
-template <typename t>
-[[nodiscard]] constexpr std::string_view persistent_type_alias() noexcept {
+template <typename t> [[nodiscard]] constexpr std::string_view persistent_type_alias() noexcept {
   using normalized_t = detail::remove_cvref_t<t>;
   static_assert(has_explicit_type_alias_v<normalized_t>,
                 "persistent type serialization requires explicit "
@@ -158,8 +150,7 @@ template <typename t>
 }
 
 /// Computes FNV-1a hash for stable alias strings.
-[[nodiscard]] constexpr std::uint64_t
-stable_name_hash(const std::string_view value) noexcept {
+[[nodiscard]] constexpr std::uint64_t stable_name_hash(const std::string_view value) noexcept {
   std::uint64_t hash = 1469598103934665603ULL;
   for (const char ch : value) {
     hash ^= static_cast<std::uint64_t>(static_cast<unsigned char>(ch));
@@ -169,14 +160,12 @@ stable_name_hash(const std::string_view value) noexcept {
 }
 
 /// Hashes diagnostic type alias.
-template <typename t>
-[[nodiscard]] constexpr std::uint64_t stable_type_hash() noexcept {
+template <typename t> [[nodiscard]] constexpr std::uint64_t stable_type_hash() noexcept {
   return stable_name_hash(diagnostic_type_alias<t>());
 }
 
 /// Hashes persistent type alias.
-template <typename t>
-[[nodiscard]] constexpr std::uint64_t persistent_type_hash() noexcept {
+template <typename t> [[nodiscard]] constexpr std::uint64_t persistent_type_hash() noexcept {
   return stable_name_hash(persistent_type_alias<t>());
 }
 
@@ -185,9 +174,8 @@ template <typename... ts> struct type_alias_registry {
   /// One alias/hash entry.
   using item = std::pair<std::string_view, std::uint64_t>;
 
-  static_assert(
-      (has_explicit_type_alias_v<ts> && ...),
-      "type_alias_registry requires explicit aliases for all registered types");
+  static_assert((has_explicit_type_alias_v<ts> && ...),
+                "type_alias_registry requires explicit aliases for all registered types");
 
   /// Static registry entries for all listed types.
   static constexpr std::array<item, sizeof...(ts)> entries = {
@@ -206,8 +194,7 @@ template <typename... ts> struct type_alias_registry {
   }
 
   /// Looks up persistent alias by hash.
-  [[nodiscard]] static constexpr std::string_view
-  find_alias(const std::uint64_t hash) noexcept {
+  [[nodiscard]] static constexpr std::string_view find_alias(const std::uint64_t hash) noexcept {
     for (const auto &entry : entries) {
       if (entry.second == hash) {
         return entry.first;

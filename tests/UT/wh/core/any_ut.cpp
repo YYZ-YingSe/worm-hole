@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/any.hpp"
 
@@ -50,8 +50,7 @@ TEST_CASE("make_any constructs owned payloads in place",
 
   REQUIRE(value.has_value<std::string>());
   REQUIRE(value.owner());
-  REQUIRE((value.policy() == any_policy::inline_owner ||
-           value.policy() == any_policy::heap_owner));
+  REQUIRE((value.policy() == any_policy::inline_owner || value.policy() == any_policy::heap_owner));
 
   auto *typed = any_cast<std::string>(&value);
   REQUIRE(typed != nullptr);

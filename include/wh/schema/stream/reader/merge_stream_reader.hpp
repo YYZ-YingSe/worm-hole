@@ -9,9 +9,9 @@
 #include <exception>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -23,18 +23,22 @@
 
 #include "wh/core/error.hpp"
 #include "wh/core/error_domain.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/small_vector.hpp"
 #include "wh/core/stdexec.hpp"
-#include "wh/core/stdexec/detail/callback_guard.hpp"
-#include "wh/core/stdexec/detail/child_completion_mailbox.hpp"
-#include "wh/core/stdexec/detail/child_set.hpp"
-#include "wh/core/stdexec/detail/scheduled_drive_loop.hpp"
-#include "wh/core/stdexec/detail/shared_operation_state.hpp"
+#include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"
+#include "wh/core/stdexec/detail/slot_ready_list.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 #include "wh/schema/stream/core/concepts.hpp"
 #include "wh/schema/stream/core/stream_base.hpp"
 
 namespace wh::schema::stream {
+
+enum class merge_topology_mode : std::uint8_t {
+  static_attached = 0U,
+  dynamic_injection,
+};
 
 /// One named input lane for merge-stream polling.
 template <stream_reader reader_t> struct named_stream_reader {
@@ -54,9 +58,46 @@ template <typename source_t, typename reader_t>
 named_stream_reader(source_t, reader_t, bool = false)
     -> named_stream_reader<std::remove_cvref_t<reader_t>>;
 
-#include "wh/schema/stream/reader/detail/dynamic_topology_registry.hpp"
-
 namespace detail {
+
+template <typename index_t = std::uint32_t>
+[[nodiscard]] inline constexpr auto indexed_capacity_limit() noexcept -> std::size_t {
+  return static_cast<std::size_t>(std::numeric_limits<index_t>::max());
+}
+
+template <typename slot_t, typename index_t = std::uint32_t>
+[[nodiscard]] inline constexpr auto slot_array_capacity_limit() noexcept -> std::size_t {
+  return std::min(indexed_capacity_limit<index_t>(),
+                  static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max() /
+                                           static_cast<std::ptrdiff_t>(sizeof(slot_t))));
+}
+
+template <typename index_t = std::uint32_t>
+[[nodiscard]] inline auto validate_indexed_capacity(const std::size_t count, const char *context)
+    -> std::size_t {
+  if (count > indexed_capacity_limit<index_t>()) {
+    throw std::length_error{context};
+  }
+  return count;
+}
+
+template <typename slot_t, typename index_t = std::uint32_t>
+[[nodiscard]] inline auto validate_slot_array_capacity(const std::size_t count, const char *context)
+    -> std::size_t {
+  if (count > slot_array_capacity_limit<slot_t, index_t>()) {
+    throw std::length_error{context};
+  }
+  return count;
+}
+
+template <typename slot_t, typename index_t = std::uint32_t>
+[[nodiscard]] inline auto allocate_slot_array(const std::size_t count, const char *context)
+    -> std::unique_ptr<slot_t[]> {
+  if (count == 0U) {
+    return {};
+  }
+  return std::make_unique<slot_t[]>(validate_slot_array_capacity<slot_t, index_t>(count, context));
+}
 
 template <typename error_t>
 [[nodiscard]] inline auto map_merge_async_error(error_t &&error) noexcept -> wh::core::error_code {
@@ -89,6 +130,8 @@ template <stream_reader reader_t>
 [[nodiscard]] inline auto make_named_stream_readers(std::vector<reader_t> &&readers)
     -> std::vector<named_stream_reader<reader_t>> {
   std::vector<named_stream_reader<reader_t>> named_readers{};
+  static_cast<void>(validate_indexed_capacity<>(
+      readers.size(), "merge_stream_reader lane count exceeds uint32_t slot capacity"));
   named_readers.reserve(readers.size());
   for (std::size_t index = 0U; index < readers.size(); ++index) {
     named_readers.push_back(
@@ -99,10 +142,14 @@ template <stream_reader reader_t>
 
 } // namespace detail
 
+#include "wh/schema/stream/reader/detail/dynamic_topology_registry.hpp"
+#include "wh/schema/stream/reader/detail/static_topology_registry.hpp"
+
 /// Merges multiple named readers into one interleaved output stream.
-template <stream_reader reader_t>
-class merge_stream_reader final
-    : public stream_base<merge_stream_reader<reader_t>, typename reader_t::value_type> {
+template <stream_reader reader_t,
+          merge_topology_mode topology_mode = merge_topology_mode::dynamic_injection>
+class merge_stream_reader final : public stream_base<merge_stream_reader<reader_t, topology_mode>,
+                                                     typename reader_t::value_type> {
 public:
   using value_type = typename reader_t::value_type;
   using lane_type = named_stream_reader<reader_t>;
@@ -120,7 +167,13 @@ public:
   };
 
 private:
-  using topology_registry_t = detail::dynamic_topology_registry<reader_t>;
+  static constexpr auto topology_mode_v = topology_mode;
+  static constexpr bool supports_dynamic_injection =
+      topology_mode_v == merge_topology_mode::dynamic_injection;
+
+  using topology_registry_t =
+      std::conditional_t<supports_dynamic_injection, detail::dynamic_topology_registry<reader_t>,
+                         detail::static_topology_registry<reader_t>>;
   using topology_sync_waiter = typename topology_registry_t::sync_waiter_type;
   using topology_async_waiter = typename topology_registry_t::async_waiter_type;
   using round_resolution = typename topology_registry_t::round_resolution;
@@ -131,11 +184,116 @@ private:
     bool stopped_without_winner{false};
   };
 
+  struct round_child_completion {
+    std::size_t position{0U};
+    status_type status{};
+    bool stopped_signal{false};
+  };
+
+  template <typename child_op_t, typename completion_t> class child_slots {
+    struct slot {
+      ~slot() { reset(); }
+
+      template <typename factory_t> auto emplace(factory_t &&factory) -> void {
+        [[maybe_unused]] auto &operation =
+            op_.template construct_with<child_op_t>(std::forward<factory_t>(factory));
+        engaged_ = true;
+      }
+
+      auto reset() noexcept -> void {
+        if (!engaged_) {
+          return;
+        }
+        op_.template destruct<child_op_t>();
+        engaged_ = false;
+      }
+
+      wh::core::detail::manual_storage<sizeof(child_op_t), alignof(child_op_t)> op_{};
+      std::optional<completion_t> completion{};
+      bool engaged_{false};
+    };
+
+  public:
+    child_slots() = default;
+
+    explicit child_slots(const std::size_t size)
+        : slots_(detail::allocate_slot_array<slot>(
+              size, "merge_stream_reader child slot count exceeds supported capacity")),
+          size_(size) {}
+
+    child_slots(const child_slots &) = delete;
+    auto operator=(const child_slots &) -> child_slots & = delete;
+    child_slots(child_slots &&) = delete;
+    auto operator=(child_slots &&) -> child_slots & = delete;
+
+    ~child_slots() { destroy_all(); }
+
+    template <typename factory_t, typename before_start_t = std::nullptr_t>
+    auto start(const std::uint32_t slot_id, factory_t &&factory,
+               before_start_t &&before_start = nullptr) -> wh::core::result<void> {
+      wh_precondition(slot_id < size_);
+      auto &child_slot = slots_[slot_id];
+      wh_invariant(!child_slot.engaged_);
+
+      try {
+        child_slot.emplace(std::forward<factory_t>(factory));
+        if constexpr (!std::same_as<std::remove_cvref_t<before_start_t>, std::nullptr_t>) {
+          std::forward<before_start_t>(before_start)();
+        }
+        stdexec::start(child_slot.op_.template get<child_op_t>());
+        return {};
+      } catch (...) {
+        child_slot.reset();
+        return wh::core::result<void>::failure(wh::core::map_current_exception());
+      }
+    }
+
+    auto destroy_all() noexcept -> void {
+      if (slots_ == nullptr) {
+        return;
+      }
+      for (std::size_t index = 0U; index < size_; ++index) {
+        slots_[index].reset();
+        slots_[index].completion.reset();
+      }
+    }
+
+    auto store_completion(const std::uint32_t slot_id, completion_t completion) noexcept -> bool {
+      wh_precondition(slot_id < size_);
+      auto &child_slot = slots_[slot_id];
+      if (child_slot.completion.has_value()) {
+        return false;
+      }
+      child_slot.completion.emplace(std::move(completion));
+      return true;
+    }
+
+    template <typename fn_t>
+    auto drain_ready(wh::core::detail::slot_ready_list &ready, fn_t &&fn) noexcept -> void {
+      auto &drain_fn = fn;
+      ready.drain([&](const std::uint32_t slot_id) {
+        wh_precondition(slot_id < size_);
+        auto &child_slot = slots_[slot_id];
+        if (!child_slot.completion.has_value()) {
+          return;
+        }
+        auto completion = std::move(*child_slot.completion);
+        child_slot.completion.reset();
+        drain_fn(slot_id, std::move(completion));
+      });
+    }
+
+  private:
+    std::unique_ptr<slot[]> slots_{};
+    std::size_t size_{0U};
+  };
+
   class round_tracker {
   public:
     auto reset(const std::size_t count) -> void {
       if (count > capacity_) {
-        slots_ = std::make_unique<slot[]>(count);
+        slots_ = detail::allocate_slot_array<slot>(
+            count, "merge_stream_reader round tracker slot count exceeds supported capacity");
         capacity_ = count;
       }
       for (std::size_t index = 0U; index < count; ++index) {
@@ -219,20 +377,61 @@ private:
     std::atomic<bool> stopped_without_winner_{false};
   };
 
-  struct shared_state {
+  template <typename lane_list_t, typename child_slots_t, typename completion_t>
+  struct round_state_base {
+    explicit round_state_base(const std::size_t lane_capacity)
+        : children(lane_capacity), ready(lane_capacity) {}
+
+    auto publish_completion(const std::uint32_t slot_id, completion_t completion) noexcept -> void {
+      publication_count.fetch_add(1U, std::memory_order_acq_rel);
+      if (!children.store_completion(slot_id, std::move(completion))) {
+        std::terminate();
+      }
+      if (!ready.publish(slot_id)) {
+        std::terminate();
+      }
+      publication_count.fetch_sub(1U, std::memory_order_acq_rel);
+    }
+
+    template <typename fn_t> auto drain_ready(fn_t &&fn) noexcept -> void {
+      children.drain_ready(ready, std::forward<fn_t>(fn));
+    }
+
+    [[nodiscard]] auto publications_quiescent() const noexcept -> bool {
+      return publication_count.load(std::memory_order_acquire) == 0U;
+    }
+
+    lane_list_t lane_indices{};
+    child_slots_t children{};
+    wh::core::detail::slot_ready_list ready{};
+    round_tracker tracker{};
+    stdexec::inplace_stop_source stop_source{};
+    std::atomic<std::size_t> publication_count{0U};
+    bool finished{false};
+  };
+
+  static auto observe_round_completion(round_tracker &tracker,
+                                       stdexec::inplace_stop_source &stop_source, bool &finished,
+                                       round_child_completion completion) noexcept -> void {
+    if (completion.stopped_signal) {
+      tracker.note_stop();
+    } else if (tracker.note_status(completion.position, std::move(completion.status))) {
+      stop_source.request_stop();
+    }
+
+    if (tracker.finish_one()) {
+      finished = true;
+    }
+  }
+
+  struct runtime : wh::core::detail::intrusive_enable_from_this<runtime> {
     using lane_list = typename topology_registry_t::lane_list;
     using round_spec = typename topology_registry_t::round_plan;
 
     struct blocking_read_op {
       using scheduler_t = stdexec::inline_scheduler;
       using child_sender_t = decltype(std::declval<reader_t &>().read_async());
-      friend class wh::core::detail::callback_guard<blocking_read_op>;
-
-      struct child_completion {
-        std::size_t position{0U};
-        status_type status{};
-        bool stopped_signal{false};
-      };
+      using child_completion = round_child_completion;
 
       struct child_env {
         stdexec::inplace_stop_token stop_token{};
@@ -258,224 +457,168 @@ private:
         }
       };
 
+      struct round_state;
+
       struct child_receiver {
         using receiver_concept = stdexec::receiver_t;
 
-        blocking_read_op *round{nullptr};
+        round_state *round{nullptr};
         std::uint32_t slot_id{0U};
         std::size_t position{0U};
-        std::shared_ptr<stdexec::inplace_stop_source> stop_source{};
 
         auto set_value(stream_result<chunk_type> status) noexcept -> void {
-          auto scope = round->callbacks_.enter(round);
-          round->enqueue_completion(slot_id, child_completion{
-                                                 .position = position,
-                                                 .status = std::move(status),
-                                                 .stopped_signal = false,
-                                             });
+          complete(child_completion{
+              .position = position,
+              .status = std::move(status),
+              .stopped_signal = false,
+          });
         }
 
         template <typename error_t> auto set_error(error_t &&error) noexcept -> void {
-          auto scope = round->callbacks_.enter(round);
-          round->enqueue_completion(
-              slot_id, child_completion{
-                           .position = position,
-                           .status = status_type::failure(
-                               detail::map_merge_async_error(std::forward<error_t>(error))),
-                           .stopped_signal = false,
-                       });
+          complete(child_completion{
+              .position = position,
+              .status =
+                  status_type::failure(detail::map_merge_async_error(std::forward<error_t>(error))),
+              .stopped_signal = false,
+          });
         }
 
         auto set_stopped() noexcept -> void {
-          auto scope = round->callbacks_.enter(round);
-          round->enqueue_completion(slot_id, child_completion{
-                                                 .position = position,
-                                                 .status = status_type{},
-                                                 .stopped_signal = true,
-                                             });
+          complete(child_completion{
+              .position = position,
+              .status = status_type{},
+              .stopped_signal = true,
+          });
         }
 
         [[nodiscard]] auto get_env() const noexcept -> child_env {
-          return child_env{stop_source == nullptr ? stdexec::inplace_stop_token{}
-                                                  : stop_source->get_token()};
+          return child_env{round == nullptr ? stdexec::inplace_stop_token{}
+                                            : round->stop_source.get_token()};
+        }
+
+      private:
+        auto complete(child_completion completion) noexcept -> void {
+          if (round == nullptr) {
+            return;
+          }
+          round->publish_completion(slot_id, std::move(completion));
+          round->wake_epoch.fetch_add(1U, std::memory_order_acq_rel);
+          round->wake_epoch.notify_one();
         }
       };
 
       using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
-      using child_set_t = wh::core::detail::child_set<child_op_t>;
-      using mailbox_t = wh::core::detail::child_completion_mailbox<child_completion>;
+      using child_slots_t = child_slots<child_op_t, child_completion>;
+      using round_state_base_t = round_state_base<lane_list, child_slots_t, child_completion>;
 
-      explicit blocking_read_op(shared_state &state) : state_(state) {}
+      struct round_state : round_state_base_t {
+        using round_state_base_t::round_state_base_t;
+
+        std::atomic<std::uint64_t> wake_epoch{0U};
+      };
+
+      explicit blocking_read_op(runtime &state) : state_(state) {}
 
       [[nodiscard]] auto run(round_spec spec) -> status_type {
-        lane_indices_ = std::move(spec.lanes);
-        result_.reset();
-        round_finished_ = false;
-        stop_source_ = std::make_shared<stdexec::inplace_stop_source>();
-        wake_epoch_.store(0U, std::memory_order_release);
-        if (lane_indices_.empty()) {
-          state_.complete_empty_round(0U);
-          stop_source_.reset();
+        round_state round{state_.lane_count()};
+        round.lane_indices = std::move(spec.lanes);
+        if (round.lane_indices.empty()) {
+          state_.complete_round_without_winner(round.lane_indices);
           return status_type::failure(wh::core::errc::internal_error);
         }
 
         try {
-          tracker_.reset(lane_indices_.size());
-          children_.reset(state_.lane_count());
-          completions_.reset(state_.lane_count());
+          round.tracker.reset(round.lane_indices.size());
         } catch (...) {
-          children_.destroy_all();
-          completions_.reset(0U);
-          stop_source_.reset();
-          state_.cancel_round();
+          state_.complete_round_without_winner(round.lane_indices);
           return status_type::failure(wh::core::errc::internal_error);
         }
 
-        for (std::size_t position = 0U; position < lane_indices_.size(); ++position) {
-          const auto lane_index = static_cast<std::uint32_t>(lane_indices_[position]);
-          if (stop_source_->stop_requested()) {
-            record_completion(child_completion{
-                .position = position,
-                .status = status_type{},
-                .stopped_signal = true,
-            });
+        for (std::size_t position = 0U; position < round.lane_indices.size(); ++position) {
+          const auto lane_index = static_cast<std::uint32_t>(round.lane_indices[position]);
+          if (round.stop_source.stop_requested()) {
+            observe_completion(round, child_completion{
+                                          .position = position,
+                                          .status = status_type{},
+                                          .stopped_signal = true,
+                                      });
             continue;
           }
 
-          auto started = children_.start_child(lane_index, [&](auto &slot) {
-            slot.emplace_from(stdexec::connect, state_.lane_read_async(lane_indices_[position]),
-                              child_receiver{
-                                  .round = this,
-                                  .slot_id = lane_index,
-                                  .position = position,
-                                  .stop_source = stop_source_,
-                              });
+          auto started = round.children.start(lane_index, [&]() -> child_op_t {
+            return stdexec::connect(state_.lane_read_async(round.lane_indices[position]),
+                                    child_receiver{
+                                        .round = std::addressof(round),
+                                        .slot_id = lane_index,
+                                        .position = position,
+                                    });
           });
           if (started.has_error()) {
-            record_completion(child_completion{
-                .position = position,
-                .status = status_type::failure(started.error()),
-                .stopped_signal = false,
-            });
+            observe_completion(round, child_completion{
+                                          .position = position,
+                                          .status = status_type::failure(started.error()),
+                                          .stopped_signal = false,
+                                      });
           }
         }
 
-        while (true) {
-          drain_completions();
-          if (result_.has_value() && children_.active_count() == 0U && !callbacks_.active()) {
-            auto status = std::move(*result_);
-            cleanup();
+        for (;;) {
+          drain(round);
+          if (round.finished && round.publications_quiescent()) {
+            auto status = finalize(round);
+            round.children.destroy_all();
             return status;
           }
-          if (completions_.has_ready()) {
-            continue;
-          }
 
-          const auto observed = wake_epoch_.load(std::memory_order_acquire);
-          if (completions_.has_ready() ||
-              (result_.has_value() && children_.active_count() == 0U && !callbacks_.active())) {
+          const auto observed = round.wake_epoch.load(std::memory_order_acquire);
+          if (round.ready.has_ready() || (round.finished && round.publications_quiescent())) {
             continue;
           }
-          wake_epoch_.wait(observed, std::memory_order_acquire);
+          round.wake_epoch.wait(observed, std::memory_order_acquire);
         }
       }
 
     private:
-      auto notify_owner() noexcept -> void {
-        wake_epoch_.fetch_add(1U, std::memory_order_acq_rel);
-        wake_epoch_.notify_one();
+      auto observe_completion(round_state &round, child_completion completion) noexcept -> void {
+        merge_stream_reader::observe_round_completion(round.tracker, round.stop_source,
+                                                      round.finished, std::move(completion));
       }
 
-      auto on_callback_exit() noexcept -> void { notify_owner(); }
-
-      auto enqueue_completion(const std::uint32_t slot_id, child_completion completion) noexcept
-          -> void {
-        if (!completions_.publish(slot_id, std::move(completion))) {
-          std::terminate();
-        }
-        notify_owner();
-      }
-
-      auto record_completion(child_completion completion) noexcept -> void {
-        if (completion.stopped_signal) {
-          tracker_.note_stop();
-        } else if (tracker_.note_status(completion.position, std::move(completion.status))) {
-          if (stop_source_ != nullptr) {
-            stop_source_->request_stop();
-          }
-        }
-
-        if (tracker_.finish_one()) {
-          round_finished_ = true;
-        }
-        if (round_finished_ && children_.active_count() == 0U) {
-          finalize_round();
-        }
-      }
-
-      auto drain_completions() noexcept -> void {
-        completions_.drain([this](const std::uint32_t slot_id, child_completion completion) {
-          children_.reclaim_child(slot_id);
-          record_completion(std::move(completion));
+      auto drain(round_state &round) noexcept -> void {
+        round.drain_ready([&](const std::uint32_t, child_completion completion) {
+          observe_completion(round, std::move(completion));
         });
-        if (round_finished_ && children_.active_count() == 0U) {
-          finalize_round();
-        }
       }
 
-      auto finalize_round() noexcept -> void {
-        if (result_.has_value()) {
-          return;
-        }
-        round_finished_ = false;
-        auto outcome = tracker_.take_outcome();
+      [[nodiscard]] auto finalize(round_state &round) noexcept -> status_type {
+        auto outcome = round.tracker.take_outcome();
 
         if (outcome.winner_position.has_value() && outcome.winner_status.has_value()) {
-          auto resolution = state_.complete_round_winner(lane_indices_[*outcome.winner_position],
-                                                         *outcome.winner_position,
-                                                         std::move(*outcome.winner_status));
+          auto resolution = state_.complete_round_winner(
+              round.lane_indices, *outcome.winner_position, std::move(*outcome.winner_status));
           state_.close_lane_if_needed(resolution.close_lane);
-          result_.emplace(std::move(resolution.status));
-          notify_owner();
-          return;
+          return std::move(resolution.status);
         }
 
         if (outcome.stopped_without_winner) {
-          state_.cancel_round();
-          result_.emplace(status_type::failure(wh::core::errc::internal_error));
-          notify_owner();
-          return;
+          state_.complete_round_without_winner(round.lane_indices);
+          return status_type::failure(wh::core::errc::internal_error);
         }
 
-        state_.complete_empty_round(lane_indices_.size());
-        result_.emplace(status_type::failure(wh::core::errc::internal_error));
-        notify_owner();
+        state_.complete_round_without_winner(round.lane_indices);
+        return status_type::failure(wh::core::errc::internal_error);
       }
 
-      auto cleanup() noexcept -> void {
-        children_.destroy_all();
-        stop_source_.reset();
-        lane_indices_.clear();
-      }
-
-      shared_state &state_;
-      lane_list lane_indices_{};
-      std::shared_ptr<stdexec::inplace_stop_source> stop_source_{};
-      child_set_t children_{};
-      mailbox_t completions_{};
-      wh::core::detail::callback_guard<blocking_read_op> callbacks_{};
-      std::atomic<std::uint64_t> wake_epoch_{0U};
-      round_tracker tracker_{};
-      std::optional<status_type> result_{};
-      bool round_finished_{false};
+      runtime &state_;
     };
 
-    shared_state() : blocking_read_(*this) {}
+    runtime() : blocking_read_(*this) {}
 
-    explicit shared_state(std::vector<lane_type> &&readers)
+    explicit runtime(std::vector<lane_type> &&readers)
         : blocking_read_(*this), topology_(std::move(readers)) {}
 
-    explicit shared_state(std::vector<lane_source_type> &&sources)
+    explicit runtime(std::vector<lane_source_type> &&sources)
+      requires(supports_dynamic_injection)
         : blocking_read_(*this), topology_(std::move(sources)) {}
 
     [[nodiscard]] auto uses_fixed_poll_path() const noexcept -> bool {
@@ -513,17 +656,15 @@ private:
       return topology_.lane_read_async(lane_index);
     }
 
-    [[nodiscard]] auto complete_round_winner(const std::size_t lane_index,
-                                             const std::size_t winner_offset, status_type status)
+    [[nodiscard]] auto complete_round_winner(const runtime::lane_list &round_lanes,
+                                             const std::size_t winner_position, status_type status)
         -> round_resolution {
-      return topology_.complete_round_winner(lane_index, winner_offset, std::move(status));
+      return topology_.complete_round_winner(round_lanes, winner_position, std::move(status));
     }
 
-    auto complete_empty_round(const std::size_t lane_count) -> void {
-      topology_.complete_empty_round(lane_count);
+    auto complete_round_without_winner(const runtime::lane_list &round_lanes) -> void {
+      topology_.complete_round_without_winner(round_lanes);
     }
-
-    auto cancel_round() -> void { topology_.cancel_round(); }
 
     auto close_lane_if_needed(const std::optional<std::size_t> lane_index) -> void {
       topology_.close_lane_if_needed(lane_index);
@@ -541,11 +682,15 @@ private:
       topology_.set_automatic_close(options);
     }
 
-    auto attach(std::string_view source, reader_t reader) -> wh::core::result<void> {
+    auto attach(std::string_view source, reader_t reader) -> wh::core::result<void>
+      requires(supports_dynamic_injection)
+    {
       return topology_.attach(source, std::move(reader));
     }
 
-    auto disable(std::string_view source) -> wh::core::result<void> {
+    auto disable(std::string_view source) -> wh::core::result<void>
+      requires(supports_dynamic_injection)
+    {
       return topology_.disable(source);
     }
 
@@ -578,53 +723,22 @@ private:
     topology_registry_t topology_{};
   };
 
-  template <typename receiver_t>
-  class read_operation : public std::enable_shared_from_this<read_operation<receiver_t>>,
-                         private wh::core::detail::scheduled_drive_loop<
-                             read_operation<receiver_t>,
-                             wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>> {
-    using drive_loop_t = wh::core::detail::scheduled_drive_loop<
-        read_operation<receiver_t>,
-        wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>>;
-    friend drive_loop_t;
-    friend class wh::core::detail::callback_guard<read_operation>;
-
+  template <typename receiver_t> class read_operation {
     using receiver_env_t = stdexec::env_of_t<receiver_t>;
     using child_sender_t = decltype(std::declval<reader_t &>().read_async());
     using outer_stop_token_t = stdexec::stop_token_of_t<receiver_env_t>;
     using resume_scheduler_t = wh::core::detail::resume_scheduler_t<receiver_env_t>;
 
-    struct final_delivery {
-      receiver_t receiver;
+    friend class wh::core::detail::scheduled_resume_turn<read_operation, resume_scheduler_t>;
+
+    struct final_completion {
       std::optional<status_type> value{};
       std::exception_ptr error{};
       bool stopped{false};
-
-      explicit final_delivery(receiver_t next_receiver) noexcept(
-          std::is_nothrow_move_constructible_v<receiver_t>)
-          : receiver(std::move(next_receiver)) {}
-
-      auto complete() && noexcept -> void {
-        if (error != nullptr) {
-          stdexec::set_error(std::move(receiver), std::move(error));
-          return;
-        }
-        if (stopped) {
-          stdexec::set_stopped(std::move(receiver));
-          return;
-        }
-        stdexec::set_value(std::move(receiver), std::move(*value));
-      }
     };
-
-    struct child_completion {
-      std::size_t position{0U};
-      status_type status{};
-      bool stopped_signal{false};
-    };
+    using child_completion = round_child_completion;
 
     struct child_env {
-      receiver_env_t base_env_{};
       resume_scheduler_t scheduler_{};
       stdexec::inplace_stop_token stop_token_{};
 
@@ -655,67 +769,64 @@ private:
       using receiver_concept = stdexec::receiver_t;
 
       read_operation *op{nullptr};
+      round_state *round{nullptr};
       std::uint32_t slot_id{0U};
       std::size_t position{0U};
-      std::shared_ptr<round_state> round{};
-      std::shared_ptr<stdexec::inplace_stop_source> stop_source{};
 
       auto set_value(stream_result<chunk_type> status) noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
-        op->finish_child(round, slot_id,
-                         child_completion{
-                             .position = position,
-                             .status = std::move(status),
-                             .stopped_signal = false,
-                         });
+        complete(child_completion{
+            .position = position,
+            .status = std::move(status),
+            .stopped_signal = false,
+        });
       }
 
       template <typename error_t> auto set_error(error_t &&error) noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
-        op->finish_child(round, slot_id,
-                         child_completion{
-                             .position = position,
-                             .status = status_type::failure(
-                                 detail::map_merge_async_error(std::forward<error_t>(error))),
-                             .stopped_signal = false,
-                         });
+        complete(child_completion{
+            .position = position,
+            .status =
+                status_type::failure(detail::map_merge_async_error(std::forward<error_t>(error))),
+            .stopped_signal = false,
+        });
       }
 
       auto set_stopped() noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
-        op->finish_child(round, slot_id,
-                         child_completion{
-                             .position = position,
-                             .status = status_type{},
-                             .stopped_signal = true,
-                         });
+        complete(child_completion{
+            .position = position,
+            .status = status_type{},
+            .stopped_signal = true,
+        });
       }
 
       [[nodiscard]] auto get_env() const noexcept -> child_env {
         return child_env{
-            .base_env_ = op->env_,
-            .scheduler_ = op->drive_loop_t::scheduler(),
+            .scheduler_ = op->scheduler_,
             .stop_token_ =
-                stop_source == nullptr ? stdexec::inplace_stop_token{} : stop_source->get_token(),
+                round == nullptr ? stdexec::inplace_stop_token{} : round->stop_source.get_token(),
         };
+      }
+
+    private:
+      auto complete(child_completion completion) noexcept -> void {
+        auto *op_ptr = op;
+        auto *round_ptr = round;
+        if (op_ptr == nullptr || round_ptr == nullptr) {
+          return;
+        }
+
+        round_ptr->publish_completion(slot_id, std::move(completion));
+        op_ptr->request_resume();
+        op_ptr->arrive();
       }
     };
 
     using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
-    using child_set_t = wh::core::detail::child_set<child_op_t>;
-    using mailbox_t = wh::core::detail::child_completion_mailbox<child_completion>;
+    using child_slots_t = child_slots<child_op_t, child_completion>;
+    using round_state_base_t =
+        round_state_base<typename runtime::lane_list, child_slots_t, child_completion>;
 
-    struct round_state {
-      explicit round_state(const std::size_t lane_capacity)
-          : children(lane_capacity), completions(lane_capacity),
-            stop_source(std::make_shared<stdexec::inplace_stop_source>()) {}
-
-      shared_state::lane_list lane_indices{};
-      child_set_t children{};
-      mailbox_t completions{};
-      round_tracker tracker{};
-      std::shared_ptr<stdexec::inplace_stop_source> stop_source{};
-      bool finished{false};
+    struct round_state : round_state_base_t {
+      using round_state_base_t::round_state_base_t;
     };
 
     struct topology_waiter final : topology_async_waiter {
@@ -726,9 +837,14 @@ private:
       read_operation *self{nullptr};
 
       auto operator()() const noexcept -> void {
-        auto scope = self->callbacks_.enter(self);
-        self->parent_stop_requested_.store(true, std::memory_order_release);
-        self->request_drive();
+        if (self == nullptr) {
+          return;
+        }
+        auto *self_ptr = self;
+        self_ptr->count_.fetch_add(1U, std::memory_order_relaxed);
+        self_ptr->stop_requested_.store(true, std::memory_order_release);
+        self_ptr->request_resume();
+        self_ptr->arrive();
       }
     };
 
@@ -737,418 +853,474 @@ private:
   public:
     using operation_state_concept = stdexec::operation_state_t;
 
-    explicit read_operation(std::shared_ptr<shared_state> state, receiver_t receiver)
-        : drive_loop_t(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
-              stdexec::get_env(receiver))),
-          state_(std::move(state)), receiver_(std::move(receiver)),
+    explicit read_operation(wh::core::detail::intrusive_ptr<runtime> state, receiver_t receiver)
+        : state_(std::move(state)), receiver_(std::move(receiver)),
           env_(stdexec::get_env(receiver_)),
-          lane_capacity_(state_ == nullptr ? 0U : state_->lane_count()) {
+          scheduler_(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env_)),
+          lane_capacity_(state_ ? state_->lane_count() : 0U), resume_turn_(scheduler_) {
       static constexpr
           typename topology_async_waiter::ops_type ops{[](topology_async_waiter *base) noexcept {
-            static_cast<topology_waiter *>(base)->op->deliver_topology_ready();
+            auto *waiter = static_cast<topology_waiter *>(base);
+            auto *op_ptr = waiter->op;
+            op_ptr->topology_ready_.store(true, std::memory_order_release);
+            op_ptr->request_resume();
+            op_ptr->arrive();
           }};
       topology_waiter_.op = this;
       topology_waiter_.ops = &ops;
     }
 
-    auto start() noexcept -> void {
+    read_operation(const read_operation &) = delete;
+    auto operator=(const read_operation &) -> read_operation & = delete;
+    read_operation(read_operation &&) = delete;
+    auto operator=(read_operation &&) -> read_operation & = delete;
+
+    ~read_operation() {
+      release_stop();
+      resume_turn_.destroy();
+      destroy_round();
+    }
+
+    auto start() & noexcept -> void {
       if (!state_) {
-        publish_completion(
-            make_value_delivery(stream_result<chunk_type>::failure(wh::core::errc::not_found)));
-        request_drive();
+        set_terminal_value(stream_result<chunk_type>::failure(wh::core::errc::not_found));
+        request_resume();
+        arrive();
         return;
       }
 
       auto stop_token = stdexec::get_stop_token(env_);
       if (stop_token.stop_requested()) {
-        publish_completion(make_stopped_delivery());
-        request_drive();
+        stop_requested_.store(true, std::memory_order_release);
+        set_terminal_stopped();
+        request_resume();
+        arrive();
         return;
       }
 
       if constexpr (!stdexec::unstoppable_token<outer_stop_token_t>) {
         try {
-          stop_callback_.emplace(stop_token, stop_callback{this});
+          on_stop_.emplace(stop_token, stop_callback{this});
         } catch (...) {
-          publish_completion(make_error_delivery(std::current_exception()));
-          request_drive();
+          set_terminal_error(std::current_exception());
+          request_resume();
+          arrive();
+          return;
+        }
+        if (stop_token.stop_requested()) {
+          stop_requested_.store(true, std::memory_order_release);
+          set_terminal_stopped();
+          request_resume();
+          arrive();
           return;
         }
       }
 
-      request_drive();
+      request_resume();
+      arrive();
     }
 
   private:
-    [[nodiscard]] auto finished() const noexcept -> bool {
-      return delivered_.load(std::memory_order_acquire);
+    [[nodiscard]] auto completed() const noexcept -> bool {
+      return completed_.load(std::memory_order_acquire);
     }
 
-    [[nodiscard]] auto completion_pending() const noexcept -> bool {
-      return pending_completion_.has_value();
-    }
+    [[nodiscard]] auto resume_turn_completed() const noexcept -> bool { return completed(); }
 
-    [[nodiscard]] auto take_completion() noexcept -> std::optional<final_delivery> {
-      if (!pending_completion_.has_value()) {
-        return std::nullopt;
-      }
-      auto completion = std::move(pending_completion_);
-      pending_completion_.reset();
-      return completion;
-    }
+    [[nodiscard]] auto terminal_pending() const noexcept -> bool { return terminal_.has_value(); }
 
-    [[nodiscard]] auto acquire_owner_lifetime_guard() noexcept -> std::shared_ptr<read_operation> {
-      auto keepalive = this->weak_from_this().lock();
-      if (!keepalive) {
-        std::terminate();
-      }
-      return keepalive;
-    }
+    auto release_stop() noexcept -> void { on_stop_.reset(); }
 
-    [[nodiscard]] auto make_value_delivery(status_type status) noexcept
-        -> std::optional<final_delivery> {
-      if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-        return std::nullopt;
-      }
-      reset_round_state();
-      auto delivery = final_delivery{std::move(receiver_)};
-      delivery.value = std::move(status);
-      return delivery;
-    }
+    auto request_resume() noexcept -> void { resume_turn_.request(this); }
 
-    [[nodiscard]] auto make_error_delivery(std::exception_ptr error) noexcept
-        -> std::optional<final_delivery> {
-      if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-        return std::nullopt;
-      }
-      reset_round_state();
-      auto delivery = final_delivery{std::move(receiver_)};
-      delivery.error = std::move(error);
-      return delivery;
-    }
-
-    [[nodiscard]] auto make_stopped_delivery() noexcept -> std::optional<final_delivery> {
-      if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-        return std::nullopt;
-      }
-      reset_round_state();
-      auto delivery = final_delivery{std::move(receiver_)};
-      delivery.stopped = true;
-      return delivery;
-    }
-
-    auto publish_completion(std::optional<final_delivery> delivery) noexcept -> bool {
-      if (!delivery.has_value()) {
-        return false;
-      }
-      if (pending_completion_.has_value()) {
-        std::terminate();
-      }
-      pending_completion_.emplace(std::move(*delivery));
-      return true;
-    }
-
-    auto request_drive() noexcept -> void { this->drive_loop_t::request_drive(); }
-
-    auto on_callback_exit() noexcept -> void {
-      if (completion_pending() ||
-          (active_round_ != nullptr && active_round_->completions.has_ready()) ||
-          parent_stop_requested_.load(std::memory_order_acquire) ||
-          topology_resume_pending_.load(std::memory_order_acquire)) {
-        request_drive();
+    auto arrive() noexcept -> void {
+      if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+        maybe_complete();
       }
     }
 
-    auto drive() noexcept -> void {
-      while (!finished()) {
-        if (callbacks_.active()) {
-          return;
-        }
+    auto resume_turn_arrive() noexcept -> void { arrive(); }
 
-        if (topology_resume_pending_.exchange(false, std::memory_order_acq_rel)) {
-          topology_waiting_registered_.store(false, std::memory_order_release);
-        }
-
-        auto active_round = active_round_;
-        if (active_round != nullptr) {
-          if (parent_stop_requested_.load(std::memory_order_acquire) &&
-              active_round->stop_source != nullptr &&
-              !active_round->stop_source->stop_requested()) {
-            active_round->stop_source->request_stop();
-          }
-          drain_completions(active_round);
-          if (finished()) {
-            return;
-          }
-          if (active_round->finished && active_round->children.active_count() == 0U) {
-            if (publish_completion(finalize_round(std::move(active_round)))) {
-              return;
-            }
-            continue;
-          }
-          if (active_round->completions.has_ready()) {
-            continue;
-          }
-          return;
-        }
-
-        if (topology_waiting_registered_.load(std::memory_order_acquire)) {
-          if (parent_stop_requested_.load(std::memory_order_acquire)) {
-            if (publish_completion(cancel_wait())) {
-              return;
-            }
-          }
-          return;
-        }
-
-        if (parent_stop_requested_.load(std::memory_order_acquire)) {
-          if (publish_completion(make_stopped_delivery())) {
-            return;
-          }
-          return;
-        }
-
-        if (!state_) {
-          if (publish_completion(make_value_delivery(
-                  stream_result<chunk_type>::failure(wh::core::errc::not_found)))) {
-            return;
-          }
-          return;
-        }
-
-        auto immediate = state_->try_read();
-        if (std::holds_alternative<status_type>(immediate)) {
-          if (publish_completion(
-                  make_value_delivery(std::move(std::get<status_type>(immediate))))) {
-            return;
-          }
-          return;
-        }
-
-        auto round_spec = state_->begin_round();
-        round_topology_epoch_ = round_spec.topology_epoch;
-        if (round_spec.immediate_status.has_value()) {
-          if (publish_completion(make_value_delivery(std::move(*round_spec.immediate_status)))) {
-            return;
-          }
-          return;
-        }
-
-        if (round_spec.wait_for_topology) {
-          if (!wait_for_topology()) {
-            continue;
-          }
-          if (parent_stop_requested_.load(std::memory_order_acquire)) {
-            if (publish_completion(cancel_wait())) {
-              return;
-            }
-          }
-          return;
-        }
-
-        if (publish_completion(start_round(std::move(round_spec.lanes)))) {
-          return;
-        }
-      }
-    }
-
-    [[nodiscard]] auto start_round(shared_state::lane_list lanes) noexcept
-        -> std::optional<final_delivery> {
-      auto round = std::make_shared<round_state>(lane_capacity_);
-      round->lane_indices = std::move(lanes);
-      active_round_ = round;
-
-      try {
-        round->tracker.reset(round->lane_indices.size());
-      } catch (...) {
-        state_->cancel_round();
-        active_round_.reset();
-        round->lane_indices.clear();
-        round->stop_source.reset();
-        return make_error_delivery(std::current_exception());
-      }
-
-      if (parent_stop_requested_.load(std::memory_order_acquire) ||
-          stdexec::get_stop_token(env_).stop_requested()) {
-        parent_stop_requested_.store(true, std::memory_order_release);
-        round->stop_source->request_stop();
-      }
-
-      for (std::size_t position = 0U; position < round->lane_indices.size(); ++position) {
-        const auto lane_index = static_cast<std::uint32_t>(round->lane_indices[position]);
-        if (round->stop_source->stop_requested()) {
-          consume_completion(round, child_completion{
-                                        .position = position,
-                                        .status = status_type{},
-                                        .stopped_signal = true,
-                                    });
-          continue;
-        }
-
-        auto started = round->children.start_child(lane_index, [&](auto &slot) {
-          slot.emplace_from(stdexec::connect,
-                            state_->lane_read_async(round->lane_indices[position]),
-                            child_receiver{
-                                .op = this,
-                                .slot_id = lane_index,
-                                .position = position,
-                                .round = round,
-                                .stop_source = round->stop_source,
-                            });
-        });
-        if (started.has_error()) {
-          consume_completion(round, child_completion{
-                                        .position = position,
-                                        .status = status_type::failure(started.error()),
-                                        .stopped_signal = false,
-                                    });
-        }
-      }
-
-      if (round->finished && round->children.active_count() == 0U) {
-        return finalize_round(std::move(round));
-      }
-      return std::nullopt;
-    }
-
-    auto finish_child(std::shared_ptr<round_state> round, const std::uint32_t slot_id,
-                      child_completion completion) noexcept -> void {
-      if (finished() || round == nullptr || round != active_round_) {
+    auto maybe_complete() noexcept -> void {
+      if (completed()) {
         return;
       }
-      if (!round->completions.publish(slot_id, std::move(completion))) {
-        std::terminate();
-      }
-      request_drive();
-    }
-
-    auto consume_completion(const std::shared_ptr<round_state> &round,
-                            child_completion completion) noexcept -> void {
-      if (round == nullptr || round != active_round_) {
+      if (count_.load(std::memory_order_acquire) != 0U || !should_complete()) {
         return;
       }
-      if (completion.stopped_signal) {
-        round->tracker.note_stop();
-      } else if (round->tracker.note_status(completion.position, std::move(completion.status))) {
-        if (round->stop_source != nullptr) {
-          round->stop_source->request_stop();
-        }
-      }
-
-      if (round->tracker.finish_one()) {
-        round->finished = true;
-      }
+      complete();
     }
 
-    auto drain_completions(const std::shared_ptr<round_state> &round) noexcept -> void {
-      if (round == nullptr) {
+    [[nodiscard]] auto should_complete() const noexcept -> bool {
+      return terminal_pending() && !round_engaged_ && !topology_waiting_registered_ &&
+             !resume_turn_running();
+    }
+
+    auto resume_turn_add_ref() noexcept -> void { count_.fetch_add(1U, std::memory_order_relaxed); }
+
+    auto resume_turn_schedule_error(const wh::core::error_code error) noexcept -> void {
+      override_terminal_failure(error);
+    }
+
+    auto resume_turn_run() noexcept -> void {
+      resume();
+      maybe_complete();
+    }
+
+    auto resume_turn_idle() noexcept -> void { maybe_complete(); }
+
+    [[nodiscard]] auto resume_turn_running() const noexcept -> bool {
+      return resume_turn_.running();
+    }
+
+    auto set_terminal(final_completion completion) noexcept -> void {
+      if (terminal_pending()) {
         return;
       }
-      round->completions.drain(
-          [this, round](const std::uint32_t slot_id, child_completion completion) {
-            round->children.reclaim_child(slot_id);
-            consume_completion(round, std::move(completion));
-          });
+      terminal_.emplace(std::move(completion));
+      maybe_complete();
     }
 
-    [[nodiscard]] auto finalize_round(std::shared_ptr<round_state> round) noexcept
-        -> std::optional<final_delivery> {
-      if (round == nullptr || round != active_round_) {
-        return std::nullopt;
+    auto override_terminal(final_completion completion) noexcept -> void {
+      if (!terminal_pending()) {
+        set_terminal(std::move(completion));
+        return;
       }
-      auto outcome = round->tracker.take_outcome();
+      terminal_ = std::move(completion);
+      maybe_complete();
+    }
 
-      if (outcome.winner_position.has_value() && outcome.winner_status.has_value()) {
-        auto resolution = state_->complete_round_winner(
-            round->lane_indices[*outcome.winner_position], *outcome.winner_position,
-            std::move(*outcome.winner_status));
-        state_->close_lane_if_needed(resolution.close_lane);
-        return make_value_delivery(std::move(resolution.status));
-      }
+    auto set_terminal_value(status_type status) noexcept -> void {
+      set_terminal(final_completion{.value = std::move(status)});
+    }
 
-      if (outcome.stopped_without_winner) {
-        state_->cancel_round();
-        if (parent_stop_requested_.load(std::memory_order_acquire)) {
-          return make_stopped_delivery();
-        }
-        return make_value_delivery(
-            stream_result<chunk_type>::failure(wh::core::errc::internal_error));
-      }
+    auto set_terminal_error(std::exception_ptr error) noexcept -> void {
+      set_terminal(final_completion{.error = std::move(error)});
+    }
 
-      state_->complete_empty_round(round->lane_indices.size());
-      active_round_.reset();
-      round->children.destroy_all();
-      round->completions.reset(lane_capacity_);
-      round->lane_indices.clear();
-      round->stop_source.reset();
-      if (state_->topology_epoch() != round_topology_epoch_ || state_->has_pending_lanes()) {
-        if (!wait_for_topology()) {
-          return std::nullopt;
-        }
-        return std::nullopt;
+    auto set_terminal_stopped() noexcept -> void {
+      set_terminal(final_completion{.stopped = true});
+    }
+
+    auto override_terminal_failure(const wh::core::error_code error) noexcept -> void {
+      override_terminal(final_completion{.value = status_type::failure(error)});
+    }
+
+    [[nodiscard]] auto active_round() noexcept -> round_state & {
+      wh_invariant(round_engaged_);
+      return round_.template get<round_state>();
+    }
+
+    auto construct_round() -> void {
+      [[maybe_unused]] auto &round = round_.template construct<round_state>(lane_capacity_);
+      round_engaged_ = true;
+    }
+
+    auto destroy_round() noexcept -> void {
+      if (!round_engaged_) {
+        return;
       }
-      return make_value_delivery(
-          stream_result<chunk_type>::failure(wh::core::errc::internal_error));
+      round_.template get<round_state>().children.destroy_all();
+      round_.template destruct<round_state>();
+      round_engaged_ = false;
+    }
+
+    auto observe_completion(child_completion completion) noexcept -> void {
+      auto &round = active_round();
+      merge_stream_reader::observe_round_completion(round.tracker, round.stop_source,
+                                                    round.finished, std::move(completion));
+    }
+
+    auto drain_round() noexcept -> void {
+      if (!round_engaged_) {
+        return;
+      }
+      auto &round = active_round();
+      round.drain_ready([this](const std::uint32_t, child_completion completion) {
+        observe_completion(std::move(completion));
+      });
     }
 
     [[nodiscard]] auto wait_for_topology() noexcept -> bool {
       if (!state_) {
         return false;
       }
+
+      count_.fetch_add(1U, std::memory_order_relaxed);
       if (!state_->register_async_topology_waiter(&topology_waiter_, round_topology_epoch_)) {
+        arrive();
         return false;
       }
-      topology_waiting_registered_.store(true, std::memory_order_release);
+      topology_waiting_registered_ = true;
       return true;
     }
 
-    [[nodiscard]] auto cancel_wait() noexcept -> std::optional<final_delivery> {
-      if (state_ && topology_waiting_registered_.load(std::memory_order_acquire)) {
-        if (!state_->remove_async_topology_waiter(&topology_waiter_)) {
-          return std::nullopt;
+    [[nodiscard]] auto cancel_topology_wait() noexcept -> bool {
+      if (!topology_waiting_registered_) {
+        return true;
+      }
+      if (state_ && state_->remove_async_topology_waiter(&topology_waiter_)) {
+        topology_waiting_registered_ = false;
+        arrive();
+        return true;
+      }
+      return false;
+    }
+
+    [[nodiscard]] auto start_round(runtime::lane_list lanes) noexcept -> bool {
+      if (lanes.empty()) {
+        state_->complete_round_without_winner(lanes);
+        set_terminal_value(stream_result<chunk_type>::failure(wh::core::errc::internal_error));
+        return true;
+      }
+
+      try {
+        construct_round();
+      } catch (...) {
+        state_->complete_round_without_winner(lanes);
+        set_terminal_error(std::current_exception());
+        return true;
+      }
+
+      auto &round = active_round();
+      round.lane_indices = std::move(lanes);
+      try {
+        round.tracker.reset(round.lane_indices.size());
+      } catch (...) {
+        state_->complete_round_without_winner(round.lane_indices);
+        destroy_round();
+        set_terminal_error(std::current_exception());
+        return true;
+      }
+
+      if (stop_requested_.load(std::memory_order_acquire) ||
+          stdexec::get_stop_token(env_).stop_requested()) {
+        stop_requested_.store(true, std::memory_order_release);
+        round.stop_source.request_stop();
+      }
+
+      for (std::size_t position = 0U; position < round.lane_indices.size(); ++position) {
+        const auto lane_index = static_cast<std::uint32_t>(round.lane_indices[position]);
+        if (round.stop_source.stop_requested()) {
+          observe_completion(child_completion{
+              .position = position,
+              .status = status_type{},
+              .stopped_signal = true,
+          });
+          continue;
         }
-        topology_waiting_registered_.store(false, std::memory_order_release);
+
+        auto started = round.children.start(
+            lane_index,
+            [&]() -> child_op_t {
+              return stdexec::connect(state_->lane_read_async(round.lane_indices[position]),
+                                      child_receiver{
+                                          .op = this,
+                                          .round = std::addressof(round),
+                                          .slot_id = lane_index,
+                                          .position = position,
+                                      });
+            },
+            [this]() noexcept { count_.fetch_add(1U, std::memory_order_relaxed); });
+        if (started.has_error()) {
+          observe_completion(child_completion{
+              .position = position,
+              .status = status_type::failure(started.error()),
+              .stopped_signal = false,
+          });
+        }
       }
-      if (topology_resume_pending_.exchange(false, std::memory_order_acq_rel)) {
-        return std::nullopt;
+
+      drain_round();
+      if (round.finished && round.publications_quiescent()) {
+        return finalize_round();
       }
-      return make_stopped_delivery();
+      return false;
     }
 
-    auto deliver_topology_ready() noexcept -> void {
-      topology_resume_pending_.store(true, std::memory_order_release);
-      request_drive();
-    }
+    [[nodiscard]] auto finalize_round() noexcept -> bool {
+      auto &round = active_round();
+      auto outcome = round.tracker.take_outcome();
+      auto lane_indices = std::move(round.lane_indices);
 
-    auto reset_round_state() noexcept -> void {
-      if (active_round_ != nullptr) {
-        auto round = std::move(active_round_);
-        round->children.destroy_all();
-        round->completions.reset(lane_capacity_);
-        round->lane_indices.clear();
-        round->stop_source.reset();
-        round->finished = false;
+      if (outcome.winner_position.has_value() && outcome.winner_status.has_value()) {
+        auto resolution = state_->complete_round_winner(lane_indices, *outcome.winner_position,
+                                                        std::move(*outcome.winner_status));
+        state_->close_lane_if_needed(resolution.close_lane);
+        destroy_round();
+        set_terminal_value(std::move(resolution.status));
+        return true;
       }
-      topology_waiting_registered_.store(false, std::memory_order_release);
-      topology_resume_pending_.store(false, std::memory_order_release);
+
+      if (outcome.stopped_without_winner) {
+        state_->complete_round_without_winner(lane_indices);
+        destroy_round();
+        if (stop_requested_.load(std::memory_order_acquire)) {
+          set_terminal_stopped();
+        } else {
+          set_terminal_value(stream_result<chunk_type>::failure(wh::core::errc::internal_error));
+        }
+        return true;
+      }
+
+      state_->complete_round_without_winner(lane_indices);
+      destroy_round();
+      if (state_->topology_epoch() != round_topology_epoch_ || state_->has_pending_lanes()) {
+        return false;
+      }
+      set_terminal_value(stream_result<chunk_type>::failure(wh::core::errc::internal_error));
+      return true;
     }
 
-    auto drive_error(const wh::core::error_code error) noexcept -> void {
-      publish_completion(make_value_delivery(stream_result<chunk_type>::failure(error)));
+    [[nodiscard]] auto handle_terminal() noexcept -> bool {
+      if (!terminal_pending()) {
+        return false;
+      }
+
+      if (round_engaged_) {
+        auto &round = active_round();
+        round.stop_source.request_stop();
+        drain_round();
+        if (!round.finished || !round.publications_quiescent()) {
+          return false;
+        }
+        state_->complete_round_without_winner(round.lane_indices);
+        destroy_round();
+      }
+
+      if (topology_waiting_registered_ && !cancel_topology_wait()) {
+        return false;
+      }
+
+      return true;
     }
 
-    std::shared_ptr<shared_state> state_{};
+    auto resume() noexcept -> void {
+      while (!completed()) {
+        if (topology_ready_.exchange(false, std::memory_order_acq_rel)) {
+          topology_waiting_registered_ = false;
+        }
+
+        if (terminal_pending()) {
+          if (!handle_terminal()) {
+            return;
+          }
+          return;
+        }
+
+        if (round_engaged_) {
+          auto &round = active_round();
+          if (stop_requested_.load(std::memory_order_acquire)) {
+            round.stop_source.request_stop();
+          }
+          drain_round();
+          if (!round.finished || !round.publications_quiescent()) {
+            return;
+          }
+          if (finalize_round()) {
+            continue;
+          }
+          if (round_engaged_) {
+            return;
+          }
+          if (state_->has_pending_lanes() && wait_for_topology()) {
+            return;
+          }
+          continue;
+        }
+
+        if (topology_waiting_registered_) {
+          if (!stop_requested_.load(std::memory_order_acquire)) {
+            return;
+          }
+          if (!cancel_topology_wait()) {
+            return;
+          }
+          set_terminal_stopped();
+          continue;
+        }
+
+        if (stop_requested_.load(std::memory_order_acquire)) {
+          set_terminal_stopped();
+          continue;
+        }
+
+        if (!state_) {
+          set_terminal_value(stream_result<chunk_type>::failure(wh::core::errc::not_found));
+          continue;
+        }
+
+        auto immediate = state_->try_read();
+        if (std::holds_alternative<status_type>(immediate)) {
+          set_terminal_value(std::move(std::get<status_type>(immediate)));
+          continue;
+        }
+
+        auto round_spec = state_->begin_round();
+        round_topology_epoch_ = round_spec.topology_epoch;
+        if (round_spec.immediate_status.has_value()) {
+          set_terminal_value(std::move(*round_spec.immediate_status));
+          continue;
+        }
+
+        if (round_spec.wait_for_topology) {
+          if (wait_for_topology()) {
+            return;
+          }
+          continue;
+        }
+
+        if (start_round(std::move(round_spec.lanes))) {
+          continue;
+        }
+        if (round_engaged_ || topology_waiting_registered_) {
+          return;
+        }
+      }
+    }
+
+    auto release_runtime_state() noexcept -> void {
+      release_stop();
+      terminal_.reset();
+      state_.reset();
+      topology_waiting_registered_ = false;
+      topology_ready_.store(false, std::memory_order_release);
+    }
+
+    auto complete() noexcept -> void {
+      if (!terminal_pending() || completed_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+      }
+
+      auto completion = std::move(*terminal_);
+      release_runtime_state();
+      if (completion.error != nullptr) {
+        stdexec::set_error(std::move(receiver_), std::move(completion.error));
+        return;
+      }
+      if (completion.stopped) {
+        stdexec::set_stopped(std::move(receiver_));
+        return;
+      }
+      wh_invariant(completion.value.has_value());
+      stdexec::set_value(std::move(receiver_), std::move(*completion.value));
+    }
+
+    wh::core::detail::intrusive_ptr<runtime> state_{};
     receiver_t receiver_;
     receiver_env_t env_{};
+    resume_scheduler_t scheduler_;
     std::size_t lane_capacity_{0U};
-    std::shared_ptr<round_state> active_round_{};
-    std::optional<stop_callback_t> stop_callback_{};
-    wh::core::detail::callback_guard<read_operation> callbacks_{};
-    std::optional<final_delivery> pending_completion_{};
-    std::atomic<bool> parent_stop_requested_{false};
-    std::atomic<bool> topology_waiting_registered_{false};
-    std::atomic<bool> topology_resume_pending_{false};
-    std::atomic<bool> delivered_{false};
+    wh::core::detail::manual_storage<sizeof(round_state), alignof(round_state)> round_{};
+    bool round_engaged_{false};
+    wh::core::detail::scheduled_resume_turn<read_operation, resume_scheduler_t> resume_turn_;
+    std::optional<stop_callback_t> on_stop_{};
+    std::optional<final_completion> terminal_{};
+    std::atomic<std::size_t> count_{1U};
+    std::atomic<bool> stop_requested_{false};
+    std::atomic<bool> topology_ready_{false};
+    std::atomic<bool> completed_{false};
+    bool topology_waiting_registered_{false};
     std::uint64_t round_topology_epoch_{0U};
     topology_waiter topology_waiter_{};
   };
@@ -1161,25 +1333,23 @@ private:
                                        stdexec::set_error_t(std::exception_ptr),
                                        stdexec::set_stopped_t()>;
 
-    explicit read_sender(std::shared_ptr<shared_state> state) : state_(std::move(state)) {}
+    explicit read_sender(wh::core::detail::intrusive_ptr<runtime> state)
+        : state_(std::move(state)) {}
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
       requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-    [[nodiscard]] auto connect(receiver_t receiver) && -> wh::core::detail::shared_operation_state<
-        read_operation<std::remove_cvref_t<receiver_t>>> {
+    [[nodiscard]] auto
+    connect(receiver_t receiver) && -> read_operation<std::remove_cvref_t<receiver_t>> {
       using operation_t = read_operation<std::remove_cvref_t<receiver_t>>;
-      return wh::core::detail::shared_operation_state<operation_t>{
-          std::make_shared<operation_t>(std::move(state_), std::move(receiver))};
+      return operation_t{std::move(state_), std::move(receiver)};
     }
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
       requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
     [[nodiscard]] auto
-    connect(receiver_t receiver) const & -> wh::core::detail::shared_operation_state<
-        read_operation<std::remove_cvref_t<receiver_t>>> {
+    connect(receiver_t receiver) const & -> read_operation<std::remove_cvref_t<receiver_t>> {
       using operation_t = read_operation<std::remove_cvref_t<receiver_t>>;
-      return wh::core::detail::shared_operation_state<operation_t>{
-          std::make_shared<operation_t>(state_, std::move(receiver))};
+      return operation_t{state_, std::move(receiver)};
     }
 
     [[nodiscard]] auto get_env() const noexcept -> wh::core::detail::async_completion_env {
@@ -1187,17 +1357,18 @@ private:
     }
 
   private:
-    std::shared_ptr<shared_state> state_{};
+    wh::core::detail::intrusive_ptr<runtime> state_{};
   };
 
 public:
   merge_stream_reader() = default;
 
   explicit merge_stream_reader(std::vector<lane_type> &&readers)
-      : state_(std::make_shared<shared_state>(std::move(readers))) {}
+      : state_(wh::core::detail::make_intrusive<runtime>(std::move(readers))) {}
 
   explicit merge_stream_reader(std::vector<lane_source_type> &&sources)
-      : state_(std::make_shared<shared_state>(std::move(sources))) {}
+    requires(supports_dynamic_injection)
+      : state_(wh::core::detail::make_intrusive<runtime>(std::move(sources))) {}
 
   merge_stream_reader(const merge_stream_reader &) = delete;
   auto operator=(const merge_stream_reader &) -> merge_stream_reader & = delete;
@@ -1262,7 +1433,9 @@ public:
   }
 
   /// Attaches one concrete reader to a pre-registered pending lane.
-  auto attach(std::string_view source, reader_t reader) -> wh::core::result<void> {
+  auto attach(std::string_view source, reader_t reader) -> wh::core::result<void>
+    requires(supports_dynamic_injection)
+  {
     if (!state_) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
@@ -1270,7 +1443,9 @@ public:
   }
 
   /// Disables one pre-registered pending lane.
-  auto disable(std::string_view source) -> wh::core::result<void> {
+  auto disable(std::string_view source) -> wh::core::result<void>
+    requires(supports_dynamic_injection)
+  {
     if (!state_) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
@@ -1285,30 +1460,33 @@ public:
   }
 
 private:
-  std::shared_ptr<shared_state> state_{};
+  explicit merge_stream_reader(wh::core::detail::intrusive_ptr<runtime> state)
+      : state_(std::move(state)) {}
+
+  wh::core::detail::intrusive_ptr<runtime> state_{};
 };
 
 /// Builds a merged stream from explicitly named readers.
 template <stream_reader reader_t>
 [[nodiscard]] inline auto
 make_merge_stream_reader(std::vector<named_stream_reader<reader_t>> &&readers)
-    -> merge_stream_reader<reader_t> {
+    -> merge_stream_reader<reader_t, merge_topology_mode::static_attached> {
   detail::sort_named_stream_readers(readers);
-  return merge_stream_reader<reader_t>{std::move(readers)};
+  return merge_stream_reader<reader_t, merge_topology_mode::static_attached>{std::move(readers)};
 }
 
 /// Builds a live merged stream shell from pending lane source names.
 template <stream_reader reader_t>
 [[nodiscard]] inline auto make_merge_stream_reader(std::vector<std::string> &&sources)
-    -> merge_stream_reader<reader_t> {
+    -> merge_stream_reader<reader_t, merge_topology_mode::dynamic_injection> {
   std::ranges::sort(sources);
-  return merge_stream_reader<reader_t>{std::move(sources)};
+  return merge_stream_reader<reader_t, merge_topology_mode::dynamic_injection>{std::move(sources)};
 }
 
 /// Builds a merged stream from anonymous readers named by index.
 template <stream_reader reader_t>
 [[nodiscard]] inline auto make_merge_stream_reader(std::vector<reader_t> &&readers)
-    -> merge_stream_reader<reader_t> {
+    -> merge_stream_reader<reader_t, merge_topology_mode::static_attached> {
   return make_merge_stream_reader(detail::make_named_stream_readers(std::move(readers)));
 }
 

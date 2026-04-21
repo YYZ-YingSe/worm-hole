@@ -1,14 +1,16 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/any.hpp"
 #include "wh/core/json.hpp"
 #include "wh/schema/serialization/registry.hpp"
 
-TEST_CASE("serialization registry covers uniqueness lookup freeze pointer view and typed deserialize branches",
-          "[UT][wh/schema/serialization/registry.hpp][serialization_registry::register_type][condition][branch][boundary]") {
+TEST_CASE("serialization registry covers uniqueness lookup freeze pointer view and typed "
+          "deserialize branches",
+          "[UT][wh/schema/serialization/"
+          "registry.hpp][serialization_registry::register_type][condition][branch][boundary]") {
   wh::schema::serialization_registry registry;
   registry.reserve(8U, 16U);
 
@@ -16,8 +18,7 @@ TEST_CASE("serialization registry covers uniqueness lookup freeze pointer view a
   REQUIRE(empty_name.has_error());
   REQUIRE(empty_name.error() == wh::core::errc::invalid_argument);
 
-  auto registered =
-      registry.register_type<std::int64_t>("my.i64", {"legacy.i64"});
+  auto registered = registry.register_type<std::int64_t>("my.i64", {"legacy.i64"});
   REQUIRE(registered.has_value());
   REQUIRE(registry.size() == 1U);
 
@@ -41,20 +42,18 @@ TEST_CASE("serialization registry covers uniqueness lookup freeze pointer view a
   REQUIRE(encoded.has_value());
   REQUIRE(encoded.value().IsInt64());
 
-  auto any_encoded = registry.serialize_any(
-      wh::core::any_type_key_v<std::int64_t>, wh::core::any{std::int64_t{88}});
+  auto any_encoded = registry.serialize_any(wh::core::any_type_key_v<std::int64_t>,
+                                            wh::core::any{std::int64_t{88}});
   REQUIRE(any_encoded.has_value());
 
-  auto bad_any = registry.serialize_any(
-      wh::core::any_type_key_v<std::int64_t>, wh::core::any{std::string{"x"}});
+  auto bad_any = registry.serialize_any(wh::core::any_type_key_v<std::int64_t>,
+                                        wh::core::any{std::string{"x"}});
   REQUIRE(bad_any.has_error());
   REQUIRE(bad_any.error() == wh::core::errc::type_mismatch);
 
   std::int64_t output = 0;
-  auto decoded_status =
-      registry.deserialize_to("legacy.i64",
-                              wh::core::any_type_key_v<std::int64_t>,
-                              encoded.value(), &output);
+  auto decoded_status = registry.deserialize_to(
+      "legacy.i64", wh::core::any_type_key_v<std::int64_t>, encoded.value(), &output);
   REQUIRE(decoded_status.has_value());
   REQUIRE(output == 77);
 
@@ -66,15 +65,12 @@ TEST_CASE("serialization registry covers uniqueness lookup freeze pointer view a
   REQUIRE(mismatch.has_error());
   REQUIRE(mismatch.error() == wh::core::errc::type_mismatch);
 
-  auto null_view =
-      registry.serialize_view(wh::core::any_type_key_v<std::int64_t>, nullptr);
+  auto null_view = registry.serialize_view(wh::core::any_type_key_v<std::int64_t>, nullptr);
   REQUIRE(null_view.has_error());
   REQUIRE(null_view.error() == wh::core::errc::invalid_argument);
 
-  auto null_decode =
-      registry.deserialize_to("legacy.i64",
-                              wh::core::any_type_key_v<std::int64_t>,
-                              encoded.value(), nullptr);
+  auto null_decode = registry.deserialize_to("legacy.i64", wh::core::any_type_key_v<std::int64_t>,
+                                             encoded.value(), nullptr);
   REQUIRE(null_decode.has_error());
   REQUIRE(null_decode.error() == wh::core::errc::invalid_argument);
 
@@ -86,7 +82,8 @@ TEST_CASE("serialization registry covers uniqueness lookup freeze pointer view a
 }
 
 TEST_CASE("serialization registry also covers deserialize_any and diagnostic alias registration",
-          "[UT][wh/schema/serialization/registry.hpp][serialization_registry::deserialize_any][condition][branch][boundary]") {
+          "[UT][wh/schema/serialization/"
+          "registry.hpp][serialization_registry::deserialize_any][condition][branch][boundary]") {
   wh::schema::serialization_registry registry{};
   REQUIRE(registry.register_type_with_diagnostic_alias<int>().has_value());
 
@@ -94,8 +91,7 @@ TEST_CASE("serialization registry also covers deserialize_any and diagnostic ali
   REQUIRE(encoded.has_value());
 
   auto decoded_any =
-      registry.deserialize_any(wh::internal::diagnostic_type_alias<int>(),
-                               encoded.value());
+      registry.deserialize_any(wh::internal::diagnostic_type_alias<int>(), encoded.value());
   REQUIRE(decoded_any.has_value());
   REQUIRE(*wh::core::any_cast<int>(&decoded_any.value()) == 5);
 
@@ -103,8 +99,7 @@ TEST_CASE("serialization registry also covers deserialize_any and diagnostic ali
   REQUIRE(missing.has_error());
   REQUIRE(missing.error() == wh::core::errc::not_found);
 
-  auto missing_key =
-      registry.primary_name_for_key(wh::core::any_type_key_v<double>);
+  auto missing_key = registry.primary_name_for_key(wh::core::any_type_key_v<double>);
   REQUIRE(missing_key.has_error());
   REQUIRE(missing_key.error() == wh::core::errc::not_found);
 }

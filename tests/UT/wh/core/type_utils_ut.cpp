@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <map>
 #include <memory>
 #include <string>
@@ -7,6 +5,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/type_utils.hpp"
 
@@ -36,19 +36,15 @@ template <> struct type_alias<ut_support::widget> {
 } // namespace wh::internal
 
 static_assert(std::same_as<wh::core::type_of_t<const int &>, int>);
-static_assert(std::same_as<decltype(wh::core::type_of<const long &>()),
-                           wh::core::type_tag<long>>);
+static_assert(std::same_as<decltype(wh::core::type_of<const long &>()), wh::core::type_tag<long>>);
 
 static_assert(wh::core::default_initializable_object<ut_support::widget>);
 static_assert(!wh::core::default_initializable_object<ut_support::no_default>);
 
 static_assert(wh::core::type_list_size<ut_support::sample_types>::value == 3U);
-static_assert(
-    std::same_as<wh::core::type_list_at<0U, ut_support::sample_types>::type, int>);
-static_assert(
-    std::same_as<wh::core::type_list_at<1U, ut_support::sample_types>::type, double>);
-static_assert(
-    std::same_as<wh::core::type_list_at<2U, ut_support::sample_types>::type, char>);
+static_assert(std::same_as<wh::core::type_list_at<0U, ut_support::sample_types>::type, int>);
+static_assert(std::same_as<wh::core::type_list_at<1U, ut_support::sample_types>::type, double>);
+static_assert(std::same_as<wh::core::type_list_at<2U, ut_support::sample_types>::type, char>);
 static_assert(std::same_as<wh::core::type_list_reverse<ut_support::sample_types>::type,
                            ut_support::reversed_sample_types>);
 
@@ -124,8 +120,7 @@ TEST_CASE("wrap_unique reverse_copy and map_copy_as preserve values",
       {"left", 1},
       {"right", 2},
   };
-  auto copied =
-      wh::core::map_copy_as<std::unordered_map<std::string, int>>(mapping);
+  auto copied = wh::core::map_copy_as<std::unordered_map<std::string, int>>(mapping);
   REQUIRE(copied.has_value());
   REQUIRE(copied.value().size() == mapping.size());
   REQUIRE(copied.value().at("left") == 1);
@@ -136,10 +131,8 @@ TEST_CASE("stable and diagnostic type tokens are non-empty and stable",
           "[UT][wh/core/type_utils.hpp][stable_type_token][boundary]") {
   const auto stable_first = wh::core::stable_type_token<ut_support::widget>();
   const auto stable_second = wh::core::stable_type_token<ut_support::widget>();
-  const auto diagnostic_first =
-      wh::core::diagnostic_type_token<ut_support::widget>();
-  const auto diagnostic_second =
-      wh::core::diagnostic_type_token<ut_support::widget>();
+  const auto diagnostic_first = wh::core::diagnostic_type_token<ut_support::widget>();
+  const auto diagnostic_second = wh::core::diagnostic_type_token<ut_support::widget>();
 
   REQUIRE_FALSE(stable_first.empty());
   REQUIRE_FALSE(diagnostic_first.empty());

@@ -1,29 +1,27 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/callbacks/aspect_inject.hpp"
 #include "wh/callbacks/manager.hpp"
 
 namespace {
 
-auto make_recording_context(std::vector<wh::callbacks::stage> &seen)
-    -> wh::core::run_context {
+auto make_recording_context(std::vector<wh::callbacks::stage> &seen) -> wh::core::run_context {
   wh::core::run_context context{};
   context.callbacks.emplace();
 
   wh::callbacks::stage_callbacks callbacks{};
-  const auto record_stage =
-      [&seen](const wh::callbacks::stage stage, const wh::callbacks::event_view,
-              const wh::callbacks::run_info &) { seen.push_back(stage); };
+  const auto record_stage = [&seen](const wh::callbacks::stage stage,
+                                    const wh::callbacks::event_view,
+                                    const wh::callbacks::run_info &) { seen.push_back(stage); };
   callbacks.on_start = record_stage;
   callbacks.on_end = record_stage;
   callbacks.on_error = record_stage;
   callbacks.on_stream_start = record_stage;
   callbacks.on_stream_end = record_stage;
   context.callbacks->manager.register_local_callbacks(
-      wh::callbacks::make_callback_config(
-          [](const wh::callbacks::stage) noexcept { return true; }),
+      wh::callbacks::make_callback_config([](const wh::callbacks::stage) noexcept { return true; }),
       std::move(callbacks));
   return context;
 }
@@ -65,9 +63,8 @@ TEST_CASE("aspect inject emit forwards the explicitly requested stage",
                   });
 }
 
-TEST_CASE(
-    "aspect inject stage helpers emit the full lifecycle in helper order",
-    "[UT][wh/callbacks/aspect_inject.hpp][emit_start][condition][branch][boundary]") {
+TEST_CASE("aspect inject stage helpers emit the full lifecycle in helper order",
+          "[UT][wh/callbacks/aspect_inject.hpp][emit_start][condition][branch][boundary]") {
   std::vector<wh::callbacks::stage> seen{};
   auto context = make_recording_context(seen);
   const auto info = make_run_info();

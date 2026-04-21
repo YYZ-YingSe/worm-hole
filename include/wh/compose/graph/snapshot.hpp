@@ -101,8 +101,7 @@ struct graph_snapshot {
   /// Graph-level compile-visible options.
   graph_snapshot_compile_options compile_options{};
   /// Stable key->node-id mapping that survives `retain_cold_data=false`.
-  std::unordered_map<std::string, std::uint32_t,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, std::uint32_t, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       node_key_to_id{};
   /// Stable node-id->key mapping.
@@ -114,8 +113,7 @@ struct graph_snapshot {
   /// Declared branch destination-set snapshots.
   std::vector<graph_snapshot_branch> branches{};
   /// Nested subgraph snapshots keyed by parent node key.
-  std::unordered_map<std::string, graph_snapshot,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, graph_snapshot, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       subgraphs{};
 };

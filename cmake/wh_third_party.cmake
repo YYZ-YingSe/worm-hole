@@ -1,5 +1,7 @@
 include_guard(GLOBAL)
 
+include(wh_third_party_wrappers)
+
 function(wh_require_git_locked_dir path label)
   if(NOT WH_REQUIRE_GIT_LOCKED_THIRDY_PARTY)
     return()
@@ -43,13 +45,27 @@ function(wh_add_interface_include_library target_name alias_name build_include
     return()
   endif()
 
+  set(build_interface_entries "$<BUILD_INTERFACE:${build_include}>")
+  if(WH_ENABLE_THIRD_PARTY_HEADER_WRAPPERS)
+    wh_generate_system_header_wrapper_tree(
+      wrapper_root
+      NAME "${target_name}"
+      SOURCE_ROOT "${build_include}")
+    set(build_interface_entries
+        "$<BUILD_INTERFACE:${wrapper_root}>"
+        "$<BUILD_INTERFACE:${build_include}>")
+  endif()
+
   add_library("${target_name}" INTERFACE)
   add_library("${alias_name}" ALIAS "${target_name}")
+  # Vendored third-party headers must always win over machine-local installs
+  # such as /usr/local/include. Keep them on the normal BEFORE include path so
+  # compiler-injected system include directories cannot preempt them.
   target_include_directories(
     "${target_name}"
     BEFORE
     INTERFACE
-      $<BUILD_INTERFACE:${build_include}>
+      ${build_interface_entries}
       $<INSTALL_INTERFACE:${install_include}>)
 endfunction()
 
@@ -58,9 +74,15 @@ function(wh_setup_third_party)
   wh_require_git_locked_dir("${WH_RAPIDJSON_DIR}" "rapidjson")
   wh_require_git_locked_dir("${WH_MINJA_DIR}" "minja")
   wh_require_git_locked_dir("${WH_NLOHMANN_JSON_DIR}" "nlohmann_json")
+  if(WH_EXPERIMENT_MIMALLOC)
+    wh_require_git_locked_dir("${WH_MIMALLOC_DIR}" "mimalloc")
+  endif()
 
   if(BUILD_TESTING AND WH_BUILD_TESTING)
     wh_require_git_locked_dir("${WH_CATCH2_DIR}" "catch2")
+  endif()
+  if(WH_BUILD_BENCHMARKS)
+    wh_require_git_locked_dir("${WH_BENCHMARK_DIR}" "benchmark")
   endif()
 
   wh_require_source_header(
@@ -79,6 +101,18 @@ function(wh_setup_third_party)
     "${WH_NLOHMANN_JSON_DIR}/include/nlohmann/json.hpp"
     "nlohmann_json header"
     "sync thirdy_party submodules or pass -DWH_NLOHMANN_JSON_DIR=<path>")
+  if(WH_BUILD_BENCHMARKS)
+    wh_require_source_header(
+      "${WH_BENCHMARK_DIR}/include/benchmark/benchmark.h"
+      "benchmark header"
+      "sync thirdy_party submodules or pass -DWH_BENCHMARK_DIR=<path>")
+  endif()
+  if(WH_EXPERIMENT_MIMALLOC)
+    wh_require_source_header(
+      "${WH_MIMALLOC_DIR}/include/mimalloc.h"
+      "mimalloc header"
+      "sync thirdy_party submodules or pass -DWH_MIMALLOC_DIR=<path>")
+  endif()
 
   wh_add_interface_include_library(
     wh_stdexec
@@ -100,6 +134,57 @@ function(wh_setup_third_party)
     minja::minja
     "${WH_MINJA_DIR}/include"
     "include/thirdy_party/minja")
+  if(BUILD_TESTING AND WH_BUILD_TESTING)
+    wh_add_interface_include_library(
+      wh_catch2_headers
+      wh::catch2_headers
+      "${WH_CATCH2_DIR}/src"
+      "include/thirdy_party/catch2/src")
+  endif()
+  if(WH_BUILD_BENCHMARKS)
+    wh_add_interface_include_library(
+      wh_benchmark_headers
+      wh::benchmark_headers
+      "${WH_BENCHMARK_DIR}/include"
+      "include/thirdy_party/benchmark")
+  endif()
+
+  if(NOT TARGET wh_third_party_headers)
+    add_library(wh_third_party_headers INTERFACE)
+    add_library(wh::third_party_headers ALIAS wh_third_party_headers)
+    target_link_libraries(
+      wh_third_party_headers
+      INTERFACE
+        STDEXEC::stdexec
+        rapidjson::rapidjson
+        nlohmann_json::nlohmann_json
+        minja::minja)
+  endif()
 
   target_link_libraries(wh_minja INTERFACE nlohmann_json::nlohmann_json)
+
+  if(WH_BUILD_BENCHMARKS AND NOT TARGET benchmark::benchmark_main)
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_INSTALL_TOOLS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${WH_BENCHMARK_DIR}"
+                     "${PROJECT_BINARY_DIR}/thirdy_party/benchmark")
+  endif()
+
+  if(WH_EXPERIMENT_MIMALLOC AND NOT TARGET mimalloc)
+    set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(MI_BUILD_SHARED ON CACHE BOOL "" FORCE)
+    set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
+    set(MI_BUILD_STATIC OFF CACHE BOOL "" FORCE)
+    set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
+    if(APPLE)
+      set(MI_OSX_INTERPOSE ON CACHE BOOL "" FORCE)
+      set(MI_OSX_ZONE ON CACHE BOOL "" FORCE)
+    endif()
+    add_subdirectory("${WH_MIMALLOC_DIR}"
+                     "${PROJECT_BINARY_DIR}/thirdy_party/mimalloc")
+  endif()
 endfunction()

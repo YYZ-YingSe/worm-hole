@@ -3,40 +3,40 @@
 #pragma once
 
 #include "wh/compose/graph/detail/invoke_join.hpp"
+#include "wh/compose/graph/detail/runtime/invoke_session.hpp"
 #include "wh/compose/graph/graph.hpp"
 #include "wh/core/compiler.hpp"
 
 namespace wh::compose {
 
-template <typename state_t, typename receiver_t, typename derived_t,
-          typename graph_scheduler_t>
+template <typename state_t, typename receiver_t, typename derived_t, typename graph_scheduler_t>
 class detail::invoke_runtime::invoke_stage_run
-    : public detail::invoke_runtime::invoke_join_base<receiver_t, derived_t,
-                                                      graph_scheduler_t> {
-  using join_base_t =
-      invoke_join_base<receiver_t, derived_t, graph_scheduler_t>;
+    : public detail::invoke_runtime::invoke_join_base<receiver_t, derived_t, graph_scheduler_t> {
+  using join_base_t = invoke_join_base<receiver_t, derived_t, graph_scheduler_t>;
 
 public:
   template <typename receiver_arg_t, typename graph_scheduler_u>
-  invoke_stage_run(state_t &&state, receiver_arg_t &&receiver,
-                   graph_scheduler_u &&graph_scheduler)
-      : join_base_t(
-            state.node_count() + 1U,
-            graph_scheduler_t{std::forward<graph_scheduler_u>(graph_scheduler)},
-            std::forward<receiver_arg_t>(receiver)) {
+  invoke_stage_run(state_t &&state, receiver_arg_t &&receiver, graph_scheduler_u &&graph_scheduler)
+      : join_base_t(state.session().node_count() + 1U,
+                    graph_scheduler_t{std::forward<graph_scheduler_u>(graph_scheduler)},
+                    std::forward<receiver_arg_t>(receiver)) {
     state_.emplace(std::move(state));
     state_->rebind_moved_runtime_storage();
   }
 
   auto bind_outer_stop() noexcept -> void { join_base_t::bind_outer_stop(); }
 
-  auto request_drive() noexcept -> void { join_base_t::request_drive(); }
+  auto request_resume() noexcept -> void { join_base_t::request_resume(); }
 
 protected:
   [[nodiscard]] auto state() noexcept -> state_t & { return *state_; }
 
-  [[nodiscard]] auto state() const noexcept -> const state_t & {
-    return *state_;
+  [[nodiscard]] auto state() const noexcept -> const state_t & { return *state_; }
+
+  [[nodiscard]] auto session() noexcept -> invoke_session & { return state_->session(); }
+
+  [[nodiscard]] auto session() const noexcept -> const invoke_session & {
+    return state_->session();
   }
 
 public:
@@ -46,344 +46,376 @@ public:
     if (!state_.has_value()) {
       return;
     }
-    state_->publish_runtime_outputs();
+    session().release_attempts();
+    session().publish_runtime_outputs();
     state_.reset();
   }
 
 protected:
-  auto release_frame(node_frame &frame) noexcept -> void {
-    frame.node_local_scope.release(state_->node_local_process_states_);
+  auto release_attempt(const attempt_id attempt) noexcept -> void {
+    session().release_attempt(attempt);
   }
 
-  auto launch_input_stage(node_frame &&frame) -> wh::core::result<void> {
-    return this->start_child(static_cast<derived_t &>(*this).build_input_sender(
-                                 std::addressof(frame)),
-                             std::move(frame));
+  auto launch_input_stage(const attempt_id attempt) -> wh::core::result<void> {
+    auto sender = static_cast<derived_t &>(*this).build_input_sender(attempt);
+    return this->start_child(std::move(sender), attempt);
   }
 
-  auto launch_state_stage(node_frame &&frame, graph_sender sender)
-      -> wh::core::result<void> {
-    return this->start_child(std::move(sender), std::move(frame));
+  auto launch_state_stage(const attempt_id attempt, graph_sender sender) -> wh::core::result<void> {
+    return this->start_child(std::move(sender), attempt);
   }
 
   auto launch_freeze_stage() -> wh::core::result<void> {
-    node_frame frame{};
-    frame.stage = stage::freeze;
-    frame.node_id = state_->control_slot_id();
+    const auto attempt = session().control_attempt_id();
+    session().release_attempt(attempt);
+    auto &attempt_slot = session().slot(attempt);
+    attempt_slot.current_stage = stage::freeze;
+    attempt_slot.node_id = attempt.slot;
     return this->start_child(
-        static_cast<derived_t &>(*this).build_freeze_sender(
-            state_->freeze_external()),
-        std::move(frame));
+        static_cast<derived_t &>(*this).build_freeze_sender(session().freeze_external()), attempt);
   }
 
-  auto launch_node_stage(node_frame &&frame) -> wh::core::result<void> {
-    if (frame.node == nullptr) {
+  auto restore_attempt_input(const attempt_id attempt) -> wh::core::result<void> {
+    auto &attempt_slot = session().slot(attempt);
+    if (attempt_slot.node == nullptr) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
-    if (!state_->should_retain_input(frame)) {
-      if (!frame.node_input.has_value()) {
-        return wh::core::result<void>::failure(wh::core::errc::not_found);
-      }
-      if (compiled_node_is_sync(*frame.node)) {
-        auto executed = run_state::run_sync_node_execution(
-            *frame.node, *frame.node_input, state_->context_,
-            state_->invoke_state().bound_call_scope, std::addressof(*state_),
-            frame,
-            [this](const std::uint32_t node_id,
-                   const std::size_t step) noexcept {
-              state_->emit_debug(graph_debug_stream_event::decision_kind::retry,
-                                 node_id, step);
-            });
-        return settle_node_stage(std::move(frame), std::move(executed));
-      }
-      return this->start_child(run_state::make_async_node_attempt_sender(
-                                   *frame.node, *frame.node_input,
-                                   state_->context_,
-                                   state_->invoke_state().bound_call_scope,
-                                   std::addressof(*state_), frame),
-                               std::move(frame));
-    }
-
-    auto *rerun_input = state_->rerun_state_.find(frame.node_id);
-    if (rerun_input == nullptr) {
+    if (!session().should_retain_input(attempt_slot)) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
-    auto execution_input =
-        frame.node->meta.input_contract == node_contract::stream
-            ? detail::fork_graph_reader_payload(*rerun_input)
-            : fork_graph_value(*rerun_input);
+    auto *pending_input = session().pending_inputs_.find_input(attempt_slot.node_id);
+    if (pending_input == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+    auto execution_input = attempt_slot.node->meta.input_contract == node_contract::stream
+                               ? detail::fork_graph_reader_payload(*pending_input)
+                               : fork_graph_value(*pending_input);
     if (execution_input.has_error()) {
       return wh::core::result<void>::failure(execution_input.error());
     }
-    if (compiled_node_is_sync(*frame.node)) {
-      auto live_input = std::move(execution_input).value();
-      auto executed = run_state::run_sync_node_execution(
-          *frame.node, live_input, state_->context_,
-          state_->invoke_state().bound_call_scope, std::addressof(*state_),
-          frame,
-          [this](const std::uint32_t node_id, const std::size_t step) noexcept {
-            state_->emit_debug(graph_debug_stream_event::decision_kind::retry,
-                               node_id, step);
-          });
-      return settle_node_stage(std::move(frame), std::move(executed));
+    if (!attempt_slot.input.has_value()) {
+      attempt_slot.input.emplace();
     }
-    frame.node_input.emplace(std::move(execution_input).value());
-    return this->start_child(run_state::make_async_node_attempt_sender(
-                                 *frame.node, *frame.node_input,
-                                 state_->context_,
-                                 state_->invoke_state().bound_call_scope,
-                                 std::addressof(*state_), frame),
-                             std::move(frame));
+    attempt_slot.input->payload.emplace(std::move(execution_input).value());
+    return {};
   }
 
-  auto continue_node_stage(node_frame &&frame, graph_value input)
-      -> wh::core::result<void> {
-    auto prepared_input =
-        state_->prepare_execution_input(std::move(frame), std::move(input));
+  auto launch_node_with_live_input(const attempt_id attempt) -> wh::core::result<void> {
+    auto &attempt_slot = session().slot(attempt);
+    if (attempt_slot.node == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+    if (!attempt_slot.input.has_value() || !attempt_slot.input->payload.has_value()) {
+      return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+    auto &live_input = *attempt_slot.input->payload;
+    const auto dispatch = session().resolve_node_sync_dispatch(attempt_slot.node_id);
+    if (compiled_node_is_sync(*attempt_slot.node)) {
+      if (dispatch == sync_dispatch::work) {
+        return this->start_child(invoke_session::make_sync_node_attempt_sender(
+                                     *attempt_slot.node, live_input, session().context_,
+                                     session().invoke_state().bound_call_scope,
+                                     std::addressof(session()), attempt_slot),
+                                 attempt);
+      }
+      auto executed = invoke_session::run_sync_node_execution(
+          *attempt_slot.node, live_input, session().context_,
+          session().invoke_state().bound_call_scope, std::addressof(session()), attempt_slot);
+      return settle_node(attempt, std::move(executed));
+    }
+    return this->start_child(invoke_session::make_async_node_attempt_sender(
+                                 *attempt_slot.node, live_input, session().context_,
+                                 session().invoke_state().bound_call_scope,
+                                 std::addressof(session()), attempt_slot),
+                             attempt);
+  }
+
+  auto launch_node_from_retained_input(const attempt_id attempt) -> wh::core::result<void> {
+    auto restored = restore_attempt_input(attempt);
+    if (restored.has_error()) {
+      return restored;
+    }
+    return launch_node_with_live_input(attempt);
+  }
+
+  auto launch_node_stage(const attempt_id attempt) -> wh::core::result<void> {
+    auto &attempt_slot = session().slot(attempt);
+    const bool has_live_input =
+        attempt_slot.input.has_value() && attempt_slot.input->payload.has_value();
+    if (has_live_input) {
+      return launch_node_with_live_input(attempt);
+    }
+    return launch_node_from_retained_input(attempt);
+  }
+
+  auto continue_attempt(const attempt_id attempt) -> wh::core::result<void> {
+    auto prepared_input = session().prepare_execution_input(attempt);
     if (prepared_input.has_error()) {
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
       return wh::core::result<void>::failure(prepared_input.error());
     }
     auto prepared_stage = std::move(prepared_input).value();
     if (prepared_stage.sender.has_value()) {
-      return launch_state_stage(std::move(prepared_stage.frame),
-                                std::move(*prepared_stage.sender));
+      return launch_state_stage(prepared_stage.attempt, std::move(*prepared_stage.sender));
     }
 
-    auto next = state_->finalize_node_frame(std::move(prepared_stage.frame),
-                                            std::move(prepared_stage.payload));
-    if (next.has_error()) {
-      return wh::core::result<void>::failure(next.error());
+    auto finalized = session().finalize_node_attempt(prepared_stage.attempt);
+    if (finalized.has_error()) {
+      state_->try_persist_checkpoint();
+      return wh::core::result<void>::failure(finalized.error());
     }
 
-    auto prepared = std::move(next).value();
-    return launch_node_stage(std::move(prepared));
+    return launch_node_with_live_input(prepared_stage.attempt);
   }
 
-  auto settle_pre_state_stage(node_frame &&frame,
-                              wh::core::result<graph_value> &&resolved)
+  auto settle_pre_state(const attempt_id attempt, wh::core::result<graph_value> &&resolved)
       -> wh::core::result<void> {
     if (resolved.has_error()) {
-      return state_->fail_node_stage(std::move(frame), resolved.error(),
-                                     "node pre-state handler failed");
+      auto failed =
+          session().fail_node_stage(attempt, resolved.error(), "node pre-state handler failed");
+      state_->try_persist_checkpoint();
+      return failed;
     }
-    return continue_node_stage(std::move(frame), std::move(resolved).value());
+    auto stored = session().store_attempt_input(attempt, std::move(resolved).value());
+    if (stored.has_error()) {
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
+      return wh::core::result<void>::failure(stored.error());
+    }
+    return continue_attempt(attempt);
   }
 
-  auto settle_prepare_stage(node_frame &&frame,
-                            wh::core::result<graph_value> &&resolved)
+  auto settle_prepare(const attempt_id attempt, wh::core::result<graph_value> &&resolved)
       -> wh::core::result<void> {
     if (resolved.has_error()) {
-      return state_->fail_node_stage(
-          std::move(frame), resolved.error(),
-          "node execution input normalization failed");
+      auto failed = session().fail_node_stage(attempt, resolved.error(),
+                                              "node execution input normalization failed");
+      state_->try_persist_checkpoint();
+      return failed;
     }
-    return continue_node_stage(std::move(frame), std::move(resolved).value());
+    auto stored = session().store_attempt_input(attempt, std::move(resolved).value());
+    if (stored.has_error()) {
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
+      return wh::core::result<void>::failure(stored.error());
+    }
+    return continue_attempt(attempt);
   }
 
-  auto settle_post_state_stage(node_frame &&frame,
-                               wh::core::result<graph_value> &&resolved)
+  auto settle_post_state(const attempt_id attempt, wh::core::result<graph_value> &&resolved)
       -> wh::core::result<void> {
     if (resolved.has_error()) {
-      return state_->fail_node_stage(std::move(frame), resolved.error(),
-                                     "node post-state handler failed");
+      auto failed =
+          session().fail_node_stage(attempt, resolved.error(), "node post-state handler failed");
+      state_->try_persist_checkpoint();
+      return failed;
     }
     return static_cast<derived_t &>(*this).commit_node_output(
-        std::move(frame), std::move(resolved).value(),
-        [this](const std::uint32_t node_id) {
+        attempt, std::move(resolved).value(), [this](const std::uint32_t node_id) {
           static_cast<derived_t &>(*this).enqueue_committed_node(node_id);
         });
   }
 
-  auto settle_node_stage(node_frame &&frame,
-                         wh::core::result<graph_value> &&executed)
+  auto settle_node(const attempt_id attempt, wh::core::result<graph_value> &&executed)
       -> wh::core::result<void> {
+    auto &attempt_slot = session().slot(attempt);
     if (executed.has_error()) {
-      if (!state_->freeze_requested() && frame.attempt < frame.retry_budget) {
-        state_->emit_debug(graph_debug_stream_event::decision_kind::retry,
-                           frame.node_id, frame.cause.step);
-        ++frame.attempt;
-        return launch_node_stage(std::move(frame));
+      if (!session().freeze_requested() && attempt_slot.attempt < attempt_slot.retry_budget) {
+        if (session().should_retain_input(attempt_slot) && attempt_slot.input.has_value()) {
+          attempt_slot.input->payload.reset();
+        }
+        session().emit_debug(graph_debug_stream_event::decision_kind::retry, attempt_slot.node_id,
+                             attempt_slot.cause.step);
+        ++attempt_slot.attempt;
+        return launch_node_stage(attempt);
       }
 
       const auto error_code = executed.error();
-      if (state_->should_wrap_node_error(error_code)) {
-        return state_->fail_node_stage(std::move(frame), error_code,
-                                       "node execution failed");
+      if (session().should_wrap_node_error(error_code)) {
+        auto failed = session().fail_node_stage(attempt, error_code, "node execution failed");
+        state_->try_persist_checkpoint();
+        return failed;
       }
-      state_->state_table_.update(frame.node_id,
-                                  graph_node_lifecycle_state::canceled,
-                                  frame.retry_budget + 1U, error_code);
-      state_->append_transition(
-          frame.node_id, graph_state_transition_event{
-                             .kind = graph_state_transition_kind::node_leave,
-                             .cause = frame.cause,
-                             .lifecycle = graph_node_lifecycle_state::canceled,
-                         });
-      state_->persist_checkpoint_best_effort();
-      frame.node_local_scope.release(state_->node_local_process_states_);
+      session().state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::canceled,
+                                    attempt_slot.retry_budget + 1U, error_code);
+      session().append_transition(attempt_slot.node_id,
+                                  graph_state_transition_event{
+                                      .kind = graph_state_transition_kind::node_leave,
+                                      .cause = attempt_slot.cause,
+                                      .lifecycle = graph_node_lifecycle_state::canceled,
+                                  });
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
       return wh::core::result<void>::failure(error_code);
     }
 
-    auto post =
-        state_->begin_state_post(std::move(frame), std::move(executed).value());
+    auto output = std::move(executed).value();
+    auto post = session().begin_state_post(attempt, output);
     if (post.has_error()) {
+      state_->try_persist_checkpoint();
       return wh::core::result<void>::failure(post.error());
     }
-    auto stage = std::move(post).value();
-    if (stage.sender.has_value()) {
-      return launch_state_stage(std::move(stage.frame),
-                                std::move(*stage.sender));
+    auto post_sender = std::move(post).value();
+    if (post_sender.has_value()) {
+      return launch_state_stage(attempt, std::move(*post_sender));
     }
     return static_cast<derived_t &>(*this).commit_node_output(
-        std::move(stage.frame), std::move(stage.payload),
-        [this](const std::uint32_t node_id) {
+        attempt, std::move(output), [this](const std::uint32_t node_id) {
           static_cast<derived_t &>(*this).enqueue_committed_node(node_id);
         });
   }
 
-  auto settle_input_stage(node_frame &&frame,
-                          wh::core::result<graph_value> &&resolved)
+  auto settle_input(const attempt_id attempt, wh::core::result<graph_value> &&resolved)
       -> wh::core::result<void> {
+    auto &attempt_slot = session().slot(attempt);
     if (resolved.has_error()) {
-      state_->publish_node_error(state_->runtime_node_path(frame.node_id),
-                                 frame.node_id, resolved.error(),
-                                 "node input resolution failed");
-      state_->state_table_.update(frame.node_id,
-                                  graph_node_lifecycle_state::failed, 1U,
-                                  resolved.error());
-      state_->append_transition(
-          frame.node_id, graph_state_transition_event{
-                             .kind = graph_state_transition_kind::node_fail,
-                             .cause = frame.cause,
-                             .lifecycle = graph_node_lifecycle_state::failed,
-                         });
-      state_->persist_checkpoint_best_effort();
+      if (resolved.error() == wh::core::errc::not_found ||
+          resolved.error() == wh::core::errc::contract_violation) {
+        auto *pending_input = session().pending_inputs_.find_input(attempt_slot.node_id);
+        if (pending_input != nullptr &&
+            session().pending_inputs_.restored_input(attempt_slot.node_id)) {
+          auto restored_input =
+              attempt_slot.node != nullptr &&
+                      attempt_slot.node->meta.input_contract == node_contract::stream
+                  ? detail::fork_graph_reader_payload(*pending_input)
+                  : fork_graph_value(*pending_input);
+          resolved = std::move(restored_input);
+        }
+      }
+    }
+    if (resolved.has_error()) {
+      session().publish_node_error(session().runtime_node_path(attempt_slot.node_id),
+                                   attempt_slot.node_id, resolved.error(),
+                                   "node input resolution failed");
+      session().state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::failed, 1U,
+                                    resolved.error());
+      session().append_transition(attempt_slot.node_id,
+                                  graph_state_transition_event{
+                                      .kind = graph_state_transition_kind::node_fail,
+                                      .cause = attempt_slot.cause,
+                                      .lifecycle = graph_node_lifecycle_state::failed,
+                                  });
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
       return wh::core::result<void>::failure(resolved.error());
     }
     auto input = std::move(resolved).value();
 
-    if (frame.node_id == state_->end_id()) {
-      auto stored = state_->store_output(frame.node_id, std::move(input));
-      if (stored.has_error()) {
-        state_->persist_checkpoint_best_effort();
-        return wh::core::result<void>::failure(stored.error());
+    if (attempt_slot.node_id == session().end_id()) {
+      const auto node_id = attempt_slot.node_id;
+      auto committed = state_->commit_terminal_input(attempt, std::move(input));
+      if (committed.has_error()) {
+        return committed;
       }
-      state_->node_states()[frame.node_id] = run_state::node_state::executed;
-      state_->state_table_.update(frame.node_id,
-                                  graph_node_lifecycle_state::completed, 0U,
-                                  std::nullopt);
-      state_->append_transition(
-          frame.node_id, graph_state_transition_event{
-                             .kind = graph_state_transition_kind::route_commit,
-                             .cause = frame.cause,
-                             .lifecycle = graph_node_lifecycle_state::completed,
-                         });
-      static_cast<derived_t &>(*this).enqueue_committed_node(frame.node_id);
+      static_cast<derived_t &>(*this).enqueue_committed_node(node_id);
       return {};
     }
 
-    auto prepared = state_->begin_state_pre(std::move(frame), std::move(input));
+    auto stored = session().store_attempt_input(attempt, std::move(input));
+    if (stored.has_error()) {
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
+      return wh::core::result<void>::failure(stored.error());
+    }
+
+    auto prepared = state_->begin_state_pre(attempt);
     if (prepared.has_error()) {
-      if (prepared.error() == wh::core::errc::canceled &&
-          state_->freeze_requested()) {
+      if (prepared.error() == wh::core::errc::canceled && session().freeze_requested()) {
+        session().release_attempt(attempt);
         return {};
       }
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
       return wh::core::result<void>::failure(prepared.error());
     }
 
-    auto stage = std::move(prepared).value();
-    if (stage.sender.has_value()) {
-      return launch_state_stage(std::move(stage.frame),
-                                std::move(*stage.sender));
+    auto prepared_stage = std::move(prepared).value();
+    if (prepared_stage.sender.has_value()) {
+      return launch_state_stage(prepared_stage.attempt, std::move(*prepared_stage.sender));
     }
-    return continue_node_stage(std::move(stage.frame),
-                               std::move(stage.payload));
+    return continue_attempt(prepared_stage.attempt);
   }
 
-  auto settle_async_node(node_frame &&frame,
-                         wh::core::result<graph_value> &&executed)
+  auto settle_async(const attempt_id attempt, wh::core::result<graph_value> &&executed)
       -> wh::core::result<void> {
-    if (frame.stage == stage::input) {
-      return settle_input_stage(std::move(frame), std::move(executed));
+    const auto current_stage = session().slot(attempt).current_stage;
+    if (current_stage == stage::input) {
+      return settle_input(attempt, std::move(executed));
     }
-    if (frame.stage == stage::pre_state) {
-      return settle_pre_state_stage(std::move(frame), std::move(executed));
+    if (current_stage == stage::pre_state) {
+      return settle_pre_state(attempt, std::move(executed));
     }
-    if (frame.stage == stage::prepare) {
-      return settle_prepare_stage(std::move(frame), std::move(executed));
+    if (current_stage == stage::prepare) {
+      return settle_prepare(attempt, std::move(executed));
     }
-    if (frame.stage == stage::post_state) {
-      return settle_post_state_stage(std::move(frame), std::move(executed));
+    if (current_stage == stage::post_state) {
+      return settle_post_state(attempt, std::move(executed));
     }
-    if (frame.stage == stage::freeze) {
+    if (current_stage == stage::freeze) {
+      session().release_attempt(attempt);
       if (executed.has_error()) {
         return wh::core::result<void>::failure(executed.error());
       }
-      this->finish(
-          wh::core::result<graph_value>::failure(wh::core::errc::canceled));
+      this->enter_terminal(wh::core::result<graph_value>::failure(wh::core::errc::canceled));
       return {};
     }
-    wh_invariant(frame.stage == stage::node);
-    return settle_node_stage(std::move(frame), std::move(executed));
+    wh_invariant(current_stage == stage::node);
+    return settle_node(attempt, std::move(executed));
   }
 
   auto drain_runtime_completions() noexcept -> void {
     join_base_t::drain_completions(
-        [this](node_frame &frame) noexcept { release_frame(frame); },
-        [this](node_frame &&frame, wh::core::result<graph_value> &&executed)
-            -> wh::core::result<void> {
-          return settle_async_node(std::move(frame), std::move(executed));
-        });
+        [this](const attempt_id attempt) noexcept { release_attempt(attempt); },
+        [this](const attempt_id attempt, wh::core::result<graph_value> &&executed)
+            -> wh::core::result<void> { return settle_async(attempt, std::move(executed)); });
   }
 
-  // Runs the common drive preflight once: stop polling, child completion
-  // drain, interrupt boundary checks, and freeze-stage launch.
-  [[nodiscard]] auto begin_drive_iteration() noexcept -> bool {
-    if (this->callback_active()) {
-      return false;
-    }
-    this->poll_outer_stop();
+  // Runs the common resume preflight once: stop polling, child completion
+  // drain, and then either enters terminal delivery or continues with
+  // boundary/freeze scheduling while the runtime is still open.
+  [[nodiscard]] auto begin_resume_iteration() noexcept -> bool {
     drain_runtime_completions();
-    if (!this->finished() && this->finish_status_.has_value()) {
-      this->maybe_deliver_finish();
-    }
-    if (this->finished()) {
+    if (this->finished() || this->terminal_pending()) {
       return false;
     }
 
-    auto boundary_interrupt = state_->check_external_interrupt_boundary();
-    if (boundary_interrupt.has_error()) {
-      this->finish(
-          wh::core::result<graph_value>::failure(boundary_interrupt.error()));
-      this->maybe_deliver_finish();
+    if (this->stop_requested()) {
+      this->enter_terminal(wh::core::result<graph_value>::failure(wh::core::errc::canceled));
       return false;
     }
-    if (!state_->freeze_requested()) {
+
+    auto boundary_interrupt = session().check_external_interrupt_boundary();
+    if (boundary_interrupt.has_error()) {
+      this->enter_terminal(wh::core::result<graph_value>::failure(boundary_interrupt.error()));
+      return false;
+    }
+    if (!session().freeze_requested()) {
       return true;
     }
 
-    if (this->children_.active_count() == 0U) {
+    if (this->active_child_count() == 0U) {
       auto started = launch_freeze_stage();
       if (started.has_error()) {
-        this->finish(wh::core::result<graph_value>::failure(started.error()));
-        this->maybe_deliver_finish();
+        this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
       }
     }
     return false;
   }
 
   auto finish_on_quiescent_boundary() noexcept -> void {
-    if (state_->interrupt_state().wait_mode_active) {
-      state_->request_freeze(true);
+    if (this->finished() || this->terminal_pending()) {
+      return;
+    }
+    if (session().interrupt_state().wait_mode_active) {
+      session().request_freeze(true);
       auto started = launch_freeze_stage();
       if (started.has_error()) {
-        this->finish(wh::core::result<graph_value>::failure(started.error()));
-        this->maybe_deliver_finish();
+        this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
       }
       return;
     }
-    this->finish(state_->finish_graph_status());
-    this->maybe_deliver_finish();
+    this->enter_terminal(state_->finish());
   }
 
   std::optional<state_t> state_{};

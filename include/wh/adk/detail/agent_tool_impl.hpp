@@ -20,11 +20,8 @@
 #include "wh/compose/runtime/resume.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/json.hpp"
-#include "wh/core/stdexec/detail/callback_guard.hpp"
-#include "wh/core/stdexec/detail/inline_drive_loop.hpp"
-#include "wh/core/stdexec/detail/receiver_completion.hpp"
-#include "wh/core/stdexec/detail/single_completion_slot.hpp"
-#include "wh/core/stdexec/manual_lifetime_box.hpp"
+#include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 
 namespace wh::adk::detail {
 
@@ -35,20 +32,6 @@ inline constexpr std::string_view agent_tool_request_json_key = "request";
 inline constexpr std::string_view agent_tool_bridge_failed_message = "agent tool bridge failed";
 inline constexpr std::string_view agent_tool_history_json_schema =
     R"({"type":"object","properties":{"messages":{"type":"array","items":{"type":"object"}}},"required":["messages"]})";
-
-/// Frozen runtime bundle captured by compose tool-entry lambdas.
-struct agent_tool_runtime {
-  /// Stable public tool name.
-  std::string tool_name{};
-  /// Stable bound child-agent name.
-  std::string agent_name{};
-  /// Frozen input mapping mode.
-  agent_tool_input_mode input_mode{agent_tool_input_mode::request};
-  /// True forwards child internal events after boundary filtering.
-  bool forward_internal_events{false};
-  /// Frozen child-agent execution entrypoint.
-  agent_tool_runner runner{nullptr};
-};
 
 /// Copyable custom-event payload retained inside bridge checkpoint state.
 struct agent_tool_custom_event_record {
@@ -170,21 +153,12 @@ struct agent_tool_output_summary {
 
 /// Internal-only accessor that materializes runtime state from the public shell.
 struct agent_tool_access {
-  [[nodiscard]] static auto make_runtime(agent_tool &tool) -> wh::core::result<agent_tool_runtime> {
-    auto frozen = tool.freeze();
-    if (frozen.has_error()) {
-      return wh::core::result<agent_tool_runtime>::failure(frozen.error());
+  [[nodiscard]] static auto runtime(const agent_tool &tool)
+      -> wh::core::result<agent_tool_runtime> {
+    if (!tool.runtime_.has_value()) {
+      return wh::core::result<agent_tool_runtime>::failure(wh::core::errc::contract_violation);
     }
-    if (!static_cast<bool>(tool.runner_)) {
-      return wh::core::result<agent_tool_runtime>::failure(wh::core::errc::not_found);
-    }
-    return agent_tool_runtime{
-        .tool_name = tool.name_,
-        .agent_name = std::string{tool.bound_agent_.name()},
-        .input_mode = tool.input_mode_,
-        .forward_internal_events = tool.forward_internal_events_,
-        .runner = tool.runner_,
-    };
+    return *tool.runtime_;
   }
 };
 
@@ -216,10 +190,10 @@ struct agent_tool_access {
 [[nodiscard]] inline auto normalize_child_metadata(const agent_tool_runtime &runtime,
                                                    const agent_tool_scope_snapshot &scope,
                                                    event_metadata metadata) -> event_metadata {
-  if (metadata.run_path.empty()) {
-    metadata.run_path = run_path{{"agent", runtime.agent_name}};
+  if (metadata.path.empty()) {
+    metadata.path = run_path{{"agent", runtime.agent_name}};
   }
-  metadata.run_path = append_run_path_prefix(scope.location, metadata.run_path);
+  metadata.path = append_run_path_prefix(scope.location, metadata.path);
   if (metadata.agent_name.empty()) {
     metadata.agent_name = runtime.agent_name;
   }
@@ -509,8 +483,9 @@ into_owned_agent_tool_interrupt_state(const agent_tool_interrupt_state &state)
   };
 }
 
-[[nodiscard]] inline auto make_owned_agent_tool_checkpoint_state(
-    const agent_tool_output_summary &output) -> wh::core::result<agent_tool_checkpoint_state> {
+[[nodiscard]] inline auto
+make_owned_agent_tool_checkpoint_state(const agent_tool_output_summary &output)
+    -> wh::core::result<agent_tool_checkpoint_state> {
   agent_tool_checkpoint_state checkpoint{};
   checkpoint.events.reserve(output.checkpoint_events.size());
   for (const auto &record : output.checkpoint_events) {
@@ -741,8 +716,7 @@ project_child_runtime(wh::core::run_context &parent, const agent_tool_scope_snap
                             ? checkpoint_child_interrupt->trigger_reason
                             : std::string{agent_tool_interrupt_reason};
   if (checkpoint_child_interrupt.has_value()) {
-    auto copied_layer_payload =
-        into_owned_bridge_state(checkpoint_child_interrupt->layer_payload);
+    auto copied_layer_payload = into_owned_bridge_state(checkpoint_child_interrupt->layer_payload);
     if (copied_layer_payload.has_error()) {
       return wh::core::result<void>::failure(copied_layer_payload.error());
     }
@@ -862,8 +836,8 @@ prepare_agent_tool_run_setup(const agent_tool_runtime &runtime, const wh::compos
   };
 }
 
-inline auto restore_outer_interrupt(wh::core::run_context &context,
-                                    agent_tool_run_setup &&setup) -> void {
+inline auto restore_outer_interrupt(wh::core::run_context &context, agent_tool_run_setup &&setup)
+    -> void {
   if (!setup.cleared_outer_interrupt || context.interrupt_info.has_value()) {
     return;
   }
@@ -936,7 +910,7 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
         output.interrupted = true;
         output.child_interrupt = agent_tool_child_interrupt{
             .interrupt_id = action->interrupt_id,
-            .location = normalized_metadata.run_path,
+            .location = normalized_metadata.path,
         };
         emitted_boundary_event = true;
         auto owned_metadata = into_owned_bridge_metadata(std::move(normalized_metadata));
@@ -1015,9 +989,8 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
             .metadata = std::move(checkpoint_metadata).value(),
         });
         emitted_boundary_event = true;
-        auto emitted =
-            bridge.emit(make_custom_event(custom->name, std::move(emitted_payload).value(),
-                                          std::move(emitted_metadata).value()));
+        auto emitted = bridge.emit(make_custom_event(
+            custom->name, std::move(emitted_payload).value(), std::move(emitted_metadata).value()));
         if (emitted.has_error()) {
           return emitted;
         }
@@ -1048,8 +1021,8 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
         .metadata = std::move(checkpoint_metadata).value(),
     });
     emitted_boundary_event = true;
-    auto emitted = bridge.emit(
-        make_message_event(*output.final_message, std::move(emitted_metadata).value()));
+    auto emitted =
+        bridge.emit(make_message_event(*output.final_message, std::move(emitted_metadata).value()));
     if (emitted.has_error()) {
       return emitted;
     }
@@ -1110,9 +1083,9 @@ inline auto restore_outer_interrupt(wh::core::run_context &context,
     return wh::core::result<agent_tool_result>::failure(materialized.error());
   }
 
-  auto projected = project_child_runtime(scope.run, scope_snapshot,
-                                         setup.value().saved_outer_interrupt, runtime,
-                                         setup.value().projection, output);
+  auto projected =
+      project_child_runtime(scope.run, scope_snapshot, setup.value().saved_outer_interrupt, runtime,
+                            setup.value().projection, output);
   if (projected.has_error()) {
     restore_outer_interrupt(scope.run, std::move(setup).value());
     return wh::core::result<agent_tool_result>::failure(projected.error());
@@ -1242,17 +1215,22 @@ public:
     explicit read_sender(agent_tool_live_stream_reader &owner) noexcept : owner_(&owner) {}
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
-    class operation : public wh::core::detail::inline_drive_loop<operation<receiver_t>> {
-      using drive_loop_t = wh::core::detail::inline_drive_loop<operation<receiver_t>>;
-      friend drive_loop_t;
-      friend class wh::core::detail::callback_guard<operation>;
+      requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
+    class operation {
+      using self_t = operation;
       using receiver_env_t =
           std::remove_cvref_t<decltype(stdexec::get_env(std::declval<const receiver_t &>()))>;
-      using final_completion_t = wh::core::detail::receiver_completion<receiver_t, result_type>;
+      using resume_scheduler_t = wh::core::detail::resume_scheduler_t<receiver_env_t>;
+      friend class wh::core::detail::scheduled_resume_turn<self_t, resume_scheduler_t>;
 
       struct stopped_tag {};
       using child_completion_t =
-          std::variant<event_result_t, message_result_t, std::exception_ptr, stopped_tag>;
+          std::variant<event_result_t, message_result_t, wh::core::error_code, stopped_tag>;
+
+      struct final_completion {
+        std::optional<result_type> value{};
+        bool stopped{false};
+      };
 
       struct child_receiver {
         using receiver_concept = stdexec::receiver_t;
@@ -1261,34 +1239,44 @@ public:
         receiver_env_t env_{};
 
         auto set_value(event_result_t status) && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          self->finish_child(child_completion_t{std::move(status)});
+          complete(child_completion_t{std::move(status)});
         }
 
         auto set_value(message_result_t status) && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          self->finish_child(child_completion_t{std::move(status)});
+          complete(child_completion_t{std::move(status)});
         }
 
         template <typename error_t> auto set_error(error_t &&error) && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          if constexpr (std::same_as<std::remove_cvref_t<error_t>, std::exception_ptr>) {
-            self->finish_child(child_completion_t{std::forward<error_t>(error)});
+          complete(map_async_error(std::forward<error_t>(error)));
+        }
+
+        auto set_stopped() && noexcept -> void { complete(child_completion_t{stopped_tag{}}); }
+
+        [[nodiscard]] auto get_env() const noexcept -> receiver_env_t { return env_; }
+
+      private:
+        template <typename error_t>
+        [[nodiscard]] static auto map_async_error(error_t &&error) noexcept -> child_completion_t {
+          if constexpr (std::same_as<std::remove_cvref_t<error_t>, wh::core::error_code>) {
+            return child_completion_t{std::forward<error_t>(error)};
           } else {
-            try {
-              throw std::forward<error_t>(error);
-            } catch (...) {
-              self->finish_child(child_completion_t{std::current_exception()});
+            if constexpr (std::same_as<std::remove_cvref_t<error_t>, std::exception_ptr>) {
+              try {
+                std::rethrow_exception(std::forward<error_t>(error));
+              } catch (...) {
+                return child_completion_t{wh::core::map_current_exception()};
+              }
+            } else {
+              return child_completion_t{wh::core::make_error(wh::core::errc::internal_error)};
             }
           }
         }
 
-        auto set_stopped() && noexcept -> void {
-          auto scope = self->callbacks_.enter(self);
-          self->finish_child(child_completion_t{stopped_tag{}});
+        auto complete(child_completion_t completion) noexcept -> void {
+          self->publish_child_completion(std::move(completion));
+          self->request_resume();
+          self->arrive();
         }
-
-        [[nodiscard]] auto get_env() const noexcept -> receiver_env_t { return env_; }
       };
 
       using event_child_sender_t =
@@ -1304,175 +1292,264 @@ public:
       using operation_state_concept = stdexec::operation_state_t;
 
       operation(agent_tool_live_stream_reader *owner, receiver_t receiver)
-          : owner_(owner), receiver_(std::move(receiver)), env_(stdexec::get_env(receiver_)) {}
+          : owner_(owner), receiver_(std::move(receiver)), env_(stdexec::get_env(receiver_)),
+            scheduler_(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env_)),
+            resume_turn_(scheduler_) {}
 
-      auto start() & noexcept -> void { request_drive(); }
+      operation(const operation &) = delete;
+      auto operator=(const operation &) -> operation & = delete;
+      operation(operation &&) = delete;
+      auto operator=(operation &&) -> operation & = delete;
+
+      ~operation() {
+        resume_turn_.destroy();
+        destroy_child();
+      }
+
+      auto start() & noexcept -> void {
+        request_resume();
+        arrive();
+      }
 
     private:
-      [[nodiscard]] auto finished() const noexcept -> bool {
-        return delivered_.load(std::memory_order_acquire);
+      [[nodiscard]] auto completed() const noexcept -> bool {
+        return completed_.load(std::memory_order_acquire);
       }
 
-      [[nodiscard]] auto completion_pending() const noexcept -> bool {
-        return pending_completion_.has_value();
+      [[nodiscard]] auto terminal_pending() const noexcept -> bool { return terminal_.has_value(); }
+
+      [[nodiscard]] auto child_active() const noexcept -> bool {
+        return child_kind_ != child_kind::none;
       }
 
-      [[nodiscard]] auto take_completion() noexcept -> std::optional<final_completion_t> {
-        if (!pending_completion_.has_value()) {
-          return std::nullopt;
+      [[nodiscard]] auto child_completion_ready() const noexcept -> bool {
+        return child_completion_ready_.load(std::memory_order_acquire);
+      }
+
+      [[nodiscard]] auto resume_turn_completed() const noexcept -> bool { return completed(); }
+
+      auto request_resume() noexcept -> void { resume_turn_.request(this); }
+
+      auto arrive() noexcept -> void {
+        if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+          maybe_complete();
         }
-        auto completion = std::move(pending_completion_);
-        pending_completion_.reset();
-        return completion;
       }
 
-      auto on_callback_exit() noexcept -> void {
-        if (completion_.ready()) {
-          request_drive();
-        }
+      auto resume_turn_arrive() noexcept -> void { arrive(); }
+
+      auto resume_turn_add_ref() noexcept -> void {
+        count_.fetch_add(1U, std::memory_order_relaxed);
       }
 
-      auto request_drive() noexcept -> void { drive_loop_t::request_drive(); }
+      auto resume_turn_schedule_error(const wh::core::error_code error) noexcept -> void {
+        set_terminal_failure(error);
+      }
 
-      auto drive() noexcept -> void {
-        while (!finished()) {
-          if (callbacks_.active()) {
-            return;
-          }
+      auto resume_turn_run() noexcept -> void {
+        resume();
+        maybe_complete();
+      }
 
-          if (auto current = completion_.take(); current.has_value()) {
-            reset_child();
-            if (auto *event = std::get_if<event_result_t>(&*current); event != nullptr) {
-              auto mapped = owner_->process_event_result(std::move(*event));
-              if (mapped.has_value()) {
-                complete_value(std::move(*mapped));
-                return;
-              }
-              continue;
-            }
-            if (auto *message = std::get_if<message_result_t>(&*current); message != nullptr) {
-              auto mapped = owner_->process_active_message_result(std::move(*message));
-              if (mapped.has_value()) {
-                complete_value(std::move(*mapped));
-                return;
-              }
-              continue;
-            }
-            if (auto *error = std::get_if<std::exception_ptr>(&*current); error != nullptr) {
-              complete_error(std::move(*error));
-              return;
-            }
-            complete_stopped();
-            return;
-          }
+      auto resume_turn_idle() noexcept -> void { maybe_complete(); }
 
-          if (auto replay = owner_->poll_replay_chunk(); replay.has_value()) {
-            complete_value(std::move(*replay));
-            return;
-          }
-          if (owner_->closed_) {
-            complete_value(result_type{chunk_type::make_eof()});
-            return;
-          }
-
-          if (owner_->active_message_reader_.has_value()) {
-            start_message_child();
-            return;
-          }
-
-          start_event_child();
+      auto maybe_complete() noexcept -> void {
+        if (completed()) {
           return;
         }
+        if (count_.load(std::memory_order_acquire) != 0U || !should_complete()) {
+          return;
+        }
+        complete();
       }
 
-      auto reset_child() noexcept -> void {
+      [[nodiscard]] auto should_complete() const noexcept -> bool {
+        return terminal_pending() && !child_active() && !child_completion_ready() &&
+               !resume_turn_.running();
+      }
+
+      auto destroy_child() noexcept -> void {
         switch (child_kind_) {
         case child_kind::none:
           return;
         case child_kind::event:
-          event_child_op_.reset();
+          event_child_op_.template destruct<event_child_op_t>();
           break;
         case child_kind::message:
-          message_child_op_.reset();
+          message_child_op_.template destruct<message_child_op_t>();
           break;
         }
         child_kind_ = child_kind::none;
       }
 
-      auto start_event_child() noexcept -> void {
+      auto publish_child_completion(child_completion_t completion) noexcept -> void {
+        if (completed()) {
+          return;
+        }
+        wh_invariant(!child_completion_ready());
+        child_completion_.emplace(std::move(completion));
+        child_completion_ready_.store(true, std::memory_order_release);
+      }
+
+      [[nodiscard]] auto drain_child_completion() noexcept -> bool {
+        if (!child_completion_ready_.exchange(false, std::memory_order_acq_rel)) {
+          return false;
+        }
+        wh_invariant(child_completion_.has_value());
+        auto current = std::move(*child_completion_);
+        child_completion_.reset();
+        destroy_child();
+
+        if (auto *event = std::get_if<event_result_t>(&current); event != nullptr) {
+          auto mapped = owner_->process_event_result(std::move(*event));
+          if (mapped.has_value()) {
+            set_terminal_value(std::move(*mapped));
+          }
+          return true;
+        }
+        if (auto *message = std::get_if<message_result_t>(&current); message != nullptr) {
+          auto mapped = owner_->process_active_message_result(std::move(*message));
+          if (mapped.has_value()) {
+            set_terminal_value(std::move(*mapped));
+          }
+          return true;
+        }
+        if (auto *error = std::get_if<wh::core::error_code>(&current); error != nullptr) {
+          set_terminal_failure(*error);
+          return true;
+        }
+        set_terminal_stopped();
+        return true;
+      }
+
+      [[nodiscard]] auto start_event_child() noexcept -> bool {
         try {
-          event_child_op_.emplace_from(stdexec::connect, owner_->live_events_.read_async(),
-                                       child_receiver{this, env_});
+          [[maybe_unused]] auto &child_op =
+              event_child_op_.template construct_with<event_child_op_t>([&]() -> event_child_op_t {
+                return stdexec::connect(owner_->live_events_.read_async(),
+                                        child_receiver{this, env_});
+              });
           child_kind_ = child_kind::event;
-          stdexec::start(event_child_op_.get());
+          count_.fetch_add(1U, std::memory_order_relaxed);
+          stdexec::start(event_child_op_.template get<event_child_op_t>());
+          return false;
         } catch (...) {
-          complete_error(std::current_exception());
+          destroy_child();
+          set_terminal_failure(wh::core::map_current_exception());
+          return true;
         }
       }
 
-      auto start_message_child() noexcept -> void {
-        if (!owner_->active_message_reader_.has_value()) {
-          request_drive();
-          return;
-        }
-
+      [[nodiscard]] auto start_message_child() noexcept -> bool {
         try {
-          message_child_op_.emplace_from(stdexec::connect,
-                                         owner_->active_message_reader_->read_async(),
-                                         child_receiver{this, env_});
+          [[maybe_unused]] auto &child_op =
+              message_child_op_.template construct_with<message_child_op_t>(
+                  [&]() -> message_child_op_t {
+                    return stdexec::connect(owner_->active_message_reader_->read_async(),
+                                            child_receiver{this, env_});
+                  });
           child_kind_ = child_kind::message;
-          stdexec::start(message_child_op_.get());
+          count_.fetch_add(1U, std::memory_order_relaxed);
+          stdexec::start(message_child_op_.template get<message_child_op_t>());
+          return false;
         } catch (...) {
-          complete_error(std::current_exception());
+          destroy_child();
+          set_terminal_failure(wh::core::map_current_exception());
+          return true;
         }
       }
 
-      auto finish_child(child_completion_t completion) noexcept -> void {
-        if (finished()) {
+      auto set_terminal(final_completion completion) noexcept -> void {
+        if (terminal_pending()) {
           return;
         }
-        if (!completion_.publish(std::move(completion))) {
-          std::terminate();
-        }
-        request_drive();
+        terminal_.emplace(std::move(completion));
+        maybe_complete();
       }
 
-      auto complete_value(result_type status) noexcept -> void {
-        if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-          return;
-        }
-        pending_completion_.emplace(
-            final_completion_t::set_value(std::move(receiver_), std::move(status)));
+      auto set_terminal_value(result_type status) noexcept -> void {
+        set_terminal(final_completion{.value = std::move(status)});
       }
 
-      auto complete_error(std::exception_ptr error) noexcept -> void {
-        if (delivered_.exchange(true, std::memory_order_acq_rel)) {
-          return;
-        }
-        pending_completion_.emplace(
-            final_completion_t::set_error(std::move(receiver_), std::move(error)));
+      auto set_terminal_failure(const wh::core::error_code error) noexcept -> void {
+        set_terminal_value(result_type::failure(error));
       }
 
-      auto complete_stopped() noexcept -> void {
-        if (delivered_.exchange(true, std::memory_order_acq_rel)) {
+      auto set_terminal_stopped() noexcept -> void {
+        set_terminal(final_completion{.stopped = true});
+      }
+
+      auto complete() noexcept -> void {
+        if (!terminal_pending() || completed_.exchange(true, std::memory_order_acq_rel)) {
           return;
         }
-        pending_completion_.emplace(final_completion_t::set_stopped(std::move(receiver_)));
+
+        auto completion = std::move(*terminal_);
+        terminal_.reset();
+        if (completion.stopped) {
+          stdexec::set_stopped(std::move(receiver_));
+          return;
+        }
+        wh_invariant(completion.value.has_value());
+        stdexec::set_value(std::move(receiver_), std::move(*completion.value));
+      }
+
+      auto resume() noexcept -> void {
+        while (!completed()) {
+          if (drain_child_completion()) {
+            continue;
+          }
+
+          if (terminal_pending()) {
+            return;
+          }
+
+          if (child_active()) {
+            return;
+          }
+
+          if (auto replay = owner_->poll_replay_chunk(); replay.has_value()) {
+            set_terminal_value(std::move(*replay));
+            continue;
+          }
+          if (owner_->closed_) {
+            set_terminal_value(result_type{chunk_type::make_eof()});
+            continue;
+          }
+
+          if (owner_->active_message_reader_.has_value()) {
+            if (start_message_child()) {
+              continue;
+            }
+            return;
+          }
+
+          if (start_event_child()) {
+            continue;
+          }
+          return;
+        }
       }
 
       agent_tool_live_stream_reader *owner_{nullptr};
       receiver_t receiver_;
       receiver_env_t env_{};
-      wh::core::detail::manual_lifetime_box<event_child_op_t> event_child_op_{};
-      wh::core::detail::manual_lifetime_box<message_child_op_t> message_child_op_{};
-      wh::core::detail::single_completion_slot<child_completion_t> completion_{};
-      wh::core::detail::callback_guard<operation> callbacks_{};
-      std::optional<final_completion_t> pending_completion_{};
-      std::atomic<bool> delivered_{false};
+      resume_scheduler_t scheduler_{};
+      wh::core::detail::manual_storage<sizeof(event_child_op_t), alignof(event_child_op_t)>
+          event_child_op_{};
+      wh::core::detail::manual_storage<sizeof(message_child_op_t), alignof(message_child_op_t)>
+          message_child_op_{};
+      std::optional<child_completion_t> child_completion_{};
+      std::optional<final_completion> terminal_{};
+      std::atomic<std::size_t> count_{1U};
+      std::atomic<bool> child_completion_ready_{false};
+      std::atomic<bool> completed_{false};
+      wh::core::detail::scheduled_resume_turn<self_t, resume_scheduler_t> resume_turn_;
       child_kind child_kind_{child_kind::none};
     };
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
+      requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
     [[nodiscard]] auto connect(receiver_t receiver) && -> operation<receiver_t> {
       return operation<receiver_t>{owner_, std::move(receiver)};
     }
@@ -1568,7 +1645,7 @@ private:
     }
     return agent_tool_child_interrupt{
         .interrupt_id = action.interrupt_id,
-        .location = metadata.run_path,
+        .location = metadata.path,
         .trigger_reason =
             action.reason.empty() ? std::string{agent_tool_interrupt_reason} : action.reason,
     };
@@ -1583,7 +1660,7 @@ private:
     }
     output_.child_interrupt = std::move(child_interrupt).value();
     auto projected = project_child_runtime(*context_, scope_, saved_outer_interrupt_, runtime_,
-                                          projection_, output_);
+                                           projection_, output_);
     if (projected.has_error()) {
       return finish_error(projected.error());
     }
@@ -1809,8 +1886,7 @@ inline auto agent_tool::tool_schema() const -> wh::schema::tool_schema_definitio
 inline auto agent_tool::run(const wh::compose::tool_call &call,
                             const wh::tool::call_scope &scope) const
     -> wh::core::result<agent_tool_result> {
-  auto *mutable_self = const_cast<agent_tool *>(this);
-  auto runtime = detail::agent_tool_access::make_runtime(*mutable_self);
+  auto runtime = detail::agent_tool_access::runtime(*this);
   if (runtime.has_error()) {
     return wh::core::result<agent_tool_result>::failure(runtime.error());
   }
@@ -1820,8 +1896,7 @@ inline auto agent_tool::run(const wh::compose::tool_call &call,
 inline auto agent_tool::stream(const wh::compose::tool_call &call,
                                const wh::tool::call_scope &scope) const
     -> wh::core::result<wh::compose::graph_stream_reader> {
-  auto *mutable_self = const_cast<agent_tool *>(this);
-  auto runtime = detail::agent_tool_access::make_runtime(*mutable_self);
+  auto runtime = detail::agent_tool_access::runtime(*this);
   if (runtime.has_error()) {
     return wh::core::result<wh::compose::graph_stream_reader>::failure(runtime.error());
   }
@@ -1829,8 +1904,7 @@ inline auto agent_tool::stream(const wh::compose::tool_call &call,
 }
 
 inline auto agent_tool::compose_entry() const -> wh::core::result<wh::compose::tool_entry> {
-  auto *mutable_self = const_cast<agent_tool *>(this);
-  auto runtime = detail::agent_tool_access::make_runtime(*mutable_self);
+  auto runtime = detail::agent_tool_access::runtime(*this);
   if (runtime.has_error()) {
     return wh::core::result<wh::compose::tool_entry>::failure(runtime.error());
   }

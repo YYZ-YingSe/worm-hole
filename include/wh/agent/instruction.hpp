@@ -58,16 +58,14 @@ public:
   [[nodiscard]] auto empty() const noexcept -> bool { return entries_.empty(); }
 
   /// Exposes the raw fragment list for diagnostics and tests.
-  [[nodiscard]] auto entries() const noexcept
-      -> std::span<const instruction_entry> {
+  [[nodiscard]] auto entries() const noexcept -> std::span<const instruction_entry> {
     return {entries_.data(), entries_.size()};
   }
 
   /// Renders the final instruction string using deterministic precedence:
   /// highest-priority replace becomes the base, then append fragments at the
   /// same or higher priority are concatenated in stable order.
-  [[nodiscard]] auto render(const std::string_view separator = "\n") const
-      -> std::string {
+  [[nodiscard]] auto render(const std::string_view separator = "\n") const -> std::string {
     if (entries_.empty()) {
       return {};
     }
@@ -78,16 +76,14 @@ public:
         continue;
       }
       if (base_replace == nullptr || entry.priority > base_replace->priority ||
-          (entry.priority == base_replace->priority &&
-           entry.sequence > base_replace->sequence)) {
+          (entry.priority == base_replace->priority && entry.sequence > base_replace->sequence)) {
         base_replace = std::addressof(entry);
       }
     }
 
     std::vector<const instruction_entry *> append_entries{};
     append_entries.reserve(entries_.size());
-    const auto minimum_priority =
-        base_replace == nullptr ? std::int32_t{} : base_replace->priority;
+    const auto minimum_priority = base_replace == nullptr ? std::int32_t{} : base_replace->priority;
     for (const auto &entry : entries_) {
       if (entry.mode != instruction_mode::append) {
         continue;
@@ -98,14 +94,13 @@ public:
       append_entries.push_back(std::addressof(entry));
     }
 
-    std::stable_sort(
-        append_entries.begin(), append_entries.end(),
-        [](const instruction_entry *left, const instruction_entry *right) {
-          if (left->priority != right->priority) {
-            return left->priority < right->priority;
-          }
-          return left->sequence < right->sequence;
-        });
+    std::stable_sort(append_entries.begin(), append_entries.end(),
+                     [](const instruction_entry *left, const instruction_entry *right) {
+                       if (left->priority != right->priority) {
+                         return left->priority < right->priority;
+                       }
+                       return left->sequence < right->sequence;
+                     });
 
     std::string rendered{};
     auto append_fragment = [&](const std::string &fragment) -> void {

@@ -165,33 +165,28 @@ struct http_response {
 using http_invoke_result = wh::core::result<http_response, transport_error>;
 
 /// Projects one owned request into its borrowed view form.
-[[nodiscard]] inline auto make_http_request_view(const http_request &request)
-    -> http_request_view {
+[[nodiscard]] inline auto make_http_request_view(const http_request &request) -> http_request_view {
   return http_request_view{
       .method = request.method,
       .url = request.url,
-      .headers = std::span<const http_header>{request.headers.data(),
-                                              request.headers.size()},
+      .headers = std::span<const http_header>{request.headers.data(), request.headers.size()},
       .body = request.body,
   };
 }
 
 /// Projects one owned JSON request into its borrowed view form.
-[[nodiscard]] inline auto
-make_http_json_request_view(const http_json_request &request)
+[[nodiscard]] inline auto make_http_json_request_view(const http_json_request &request)
     -> http_json_request_view {
   return http_json_request_view{
       .method = request.method,
       .url = request.url,
-      .headers = std::span<const http_header>{request.headers.data(),
-                                              request.headers.size()},
+      .headers = std::span<const http_header>{request.headers.data(), request.headers.size()},
       .json_body = request.json_body,
   };
 }
 
 /// Projects one owned stream request into its borrowed view form.
-[[nodiscard]] inline auto
-make_http_stream_request_view(const http_stream_request &request)
+[[nodiscard]] inline auto make_http_stream_request_view(const http_stream_request &request)
     -> http_stream_request_view {
   return http_stream_request_view{
       .request = make_http_request_view(request.request),

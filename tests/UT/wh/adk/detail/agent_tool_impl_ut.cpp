@@ -24,7 +24,7 @@ namespace {
 
 TEST_CASE("agent tool impl detail constants runtime access and metadata helpers stay stable",
           "[UT][wh/adk/detail/"
-          "agent_tool_impl.hpp][agent_tool_access::make_runtime][condition][branch][boundary]") {
+          "agent_tool_impl.hpp][agent_tool_access::runtime][condition][branch][boundary]") {
   REQUIRE(wh::adk::detail::agent_tool_interrupt_id_prefix == "tool:");
   REQUIRE(wh::adk::detail::agent_tool_interrupt_default_suffix == "interrupt");
   REQUIRE(wh::adk::detail::agent_tool_interrupt_reason == "agent tool interrupted");
@@ -35,15 +35,16 @@ TEST_CASE("agent tool impl detail constants runtime access and metadata helpers 
   REQUIRE(wh::adk::detail::render_message_text(message) == "hello");
 
   wh::adk::agent_tool unbound{"delegate", "delegate request", wh::agent::agent{"worker"}};
-  auto missing_runtime = wh::adk::detail::agent_tool_access::make_runtime(unbound);
+  auto missing_runtime = wh::adk::detail::agent_tool_access::runtime(unbound);
   REQUIRE(missing_runtime.has_error());
-  REQUIRE(missing_runtime.error() == wh::core::errc::not_found);
+  REQUIRE(missing_runtime.error() == wh::core::errc::contract_violation);
 
   wh::adk::agent_tool tool{"delegate", "delegate request", wh::agent::agent{"worker"}};
   REQUIRE(tool.bind_runner([](const wh::adk::run_request &, wh::core::run_context &)
                                -> wh::adk::agent_run_result { return wh::adk::agent_run_output{}; })
               .has_value());
-  auto runtime = wh::adk::detail::agent_tool_access::make_runtime(tool);
+  REQUIRE(tool.freeze().has_value());
+  auto runtime = wh::adk::detail::agent_tool_access::runtime(tool);
   REQUIRE(runtime.has_value());
   REQUIRE(runtime->tool_name == "delegate");
   REQUIRE(runtime->agent_name == "worker");
@@ -58,13 +59,13 @@ TEST_CASE("agent tool impl detail constants runtime access and metadata helpers 
   auto default_metadata = wh::adk::detail::default_tool_metadata(runtime.value(), snapshot);
   REQUIRE(default_metadata.agent_name == "worker");
   REQUIRE(default_metadata.tool_name == "delegate");
-  REQUIRE(default_metadata.run_path.to_string("/") == "tool/delegate/call-1/agent/worker");
+  REQUIRE(default_metadata.path.to_string("/") == "tool/delegate/call-1/agent/worker");
 
   wh::adk::event_metadata child_metadata{};
-  child_metadata.run_path = wh::adk::run_path{{"agent", "leaf"}};
+  child_metadata.path = wh::adk::run_path{{"agent", "leaf"}};
   auto normalized = wh::adk::detail::normalize_child_metadata(runtime.value(), snapshot,
                                                               std::move(child_metadata));
-  REQUIRE(normalized.run_path.to_string("/") == "tool/delegate/call-1/agent/leaf");
+  REQUIRE(normalized.path.to_string("/") == "tool/delegate/call-1/agent/leaf");
   REQUIRE(normalized.agent_name == "worker");
   REQUIRE(normalized.tool_name == "delegate");
 }
@@ -77,8 +78,7 @@ TEST_CASE(
   REQUIRE(move_only_owned.has_error());
 
   std::string borrowed_text = "borrowed";
-  auto borrowed_owned =
-      wh::adk::detail::into_owned_bridge_state(wh::core::any::ref(borrowed_text));
+  auto borrowed_owned = wh::adk::detail::into_owned_bridge_state(wh::core::any::ref(borrowed_text));
   REQUIRE(borrowed_owned.has_value());
   auto *owned_text = wh::core::any_cast<std::string>(&borrowed_owned.value());
   REQUIRE(owned_text != nullptr);

@@ -30,7 +30,7 @@ public:
   static constexpr bool can_create_v = base::template can_create_from<fun_t, args_t...>();
 };
 
-using lower_graph_hook_probe =
+using lower_hook_probe =
     owning_storage_probe<wh::core::result<wh::compose::graph>(), wh::core::fn::deep_copy,
                          wh::core::fn::non_copyable_accept, wh::core::fn::assert_on_error,
                          sizeof(void *)>;
@@ -80,14 +80,14 @@ template <typename run_t> auto make_async_wrapper(run_t &&run) {
              wh::compose::graph_value &input, wh::core::run_context &context,
              const wh::compose::node_runtime &runtime) -> wh::compose::graph_sender {
     auto sender = stored.value(input, context, runtime);
-    if (runtime.graph_scheduler() == nullptr) {
+    if (runtime.work_scheduler() == nullptr) {
       return wh::compose::detail::failure_graph_sender(wh::core::errc::contract_violation);
     }
     if constexpr (std::same_as<std::remove_cvref_t<decltype(sender)>, wh::compose::graph_sender>) {
       return wh::compose::detail::bridge_graph_sender(std::move(sender));
     }
     return wh::compose::detail::bridge_graph_sender(
-        wh::core::detail::write_sender_scheduler(std::move(sender), *runtime.graph_scheduler()));
+        wh::core::detail::write_sender_scheduler(std::move(sender), *runtime.work_scheduler()));
   };
 }
 
@@ -103,10 +103,10 @@ TEST_CASE("function storage accepts representative callable layouts across "
   };
   using lower_t = decltype(lower);
   STATIC_REQUIRE(!std::is_copy_constructible_v<lower_t>);
-  STATIC_REQUIRE(lower_graph_hook_probe::template can_create_v<lower_t, lower_t>);
-  STATIC_REQUIRE(std::is_constructible_v<wh::agent::agent::lower_graph_hook, lower_t>);
+  STATIC_REQUIRE(lower_hook_probe::template can_create_v<lower_t, lower_t>);
+  STATIC_REQUIRE(std::is_constructible_v<wh::agent::agent::lower_hook, lower_t>);
 
-  wh::agent::agent::lower_graph_hook lower_hook{std::move(lower)};
+  wh::agent::agent::lower_hook lower_hook{std::move(lower)};
   REQUIRE(static_cast<bool>(lower_hook));
 
   auto selector =

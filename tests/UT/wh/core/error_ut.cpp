@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <cstring>
 #include <functional>
@@ -7,6 +5,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/error.hpp"
 
@@ -57,13 +57,11 @@ TEST_CASE("to_string returns symbolic names and unknown fallback",
           "[UT][wh/core/error.hpp][to_string][branch][boundary]") {
   REQUIRE(wh::core::to_string(errc::ok) == "ok");
   REQUIRE(wh::core::to_string(errc::timeout) == "timeout");
-  REQUIRE(wh::core::to_string(errc::resource_exhausted) ==
-          "resource_exhausted");
+  REQUIRE(wh::core::to_string(errc::resource_exhausted) == "resource_exhausted");
   REQUIRE(wh::core::to_string(static_cast<errc>(65535)) == "unknown");
 }
 
-TEST_CASE("operator stream formats errc symbolic name",
-          "[UT][wh/core/error.hpp][operator<<]") {
+TEST_CASE("operator stream formats errc symbolic name", "[UT][wh/core/error.hpp][operator<<]") {
   std::ostringstream stream{};
   stream << errc::protocol_error;
   REQUIRE(stream.str() == "protocol_error");
@@ -72,8 +70,7 @@ TEST_CASE("operator stream formats errc symbolic name",
 TEST_CASE("detail is_known_errc_value accepts defined values only",
           "[UT][wh/core/error.hpp][detail::is_known_errc_value][branch][boundary]") {
   REQUIRE(wh::core::detail::is_known_errc_value(static_cast<int>(errc::ok)));
-  REQUIRE(
-      wh::core::detail::is_known_errc_value(static_cast<int>(errc::internal_error)));
+  REQUIRE(wh::core::detail::is_known_errc_value(static_cast<int>(errc::internal_error)));
   REQUIRE_FALSE(wh::core::detail::is_known_errc_value(-1));
   REQUIRE_FALSE(wh::core::detail::is_known_errc_value(65535));
 }
@@ -81,20 +78,16 @@ TEST_CASE("detail is_known_errc_value accepts defined values only",
 TEST_CASE("detail write_cstr_buffer handles null empty full and truncated writes",
           "[UT][wh/core/error.hpp][detail::write_cstr_buffer][branch][boundary]") {
   char full[16]{};
-  REQUIRE(wh::core::detail::write_cstr_buffer("hello", full, sizeof(full)) ==
-          full);
+  REQUIRE(wh::core::detail::write_cstr_buffer("hello", full, sizeof(full)) == full);
   REQUIRE(std::strcmp(full, "hello") == 0);
 
   char truncated[4]{};
-  REQUIRE(wh::core::detail::write_cstr_buffer("abcdef", truncated,
-                                              sizeof(truncated)) == truncated);
+  REQUIRE(wh::core::detail::write_cstr_buffer("abcdef", truncated, sizeof(truncated)) == truncated);
   REQUIRE(std::strcmp(truncated, "abc") == 0);
 
   char untouched[4] = {'x', 'x', 'x', '\0'};
-  REQUIRE(wh::core::detail::write_cstr_buffer("ignored", nullptr,
-                                              sizeof(untouched)) == nullptr);
-  REQUIRE(wh::core::detail::write_cstr_buffer("ignored", untouched, 0U) ==
-          untouched);
+  REQUIRE(wh::core::detail::write_cstr_buffer("ignored", nullptr, sizeof(untouched)) == nullptr);
+  REQUIRE(wh::core::detail::write_cstr_buffer("ignored", untouched, 0U) == untouched);
   REQUIRE(std::strcmp(untouched, "xxx") == 0);
 }
 
@@ -102,8 +95,7 @@ TEST_CASE("error_code exposes raw code numeric value message and comparisons",
           "[UT][wh/core/error.hpp][error_code][branch][boundary]") {
   const error_code ok{};
   const error_code timeout{errc::timeout};
-  const error_code timeout_with_location{
-      errc::timeout, std::source_location::current()};
+  const error_code timeout_with_location{errc::timeout, std::source_location::current()};
   const error_code missing{errc::not_found};
 
   REQUIRE(ok.code() == errc::ok);
@@ -140,8 +132,7 @@ TEST_CASE("make_error helpers and error predicates preserve semantics",
   const auto timeout = wh::core::make_error(errc::timeout);
   const auto canceled = wh::core::make_error_code(errc::canceled);
   const auto unavailable =
-      wh::core::make_error_code(errc::unavailable,
-                                std::source_location::current());
+      wh::core::make_error_code(errc::unavailable, std::source_location::current());
   const auto ok = wh::core::make_error_code(errc::ok);
 
   REQUIRE(timeout == errc::timeout);
@@ -165,12 +156,9 @@ TEST_CASE("make_error helpers and error predicates preserve semantics",
 
 TEST_CASE("make_error_info builds views and chained causes",
           "[UT][wh/core/error.hpp][make_error_info]") {
-  const auto cause = wh::core::make_error_info(
-      errc::network_error, "dial", "upstream unavailable");
-  const auto info = wh::core::make_error_info(
-      wh::core::make_error(errc::timeout), "fetch", "deadline",
-      std::source_location::current(),
-      &cause);
+  const auto cause = wh::core::make_error_info(errc::network_error, "dial", "upstream unavailable");
+  const auto info = wh::core::make_error_info(wh::core::make_error(errc::timeout), "fetch",
+                                              "deadline", std::source_location::current(), &cause);
 
   REQUIRE(info.code == errc::timeout);
   REQUIRE(info.operation == "fetch");
@@ -186,8 +174,7 @@ TEST_CASE("make_error_info builds views and chained causes",
 TEST_CASE("hash_value hash specialization and stream output stay consistent",
           "[UT][wh/core/error.hpp][hash_value]") {
   const error_code timeout{errc::timeout};
-  const auto expected =
-      static_cast<std::size_t>(static_cast<int>(errc::timeout));
+  const auto expected = static_cast<std::size_t>(static_cast<int>(errc::timeout));
 
   REQUIRE(wh::core::hash_value(timeout) == expected);
   REQUIRE(std::hash<error_code>{}(timeout) == expected);

@@ -1,7 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
-#include <exec/static_thread_pool.hpp>
-
 #include <chrono>
 #include <initializer_list>
 #include <memory>
@@ -13,16 +9,19 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+#include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/component_contract_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
-#include "wh/compose/graph/stream.hpp"
-#include "wh/compose/node/detail/tools/stream.hpp"
-#include "wh/core/type_utils.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
 #include "helper/static_thread_scheduler.hpp"
+#include "wh/compose/graph/stream.hpp"
+#include "wh/compose/node/detail/tools/output.hpp"
+#include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
+#include "wh/core/type_utils.hpp"
 
 namespace {
 
@@ -40,13 +39,11 @@ using wh::testing::helper::read_graph_value;
 using wh::testing::helper::sum_ints;
 
 template <typename value_t>
-auto require_value_capture(
-    wh::testing::helper::sender_capture<value_t> &capture,
-    const std::chrono::milliseconds timeout = std::chrono::milliseconds{500})
+auto require_value_capture(wh::testing::helper::sender_capture<value_t> &capture,
+                           const std::chrono::milliseconds timeout = std::chrono::milliseconds{500})
     -> value_t {
   REQUIRE(capture.ready.try_acquire_for(timeout));
-  REQUIRE(capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::value);
   REQUIRE(capture.value.has_value());
   return std::move(*capture.value);
 }
@@ -73,16 +70,14 @@ auto require_value_capture(
   for (auto &payload : collected.value()) {
     const auto *typed = wh::core::any_cast<int>(&payload);
     if (typed == nullptr) {
-      return wh::core::result<std::vector<int>>::failure(
-          wh::core::errc::type_mismatch);
+      return wh::core::result<std::vector<int>>::failure(wh::core::errc::type_mismatch);
     }
     values.push_back(*typed);
   }
   return values;
 }
 
-[[nodiscard]] auto read_int_payload(wh::compose::graph_value &&payload)
-    -> wh::core::result<int> {
+[[nodiscard]] auto read_int_payload(wh::compose::graph_value &&payload) -> wh::core::result<int> {
   if (auto *typed = wh::core::any_cast<int>(&payload); typed != nullptr) {
     return std::move(*typed);
   }
@@ -113,8 +108,7 @@ struct inline_async_int_reader {
     return chunk_type::make_value(value);
   }
 
-  [[nodiscard]] auto try_read()
-      -> wh::schema::stream::stream_try_result<chunk_type> {
+  [[nodiscard]] auto try_read() -> wh::schema::stream::stream_try_result<chunk_type> {
     return read();
   }
 
@@ -142,13 +136,11 @@ struct handoff_lifetime_probe {
 struct handoff_probe_scheduler {
   struct schedule_sender {
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     std::shared_ptr<handoff_lifetime_probe> probe{};
 
-    template <stdexec::receiver_of<completion_signatures> receiver_t>
-    struct operation {
+    template <stdexec::receiver_of<completion_signatures> receiver_t> struct operation {
       using operation_state_concept = stdexec::operation_state_t;
 
       receiver_t receiver;
@@ -183,12 +175,9 @@ struct handoff_probe_scheduler {
 
   std::shared_ptr<handoff_lifetime_probe> probe{};
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return schedule_sender{probe};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return schedule_sender{probe}; }
 
-  [[nodiscard]] auto
-  operator==(const handoff_probe_scheduler &) const noexcept -> bool = default;
+  [[nodiscard]] auto operator==(const handoff_probe_scheduler &) const noexcept -> bool = default;
 };
 
 } // namespace
@@ -245,8 +234,7 @@ TEST_CASE("graph value fork rejects embedded reader payload",
 
 TEST_CASE("graph stream explicit copies preserve fanout semantics",
           "[core][compose][graph_stream][concurrency]") {
-  auto [writer, source] =
-      wh::schema::stream::make_pipe_stream<wh::compose::graph_value>(9U);
+  auto [writer, source] = wh::schema::stream::make_pipe_stream<wh::compose::graph_value>(9U);
   for (int value = 1; value <= 8; ++value) {
     REQUIRE(writer.try_write(wh::core::any(value)).has_value());
   }
@@ -261,9 +249,9 @@ TEST_CASE("graph stream explicit copies preserve fanout semantics",
   wh::core::result<std::vector<int>> left{};
   wh::core::result<std::vector<int>> right{};
 
-  std::jthread left_thread(
+  wh::testing::helper::joining_thread left_thread(
       [&]() { left = collect_ints(std::move(left_reader)); });
-  std::jthread right_thread(
+  wh::testing::helper::joining_thread right_thread(
       [&]() { right = collect_ints(std::move(right_reader)); });
 
   left_thread.join();
@@ -280,24 +268,22 @@ TEST_CASE("graph stream async merge forwards merged lane reads",
   auto [left_writer, left_reader] = wh::compose::make_graph_stream(2U);
   auto [right_writer, right_reader] = wh::compose::make_graph_stream(2U);
 
-  std::vector<wh::schema::stream::named_stream_reader<wh::compose::graph_stream_reader>>
-      lanes{};
+  std::vector<wh::schema::stream::named_stream_reader<wh::compose::graph_stream_reader>> lanes{};
   lanes.push_back({"left", std::move(left_reader), false});
   lanes.push_back({"right", std::move(right_reader), false});
   auto merged = wh::compose::detail::make_graph_merge_reader(std::move(lanes));
 
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
-  std::jthread producer([writer = std::move(right_writer),
-                         left = std::move(left_writer)]() mutable {
-    std::this_thread::sleep_for(std::chrono::milliseconds{10});
-    [[maybe_unused]] const auto write_status =
-        writer.try_write(wh::core::any(19));
-    [[maybe_unused]] const auto close_status = writer.close();
-    [[maybe_unused]] const auto left_close = left.close();
-  });
+  wh::testing::helper::joining_thread producer(
+      [writer = std::move(right_writer), left = std::move(left_writer)]() mutable {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        [[maybe_unused]] const auto write_status = writer.try_write(wh::core::any(19));
+        [[maybe_unused]] const auto close_status = writer.close();
+        [[maybe_unused]] const auto left_close = left.close();
+      });
 
-  auto waited = stdexec::sync_wait(
-      stdexec::starts_on(scheduler.scheduler(), std::move(merged).read_async()));
+  auto waited =
+      stdexec::sync_wait(stdexec::starts_on(scheduler.scheduler(), std::move(merged).read_async()));
   REQUIRE(waited.has_value());
 
   auto first = std::move(std::get<0>(waited.value()));
@@ -341,8 +327,7 @@ TEST_CASE(
   std::vector<wh::schema::stream::named_stream_reader<reader_t>> lanes{};
   lanes.push_back({"lane", reader_t{.value = 19}, false});
 
-  auto merged = wh::schema::stream::make_merge_stream_reader<reader_t>(
-      std::move(lanes));
+  auto merged = wh::schema::stream::make_merge_stream_reader<reader_t>(std::move(lanes));
 
   status_t status{};
   REQUIRE(wh::testing::helper::wait_for_value(
@@ -368,14 +353,12 @@ TEST_CASE("graph stream async merge remains stable across repeated scheduler han
     std::vector<wh::schema::stream::named_stream_reader<reader_t>> lanes{};
     lanes.push_back({"lane", reader_t{.value = iteration}, false});
 
-    auto merged = wh::schema::stream::make_merge_stream_reader<reader_t>(
-        std::move(lanes));
+    auto merged = wh::schema::stream::make_merge_stream_reader<reader_t>(std::move(lanes));
 
     status_t status{};
     REQUIRE(wh::testing::helper::wait_for_value(
         merged.read_async(), status, std::chrono::milliseconds{500},
-        wh::testing::helper::make_scheduler_env(
-            handoff_probe_scheduler{probe})));
+        wh::testing::helper::make_scheduler_env(handoff_probe_scheduler{probe})));
     REQUIRE(status.has_value());
     REQUIRE(status.value().value.has_value());
     REQUIRE(*status.value().value == iteration);
@@ -386,12 +369,11 @@ TEST_CASE("graph stream async merge remains stable across repeated scheduler han
 
 TEST_CASE("graph stream blocking merge wakes when pending lane is disabled",
           "[core][compose][graph_stream][topology][blocking]") {
-  auto merged =
-      wh::schema::stream::make_merge_stream_reader<wh::compose::graph_stream_reader>(
-          std::vector<std::string>{"late"});
+  auto merged = wh::schema::stream::make_merge_stream_reader<wh::compose::graph_stream_reader>(
+      std::vector<std::string>{"late"});
 
   std::optional<wh::compose::graph_stream_reader::chunk_result_type> result{};
-  std::jthread consumer([&] { result.emplace(merged.read()); });
+  wh::testing::helper::joining_thread consumer([&] { result.emplace(merged.read()); });
 
   std::this_thread::sleep_for(std::chrono::milliseconds{10});
   REQUIRE(merged.disable("late").has_value());
@@ -404,34 +386,30 @@ TEST_CASE("graph stream blocking merge wakes when pending lane is disabled",
 
 TEST_CASE("graph stream async merge pending read propagates outer stop",
           "[core][compose][graph_stream][topology][stop]") {
-  auto merged =
-      wh::schema::stream::make_merge_stream_reader<wh::compose::graph_stream_reader>(
-          std::vector<std::string>{"late"});
+  auto merged = wh::schema::stream::make_merge_stream_reader<wh::compose::graph_stream_reader>(
+      std::vector<std::string>{"late"});
 
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
   stdexec::inplace_stop_source stop_source{};
   wh::testing::helper::sender_capture<> completion{};
 
-  auto operation = stdexec::connect(
-      stdexec::starts_on(scheduler.scheduler(), merged.read_async()),
-      wh::testing::helper::sender_capture_receiver{
-          &completion,
-          scheduler.env(stop_source.get_token()),
-      });
+  auto operation = stdexec::connect(stdexec::starts_on(scheduler.scheduler(), merged.read_async()),
+                                    wh::testing::helper::sender_capture_receiver{
+                                        &completion,
+                                        scheduler.env(stop_source.get_token()),
+                                    });
   stdexec::start(operation);
 
   stop_source.request_stop();
 
   REQUIRE(completion.ready.try_acquire_for(std::chrono::milliseconds{500}));
-  REQUIRE(completion.terminal ==
-          wh::testing::helper::sender_terminal_kind::stopped);
+  REQUIRE(completion.terminal == wh::testing::helper::sender_terminal_kind::stopped);
 }
 
 TEST_CASE("graph stream async merge pending read resumes when lane attaches",
           "[core][compose][graph_stream][topology][async]") {
-  auto merged =
-      wh::schema::stream::make_merge_stream_reader<wh::compose::graph_stream_reader>(
-          std::vector<std::string>{"late"});
+  auto merged = wh::schema::stream::make_merge_stream_reader<wh::compose::graph_stream_reader>(
+      std::vector<std::string>{"late"});
 
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
   wh::compose::graph_stream_reader::chunk_result_type value{};
@@ -440,7 +418,7 @@ TEST_CASE("graph stream async merge pending read resumes when lane attaches",
   std::optional<wh::core::result<void>> write_status{};
   std::optional<wh::core::result<void>> close_status{};
 
-  std::jthread producer([&] {
+  wh::testing::helper::joining_thread producer([&] {
     try {
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
       auto [writer, reader] = wh::compose::make_graph_stream(2U);
@@ -455,22 +433,19 @@ TEST_CASE("graph stream async merge pending read resumes when lane attaches",
       close_status.emplace(writer.close());
     } catch (...) {
       if (!attach_status.has_value()) {
-        attach_status.emplace(
-            wh::core::result<void>::failure(wh::core::errc::internal_error));
+        attach_status.emplace(wh::core::result<void>::failure(wh::core::errc::internal_error));
       }
       if (!write_status.has_value()) {
-        write_status.emplace(
-            wh::core::result<void>::failure(wh::core::errc::internal_error));
+        write_status.emplace(wh::core::result<void>::failure(wh::core::errc::internal_error));
       }
       if (!close_status.has_value()) {
-        close_status.emplace(
-            wh::core::result<void>::failure(wh::core::errc::internal_error));
+        close_status.emplace(wh::core::result<void>::failure(wh::core::errc::internal_error));
       }
     }
   });
 
-  REQUIRE(wh::testing::helper::wait_for_value(
-      sender, value, std::chrono::milliseconds{500}, scheduler.env()));
+  REQUIRE(wh::testing::helper::wait_for_value(sender, value, std::chrono::milliseconds{500},
+                                              scheduler.env()));
   producer.join();
 
   REQUIRE(attach_status.has_value());
@@ -489,56 +464,49 @@ TEST_CASE("graph stream async merge pending read resumes when lane attaches",
 TEST_CASE("tools event stream async read preserves stopped and remains readable after resume",
           "[core][compose][graph_stream][tools][stop]") {
   auto [writer, source] = wh::compose::make_graph_stream(4U);
-  std::vector<wh::schema::stream::named_stream_reader<wh::compose::graph_stream_reader>>
-      lanes{};
-  lanes.push_back({"call-1", std::move(source), false});
-
-  wh::compose::detail::tool_stream_binding_map bindings{};
-  bindings.emplace(
-      "call-1",
-      wh::compose::detail::tool_stream_binding{
-          .call =
-              wh::compose::tool_call{
-                  .call_id = "call-1",
-                  .tool_name = "echo",
-                  .arguments = "payload",
-              },
-          .context = wh::core::run_context{},
-      });
-
-  wh::compose::detail::tool_event_stream_reader wrapped{
-      wh::compose::detail::make_graph_merge_reader(std::move(lanes)),
-      std::move(bindings),
-      {}};
+  wh::compose::tools_options options{};
+  wh::compose::detail::tools_state state{};
+  state.options = &options;
+  std::vector<wh::compose::detail::stream_completion> stream_inputs{};
+  stream_inputs.push_back(wh::compose::detail::stream_completion{.index = 0U,
+                                                                 .call =
+                                                                     wh::compose::tool_call{
+                                                                         .call_id = "call-1",
+                                                                         .tool_name = "echo",
+                                                                         .arguments = "payload",
+                                                                     },
+                                                                 .stream = std::move(source),
+                                                                 .rerun_extra = {}});
+  auto output = wh::compose::detail::build_stream_output(state, std::move(stream_inputs));
+  REQUIRE(output.has_value());
+  auto *wrapped = wh::core::any_cast<wh::compose::graph_stream_reader>(&output.value());
+  REQUIRE(wrapped != nullptr);
 
   wh::testing::helper::sender_capture<> completion{};
   stdexec::inplace_stop_source stop_source{};
-  auto operation = stdexec::connect(
-      wrapped.read_async(),
-      wh::testing::helper::sender_capture_receiver{
-          &completion,
-          wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
-                                                  stop_source.get_token()),
-      });
+  auto operation = stdexec::connect(wrapped->read_async(),
+                                    wh::testing::helper::sender_capture_receiver{
+                                        &completion,
+                                        wh::testing::helper::make_scheduler_env(
+                                            stdexec::inline_scheduler{}, stop_source.get_token()),
+                                    });
 
   stdexec::start(operation);
   stop_source.request_stop();
 
   REQUIRE(completion.ready.try_acquire_for(std::chrono::milliseconds(100)));
-  REQUIRE(completion.terminal ==
-          wh::testing::helper::sender_terminal_kind::stopped);
+  REQUIRE(completion.terminal == wh::testing::helper::sender_terminal_kind::stopped);
 
   REQUIRE(writer.try_write(wh::core::any(std::string{"chunk-1"})).has_value());
   REQUIRE(writer.close().has_value());
 
-  auto resumed = wrapped.read();
+  auto resumed = wrapped->read();
   REQUIRE(resumed.has_value());
   REQUIRE_FALSE(resumed.value().eof);
   REQUIRE_FALSE(resumed.value().error.failed());
   REQUIRE(resumed.value().value.has_value());
 
-  auto *event =
-      wh::core::any_cast<wh::compose::tool_event>(&*resumed.value().value);
+  auto *event = wh::core::any_cast<wh::compose::tool_event>(&*resumed.value().value);
   REQUIRE(event != nullptr);
   REQUIRE(event->call_id == "call-1");
   REQUIRE(event->tool_name == "echo");
@@ -546,38 +514,28 @@ TEST_CASE("tools event stream async read preserves stopped and remains readable 
   REQUIRE(text.has_value());
   REQUIRE(text.value() == "chunk-1");
 
-  auto eof = wrapped.read();
+  auto eof = wrapped->read();
   REQUIRE(eof.has_value());
   REQUIRE(eof.value().eof);
 }
 
 TEST_CASE("graph stream fanout into two live merges keeps blocking readers isolated",
           "[core][compose][graph_stream][merge][fanout]") {
-  auto fast_copies = wh::schema::stream::make_copy_stream_readers(
-      make_int_stream({1, 2}), 2U);
-  auto slow_copies = wh::schema::stream::make_copy_stream_readers(
-      make_int_stream({10, 11}), 2U);
+  auto fast_copies = wh::schema::stream::make_copy_stream_readers(make_int_stream({1, 2}), 2U);
+  auto slow_copies = wh::schema::stream::make_copy_stream_readers(make_int_stream({10, 11}), 2U);
   REQUIRE(fast_copies.size() == 2U);
   REQUIRE(slow_copies.size() == 2U);
 
   using reader_t = wh::compose::graph_stream_reader;
-  auto left_merge = std::make_shared<
-      wh::schema::stream::merge_stream_reader<reader_t>>(
+  auto left_merge = std::make_shared<wh::schema::stream::merge_stream_reader<reader_t>>(
       wh::schema::stream::make_merge_stream_reader<reader_t>(
           std::vector<std::string>{"fast", "slow"}));
-  auto right_merge = std::make_shared<
-      wh::schema::stream::merge_stream_reader<reader_t>>(
+  auto right_merge = std::make_shared<wh::schema::stream::merge_stream_reader<reader_t>>(
       wh::schema::stream::make_merge_stream_reader<reader_t>(
           std::vector<std::string>{"fast", "slow"}));
 
-  REQUIRE(left_merge
-              ->attach("fast",
-                       reader_t{std::move(fast_copies[0])})
-              .has_value());
-  REQUIRE(right_merge
-              ->attach("fast",
-                       reader_t{std::move(fast_copies[1])})
-              .has_value());
+  REQUIRE(left_merge->attach("fast", reader_t{std::move(fast_copies[0])}).has_value());
+  REQUIRE(right_merge->attach("fast", reader_t{std::move(fast_copies[1])}).has_value());
 
   auto drain = [](reader_t reader) -> wh::core::result<std::vector<int>> {
     std::vector<int> values{};
@@ -598,8 +556,7 @@ TEST_CASE("graph stream fanout into two live merges keeps blocking readers isola
         continue;
       }
       if (!chunk.value.has_value()) {
-        return wh::core::result<std::vector<int>>::failure(
-            wh::core::errc::not_found);
+        return wh::core::result<std::vector<int>>::failure(wh::core::errc::not_found);
       }
       auto typed = read_int_payload(std::move(*chunk.value));
       if (typed.has_error()) {
@@ -611,8 +568,7 @@ TEST_CASE("graph stream fanout into two live merges keeps blocking readers isola
       }
     }
     if (sources != std::unordered_set<std::string>{"fast", "slow"}) {
-      return wh::core::result<std::vector<int>>::failure(
-          wh::core::errc::type_mismatch);
+      return wh::core::result<std::vector<int>>::failure(wh::core::errc::type_mismatch);
     }
     return values;
   };
@@ -622,38 +578,33 @@ TEST_CASE("graph stream fanout into two live merges keeps blocking readers isola
   std::optional<wh::core::result<void>> left_attach_status{};
   std::optional<wh::core::result<void>> right_attach_status{};
 
-  std::jthread producer([left_merge, right_merge,
-                         &left_attach_status, &right_attach_status,
-                         slow_left = reader_t{std::move(slow_copies[0])},
-                         slow_right = reader_t{std::move(slow_copies[1])}]() mutable {
+  wh::testing::helper::joining_thread producer([left_merge, right_merge, &left_attach_status,
+                                                &right_attach_status,
+                                                slow_left = reader_t{std::move(slow_copies[0])},
+                                                slow_right =
+                                                    reader_t{std::move(slow_copies[1])}]() mutable {
     try {
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
-      left_attach_status.emplace(
-          left_merge->attach("slow", std::move(slow_left)));
-      right_attach_status.emplace(
-          right_merge->attach("slow", std::move(slow_right)));
+      left_attach_status.emplace(left_merge->attach("slow", std::move(slow_left)));
+      right_attach_status.emplace(right_merge->attach("slow", std::move(slow_right)));
     } catch (...) {
-      left_attach_status.emplace(
-          wh::core::result<void>::failure(wh::core::errc::internal_error));
-      right_attach_status.emplace(
-          wh::core::result<void>::failure(wh::core::errc::internal_error));
+      left_attach_status.emplace(wh::core::result<void>::failure(wh::core::errc::internal_error));
+      right_attach_status.emplace(wh::core::result<void>::failure(wh::core::errc::internal_error));
     }
   });
 
-  std::jthread left_thread([&]() {
+  wh::testing::helper::joining_thread left_thread([&]() {
     try {
       left_values = drain(reader_t{left_merge->share()});
     } catch (...) {
-      left_values =
-          wh::core::result<std::vector<int>>::failure(wh::core::errc::internal_error);
+      left_values = wh::core::result<std::vector<int>>::failure(wh::core::errc::internal_error);
     }
   });
-  std::jthread right_thread([&]() {
+  wh::testing::helper::joining_thread right_thread([&]() {
     try {
       right_values = drain(reader_t{right_merge->share()});
     } catch (...) {
-      right_values =
-          wh::core::result<std::vector<int>>::failure(wh::core::errc::internal_error);
+      right_values = wh::core::result<std::vector<int>>::failure(wh::core::errc::internal_error);
     }
   });
 
@@ -667,12 +618,10 @@ TEST_CASE("graph stream fanout into two live merges keeps blocking readers isola
   REQUIRE(right_attach_status->has_value());
   const auto left_message =
       left_values.has_error() ? left_values.error().message() : std::string{"left_ok"};
-  const auto right_message = right_values.has_error()
-                                 ? right_values.error().message()
-                                 : std::string{"right_ok"};
+  const auto right_message =
+      right_values.has_error() ? right_values.error().message() : std::string{"right_ok"};
   const auto left_code = left_values.has_error() ? left_values.error().value() : 0;
-  const auto right_code =
-      right_values.has_error() ? right_values.error().value() : 0;
+  const auto right_code = right_values.has_error() ? right_values.error().value() : 0;
   INFO(left_message);
   INFO(right_message);
   INFO(left_code);
@@ -688,30 +637,25 @@ TEST_CASE("compose graph fan-in stream-to-value normalization builds value map",
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   wh::compose::graph graph{std::move(options)};
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                   "a",
                   [](const wh::compose::graph_value &, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_stream_reader> {
-                    return wh::compose::make_single_value_stream_reader(
-                        std::string{"A"});
+                    return wh::compose::make_single_value_stream_reader(std::string{"A"});
                   })
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                   "b",
                   [](const wh::compose::graph_value &, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_stream_reader> {
-                    return wh::compose::make_single_value_stream_reader(
-                        std::string{"B"});
+                    return wh::compose::make_single_value_stream_reader(std::string{"B"});
                   })
               .has_value());
   REQUIRE(graph
@@ -722,35 +666,27 @@ TEST_CASE("compose graph fan-in stream-to-value normalization builds value map",
                       -> wh::core::result<wh::compose::graph_value> {
                     auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
-                    auto left =
-                        collect_string_graph_chunk_values(merged.value().at("a"));
-                    auto right =
-                        collect_string_graph_chunk_values(merged.value().at("b"));
+                    auto left = collect_string_graph_chunk_values(merged.value().at("a"));
+                    auto right = collect_string_graph_chunk_values(merged.value().at("b"));
                     if (left.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          left.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
                     }
                     if (right.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          right.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
                     }
                     if (left.value().size() != 1U || right.value().size() != 1U) {
                       return wh::core::result<wh::compose::graph_value>::failure(
                           wh::core::errc::contract_violation);
                     }
-                    return wh::core::any(left.value().front() + "+" +
-                                         right.value().front());
+                    return wh::core::any(left.value().front() + "+" + right.value().front());
                   })
               .has_value());
   REQUIRE(graph.add_entry_edge("a").has_value());
   REQUIRE(graph.add_entry_edge("b").has_value());
-  REQUIRE(graph.add_edge("a", "join", make_auto_contract_edge_options())
-              .has_value());
-  REQUIRE(graph.add_edge("b", "join", make_auto_contract_edge_options())
-              .has_value());
+  REQUIRE(graph.add_edge("a", "join", make_auto_contract_edge_options()).has_value());
+  REQUIRE(graph.add_edge("b", "join", make_auto_contract_edge_options()).has_value());
   REQUIRE(graph.add_exit_edge("join").has_value());
   REQUIRE(graph.compile().has_value());
 
@@ -767,13 +703,11 @@ TEST_CASE("compose graph fan-in stream-to-value normalization preserves chunk li
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   wh::compose::graph graph{std::move(options)};
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                   "a",
                   [](const wh::compose::graph_value &, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
@@ -781,28 +715,24 @@ TEST_CASE("compose graph fan-in stream-to-value normalization preserves chunk li
                     auto [writer, reader] = wh::compose::make_graph_stream(4U);
                     auto push_1 = writer.try_write(wh::core::any(1));
                     if (push_1.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           push_1.error());
                     }
                     auto push_2 = writer.try_write(wh::core::any(2));
                     if (push_2.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           push_2.error());
                     }
                     auto closed = writer.close();
                     if (closed.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           closed.error());
                     }
                     return std::move(reader);
                   })
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                   "b",
                   [](const wh::compose::graph_value &, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
@@ -810,20 +740,17 @@ TEST_CASE("compose graph fan-in stream-to-value normalization preserves chunk li
                     auto [writer, reader] = wh::compose::make_graph_stream(4U);
                     auto push_1 = writer.try_write(wh::core::any(3));
                     if (push_1.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           push_1.error());
                     }
                     auto push_2 = writer.try_write(wh::core::any(4));
                     if (push_2.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           push_2.error());
                     }
                     auto closed = writer.close();
                     if (closed.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           closed.error());
                     }
                     return std::move(reader);
@@ -837,31 +764,23 @@ TEST_CASE("compose graph fan-in stream-to-value normalization preserves chunk li
                       -> wh::core::result<wh::compose::graph_value> {
                     auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
-                    auto left =
-                        collect_int_graph_chunk_values(merged.value().at("a"));
-                    auto right =
-                        collect_int_graph_chunk_values(merged.value().at("b"));
+                    auto left = collect_int_graph_chunk_values(merged.value().at("a"));
+                    auto right = collect_int_graph_chunk_values(merged.value().at("b"));
                     if (left.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          left.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
                     }
                     if (right.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          right.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
                     }
-                    return wh::core::any(sum_ints(left.value()) +
-                                         sum_ints(right.value()));
+                    return wh::core::any(sum_ints(left.value()) + sum_ints(right.value()));
                   })
               .has_value());
   REQUIRE(graph.add_entry_edge("a").has_value());
   REQUIRE(graph.add_entry_edge("b").has_value());
-  REQUIRE(graph.add_edge("a", "join", make_auto_contract_edge_options())
-              .has_value());
-  REQUIRE(graph.add_edge("b", "join", make_auto_contract_edge_options())
-              .has_value());
+  REQUIRE(graph.add_edge("a", "join", make_auto_contract_edge_options()).has_value());
+  REQUIRE(graph.add_edge("b", "join", make_auto_contract_edge_options()).has_value());
   REQUIRE(graph.add_exit_edge("join").has_value());
   REQUIRE(graph.compile().has_value());
 
@@ -883,11 +802,9 @@ TEST_CASE("compose graph allow-no-data stream input falls back to closed reader"
   node_options.allow_no_control = true;
   node_options.allow_no_data = true;
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                   "sink",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     if (!input.is_source_closed()) {
@@ -896,8 +813,7 @@ TEST_CASE("compose graph allow-no-data stream input falls back to closed reader"
                     }
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          values.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(values.error());
                     }
                     return wh::core::any(static_cast<int>(values.value().size()));
                   },
@@ -924,84 +840,70 @@ TEST_CASE("compose graph copyable stream one-to-many fanout remains stable",
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
   options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   wh::compose::graph graph{std::move(options)};
+  REQUIRE(
+      graph
+          .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
+              "source",
+              [](const wh::compose::graph_value &input, wh::core::run_context &,
+                 const wh::compose::graph_call_scope &)
+                  -> wh::core::result<wh::compose::graph_stream_reader> {
+                auto typed = read_any<int>(input);
+                if (typed.has_error()) {
+                  return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
+                }
+                return make_int_graph_stream({typed.value(), typed.value() + 1, typed.value() + 2},
+                                             4U);
+              })
+          .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
-                  "source",
-                  [](const wh::compose::graph_value &input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                    auto typed = read_any<int>(input);
-                    if (typed.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
-                          typed.error());
-                    }
-                    return make_int_graph_stream(
-                        {typed.value(), typed.value() + 1, typed.value() + 2},
-                        4U);
-                  })
-              .has_value());
-  REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                   "left",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          values.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(values.error());
                     }
                     return wh::core::any(sum_ints(values.value()));
                   })
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::stream>(
                   "right_transform",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_stream_reader> {
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           values.error());
                     }
                     auto [writer, reader] = wh::compose::make_graph_stream(4U);
                     for (const auto value : values.value()) {
                       auto pushed = writer.try_write(wh::core::any(value * 10));
                       if (pushed.has_error()) {
-                        return wh::core::result<
-                            wh::compose::graph_stream_reader>::failure(
+                        return wh::core::result<wh::compose::graph_stream_reader>::failure(
                             pushed.error());
                       }
                     }
                     auto closed = writer.close();
                     if (closed.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           closed.error());
                     }
                     return std::move(reader);
                   })
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                   "right",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          values.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(values.error());
                     }
                     return wh::core::any(sum_ints(values.value()));
                   })
@@ -1014,18 +916,15 @@ TEST_CASE("compose graph copyable stream one-to-many fanout remains stable",
                       -> wh::core::result<wh::compose::graph_value> {
                     auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
                     auto left = read_any<int>(merged.value().at("left"));
                     auto right = read_any<int>(merged.value().at("right"));
                     if (left.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          left.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
                     }
                     if (right.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          right.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
                     }
                     return wh::core::any(left.value() + right.value());
                   })
@@ -1052,21 +951,18 @@ TEST_CASE("compose graph copyable stream one-to-many fanout remains stable",
 
 TEST_CASE("compose graph value fan-in requires eof before materializing value",
           "[core][compose][graph][boundary]") {
-  auto build_case =
-      [](int &join_value, const bool close_second_stream,
-         const std::optional<std::chrono::milliseconds> node_timeout =
-             std::nullopt) -> wh::compose::graph {
+  auto build_case = [](int &join_value, const bool close_second_stream,
+                       const std::optional<std::chrono::milliseconds> node_timeout =
+                           std::nullopt) -> wh::compose::graph {
     wh::compose::graph_compile_options options{};
     options.mode = wh::compose::graph_runtime_mode::dag;
     options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-    options.fan_in_policy =
-        wh::compose::graph_fan_in_policy::require_all_sources;
+    options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
     options.node_timeout = node_timeout;
     wh::compose::graph graph{std::move(options)};
 
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream>(
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                     "stream_a",
                     [](const wh::compose::graph_value &, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
@@ -1075,12 +971,10 @@ TEST_CASE("compose graph value fan-in requires eof before materializing value",
                     })
                 .has_value());
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream>(
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                     "stream_b",
-                    [close_second_stream](
-                        const wh::compose::graph_value &, wh::core::run_context &,
-                        const wh::compose::graph_call_scope &)
+                    [close_second_stream](const wh::compose::graph_value &, wh::core::run_context &,
+                                          const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_stream_reader> {
                       if (close_second_stream) {
                         return wh::compose::make_single_value_stream_reader(20);
@@ -1088,8 +982,7 @@ TEST_CASE("compose graph value fan-in requires eof before materializing value",
                       auto [writer, reader] = wh::compose::make_graph_stream(2U);
                       auto pushed = writer.try_write(wh::core::any(20));
                       if (pushed.has_error()) {
-                        return wh::core::result<
-                            wh::compose::graph_stream_reader>::failure(
+                        return wh::core::result<wh::compose::graph_stream_reader>::failure(
                             pushed.error());
                       }
                       return std::move(reader);
@@ -1098,26 +991,20 @@ TEST_CASE("compose graph value fan-in requires eof before materializing value",
     REQUIRE(graph
                 .add_lambda(
                     "join",
-                    [&join_value](const wh::compose::graph_value &input,
-                                  wh::core::run_context &,
+                    [&join_value](const wh::compose::graph_value &input, wh::core::run_context &,
                                   const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_value> {
                       auto merged = read_any<wh::compose::graph_value_map>(input);
                       if (merged.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            merged.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                       }
-                      auto left =
-                          collect_int_graph_chunk_values(merged.value().at("stream_a"));
-                      auto right =
-                          collect_int_graph_chunk_values(merged.value().at("stream_b"));
+                      auto left = collect_int_graph_chunk_values(merged.value().at("stream_a"));
+                      auto right = collect_int_graph_chunk_values(merged.value().at("stream_b"));
                       if (left.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            left.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(left.error());
                       }
                       if (right.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            right.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(right.error());
                       }
                       join_value = sum_ints(left.value()) + sum_ints(right.value());
                       return wh::core::any(join_value);
@@ -1126,12 +1013,8 @@ TEST_CASE("compose graph value fan-in requires eof before materializing value",
 
     REQUIRE(graph.add_entry_edge("stream_a").has_value());
     REQUIRE(graph.add_entry_edge("stream_b").has_value());
-    REQUIRE(graph.add_edge("stream_a", "join",
-                           make_auto_contract_edge_options())
-                .has_value());
-    REQUIRE(graph.add_edge("stream_b", "join",
-                           make_auto_contract_edge_options())
-                .has_value());
+    REQUIRE(graph.add_edge("stream_a", "join", make_auto_contract_edge_options()).has_value());
+    REQUIRE(graph.add_edge("stream_b", "join", make_auto_contract_edge_options()).has_value());
     REQUIRE(graph.add_exit_edge("join").has_value());
     REQUIRE(graph.compile().has_value());
     return graph;
@@ -1146,15 +1029,15 @@ TEST_CASE("compose graph value fan-in requires eof before materializing value",
   exec::static_thread_pool pool{2U};
   stdexec::inplace_stop_source stop_source{};
   using status_t = wh::core::result<wh::compose::graph_invoke_result>;
-  auto env = make_dual_scheduler_env(pool.get_scheduler(), pool.get_scheduler(),
-                                     stop_source.get_token());
+  auto env =
+      make_dual_scheduler_env(pool.get_scheduler(), pool.get_scheduler(), stop_source.get_token());
   wh::testing::helper::sender_capture<status_t> capture{};
-  auto open_op = stdexec::connect(
-      open_stream_graph.invoke(open_context, make_graph_request(wh::core::any(0))),
-      wh::testing::helper::sender_capture_receiver<status_t, decltype(env)>{
-          &capture,
-          env,
-      });
+  auto open_op =
+      stdexec::connect(open_stream_graph.invoke(open_context, make_graph_request(wh::core::any(0))),
+                       wh::testing::helper::sender_capture_receiver<status_t, decltype(env)>{
+                           &capture,
+                           env,
+                       });
   stdexec::start(open_op);
 
   REQUIRE_FALSE(capture.ready.try_acquire_for(std::chrono::milliseconds{20}));
@@ -1167,8 +1050,7 @@ TEST_CASE("compose graph value fan-in requires eof before materializing value",
   REQUIRE(open_status.value().output_status.error() == wh::core::errc::canceled);
 
   wh::core::run_context closed_context{};
-  auto closed_invoked =
-      invoke_value_sync(closed_stream_graph, wh::core::any(0), closed_context);
+  auto closed_invoked = invoke_value_sync(closed_stream_graph, wh::core::any(0), closed_context);
   REQUIRE(closed_invoked.has_value());
   auto closed_output = read_any<int>(closed_invoked.value());
   REQUIRE(closed_output.has_value());
@@ -1190,25 +1072,22 @@ TEST_CASE("compose graph value boundary rejects reader payloads",
   REQUIRE(writer.close().has_value());
 
   wh::core::run_context context{};
-  auto invoked =
-      invoke_graph_sync(graph, wh::core::any(std::move(reader)), context);
+  auto invoked = invoke_graph_sync(graph, wh::core::any(std::move(reader)), context);
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_error());
-  REQUIRE(invoked.value().output_status.error() ==
-          wh::core::errc::contract_violation);
+  REQUIRE(invoked.value().output_status.error() == wh::core::errc::contract_violation);
 }
 
 TEST_CASE("compose graph value contract rejects move-only dynamic outputs",
           "[core][compose][graph][boundary]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda(
-                  "worker",
-                  [](const wh::compose::graph_value &, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    return wh::core::any(std::make_unique<int>(7));
-                  })
+              .add_lambda("worker",
+                          [](const wh::compose::graph_value &, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            return wh::core::any(std::make_unique<int>(7));
+                          })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -1218,6 +1097,5 @@ TEST_CASE("compose graph value contract rejects move-only dynamic outputs",
   auto invoked = invoke_graph_sync(graph, wh::core::any(1), context);
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_error());
-  REQUIRE(invoked.value().output_status.error() ==
-          wh::core::errc::contract_violation);
+  REQUIRE(invoked.value().output_status.error() == wh::core::errc::contract_violation);
 }

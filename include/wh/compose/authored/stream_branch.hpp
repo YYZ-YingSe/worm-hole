@@ -18,9 +18,9 @@
 namespace wh::compose {
 
 /// Stream-branch selector that returns selected destination node keys.
-using stream_branch_selector = wh::core::callback_function<
-    wh::core::result<std::vector<std::string>>(graph_stream_reader,
-                                               wh::core::run_context &) const>;
+using stream_branch_selector =
+    wh::core::callback_function<wh::core::result<std::vector<std::string>>(
+        graph_stream_reader, wh::core::run_context &) const>;
 
 /// Conditional stream-routing builder that selects one or more target nodes.
 class stream_branch {
@@ -51,9 +51,7 @@ public:
   }
 
   /// Returns declared branch destination keys.
-  [[nodiscard]] auto end_nodes() const -> std::vector<std::string> {
-    return targets_;
-  }
+  [[nodiscard]] auto end_nodes() const -> std::vector<std::string> { return targets_; }
 
   /// Returns immutable branch destination keys.
   [[nodiscard]] auto targets() const noexcept -> const std::vector<std::string> & {
@@ -61,29 +59,25 @@ public:
   }
 
   /// Returns the optional selector used by this branch.
-  [[nodiscard]] auto selector() const noexcept
-      -> const stream_branch_selector & {
+  [[nodiscard]] auto selector() const noexcept -> const stream_branch_selector & {
     return selector_;
   }
 
   /// Applies stream-branch declaration by expanding to graph branch edges.
-  auto apply(graph &target_graph, const std::string &from_node_key) const &
-      -> wh::core::result<void> {
+  auto apply(graph &target_graph,
+             const std::string &from_node_key) const & -> wh::core::result<void> {
     return apply_impl(target_graph, from_node_key, targets_, selector_);
   }
 
   /// Move-enabled apply path that avoids extra target copies.
-  auto apply(graph &target_graph, const std::string &from_node_key) &&
-      -> wh::core::result<void> {
-    return apply_impl(target_graph, from_node_key, std::move(targets_),
-                      std::move(selector_));
+  auto apply(graph &target_graph, const std::string &from_node_key) && -> wh::core::result<void> {
+    return apply_impl(target_graph, from_node_key, std::move(targets_), std::move(selector_));
   }
 
 private:
   template <typename targets_t, typename selector_t>
-  auto apply_impl(graph &target_graph, const std::string &from_node_key,
-                  targets_t &&source_targets, selector_t &&selector) const
-      -> wh::core::result<void> {
+  auto apply_impl(graph &target_graph, const std::string &from_node_key, targets_t &&source_targets,
+                  selector_t &&selector) const -> wh::core::result<void> {
     using stored_targets_t = std::remove_cvref_t<targets_t>;
     stored_targets_t stored_targets{std::forward<targets_t>(source_targets)};
     if (stored_targets.empty()) {
@@ -94,8 +88,7 @@ private:
                        wh::core::transparent_string_equal>
         unique_targets{};
     unique_targets.reserve(stored_targets.size());
-    std::unordered_map<std::string, std::uint32_t,
-                       wh::core::transparent_string_hash,
+    std::unordered_map<std::string, std::uint32_t, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>
         target_ids{};
     target_ids.reserve(stored_targets.size());
@@ -113,15 +106,12 @@ private:
     graph_stream_branch_selector_ids selector_ids{nullptr};
     stream_branch_selector stored_selector{std::forward<selector_t>(selector)};
     if (stored_selector) {
-      selector_ids = [selector_fn = std::move(stored_selector),
-                      target_ids = std::move(target_ids)](
+      selector_ids = [selector_fn = std::move(stored_selector), target_ids = std::move(target_ids)](
                          graph_stream_reader input, wh::core::run_context &context,
-                         const graph_call_scope &)
-          -> wh::core::result<std::vector<std::uint32_t>> {
+                         const graph_call_scope &) -> wh::core::result<std::vector<std::uint32_t>> {
         auto selected_keys = selector_fn(std::move(input), context);
         if (selected_keys.has_error()) {
-          return wh::core::result<std::vector<std::uint32_t>>::failure(
-              selected_keys.error());
+          return wh::core::result<std::vector<std::uint32_t>>::failure(selected_keys.error());
         }
         std::vector<std::uint32_t> selected{};
         selected.reserve(selected_keys.value().size());
@@ -137,12 +127,11 @@ private:
       };
     }
 
-    return target_graph.add_stream_branch(
-        graph_stream_branch{
-            .from = from_node_key,
-            .end_nodes = std::move(stored_targets),
-            .selector_ids = std::move(selector_ids),
-        });
+    return target_graph.add_stream_branch(graph_stream_branch{
+        .from = from_node_key,
+        .end_nodes = std::move(stored_targets),
+        .selector_ids = std::move(selector_ids),
+    });
   }
 
   /// Ordered branch destination keys.

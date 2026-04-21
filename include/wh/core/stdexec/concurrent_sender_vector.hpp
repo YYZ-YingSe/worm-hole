@@ -1,43 +1,46 @@
-// Defines a sender that runs a homogeneous sender vector with a bounded
-// in-flight budget and collects each result in index order.
+// Defines a bounded homogeneous sender fan-out that keeps a fixed in-flight
+// budget and collects child results in index order.
 #pragma once
 
 #include <atomic>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <optional>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <exec/trampoline_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/core/compiler.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec/detail/callback_guard.hpp"
-#include "wh/core/stdexec/detail/child_completion_mailbox.hpp"
-#include "wh/core/stdexec/detail/child_set.hpp"
-#include "wh/core/stdexec/detail/inline_drive_loop.hpp"
-#include "wh/core/stdexec/detail/receiver_completion.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 
 namespace wh::core::detail {
 
 template <typename result_t, stdexec::sender sender_t>
   requires result_like<result_t>
 class concurrent_sender_vector {
-  template <typename receiver_t>
-  class operation
-      : public wh::core::detail::inline_drive_loop<operation<receiver_t>> {
-    using drive_loop_t =
-        wh::core::detail::inline_drive_loop<operation<receiver_t>>;
-    friend drive_loop_t;
-    friend class wh::core::detail::callback_guard<operation>;
-    using receiver_env_t =
-        decltype(stdexec::get_env(std::declval<const receiver_t &>()));
-    using final_completion_t =
-        wh::core::detail::receiver_completion<receiver_t,
-                                              std::vector<result_t>>;
+  template <typename receiver_t> class operation {
+    using receiver_env_t = decltype(stdexec::get_env(std::declval<const receiver_t &>()));
+    using outer_stop_token_t = stdexec::stop_token_of_t<receiver_env_t>;
+    using stop_token_env_t =
+        decltype(stdexec::prop{stdexec::get_stop_token, stdexec::inplace_stop_token{}});
+
+    enum class control_state : std::uint8_t {
+      started,
+      stopped,
+    };
+
+    struct stop_callback {
+      operation *op{nullptr};
+
+      auto operator()() const noexcept -> void { op->request_stop(); }
+    };
 
     struct child_receiver {
       using receiver_concept = stdexec::receiver_t;
@@ -47,53 +50,117 @@ class concurrent_sender_vector {
       receiver_env_t env_{};
 
       auto set_value(result_t status) && noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
         op->finish_child(index, std::move(status));
       }
 
-      template <typename error_t>
-      auto set_error(error_t &&) && noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
-        op->finish_child(index,
-                         result_t::failure(wh::core::errc::internal_error));
+      template <typename error_t> auto set_error(error_t &&) && noexcept -> void {
+        op->finish_child(index, result_t::failure(wh::core::errc::internal_error));
       }
 
       auto set_stopped() && noexcept -> void {
-        auto scope = op->callbacks_.enter(op);
         op->finish_child(index, result_t::failure(wh::core::errc::canceled));
       }
 
       [[nodiscard]] auto get_env() const noexcept { return env_; }
     };
 
-    using child_op_t = stdexec::connect_result_t<sender_t, child_receiver>;
-    using child_set_t = wh::core::detail::child_set<child_op_t>;
-    using mailbox_t = wh::core::detail::child_completion_mailbox<result_t>;
+    enum class start_result : std::uint8_t {
+      started,
+      advance,
+      exhausted,
+      completed,
+    };
+
+    using child_sender_t = decltype(stdexec::starts_on(
+        exec::trampoline_scheduler{},
+        stdexec::write_env(std::declval<sender_t>(), std::declval<stop_token_env_t>())));
+    using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
+    using stop_callback_t = stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
 
   public:
-    explicit operation(std::vector<sender_t> senders, std::size_t max_in_flight,
+    explicit operation(std::vector<sender_t> senders, const std::size_t max_in_flight,
                        receiver_t receiver)
         : receiver_(std::move(receiver)), env_(stdexec::get_env(receiver_)),
-          senders_(std::move(senders)), results_(senders_.size()),
-          children_(senders_.size()), completions_(senders_.size()),
+          senders_(std::move(senders)), results_(allocate_results(senders_.size())),
+          result_engaged_(senders_.size(), 0U), child_ops_(allocate_child_ops(senders_.size())),
+          child_engaged_(senders_.size(), 0U),
           max_in_flight_(resolve_max_in_flight(max_in_flight, senders_.size())),
           remaining_(senders_.size()) {}
 
+    operation(const operation &) = delete;
+    auto operator=(const operation &) -> operation & = delete;
+    operation(operation &&) = delete;
+    auto operator=(operation &&) -> operation & = delete;
+
+    ~operation() {
+      on_stop_.reset();
+      destroy_results();
+      destroy_children();
+    }
+
     auto start() & noexcept -> void {
       if (senders_.empty()) {
-        delivered_.store(true, std::memory_order_release);
-        pending_completion_.emplace(final_completion_t::set_value(
-            std::move(receiver_), std::vector<result_t>{}));
-        request_drive();
+        completed_.store(true, std::memory_order_release);
+        stdexec::set_value(std::move(receiver_), std::vector<result_t>{});
         return;
       }
-      request_drive();
+
+      bind_stop();
+
+      for (std::size_t slot = 0U; slot < max_in_flight_; ++slot) {
+        if (state_.load(std::memory_order_acquire) != control_state::started) {
+          break;
+        }
+        const auto started = start_next();
+        if (started == start_result::completed) {
+          arrive();
+          return;
+        }
+        if (started == start_result::exhausted) {
+          break;
+        }
+      }
+
+      arrive();
     }
 
   private:
-    [[nodiscard]] static auto
-    resolve_max_in_flight(const std::size_t requested,
-                          const std::size_t total) noexcept -> std::size_t {
+    auto bind_stop() noexcept -> void {
+      if constexpr (!stdexec::unstoppable_token<outer_stop_token_t>) {
+        auto stop_token = stdexec::get_stop_token(env_);
+        if (stop_token.stop_requested()) {
+          mark_stopped();
+          return;
+        }
+        try {
+          on_stop_.emplace(stop_token, stop_callback{this});
+        } catch (...) {
+          mark_stopped();
+          return;
+        }
+        if (stop_token.stop_requested()) {
+          mark_stopped();
+        }
+      }
+    }
+
+    auto mark_stopped() noexcept -> void {
+      auto expected = control_state::started;
+      if (state_.compare_exchange_strong(expected, control_state::stopped,
+                                         std::memory_order_acq_rel, std::memory_order_acquire)) {
+        stop_source_.request_stop();
+      }
+    }
+
+    auto request_stop() noexcept -> void {
+      count_.fetch_add(1U, std::memory_order_relaxed);
+      mark_stopped();
+      arrive();
+    }
+
+    [[nodiscard]] static auto resolve_max_in_flight(const std::size_t requested,
+                                                    const std::size_t total) noexcept
+        -> std::size_t {
       if (total == 0U) {
         return 0U;
       }
@@ -103,179 +170,194 @@ class concurrent_sender_vector {
       return requested;
     }
 
-    [[nodiscard]] auto finished() const noexcept -> bool {
-      return delivered_.load(std::memory_order_acquire);
-    }
-
-    [[nodiscard]] auto completion_pending() const noexcept -> bool {
-      return pending_completion_.has_value();
-    }
-
-    [[nodiscard]] auto take_completion() noexcept
-        -> std::optional<final_completion_t> {
-      if (!pending_completion_.has_value()) {
-        return std::nullopt;
+    [[nodiscard]] static auto allocate_child_ops(const std::size_t count)
+        -> std::unique_ptr<wh::core::detail::manual_lifetime<child_op_t>[]> {
+      if (count == 0U) {
+        return {};
       }
-      auto completion = std::move(pending_completion_);
-      pending_completion_.reset();
-      return completion;
+      return std::make_unique<wh::core::detail::manual_lifetime<child_op_t>[]>(count);
     }
 
-    auto request_drive() noexcept -> void { drive_loop_t::request_drive(); }
-
-    auto on_callback_exit() noexcept -> void {
-      if (completions_.has_ready()) {
-        request_drive();
+    [[nodiscard]] static auto allocate_results(const std::size_t count)
+        -> std::unique_ptr<wh::core::detail::manual_lifetime<result_t>[]> {
+      if (count == 0U) {
+        return {};
       }
+      return std::make_unique<wh::core::detail::manual_lifetime<result_t>[]>(count);
     }
 
-    auto drive() noexcept -> void {
-      while (!finished()) {
-        if (callbacks_.active()) {
-          return;
-        }
-
-        drain_completions();
-        if (finished()) {
-          return;
-        }
-
-        bool started_child = false;
-        while (children_.active_count() < max_in_flight_) {
-          const auto index = next_to_start_;
-          ++next_to_start_;
-          if (index >= senders_.size()) {
-            break;
-          }
-
-          auto started = children_.start_child(
-              static_cast<std::uint32_t>(index), [&](auto &slot) {
-                slot.emplace_from(stdexec::connect, std::move(senders_[index]),
-                                  child_receiver{
-                                      this,
-                                      static_cast<std::uint32_t>(index),
-                                      env_,
-                                  });
-              });
-          if (started.has_error()) {
-            record_start_failure(index);
-            continue;
-          }
-          started_child = true;
-        }
-
-        if (finished()) {
-          return;
-        }
-        if (completions_.has_ready()) {
-          continue;
-        }
-        if (children_.active_count() == 0U &&
-            next_to_start_ >= senders_.size()) {
-          complete();
-          return;
-        }
-        if (!started_child) {
-          return;
-        }
-      }
-    }
-
-    auto record_start_failure(const std::size_t index) noexcept -> void {
-      wh_invariant(index < results_.size());
-      wh_invariant(!results_[index].has_value());
-      results_[index].emplace(
-          result_t::failure(wh::core::errc::internal_error));
-      wh_invariant(remaining_ != 0U);
-      --remaining_;
-    }
-
-    auto finish_child(const std::uint32_t index, result_t status) noexcept
-        -> void {
-      if (finished()) {
+    auto destroy_children() noexcept -> void {
+      if (!child_ops_) {
         return;
       }
-#ifndef NDEBUG
-      wh_invariant(completions_.publish(index, std::move(status)));
-#else
-      completions_.publish(index, std::move(status));
-#endif
-      request_drive();
+      for (std::size_t index = 0U; index < child_engaged_.size(); ++index) {
+        if (child_engaged_[index] == 0U) {
+          continue;
+        }
+        child_ops_[index].destruct();
+        child_engaged_[index] = 0U;
+      }
     }
 
-    auto drain_completions() noexcept -> void {
-      bool saw_completion = false;
-      completions_.drain([&](const std::uint32_t index, result_t status) {
-        children_.reclaim_child(index);
-        saw_completion = true;
-        wh_invariant(index < results_.size());
-        wh_invariant(!results_[index].has_value());
-        results_[index].emplace(std::move(status));
-        wh_invariant(remaining_ != 0U);
-        --remaining_;
-      });
-      if (saw_completion && remaining_ == 0U) {
+    auto destroy_results() noexcept -> void {
+      if (!results_) {
+        return;
+      }
+      for (std::size_t index = 0U; index < result_engaged_.size(); ++index) {
+        if (result_engaged_[index] == 0U) {
+          continue;
+        }
+        results_[index].destruct();
+        result_engaged_[index] = 0U;
+      }
+    }
+
+    auto arrive() noexcept -> void {
+      if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U && should_complete()) {
         complete();
       }
     }
 
+    [[nodiscard]] auto should_complete() const noexcept -> bool {
+      if (state_.load(std::memory_order_acquire) == control_state::stopped) {
+        return active_.load(std::memory_order_acquire) == 0U;
+      }
+      return remaining_.load(std::memory_order_acquire) == 0U;
+    }
+
+    auto finish_child(const std::uint32_t index, result_t status) noexcept -> void {
+      const auto completed = emplace_result(index, std::move(status));
+      wh_invariant(active_.load(std::memory_order_acquire) != 0U);
+      active_.fetch_sub(1U, std::memory_order_acq_rel);
+      if (!completed && state_.load(std::memory_order_acquire) == control_state::started) {
+        static_cast<void>(start_next());
+      }
+      arrive();
+    }
+
+    [[nodiscard]] auto start_next() noexcept -> start_result {
+      if (state_.load(std::memory_order_acquire) != control_state::started) {
+        return start_result::exhausted;
+      }
+      for (;;) {
+        const auto index = next_.fetch_add(1U, std::memory_order_acq_rel);
+        if (index >= senders_.size()) {
+          return start_result::exhausted;
+        }
+        const auto started = start_child(index);
+        if (started != start_result::advance) {
+          return started;
+        }
+      }
+    }
+
+    [[nodiscard]] auto start_child(const std::size_t index) noexcept -> start_result {
+      wh_invariant(index < senders_.size());
+      wh_invariant(child_engaged_[index] == 0U);
+
+      try {
+        [[maybe_unused]] auto &child_op = child_ops_[index].construct_with([&]() -> child_op_t {
+          return stdexec::connect(
+              stdexec::starts_on(exec::trampoline_scheduler{},
+                                 stdexec::write_env(std::move(senders_[index]),
+                                                    stdexec::prop{stdexec::get_stop_token,
+                                                                  stop_source_.get_token()})),
+              child_receiver{
+                  this,
+                  static_cast<std::uint32_t>(index),
+                  env_,
+              });
+        });
+        child_engaged_[index] = 1U;
+        count_.fetch_add(1U, std::memory_order_relaxed);
+        active_.fetch_add(1U, std::memory_order_relaxed);
+        stdexec::start(child_ops_[index].get());
+        return start_result::started;
+      } catch (...) {
+        if (child_engaged_[index] != 0U) {
+          child_ops_[index].destruct();
+          child_engaged_[index] = 0U;
+        }
+        if (emplace_result(index, result_t::failure(wh::core::errc::internal_error))) {
+          return start_result::completed;
+        }
+        return start_result::advance;
+      }
+    }
+
+    [[nodiscard]] auto emplace_result(const std::size_t index, result_t status) noexcept -> bool {
+      wh_invariant(index < result_engaged_.size());
+      wh_invariant(result_engaged_[index] == 0U);
+      [[maybe_unused]] auto &result = results_[index].construct(std::move(status));
+      result_engaged_[index] = 1U;
+      return remaining_.fetch_sub(1U, std::memory_order_acq_rel) == 1U;
+    }
+
     auto complete() noexcept -> void {
-      if (delivered_.exchange(true, std::memory_order_acq_rel)) {
+      if (completed_.exchange(true, std::memory_order_acq_rel)) {
         return;
       }
+      on_stop_.reset();
+
+      const auto state = state_.load(std::memory_order_acquire);
+      if (state == control_state::stopped) {
+        stdexec::set_stopped(std::move(receiver_));
+        return;
+      }
+
       std::vector<result_t> results{};
-      results.reserve(results_.size());
-      for (auto &slot : results_) {
-        if (slot.has_value()) {
-          results.push_back(std::move(*slot));
+      results.reserve(result_engaged_.size());
+      for (std::size_t index = 0U; index < result_engaged_.size(); ++index) {
+        if (result_engaged_[index] != 0U) {
+          results.push_back(std::move(results_[index].get()));
           continue;
         }
         results.push_back(result_t::failure(wh::core::errc::internal_error));
       }
-      pending_completion_.emplace(final_completion_t::set_value(
-          std::move(receiver_), std::move(results)));
+
+      stdexec::set_value(std::move(receiver_), std::move(results));
     }
 
     receiver_t receiver_;
     receiver_env_t env_;
     std::vector<sender_t> senders_{};
-    std::vector<std::optional<result_t>> results_{};
-    child_set_t children_{};
-    mailbox_t completions_{};
+    std::unique_ptr<wh::core::detail::manual_lifetime<result_t>[]> results_{};
+    std::vector<std::uint8_t> result_engaged_{};
+    std::unique_ptr<wh::core::detail::manual_lifetime<child_op_t>[]> child_ops_{};
+    std::vector<std::uint8_t> child_engaged_{};
+    std::optional<stop_callback_t> on_stop_{};
+    stdexec::inplace_stop_source stop_source_{};
     std::size_t max_in_flight_{0U};
-    std::size_t next_to_start_{0U};
-    std::size_t remaining_{0U};
-    wh::core::detail::callback_guard<operation> callbacks_{};
-    std::optional<final_completion_t> pending_completion_{};
-    std::atomic<bool> delivered_{false};
+    std::atomic<std::size_t> next_{0U};
+    std::atomic<std::size_t> active_{0U};
+    std::atomic<std::size_t> remaining_{0U};
+    std::atomic<std::size_t> count_{1U};
+    std::atomic<control_state> state_{control_state::started};
+    std::atomic<bool> completed_{false};
   };
 
 public:
   using sender_concept = stdexec::sender_t;
 
-  explicit concurrent_sender_vector(std::vector<sender_t> senders,
-                                    const std::size_t max_in_flight)
+  explicit concurrent_sender_vector(std::vector<sender_t> senders, const std::size_t max_in_flight)
       : senders_(std::move(senders)), max_in_flight_(max_in_flight) {}
 
   template <typename self_t, stdexec::receiver receiver_t>
-    requires std::same_as<std::remove_cvref_t<self_t>,
-                          concurrent_sender_vector> &&
+    requires std::same_as<std::remove_cvref_t<self_t>, concurrent_sender_vector> &&
              (!std::is_const_v<std::remove_reference_t<self_t>>)
-  STDEXEC_EXPLICIT_THIS_BEGIN(auto connect)(this self_t &&self,
-                                            receiver_t receiver) {
-    return operation<receiver_t>{std::move(self).senders_,
-                                 std::move(self).max_in_flight_,
-                                 std::move(receiver)};
+  STDEXEC_EXPLICIT_THIS_BEGIN(auto connect)(this self_t &&self, receiver_t receiver) {
+    using stored_receiver_t = std::remove_cvref_t<receiver_t>;
+    return operation<stored_receiver_t>{std::move(self).senders_, std::move(self).max_in_flight_,
+                                        std::move(receiver)};
   }
   STDEXEC_EXPLICIT_THIS_END(connect)
 
   template <typename self_t, typename... env_t>
-    requires std::same_as<std::remove_cvref_t<self_t>,
-                          concurrent_sender_vector> &&
+    requires std::same_as<std::remove_cvref_t<self_t>, concurrent_sender_vector> &&
              (sizeof...(env_t) >= 1U)
   static consteval auto get_completion_signatures() {
-    return stdexec::completion_signatures<stdexec::set_value_t(
-        std::vector<result_t>)>{};
+    return stdexec::completion_signatures<stdexec::set_value_t(std::vector<result_t>),
+                                          stdexec::set_stopped_t()>{};
   }
 
 private:
@@ -285,12 +367,10 @@ private:
 
 template <typename result_t, stdexec::sender sender_t>
   requires result_like<result_t>
-[[nodiscard]] inline auto
-make_concurrent_sender_vector(std::vector<sender_t> senders,
-                              const std::size_t max_in_flight)
+[[nodiscard]] inline auto make_concurrent_sender_vector(std::vector<sender_t> senders,
+                                                        const std::size_t max_in_flight)
     -> concurrent_sender_vector<result_t, sender_t> {
-  return concurrent_sender_vector<result_t, sender_t>{std::move(senders),
-                                                      max_in_flight};
+  return concurrent_sender_vector<result_t, sender_t>{std::move(senders), max_in_flight};
 }
 
 } // namespace wh::core::detail

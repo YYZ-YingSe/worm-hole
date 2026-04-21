@@ -20,8 +20,7 @@
 namespace wh::adk {
 
 /// Stable tool name used for transfer assistant/tool message pairs.
-inline constexpr std::string_view deterministic_transfer_tool_name =
-    "transfer_to_agent";
+inline constexpr std::string_view deterministic_transfer_tool_name = "transfer_to_agent";
 
 /// Supported transfer directions resolved by the deterministic bridge.
 enum class transfer_target_kind {
@@ -73,28 +72,24 @@ struct deterministic_transfer_state {
 
 namespace detail::transfer {
 
-[[nodiscard]] inline auto make_context_message(std::string text)
-    -> wh::schema::message {
+[[nodiscard]] inline auto make_context_message(std::string text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
   message.parts.emplace_back(wh::schema::text_part{std::move(text)});
   return message;
 }
 
-[[nodiscard]] inline auto
-render_message_text(const wh::schema::message &message) -> std::string {
+[[nodiscard]] inline auto render_message_text(const wh::schema::message &message) -> std::string {
   std::string text{};
   for (const auto &part : message.parts) {
-    if (const auto *typed = std::get_if<wh::schema::text_part>(&part);
-        typed != nullptr) {
+    if (const auto *typed = std::get_if<wh::schema::text_part>(&part); typed != nullptr) {
       if (!text.empty()) {
         text.push_back(' ');
       }
       text.append(typed->text);
       continue;
     }
-    if (const auto *tool = std::get_if<wh::schema::tool_call_part>(&part);
-        tool != nullptr) {
+    if (const auto *tool = std::get_if<wh::schema::tool_call_part>(&part); tool != nullptr) {
       if (!text.empty()) {
         text.push_back(' ');
       }
@@ -106,8 +101,7 @@ render_message_text(const wh::schema::message &message) -> std::string {
   return text;
 }
 
-[[nodiscard]] inline auto make_context_text(const wh::schema::message &message)
-    -> std::string {
+[[nodiscard]] inline auto make_context_text(const wh::schema::message &message) -> std::string {
   std::string text{"[context"};
   if (!message.name.empty()) {
     text.append(" agent=");
@@ -122,8 +116,8 @@ render_message_text(const wh::schema::message &message) -> std::string {
   return text;
 }
 
-[[nodiscard]] inline auto
-is_transfer_assistant_message(const wh::schema::message &message) -> bool {
+[[nodiscard]] inline auto is_transfer_assistant_message(const wh::schema::message &message)
+    -> bool {
   if (message.role != wh::schema::message_role::assistant) {
     return false;
   }
@@ -136,8 +130,7 @@ is_transfer_assistant_message(const wh::schema::message &message) -> bool {
   return false;
 }
 
-[[nodiscard]] inline auto
-transfer_assistant_call_id(const wh::schema::message &message)
+[[nodiscard]] inline auto transfer_assistant_call_id(const wh::schema::message &message)
     -> std::optional<std::string_view> {
   if (!is_transfer_assistant_message(message)) {
     return std::nullopt;
@@ -151,19 +144,16 @@ transfer_assistant_call_id(const wh::schema::message &message)
   return std::nullopt;
 }
 
-[[nodiscard]] inline auto
-is_transfer_tool_message(const wh::schema::message &message) -> bool {
+[[nodiscard]] inline auto is_transfer_tool_message(const wh::schema::message &message) -> bool {
   return message.role == wh::schema::message_role::tool &&
-         message.tool_name == deterministic_transfer_tool_name &&
-         !message.tool_call_id.empty();
+         message.tool_name == deterministic_transfer_tool_name && !message.tool_call_id.empty();
 }
 
 } // namespace detail::transfer
 
 /// Builds the assistant-side transfer tool-call message.
-[[nodiscard]] inline auto
-make_transfer_assistant_message(const std::string_view target_agent_name,
-                                const std::string_view tool_call_id)
+[[nodiscard]] inline auto make_transfer_assistant_message(const std::string_view target_agent_name,
+                                                          const std::string_view tool_call_id)
     -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::assistant;
@@ -179,48 +169,41 @@ make_transfer_assistant_message(const std::string_view target_agent_name,
 }
 
 /// Builds the tool-side transfer acknowledgement message.
-[[nodiscard]] inline auto
-make_transfer_tool_message(const std::string_view target_agent_name,
-                           const std::string_view tool_call_id)
+[[nodiscard]] inline auto make_transfer_tool_message(const std::string_view target_agent_name,
+                                                     const std::string_view tool_call_id)
     -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::tool;
   message.tool_call_id = std::string{tool_call_id};
   message.tool_name = std::string{deterministic_transfer_tool_name};
-  message.parts.emplace_back(wh::schema::text_part{
-      std::string{"transfer:"} + std::string{target_agent_name}});
+  message.parts.emplace_back(
+      wh::schema::text_part{std::string{"transfer:"} + std::string{target_agent_name}});
   return message;
 }
 
 /// Parses one normalized transfer action from a transfer tool message.
-[[nodiscard]] inline auto
-parse_transfer_tool_message(const wh::schema::message &message)
+[[nodiscard]] inline auto parse_transfer_tool_message(const wh::schema::message &message)
     -> wh::core::result<wh::agent::agent_transfer> {
   if (!detail::transfer::is_transfer_tool_message(message)) {
-    return wh::core::result<wh::agent::agent_transfer>::failure(
-        wh::core::errc::type_mismatch);
+    return wh::core::result<wh::agent::agent_transfer>::failure(wh::core::errc::type_mismatch);
   }
   if (message.parts.empty()) {
-    return wh::core::result<wh::agent::agent_transfer>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<wh::agent::agent_transfer>::failure(wh::core::errc::invalid_argument);
   }
 
   const auto *text = std::get_if<wh::schema::text_part>(&message.parts.front());
   if (text == nullptr) {
-    return wh::core::result<wh::agent::agent_transfer>::failure(
-        wh::core::errc::type_mismatch);
+    return wh::core::result<wh::agent::agent_transfer>::failure(wh::core::errc::type_mismatch);
   }
 
   constexpr std::string_view prefix = "transfer:";
   if (!text->text.starts_with(prefix)) {
-    return wh::core::result<wh::agent::agent_transfer>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<wh::agent::agent_transfer>::failure(wh::core::errc::invalid_argument);
   }
 
   auto target_agent_name = text->text.substr(prefix.size());
   if (target_agent_name.empty() || message.tool_call_id.empty()) {
-    return wh::core::result<wh::agent::agent_transfer>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<wh::agent::agent_transfer>::failure(wh::core::errc::invalid_argument);
   }
 
   return wh::agent::agent_transfer{
@@ -230,8 +213,7 @@ parse_transfer_tool_message(const wh::schema::message &message)
 }
 
 /// Best-effort transfer extractor for one agent final message.
-[[nodiscard]] inline auto
-extract_transfer_from_message(const wh::schema::message &message)
+[[nodiscard]] inline auto extract_transfer_from_message(const wh::schema::message &message)
     -> std::optional<wh::agent::agent_transfer> {
   auto parsed = parse_transfer_tool_message(message);
   if (parsed.has_error()) {
@@ -242,13 +224,11 @@ extract_transfer_from_message(const wh::schema::message &message)
 
 /// Resolves one raw target name against the authored parent/child topology of
 /// the current agent.
-[[nodiscard]] inline auto
-resolve_transfer_target(const wh::agent::agent &current,
-                        const std::string_view target_agent_name)
+[[nodiscard]] inline auto resolve_transfer_target(const wh::agent::agent &current,
+                                                  const std::string_view target_agent_name)
     -> wh::core::result<transfer_target> {
   if (target_agent_name.empty()) {
-    return wh::core::result<transfer_target>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<transfer_target>::failure(wh::core::errc::invalid_argument);
   }
 
   if (target_agent_name == current.name()) {
@@ -257,11 +237,9 @@ resolve_transfer_target(const wh::agent::agent &current,
     };
   }
 
-  if (current.parent_name().has_value() &&
-      target_agent_name == *current.parent_name()) {
+  if (current.parent_name().has_value() && target_agent_name == *current.parent_name()) {
     if (!current.allows_transfer_to_parent()) {
-      return wh::core::result<transfer_target>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<transfer_target>::failure(wh::core::errc::contract_violation);
     }
     return transfer_target{
         .kind = transfer_target_kind::parent,
@@ -270,8 +248,7 @@ resolve_transfer_target(const wh::agent::agent &current,
 
   if (current.has_child(target_agent_name)) {
     if (!current.allows_transfer_to_child(target_agent_name)) {
-      return wh::core::result<transfer_target>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<transfer_target>::failure(wh::core::errc::contract_violation);
     }
     return transfer_target{
         .kind = transfer_target_kind::child,
@@ -284,17 +261,14 @@ resolve_transfer_target(const wh::agent::agent &current,
 
 /// Starts one deterministic transfer after the target name has already been
 /// validated and resolved.
-[[nodiscard]] inline auto
-begin_deterministic_transfer(deterministic_transfer_state &state,
-                             const std::string_view resolved_target)
+[[nodiscard]] inline auto begin_deterministic_transfer(deterministic_transfer_state &state,
+                                                       const std::string_view resolved_target)
     -> wh::core::result<std::string> {
   if (resolved_target.empty()) {
-    return wh::core::result<std::string>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<std::string>::failure(wh::core::errc::invalid_argument);
   }
   if (state.visited_agents.contains(resolved_target)) {
-    return wh::core::result<std::string>::failure(
-        wh::core::errc::already_exists);
+    return wh::core::result<std::string>::failure(wh::core::errc::already_exists);
   }
   state.visited_agents.insert(std::string{resolved_target});
   state.pending_target = std::string{resolved_target};
@@ -303,9 +277,10 @@ begin_deterministic_transfer(deterministic_transfer_state &state,
 
 /// Resolves one transfer target against authored agent topology and records
 /// the pending target plus loop-guard visit state.
-[[nodiscard]] inline auto begin_deterministic_transfer(
-    const wh::agent::agent &current, deterministic_transfer_state &state,
-    transfer_target target) -> wh::core::result<std::string> {
+[[nodiscard]] inline auto begin_deterministic_transfer(const wh::agent::agent &current,
+                                                       deterministic_transfer_state &state,
+                                                       transfer_target target)
+    -> wh::core::result<std::string> {
   std::string resolved{};
   switch (target.kind) {
   case transfer_target_kind::current:
@@ -313,8 +288,7 @@ begin_deterministic_transfer(deterministic_transfer_state &state,
     break;
   case transfer_target_kind::parent:
     if (!current.allows_transfer_to_parent()) {
-      return wh::core::result<std::string>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<std::string>::failure(wh::core::errc::contract_violation);
     }
     if (!current.parent_name().has_value()) {
       return wh::core::result<std::string>::failure(wh::core::errc::not_found);
@@ -323,12 +297,10 @@ begin_deterministic_transfer(deterministic_transfer_state &state,
     break;
   case transfer_target_kind::child:
     if (target.agent_name.empty()) {
-      return wh::core::result<std::string>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<std::string>::failure(wh::core::errc::invalid_argument);
     }
     if (!current.allows_transfer_to_child(target.agent_name)) {
-      return wh::core::result<std::string>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<std::string>::failure(wh::core::errc::contract_violation);
     }
     if (!current.child(target.agent_name).has_value()) {
       return wh::core::result<std::string>::failure(wh::core::errc::not_found);
@@ -343,9 +315,8 @@ begin_deterministic_transfer(deterministic_transfer_state &state,
 /// Records one parent-visible message event only when its run path matches the
 /// exact bridge-visible path and the payload is not an interrupt control.
 inline auto record_parent_visible_event(deterministic_transfer_state &state,
-                                        const agent_event &event)
-    -> wh::core::result<void> {
-  if (!(event.metadata.run_path == state.exact_run_path)) {
+                                        const agent_event &event) -> wh::core::result<void> {
+  if (!(event.metadata.path == state.exact_run_path)) {
     return {};
   }
   if (const auto *control = std::get_if<control_action>(&event.payload);
@@ -356,8 +327,7 @@ inline auto record_parent_visible_event(deterministic_transfer_state &state,
   if (message == nullptr) {
     return {};
   }
-  if (const auto *value = std::get_if<wh::schema::message>(&message->content);
-      value != nullptr) {
+  if (const auto *value = std::get_if<wh::schema::message>(&message->content); value != nullptr) {
     state.visible_history.push_back(*value);
     return {};
   }
@@ -366,35 +336,30 @@ inline auto record_parent_visible_event(deterministic_transfer_state &state,
 
 /// Rewrites transfer history for one target agent by trimming configured
 /// transfer pairs and demoting foreign assistant/tool messages to context text.
-[[nodiscard]] inline auto
-rewrite_transfer_history(const std::span<const wh::schema::message> history,
-                         const std::string_view current_agent_name,
-                         const resolved_transfer_trim_options trim = {})
-    -> std::vector<wh::schema::message> {
+[[nodiscard]] inline auto rewrite_transfer_history(
+    const std::span<const wh::schema::message> history, const std::string_view current_agent_name,
+    const resolved_transfer_trim_options trim = {}) -> std::vector<wh::schema::message> {
   std::vector<wh::schema::message> rewritten{};
   rewritten.reserve(history.size());
 
   for (std::size_t index = 0U; index < history.size(); ++index) {
     const auto &message = history[index];
 
-    const bool trim_assistant =
-        trim.trim_assistant_transfer_message &&
-        detail::transfer::is_transfer_assistant_message(message);
-    const bool trim_tool = trim.trim_tool_transfer_pair &&
-                           detail::transfer::is_transfer_tool_message(message);
+    const bool trim_assistant = trim.trim_assistant_transfer_message &&
+                                detail::transfer::is_transfer_assistant_message(message);
+    const bool trim_tool =
+        trim.trim_tool_transfer_pair && detail::transfer::is_transfer_tool_message(message);
     if (trim_assistant || trim_tool) {
       continue;
     }
 
-    const bool foreign_assistant =
-        message.role == wh::schema::message_role::assistant &&
-        !message.name.empty() && message.name != current_agent_name;
+    const bool foreign_assistant = message.role == wh::schema::message_role::assistant &&
+                                   !message.name.empty() && message.name != current_agent_name;
     const bool foreign_tool = message.role == wh::schema::message_role::tool &&
-                              !message.name.empty() &&
-                              message.name != current_agent_name;
+                              !message.name.empty() && message.name != current_agent_name;
     if (foreign_assistant || foreign_tool) {
-      rewritten.push_back(detail::transfer::make_context_message(
-          detail::transfer::make_context_text(message)));
+      rewritten.push_back(
+          detail::transfer::make_context_message(detail::transfer::make_context_text(message)));
       continue;
     }
 
@@ -405,12 +370,11 @@ rewrite_transfer_history(const std::span<const wh::schema::message> history,
 
 /// Appends one transfer assistant/tool message pair exactly once when the
 /// transfer completed normally.
-inline auto
-append_transfer_messages_once(std::vector<wh::schema::message> &history,
-                              deterministic_transfer_state &state,
-                              const std::string_view target_agent_name,
-                              const std::string_view tool_call_id,
-                              const transfer_completion_kind completion)
+inline auto append_transfer_messages_once(std::vector<wh::schema::message> &history,
+                                          deterministic_transfer_state &state,
+                                          const std::string_view target_agent_name,
+                                          const std::string_view tool_call_id,
+                                          const transfer_completion_kind completion)
     -> wh::core::result<void> {
   if (completion != transfer_completion_kind::normal) {
     return {};
@@ -422,10 +386,8 @@ append_transfer_messages_once(std::vector<wh::schema::message> &history,
     return {};
   }
 
-  history.push_back(
-      make_transfer_assistant_message(target_agent_name, tool_call_id));
-  history.push_back(
-      make_transfer_tool_message(target_agent_name, tool_call_id));
+  history.push_back(make_transfer_assistant_message(target_agent_name, tool_call_id));
+  history.push_back(make_transfer_tool_message(target_agent_name, tool_call_id));
   state.appended_tool_call_ids.insert(std::string{tool_call_id});
   state.pending_target.reset();
   return {};

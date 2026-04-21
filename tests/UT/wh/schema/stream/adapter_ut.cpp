@@ -4,24 +4,23 @@
 #include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 TEST_CASE("stream adapter facade exposes filter-map transform and to-stream helpers",
-          "[UT][wh/schema/stream/adapter.hpp][make_transform_stream_reader][condition][branch][boundary]") {
+          "[UT][wh/schema/stream/"
+          "adapter.hpp][make_transform_stream_reader][condition][branch][boundary]") {
   auto filter_mapped = wh::schema::stream::make_filter_map_stream_reader(
-      wh::schema::stream::make_values_stream_reader(
-          std::vector<std::string>{"1", "skip", "2"}),
-      [](const std::string &value)
-          -> wh::core::result<wh::schema::stream::filter_map_step<int>> {
+      wh::schema::stream::make_values_stream_reader(std::vector<std::string>{"1", "skip", "2"}),
+      [](const std::string &value) -> wh::core::result<wh::schema::stream::filter_map_step<int>> {
         if (value == "skip") {
           return wh::schema::stream::skip;
         }
         return std::stoi(value);
       });
 
-  auto first = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(filter_mapped.try_read());
-  auto second = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(filter_mapped.try_read());
-  auto eof = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(filter_mapped.try_read());
+  auto first = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      filter_mapped.try_read());
+  auto second = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      filter_mapped.try_read());
+  auto eof = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      filter_mapped.try_read());
   REQUIRE(first.has_value());
   REQUIRE(first.value().value == std::optional<int>{1});
   REQUIRE(second.has_value());
@@ -31,9 +30,7 @@ TEST_CASE("stream adapter facade exposes filter-map transform and to-stream help
 
   auto transformed = wh::schema::stream::make_transform_stream_reader(
       wh::schema::stream::make_values_stream_reader(std::vector<int>{3}),
-      [](const int &value) -> wh::core::result<std::string> {
-        return std::to_string(value * 2);
-      });
+      [](const int &value) -> wh::core::result<std::string> { return std::to_string(value * 2); });
   auto transformed_next = transformed.read();
   REQUIRE(transformed_next.has_value());
   REQUIRE(transformed_next.value().value == std::optional<std::string>{"6"});
@@ -46,7 +43,8 @@ TEST_CASE("stream adapter facade exposes filter-map transform and to-stream help
 }
 
 TEST_CASE("stream adapter facade propagates mapper failures through transform readers",
-          "[UT][wh/schema/stream/adapter.hpp][make_filter_map_stream_reader][condition][branch][boundary][error]") {
+          "[UT][wh/schema/stream/"
+          "adapter.hpp][make_filter_map_stream_reader][condition][branch][boundary][error]") {
   auto transformed = wh::schema::stream::make_transform_stream_reader(
       wh::schema::stream::make_values_stream_reader(std::vector<int>{1}),
       [](const int &) -> wh::core::result<std::string> {
