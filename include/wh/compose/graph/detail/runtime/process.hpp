@@ -16,8 +16,7 @@
 
 namespace wh::compose::detail::process_runtime {
 
-using node_local_process_state_slots =
-    std::vector<std::optional<graph_process_state>>;
+using node_local_process_state_slots = std::vector<std::optional<graph_process_state>>;
 
 /// RAII holder for one node-local process-state lifecycle.
 class scoped_node_local_process_state {
@@ -27,13 +26,11 @@ public:
   explicit scoped_node_local_process_state(const std::uint32_t node_id) noexcept
       : node_id_(node_id) {}
 
-  scoped_node_local_process_state(const scoped_node_local_process_state &) =
-      delete;
+  scoped_node_local_process_state(const scoped_node_local_process_state &) = delete;
   auto operator=(const scoped_node_local_process_state &)
       -> scoped_node_local_process_state & = delete;
 
-  scoped_node_local_process_state(scoped_node_local_process_state &&) noexcept =
-      default;
+  scoped_node_local_process_state(scoped_node_local_process_state &&) noexcept = default;
 
   auto operator=(scoped_node_local_process_state &&) noexcept
       -> scoped_node_local_process_state & = default;
@@ -43,13 +40,13 @@ public:
   [[nodiscard]] auto get(node_local_process_state_slots &states)
       -> wh::core::result<std::reference_wrapper<graph_process_state>> {
     if (node_id_ == invalid_node_id || node_id_ >= states.size()) {
-      return wh::core::result<std::reference_wrapper<graph_process_state>>::
-          failure(wh::core::errc::contract_violation);
+      return wh::core::result<std::reference_wrapper<graph_process_state>>::failure(
+          wh::core::errc::contract_violation);
     }
     auto &slot = states[node_id_];
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<graph_process_state>>::
-          failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<graph_process_state>>::failure(
+          wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
@@ -62,8 +59,7 @@ public:
   }
 
 private:
-  static constexpr std::uint32_t invalid_node_id =
-      std::numeric_limits<std::uint32_t>::max();
+  static constexpr std::uint32_t invalid_node_id = std::numeric_limits<std::uint32_t>::max();
 
   std::uint32_t node_id_{invalid_node_id};
 };
@@ -84,8 +80,7 @@ acquire_node_local_process_state(node_local_process_state_slots &states,
 }
 
 inline auto bind_parent_process_state(graph_process_state &process_state,
-                                      graph_process_state *parent) noexcept
-    -> void {
+                                      graph_process_state *parent) noexcept -> void {
   process_state.set_parent(parent);
 }
 

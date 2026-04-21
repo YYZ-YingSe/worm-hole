@@ -12,8 +12,8 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/callbacks/callbacks.hpp"
-#include "wh/core/component.hpp"
 #include "wh/core/compiler.hpp"
+#include "wh/core/component.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/stdexec.hpp"
@@ -59,25 +59,20 @@ using callback_sink = wh::callbacks::callback_sink;
 using wh::callbacks::borrow_callback_sink;
 using wh::callbacks::make_callback_sink;
 
-template <typename... args_t>
-inline auto emit_callback(args_t &&...args) -> void {
+template <typename... args_t> inline auto emit_callback(args_t &&...args) -> void {
   wh::callbacks::emit(std::forward<args_t>(args)...);
 }
 
 template <typename impl_t>
-concept sync_batch_indexer_handler =
-    requires(const impl_t &impl, const indexer_request &request) {
-      { impl.write(request) } -> std::same_as<indexer_result>;
-    };
+concept sync_batch_indexer_handler = requires(const impl_t &impl, const indexer_request &request) {
+  { impl.write(request) } -> std::same_as<indexer_result>;
+};
 
 template <typename impl_t>
-concept sync_single_indexer_handler =
-    requires(const impl_t &impl, const wh::schema::document &document,
-             const indexer_options &options) {
-      {
-        impl.write_one(document, options)
-      } -> std::same_as<wh::core::result<std::string>>;
-    };
+concept sync_single_indexer_handler = requires(
+    const impl_t &impl, const wh::schema::document &document, const indexer_options &options) {
+  { impl.write_one(document, options) } -> std::same_as<wh::core::result<std::string>>;
+};
 
 template <typename impl_t>
 concept sender_indexer_handler_const =
@@ -86,10 +81,9 @@ concept sender_indexer_handler_const =
     };
 
 template <typename impl_t>
-concept sender_indexer_handler_move =
-    requires(const impl_t &impl, indexer_request &&request) {
-      { impl.write_sender(std::move(request)) } -> stdexec::sender;
-    };
+concept sender_indexer_handler_move = requires(const impl_t &impl, indexer_request &&request) {
+  { impl.write_sender(std::move(request)) } -> stdexec::sender;
+};
 
 template <typename impl_t>
 concept async_indexer_handler =
@@ -99,9 +93,8 @@ template <typename impl_t>
 concept sender_indexer_handler = async_indexer_handler<impl_t>;
 
 template <typename impl_t>
-concept indexer_impl =
-    async_indexer_handler<impl_t> || sync_batch_indexer_handler<impl_t> ||
-    sync_single_indexer_handler<impl_t>;
+concept indexer_impl = async_indexer_handler<impl_t> || sync_batch_indexer_handler<impl_t> ||
+                       sync_single_indexer_handler<impl_t>;
 
 [[nodiscard]] inline auto make_callback_state(const indexer_request &request)
     -> indexer_callback_state {
@@ -109,15 +102,15 @@ concept indexer_impl =
   state.run_info.name = "Indexer";
   state.run_info.type = "Indexer";
   state.run_info.component = wh::core::component_kind::indexer;
-  state.run_info = wh::callbacks::apply_component_run_info(
-      std::move(state.run_info), request.options);
+  state.run_info =
+      wh::callbacks::apply_component_run_info(std::move(state.run_info), request.options);
   state.event.batch_size = request.documents.size();
   return state;
 }
 
 template <typename impl_t>
-[[nodiscard]] inline auto
-run_sync_batch_indexer_impl(const impl_t &impl, const indexer_request &request)
+[[nodiscard]] inline auto run_sync_batch_indexer_impl(const impl_t &impl,
+                                                      const indexer_request &request)
     -> indexer_result {
   if constexpr (requires {
                   { impl.write(request) } -> std::same_as<indexer_result>;
@@ -127,13 +120,10 @@ run_sync_batch_indexer_impl(const impl_t &impl, const indexer_request &request)
 }
 
 template <typename impl_t>
-[[nodiscard]] inline auto run_sync_batch_indexer_impl(const impl_t &impl,
-                                                      indexer_request &&request)
+[[nodiscard]] inline auto run_sync_batch_indexer_impl(const impl_t &impl, indexer_request &&request)
     -> indexer_result {
   if constexpr (requires {
-                  {
-                    impl.write(std::move(request))
-                  } -> std::same_as<indexer_result>;
+                  { impl.write(std::move(request)) } -> std::same_as<indexer_result>;
                 }) {
     return impl.write(std::move(request));
   } else {
@@ -142,10 +132,9 @@ template <typename impl_t>
 }
 
 template <typename impl_t>
-[[nodiscard]] inline auto
-run_sync_single_indexer_impl(const impl_t &impl,
-                             const wh::schema::document &document,
-                             const indexer_options &options)
+[[nodiscard]] inline auto run_sync_single_indexer_impl(const impl_t &impl,
+                                                       const wh::schema::document &document,
+                                                       const indexer_options &options)
     -> wh::core::result<std::string> {
   if constexpr (requires {
                   {
@@ -157,8 +146,7 @@ run_sync_single_indexer_impl(const impl_t &impl,
 }
 
 template <typename impl_t>
-[[nodiscard]] inline auto run_sync_indexer_impl(const impl_t &impl,
-                                                const indexer_request &request)
+[[nodiscard]] inline auto run_sync_indexer_impl(const impl_t &impl, const indexer_request &request)
     -> indexer_result {
   if constexpr (sync_batch_indexer_handler<impl_t>) {
     return run_sync_batch_indexer_impl(impl, request);
@@ -174,8 +162,7 @@ template <typename impl_t>
     for (const auto &document : request.documents) {
       auto retries = options.max_retries;
       while (true) {
-        auto status =
-            run_sync_single_indexer_impl(impl, document, request.options);
+        auto status = run_sync_single_indexer_impl(impl, document, request.options);
         if (status.has_value()) {
           response.document_ids.push_back(std::move(status).value());
           ++response.success_count;
@@ -199,57 +186,45 @@ template <typename impl_t>
 }
 
 template <typename impl_t>
-[[nodiscard]] inline auto run_sync_indexer_impl(const impl_t &impl,
-                                                indexer_request &&request)
+[[nodiscard]] inline auto run_sync_indexer_impl(const impl_t &impl, indexer_request &&request)
     -> indexer_result {
   if constexpr (sync_batch_indexer_handler<impl_t>) {
     return run_sync_batch_indexer_impl(impl, std::move(request));
   } else {
-    return run_sync_indexer_impl(impl,
-                                 static_cast<const indexer_request &>(request));
+    return run_sync_indexer_impl(impl, static_cast<const indexer_request &>(request));
   }
 }
 
 template <typename impl_t, typename request_t>
   requires async_indexer_handler<impl_t>
-[[nodiscard]] inline auto make_impl_sender(const impl_t &impl,
-                                           request_t &&request) {
+[[nodiscard]] inline auto make_impl_sender(const impl_t &impl, request_t &&request) {
   using request_value_t = std::remove_cvref_t<request_t>;
   static_assert(std::same_as<request_value_t, indexer_request>,
                 "indexer sender factory requires indexer_request input");
   return wh::core::detail::request_result_sender<indexer_result>(
-      std::forward<request_t>(request),
-      [&impl](auto &&forwarded_request) -> decltype(auto) {
-        return impl.write_sender(
-            std::forward<decltype(forwarded_request)>(forwarded_request));
+      std::forward<request_t>(request), [&impl](auto &&forwarded_request) -> decltype(auto) {
+        return impl.write_sender(std::forward<decltype(forwarded_request)>(forwarded_request));
       });
 }
 
-template <wh::core::resume_mode Resume, typename impl_t, typename request_t,
-          typename scheduler_t>
-[[nodiscard]] inline auto
-make_async_sender(const impl_t &impl, request_t &&request, callback_sink sink,
-                  scheduler_t scheduler) {
+template <wh::core::resume_mode Resume, typename impl_t, typename request_t, typename scheduler_t>
+[[nodiscard]] inline auto make_async_sender(const impl_t &impl, request_t &&request,
+                                            callback_sink sink, scheduler_t scheduler) {
   return wh::core::detail::component_async_entry<Resume>(
       std::forward<request_t>(request), std::move(sink), std::move(scheduler),
       [&impl](auto &&forwarded_request) {
-        return make_impl_sender(
-            impl, std::forward<decltype(forwarded_request)>(forwarded_request));
+        return make_impl_sender(impl, std::forward<decltype(forwarded_request)>(forwarded_request));
       },
-      [](const indexer_request &state_request) {
-        return make_callback_state(state_request);
-      },
+      [](const indexer_request &state_request) { return make_callback_state(state_request); },
       [](const callback_sink &start_sink, const indexer_callback_state &state) {
         emit_callback(start_sink, wh::callbacks::stage::start, state);
       },
-      [](const callback_sink &success_sink, indexer_callback_state &state,
-         indexer_result &status) {
+      [](const callback_sink &success_sink, indexer_callback_state &state, indexer_result &status) {
         state.event.success_count = status.value().success_count;
         state.event.failure_count = status.value().failure_count;
         emit_callback(success_sink, wh::callbacks::stage::end, state);
       },
-      [](const callback_sink &error_sink, indexer_callback_state &state,
-         indexer_result &) {
+      [](const callback_sink &error_sink, indexer_callback_state &state, indexer_result &) {
         emit_callback(error_sink, wh::callbacks::stage::error, state);
       });
 }
@@ -267,8 +242,7 @@ public:
       : impl_(impl) {}
 
   /// Stores one movable indexer implementation object by value.
-  explicit indexer(impl_t &&impl) noexcept(
-      std::is_nothrow_move_constructible_v<impl_t>)
+  explicit indexer(impl_t &&impl) noexcept(std::is_nothrow_move_constructible_v<impl_t>)
       : impl_(std::move(impl)) {}
 
   indexer(const indexer &) = default;
@@ -279,32 +253,27 @@ public:
 
   /// Returns static descriptor metadata for this component.
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{"Indexer",
-                                          wh::core::component_kind::indexer};
+    return wh::core::component_descriptor{"Indexer", wh::core::component_kind::indexer};
   }
 
   /// Writes documents synchronously and emits callbacks through the run
   /// context.
   [[nodiscard]] auto write(const indexer_request &request,
-                           wh::core::run_context &callback_context) const
-      -> detail::indexer_result
+                           wh::core::run_context &callback_context) const -> detail::indexer_result
     requires detail::sync_batch_indexer_handler<impl_t> ||
              detail::sync_single_indexer_handler<impl_t>
   {
-    return write_sync_impl(request,
-                           detail::borrow_callback_sink(callback_context));
+    return write_sync_impl(request, detail::borrow_callback_sink(callback_context));
   }
 
   /// Writes documents synchronously for movable request and emits callbacks
   /// through the run context.
-  [[nodiscard]] auto write(indexer_request &&request,
-                           wh::core::run_context &callback_context) const
+  [[nodiscard]] auto write(indexer_request &&request, wh::core::run_context &callback_context) const
       -> detail::indexer_result
     requires detail::sync_batch_indexer_handler<impl_t> ||
              detail::sync_single_indexer_handler<impl_t>
   {
-    return write_sync_impl(std::move(request),
-                           detail::borrow_callback_sink(callback_context));
+    return write_sync_impl(std::move(request), detail::borrow_callback_sink(callback_context));
   }
 
   /// Writes documents asynchronously and emits callbacks through the run
@@ -312,8 +281,7 @@ public:
   template <typename request_t>
     requires std::same_as<std::remove_cvref_t<request_t>, indexer_request> &&
              detail::async_indexer_handler<impl_t>
-  [[nodiscard]] auto async_write(request_t &&request,
-                                 wh::core::run_context &callback_context) const
+  [[nodiscard]] auto async_write(request_t &&request, wh::core::run_context &callback_context) const
       -> auto {
     return write_async_impl(std::forward<request_t>(request),
                             detail::make_callback_sink(callback_context));
@@ -327,16 +295,13 @@ private:
     requires std::same_as<std::remove_cvref_t<request_t>, indexer_request> &&
              (detail::sync_batch_indexer_handler<impl_t> ||
               detail::sync_single_indexer_handler<impl_t>)
-  [[nodiscard]] auto write_sync_impl(request_t &&request,
-                                     detail::callback_sink sink) const
+  [[nodiscard]] auto write_sync_impl(request_t &&request, detail::callback_sink sink) const
       -> detail::indexer_result {
-    sink =
-        wh::callbacks::filter_callback_sink(std::move(sink), request.options);
+    sink = wh::callbacks::filter_callback_sink(std::move(sink), request.options);
     auto callback_state = detail::make_callback_state(request);
     detail::emit_callback(sink, wh::callbacks::stage::start, callback_state);
 
-    auto output =
-        detail::run_sync_indexer_impl(impl_, std::forward<request_t>(request));
+    auto output = detail::run_sync_indexer_impl(impl_, std::forward<request_t>(request));
     if (output.has_error()) {
       detail::emit_callback(sink, wh::callbacks::stage::error, callback_state);
       return output;
@@ -351,14 +316,13 @@ private:
   template <typename request_t>
     requires std::same_as<std::remove_cvref_t<request_t>, indexer_request> &&
              detail::async_indexer_handler<impl_t>
-  [[nodiscard]] auto write_async_impl(request_t &&request,
-                                      detail::callback_sink sink) const
+  [[nodiscard]] auto write_async_impl(request_t &&request, detail::callback_sink sink) const
       -> auto {
     return wh::core::detail::defer_resume_sender<Resume>(
         [this, request = indexer_request{std::forward<request_t>(request)},
          sink = std::move(sink)](auto scheduler) mutable {
-          return detail::make_async_sender<Resume>(
-              impl_, std::move(request), std::move(sink), std::move(scheduler));
+          return detail::make_async_sender<Resume>(impl_, std::move(request), std::move(sink),
+                                                   std::move(scheduler));
         });
   }
 
@@ -366,7 +330,6 @@ private:
   wh_no_unique_address impl_t impl_;
 };
 
-template <typename impl_t>
-indexer(impl_t &&) -> indexer<std::remove_cvref_t<impl_t>>;
+template <typename impl_t> indexer(impl_t &&) -> indexer<std::remove_cvref_t<impl_t>>;
 
 } // namespace wh::indexer

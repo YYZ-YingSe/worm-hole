@@ -1,17 +1,17 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <exception>
 #include <memory>
 #include <stdexcept>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/test_thread_wait.hpp"
 #include "wh/core/bounded_queue.hpp"
 #include "wh/schema/stream/detail/pipe_stream.hpp"
 
-TEST_CASE("pipe stream detail maps queue status and retries busy helper paths",
-          "[UT][wh/schema/stream/detail/pipe_stream.hpp][map_pipe_queue_status][condition][branch]") {
+TEST_CASE(
+    "pipe stream detail maps queue status and retries busy helper paths",
+    "[UT][wh/schema/stream/detail/pipe_stream.hpp][map_pipe_queue_status][condition][branch]") {
   using wh::core::bounded_queue_status;
   using wh::schema::stream::detail::map_pipe_queue_status;
 
@@ -36,8 +36,7 @@ TEST_CASE("pipe stream detail maps queue status and retries busy helper paths",
   auto retried = wh::schema::stream::detail::retry_busy_result([&]() noexcept {
     ++result_attempts;
     if (result_attempts < 3) {
-      return wh::core::result<int, bounded_queue_status>::failure(
-          bounded_queue_status::busy);
+      return wh::core::result<int, bounded_queue_status>::failure(bounded_queue_status::busy);
     }
     return wh::core::result<int, bounded_queue_status>{9};
   });
@@ -46,16 +45,16 @@ TEST_CASE("pipe stream detail maps queue status and retries busy helper paths",
   REQUIRE(result_attempts == 3);
 }
 
-TEST_CASE("pipe stream detail shared closed state normalization and exception forwarding cover success and terminal branches",
-          "[UT][wh/schema/stream/detail/pipe_stream.hpp][normalize_pipe_read_sender][branch][boundary]") {
+TEST_CASE(
+    "pipe stream detail shared closed state normalization and exception forwarding cover success "
+    "and terminal branches",
+    "[UT][wh/schema/stream/detail/pipe_stream.hpp][normalize_pipe_read_sender][branch][boundary]") {
   using state_t = wh::schema::stream::detail::pipe_stream_state<int>;
   using chunk_t = wh::schema::stream::stream_chunk<int>;
   using result_t = wh::schema::stream::stream_result<chunk_t>;
 
-  const auto &closed_a =
-      wh::schema::stream::detail::shared_closed_pipe_state<state_t>();
-  const auto &closed_b =
-      wh::schema::stream::detail::shared_closed_pipe_state<state_t>();
+  const auto &closed_a = wh::schema::stream::detail::shared_closed_pipe_state<state_t>();
+  const auto &closed_b = wh::schema::stream::detail::shared_closed_pipe_state<state_t>();
   REQUIRE(closed_a.get() == closed_b.get());
   REQUIRE(closed_a->queue.is_closed());
 
@@ -96,29 +95,28 @@ TEST_CASE("pipe stream detail shared closed state normalization and exception fo
   REQUIRE(read_closed.has_value());
   REQUIRE(read_closed.value().is_terminal_eof());
 
-  REQUIRE_THROWS_AS(
-      wh::schema::stream::detail::rethrow_pipe_exception<result_t>(
-          std::make_exception_ptr(std::runtime_error{"boom"})),
-      std::runtime_error);
+  REQUIRE_THROWS_AS(wh::schema::stream::detail::rethrow_pipe_exception<result_t>(
+                        std::make_exception_ptr(std::runtime_error{"boom"})),
+                    std::runtime_error);
 }
 
 TEST_CASE("pipe stream detail normalization preserves real bounded-queue async read senders",
-          "[UT][wh/schema/stream/detail/pipe_stream.hpp][normalize_pipe_read_sender][concurrency][boundary]") {
+          "[UT][wh/schema/stream/detail/"
+          "pipe_stream.hpp][normalize_pipe_read_sender][concurrency][boundary]") {
   using state_t = wh::schema::stream::detail::pipe_stream_state<int>;
 
   auto state = std::make_shared<state_t>(1U);
   REQUIRE(state->queue.try_push(7) == wh::core::bounded_queue_status::success);
 
   auto value = wh::testing::helper::wait_value_on_test_thread(
-      wh::schema::stream::detail::normalize_pipe_read_sender<int>(
-          state->queue.async_pop(), state, false, false));
+      wh::schema::stream::detail::normalize_pipe_read_sender<int>(state->queue.async_pop(), state,
+                                                                  false, false));
   REQUIRE(value.has_value());
   REQUIRE(value.value().value == std::optional<int>{7});
 
   auto missing = wh::testing::helper::wait_value_on_test_thread(
       wh::schema::stream::detail::normalize_pipe_read_sender<int>(
-          wh::schema::stream::detail::shared_closed_pipe_state<state_t>()
-              ->queue.async_pop(),
+          wh::schema::stream::detail::shared_closed_pipe_state<state_t>()->queue.async_pop(),
           std::shared_ptr<state_t>{}, true, false));
   REQUIRE(missing.has_error());
   REQUIRE(missing.error() == wh::core::errc::not_found);

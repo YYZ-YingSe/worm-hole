@@ -18,8 +18,7 @@ namespace wh::core::detail {
 
 class slot_ready_list {
 public:
-  static constexpr std::uint32_t no_slot =
-      std::numeric_limits<std::uint32_t>::max();
+  static constexpr std::uint32_t no_slot = std::numeric_limits<std::uint32_t>::max();
 
   slot_ready_list() = default;
 
@@ -32,8 +31,7 @@ public:
 
   auto reset(const std::size_t size) -> void {
     if (size > max_slot_capacity()) {
-      throw std::length_error{
-          "slot_ready_list size exceeds supported uint32_t slot capacity"};
+      throw std::length_error{"slot_ready_list size exceeds supported uint32_t slot capacity"};
     }
     slots_ = size == 0U ? nullptr : std::make_unique<slot[]>(size);
     size_ = size;
@@ -50,8 +48,7 @@ public:
     auto head = head_.load(std::memory_order_acquire);
     do {
       slot_state.next = head;
-    } while (!head_.compare_exchange_weak(head, slot_id,
-                                          std::memory_order_release,
+    } while (!head_.compare_exchange_weak(head, slot_id, std::memory_order_release,
                                           std::memory_order_acquire));
     return true;
   }
@@ -79,13 +76,10 @@ private:
     std::uint32_t next{no_slot};
   };
 
-  [[nodiscard]] static constexpr auto max_slot_capacity() noexcept
-      -> std::size_t {
-    return std::min(
-        static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()),
-        static_cast<std::size_t>(
-            std::numeric_limits<std::ptrdiff_t>::max() /
-            static_cast<std::ptrdiff_t>(sizeof(slot))));
+  [[nodiscard]] static constexpr auto max_slot_capacity() noexcept -> std::size_t {
+    return std::min(static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()),
+                    static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max() /
+                                             static_cast<std::ptrdiff_t>(sizeof(slot))));
   }
 
   std::unique_ptr<slot[]> slots_{};

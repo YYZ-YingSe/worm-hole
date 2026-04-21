@@ -2,8 +2,9 @@
 
 #include "wh/compose/runtime/state.hpp"
 
-TEST_CASE("graph process state supports typed storage lookup and parent fallback",
-          "[UT][wh/compose/runtime/state.hpp][graph_process_state::get][condition][branch][boundary]") {
+TEST_CASE(
+    "graph process state supports typed storage lookup and parent fallback",
+    "[UT][wh/compose/runtime/state.hpp][graph_process_state::get][condition][branch][boundary]") {
   wh::compose::graph_process_state parent{};
   REQUIRE(parent.emplace<int>(7).has_value());
 
@@ -25,7 +26,8 @@ TEST_CASE("graph process state supports typed storage lookup and parent fallback
 }
 
 TEST_CASE("graph process state reports not found and type mismatch details",
-          "[UT][wh/compose/runtime/state.hpp][graph_process_state::last_error_detail][condition][branch][boundary]") {
+          "[UT][wh/compose/runtime/"
+          "state.hpp][graph_process_state::last_error_detail][condition][branch][boundary]") {
   wh::compose::graph_process_state state{};
   REQUIRE(state.emplace<int>(1).has_value());
 
@@ -37,13 +39,13 @@ TEST_CASE("graph process state reports not found and type mismatch details",
   REQUIRE(wh::compose::detail::state_type_name<int>().empty() == false);
   REQUIRE(wh::compose::detail::state_not_found_detail<int>().find("expected=") !=
           std::string::npos);
-  REQUIRE(wh::compose::detail::state_type_mismatch_detail<int>(
-              wh::core::any{std::string{"bad"}})
+  REQUIRE(wh::compose::detail::state_type_mismatch_detail<int>(wh::core::any{std::string{"bad"}})
               .find("actual=") != std::string::npos);
 }
 
-TEST_CASE("graph state table tracks keyed lifecycle updates and snapshots",
-          "[UT][wh/compose/runtime/state.hpp][graph_state_table::update][condition][branch][boundary]") {
+TEST_CASE(
+    "graph state table tracks keyed lifecycle updates and snapshots",
+    "[UT][wh/compose/runtime/state.hpp][graph_state_table::update][condition][branch][boundary]") {
   std::vector<std::string> keys{"a", "b"};
   wh::compose::graph_state_table table{};
   table.reset(keys);
@@ -60,23 +62,19 @@ TEST_CASE("graph state table tracks keyed lifecycle updates and snapshots",
               .update("a", wh::compose::graph_node_lifecycle_state::running, 2U,
                       wh::core::errc::timeout)
               .has_value());
-  REQUIRE(table
-              .update(1U, wh::compose::graph_node_lifecycle_state::completed)
-              .has_value());
+  REQUIRE(table.update(1U, wh::compose::graph_node_lifecycle_state::completed).has_value());
 
   auto by_key = table.by_key("a");
   REQUIRE(by_key.has_value());
   REQUIRE(by_key->node_id == 0U);
   REQUIRE(by_key->lifecycle == wh::compose::graph_node_lifecycle_state::running);
   REQUIRE(by_key->attempts == 2U);
-  REQUIRE(by_key->last_error == std::optional<wh::core::error_code>{
-                                   wh::core::errc::timeout});
+  REQUIRE(by_key->last_error == std::optional<wh::core::error_code>{wh::core::errc::timeout});
 
   auto by_id = table.by_id(1U);
   REQUIRE(by_id.has_value());
   REQUIRE(by_id->key == "b");
-  REQUIRE(by_id->lifecycle ==
-          wh::compose::graph_node_lifecycle_state::completed);
+  REQUIRE(by_id->lifecycle == wh::compose::graph_node_lifecycle_state::completed);
 
   auto states = table.states();
   REQUIRE(states.size() == 2U);

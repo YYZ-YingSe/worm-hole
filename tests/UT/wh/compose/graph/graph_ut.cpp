@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/graph.hpp"
@@ -15,8 +14,7 @@ TEST_CASE("graph class compiles passthrough nodes and exposes snapshots",
   REQUIRE(graph.compile_order().empty());
   REQUIRE(graph.diagnostics().empty());
   REQUIRE(graph.node_id("missing").has_error());
-  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(graph.node_id("worker").has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -32,8 +30,7 @@ TEST_CASE("graph class compiles passthrough nodes and exposes snapshots",
   auto awaited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
-  REQUIRE(*wh::core::any_cast<int>(&std::get<0>(*awaited).value().output_status.value()) ==
-          9);
+  REQUIRE(*wh::core::any_cast<int>(&std::get<0>(*awaited).value().output_status.value()) == 9);
 }
 
 TEST_CASE("graph facade exposes boundary snapshots copy semantics and compile option constructors",

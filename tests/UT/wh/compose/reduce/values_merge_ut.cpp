@@ -9,8 +9,7 @@ TEST_CASE("compose values merge delegates typed and dynamic merge paths",
   REQUIRE(registry.size() == 0U);
   REQUIRE_FALSE(registry.is_frozen());
   REQUIRE(registry
-              .register_merge<int>([](std::span<const int> values)
-                                       -> wh::core::result<int> {
+              .register_merge<int>([](std::span<const int> values) -> wh::core::result<int> {
                 int sum = 0;
                 for (const auto value : values) {
                   sum += value;
@@ -25,8 +24,7 @@ TEST_CASE("compose values merge delegates typed and dynamic merge paths",
   REQUIRE(typed.value() == 6);
 
   const std::array dynamic_values = {wh::core::any{1}, wh::core::any{5}};
-  auto dynamic = wh::compose::values_merge(
-      registry, wh::core::any_type_key_v<int>, dynamic_values);
+  auto dynamic = wh::compose::values_merge(registry, wh::core::any_type_key_v<int>, dynamic_values);
   REQUIRE(dynamic.has_value());
   REQUIRE(*wh::core::any_cast<int>(&dynamic.value()) == 6);
 
@@ -48,8 +46,8 @@ TEST_CASE("compose values merge surfaces empty singleton and unsupported branche
   REQUIRE(single.value() == 7);
 
   const std::array dynamic_values = {wh::core::any{1}};
-  auto unsupported = wh::compose::values_merge(
-      registry, wh::core::any_type_key_v<int>, dynamic_values);
+  auto unsupported =
+      wh::compose::values_merge(registry, wh::core::any_type_key_v<int>, dynamic_values);
   REQUIRE(unsupported.has_error());
   REQUIRE(unsupported.error() == wh::core::errc::not_supported);
 }

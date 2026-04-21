@@ -36,12 +36,11 @@ using document_string_equal = wh::core::transparent_string_equal;
 
 /// Supported metadata value variants for one document metadata key.
 using document_metadata_value =
-    std::variant<std::nullptr_t, bool, std::int64_t, double, std::string,
-                 dense_vector, sparse_vector, std::vector<std::string>>;
+    std::variant<std::nullptr_t, bool, std::int64_t, double, std::string, dense_vector,
+                 sparse_vector, std::vector<std::string>>;
 /// Metadata map with heterogeneous key lookup support.
-using document_metadata_map =
-    std::unordered_map<std::string, document_metadata_value,
-                       document_string_hash, document_string_equal>;
+using document_metadata_map = std::unordered_map<std::string, document_metadata_value,
+                                                 document_string_hash, document_string_equal>;
 
 /// Reserved metadata keys used by built-in retrieval/rerank flows.
 namespace document_metadata_keys {
@@ -60,13 +59,10 @@ public:
 
   template <typename content_t>
     requires std::constructible_from<std::string, content_t &&>
-  explicit document(content_t &&content)
-      : content_(std::forward<content_t>(content)) {}
+  explicit document(content_t &&content) : content_(std::forward<content_t>(content)) {}
 
   /// Returns document content.
-  [[nodiscard]] auto content() const noexcept -> const std::string & {
-    return content_;
-  }
+  [[nodiscard]] auto content() const noexcept -> const std::string & { return content_; }
 
   /// Replaces document content.
   template <typename content_t>
@@ -77,8 +73,7 @@ public:
   }
 
   /// Returns metadata map pointer when metadata exists.
-  [[nodiscard]] auto metadata() const noexcept
-      -> const document_metadata_map * {
+  [[nodiscard]] auto metadata() const noexcept -> const document_metadata_map * {
     return metadata_ ? std::addressof(*metadata_) : nullptr;
   }
 
@@ -95,17 +90,15 @@ public:
     requires std::constructible_from<std::string, key_t &&> &&
              std::constructible_from<document_metadata_value, value_t>
   auto set_metadata(key_t &&key, value_t &&value) -> document & {
-    ensure_metadata().insert_or_assign(
-        std::string{std::forward<key_t>(key)},
-        document_metadata_value{std::forward<value_t>(value)});
+    ensure_metadata().insert_or_assign(std::string{std::forward<key_t>(key)},
+                                       document_metadata_value{std::forward<value_t>(value)});
     return *this;
   }
 
   /// Reads metadata value, returning `fallback` when missing/type mismatch.
   template <typename value_t>
   [[nodiscard]] auto metadata_or(const std::string_view key,
-                                 const value_t &fallback = value_t{}) const
-      -> value_t {
+                                 const value_t &fallback = value_t{}) const -> value_t {
     if (!metadata_) {
       return fallback;
     }
@@ -119,8 +112,7 @@ public:
 
   /// Returns typed metadata pointer, or `nullptr` when unavailable.
   template <typename value_t>
-  [[nodiscard]] auto metadata_ptr(const std::string_view key) const
-      -> const value_t * {
+  [[nodiscard]] auto metadata_ptr(const std::string_view key) const -> const value_t * {
     if (!metadata_) {
       return nullptr;
     }
@@ -169,8 +161,7 @@ public:
   template <typename value_t>
     requires std::constructible_from<std::string, value_t &&>
   auto with_dsl(value_t &&value) -> document & {
-    return set_metadata(std::string{document_metadata_keys::dsl},
-                        std::forward<value_t>(value));
+    return set_metadata(std::string{document_metadata_keys::dsl}, std::forward<value_t>(value));
   }
 
   /// Sets `_extra_info` metadata.
@@ -191,8 +182,7 @@ public:
 
   /// Sets `_dense_vector` metadata.
   auto with_dense_vector(std::initializer_list<double> value) -> document & {
-    return set_metadata(std::string{document_metadata_keys::dense_vector},
-                        dense_vector{value});
+    return set_metadata(std::string{document_metadata_keys::dense_vector}, dense_vector{value});
   }
 
   /// Sets `_sparse_vector` metadata.
@@ -204,10 +194,8 @@ public:
   }
 
   /// Sets `_sparse_vector` metadata.
-  auto with_sparse_vector(std::initializer_list<sparse_vector_item> value)
-      -> document & {
-    return set_metadata(std::string{document_metadata_keys::sparse_vector},
-                        sparse_vector{value});
+  auto with_sparse_vector(std::initializer_list<sparse_vector_item> value) -> document & {
+    return set_metadata(std::string{document_metadata_keys::sparse_vector}, sparse_vector{value});
   }
 
   /// Reads `_score` metadata.
@@ -237,8 +225,7 @@ public:
 
   /// Reads `_sparse_vector` metadata.
   [[nodiscard]] auto get_sparse_vector() const -> sparse_vector {
-    return metadata_or<sparse_vector>(document_metadata_keys::sparse_vector,
-                                      {});
+    return metadata_or<sparse_vector>(document_metadata_keys::sparse_vector, {});
   }
 
 private:

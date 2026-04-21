@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/compiler.hpp"
 
@@ -29,12 +29,9 @@ TEST_CASE("compiler helpers expose platform alignment and contract metadata",
 
 TEST_CASE("compiler helpers preserve boolean branch and contract semantics",
           "[UT][wh/core/compiler.hpp][contract_kind_name][condition][branch]") {
-  REQUIRE(wh::core::contract_kind_name(wh::core::contract_kind::precondition) ==
-          "precondition");
-  REQUIRE(wh::core::contract_kind_name(wh::core::contract_kind::postcondition) ==
-          "postcondition");
-  REQUIRE(wh::core::contract_kind_name(wh::core::contract_kind::invariant) ==
-          "invariant");
+  REQUIRE(wh::core::contract_kind_name(wh::core::contract_kind::precondition) == "precondition");
+  REQUIRE(wh::core::contract_kind_name(wh::core::contract_kind::postcondition) == "postcondition");
+  REQUIRE(wh::core::contract_kind_name(wh::core::contract_kind::invariant) == "invariant");
 
   bool likely_taken = false;
   if (true)

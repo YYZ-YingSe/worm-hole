@@ -26,8 +26,7 @@ TEST_CASE("infer_schema builds base definitions with and without parameters",
 
   REQUIRE(modified.parameters.size() == 1U);
   REQUIRE(modified.parameters.front().description == "query");
-  REQUIRE(modified.parameters.front().properties.front().description ==
-          "query.limit");
+  REQUIRE(modified.parameters.front().properties.front().description == "query.limit");
 }
 
 TEST_CASE("infer_schema keeps supplied parameter descriptions when no mutator is provided",

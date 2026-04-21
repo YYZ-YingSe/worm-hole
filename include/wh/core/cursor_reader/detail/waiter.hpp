@@ -43,9 +43,7 @@ template <typename result_t> struct async_waiter_base {
   std::optional<result_t> status{};
   std::atomic<bool> waiting_registered_{false};
 
-  auto store_ready(result_t value) noexcept -> void {
-    status.emplace(std::move(value));
-  }
+  auto store_ready(result_t value) noexcept -> void { status.emplace(std::move(value)); }
 
   [[nodiscard]] auto take_ready() -> result_t { return std::move(*status); }
 

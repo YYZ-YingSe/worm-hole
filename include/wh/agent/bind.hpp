@@ -11,11 +11,11 @@
 #include "wh/agent/plan_execute.hpp"
 #include "wh/agent/react.hpp"
 #include "wh/agent/reflexion.hpp"
-#include "wh/agent/reviewer_executor.hpp"
 #include "wh/agent/research.hpp"
+#include "wh/agent/reviewer_executor.hpp"
 #include "wh/agent/self_refine.hpp"
-#include "wh/agent/swarm.hpp"
 #include "wh/agent/supervisor.hpp"
+#include "wh/agent/swarm.hpp"
 
 namespace wh::agent {
 
@@ -35,8 +35,7 @@ inline auto self_refine::into_agent() && -> wh::core::result<wh::agent::agent> {
   return wh::adk::bind_self_refine_agent(std::move(*this));
 }
 
-inline auto reviewer_executor::into_agent() &&
-    -> wh::core::result<wh::agent::agent> {
+inline auto reviewer_executor::into_agent() && -> wh::core::result<wh::agent::agent> {
   return wh::adk::bind_reviewer_executor_agent(std::move(*this));
 }
 

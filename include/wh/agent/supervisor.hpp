@@ -60,8 +60,7 @@ public:
   }
 
   /// Returns the explicit supervisor role.
-  [[nodiscard]] auto supervisor_agent()
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto supervisor_agent() -> wh::core::result<std::reference_wrapper<agent>> {
     return role_ref(supervisor_);
   }
 
@@ -82,14 +81,10 @@ public:
   }
 
   /// Returns the worker roles used by this authored shell.
-  [[nodiscard]] auto workers() noexcept -> std::vector<agent> & {
-    return workers_;
-  }
+  [[nodiscard]] auto workers() noexcept -> std::vector<agent> & { return workers_; }
 
   /// Returns the worker roles used by this authored shell.
-  [[nodiscard]] auto workers() const noexcept -> const std::vector<agent> & {
-    return workers_;
-  }
+  [[nodiscard]] auto workers() const noexcept -> const std::vector<agent> & { return workers_; }
 
   /// Validates the authored shape once. Runtime topology wiring happens only
   /// when the shell is lowered into the executable agent surface.
@@ -101,25 +96,20 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     if (supervisor_->name() != name_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     if (!supervisor_->executable()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     for (const auto &worker : workers_) {
-      if (!worker.executable() || worker.name().empty() ||
-          worker.name() == supervisor_->name()) {
-        return wh::core::result<void>::failure(
-            wh::core::errc::contract_violation);
+      if (!worker.executable() || worker.name().empty() || worker.name() == supervisor_->name()) {
+        return wh::core::result<void>::failure(wh::core::errc::contract_violation);
       }
     }
     for (std::size_t index = 0U; index < workers_.size(); ++index) {
       for (std::size_t other = index + 1U; other < workers_.size(); ++other) {
         if (workers_[index].name() == workers_[other].name()) {
-          return wh::core::result<void>::failure(
-              wh::core::errc::already_exists);
+          return wh::core::result<void>::failure(wh::core::errc::already_exists);
         }
       }
     }
@@ -143,16 +133,14 @@ private:
   [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
       -> wh::core::result<std::reference_wrapper<agent>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
 
   [[nodiscard]] auto ensure_mutable() const -> wh::core::result<void> {
     if (frozen_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     return {};
   }

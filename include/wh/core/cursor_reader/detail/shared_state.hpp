@@ -11,12 +11,13 @@
 
 #include <exec/start_detached.hpp>
 #include <exec/trampoline_scheduler.hpp>
-#include "wh/core/intrusive_ptr.hpp"
+
 #include "wh/core/cursor_reader/detail/pull_op.hpp"
 #include "wh/core/cursor_reader/detail/retained_ring_storage.hpp"
 #include "wh/core/cursor_reader/detail/source.hpp"
 #include "wh/core/cursor_reader/detail/waiter.hpp"
 #include "wh/core/error.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/stdexec.hpp"
 
@@ -25,8 +26,7 @@ namespace wh::core::cursor_reader_detail {
 template <wh::core::cursor_reader_source source_t, typename policy_t>
   requires wh::core::cursor_reader_detail::policy_for<source_t, policy_t>
 class shared_state
-    : public wh::core::detail::intrusive_enable_from_this<
-          shared_state<source_t, policy_t>> {
+    : public wh::core::detail::intrusive_enable_from_this<shared_state<source_t, policy_t>> {
 public:
   using result_type = typename policy_t::result_type;
   using try_result_type = typename policy_t::try_result_type;
@@ -38,14 +38,12 @@ public:
   using sync_ready_buffer_t = sync_ready_buffer<result_type>;
   using async_ready_list_t = async_ready_list<result_type>;
 
-  struct inactive_pull_op
-      : wh::core::detail::intrusive_enable_from_this<inactive_pull_op> {
+  struct inactive_pull_op : wh::core::detail::intrusive_enable_from_this<inactive_pull_op> {
     auto request_stop() noexcept -> void {}
   };
   using pull_op_t =
       std::conditional_t<wh::core::cursor_reader_detail::async_source<source_t>,
-                         pull_op<shared_state, source_t, result_type>,
-                         inactive_pull_op>;
+                         pull_op<shared_state, source_t, result_type>, inactive_pull_op>;
   using active_pull_handle_t = wh::core::detail::intrusive_ptr<pull_op_t>;
 
 private:
@@ -60,11 +58,8 @@ private:
       auto keepalive = this->intrusive_from_this();
       try {
         exec::start_detached(
-            stdexec::then(
-                stdexec::schedule(exec::trampoline_scheduler{}),
-                [keepalive]() mutable noexcept {
-                  keepalive->finish();
-                }));
+            stdexec::then(stdexec::schedule(exec::trampoline_scheduler{}),
+                          [keepalive]() mutable noexcept { keepalive->finish(); }));
       } catch (...) {
         keepalive->finish();
       }
@@ -90,25 +85,21 @@ private:
     std::atomic<bool> finished_{false};
   };
 
-  using pull_completion_task_handle_t =
-      wh::core::detail::intrusive_ptr<pull_completion_task>;
+  using pull_completion_task_handle_t = wh::core::detail::intrusive_ptr<pull_completion_task>;
 
 public:
   struct async_read_ticket {
     std::optional<result_type> ready{};
     bool start_pull{false};
 
-    [[nodiscard]] auto registered() const noexcept -> bool {
-      return !ready.has_value();
-    }
+    [[nodiscard]] auto registered() const noexcept -> bool { return !ready.has_value(); }
   };
 
 public:
   explicit shared_state(source_t source, const std::size_t reader_count)
       : source_(std::move(source)), slots_(initial_capacity()),
-        reader_counts_(initial_capacity() + 1U, 0U),
-        capacity_(initial_capacity()), readers_(reader_count),
-        open_reader_count_(reader_count) {
+        reader_counts_(initial_capacity() + 1U, 0U), capacity_(initial_capacity()),
+        readers_(reader_count), open_reader_count_(reader_count) {
     policy_t::set_automatic_close(source_, automatic_close_);
     for (auto &reader : readers_) {
       reader.next_sequence = write_sequence_locked();
@@ -116,10 +107,8 @@ public:
     }
   }
 
-  [[nodiscard]] auto
-  async_failure(const wh::core::error_code code) const noexcept -> result_type {
-    if constexpr (std::same_as<typename result_type::error_type,
-                               wh::core::error_code>) {
+  [[nodiscard]] auto async_failure(const wh::core::error_code code) const noexcept -> result_type {
+    if constexpr (std::same_as<typename result_type::error_type, wh::core::error_code>) {
       return result_type::failure(code);
     } else {
       return policy_t::internal_result();
@@ -137,12 +126,11 @@ public:
     return source_closed_ || pull_state_ == pull_state::terminal;
   }
 
-  [[nodiscard]] auto
-  reader_is_closed(const std::size_t reader_index) const noexcept -> bool {
+  [[nodiscard]] auto reader_is_closed(const std::size_t reader_index) const noexcept -> bool {
     std::scoped_lock lock(lock_);
     const auto &reader = readers_[reader_index];
-    return reader.closed || (pull_state_ == pull_state::terminal &&
-                             reader.next_sequence >= write_sequence_locked());
+    return reader.closed ||
+           (pull_state_ == pull_state::terminal && reader.next_sequence >= write_sequence_locked());
   }
 
   auto close_reader(const std::size_t reader_index) noexcept -> void {
@@ -170,8 +158,7 @@ public:
         --open_reader_count_;
       }
       reclaim_prefix_locked();
-      if (automatic_close_ && open_reader_count_ == 0U &&
-          pull_state_ != pull_state::terminal) {
+      if (automatic_close_ && open_reader_count_ == 0U && pull_state_ != pull_state::terminal) {
         close_requested_ = true;
         switch (pull_state_) {
         case pull_state::idle:
@@ -202,8 +189,7 @@ public:
     notify_async_waiters(async_ready);
   }
 
-  [[nodiscard]] auto try_read_for(const std::size_t reader_index)
-      -> try_result_type {
+  [[nodiscard]] auto try_read_for(const std::size_t reader_index) -> try_result_type {
     auto &reader = readers_[reader_index];
     for (;;) {
       {
@@ -276,8 +262,7 @@ public:
   }
 
   [[nodiscard]] auto register_async_waiter(const std::size_t reader_index,
-                                           async_waiter_t *waiter) noexcept
-      -> async_read_ticket {
+                                           async_waiter_t *waiter) noexcept -> async_read_ticket {
     std::scoped_lock lock(lock_);
     auto &reader = readers_[reader_index];
     if (reader.closed) {
@@ -303,8 +288,8 @@ public:
     return {.ready = std::nullopt, .start_pull = false};
   }
 
-  auto remove_async_waiter(const std::size_t reader_index,
-                           async_waiter_t *waiter) noexcept -> bool {
+  auto remove_async_waiter(const std::size_t reader_index, async_waiter_t *waiter) noexcept
+      -> bool {
     active_pull_handle_t active_pull{};
     {
       std::scoped_lock lock(lock_);
@@ -314,8 +299,7 @@ public:
       }
       waiter->clear_waiting_registered();
       decrement_async_waiter_count_locked();
-      if (pull_state_ == pull_state::async_reading &&
-          async_waiter_count_ == 0U) {
+      if (pull_state_ == pull_state::async_reading && async_waiter_count_ == 0U) {
         if (active_pull_) {
           active_pull = active_pull_;
         } else if (!close_requested_) {
@@ -331,9 +315,7 @@ public:
     return true;
   }
 
-  auto
-  start_async_pull(wh::core::detail::any_resume_scheduler_t scheduler) noexcept
-      -> void
+  auto start_async_pull(wh::core::detail::any_resume_scheduler_t scheduler) noexcept -> void
     requires wh::core::cursor_reader_detail::async_source<source_t>
   {
     active_pull_handle_t active_pull{};
@@ -370,8 +352,8 @@ public:
     }
 
     try {
-      task = wh::core::detail::make_intrusive<pull_completion_task>(
-          std::move(owner), std::move(completed_pull));
+      task = wh::core::detail::make_intrusive<pull_completion_task>(std::move(owner),
+                                                                    std::move(completed_pull));
     } catch (...) {
       if (completed_pull) {
         completed_pull->drain_completion();
@@ -386,8 +368,8 @@ public:
     task->start();
   }
 
-  auto finish_source_pull(pull_op_t *, result_type status,
-                          const bool terminal_override) noexcept -> void {
+  auto finish_source_pull(pull_op_t *, result_type status, const bool terminal_override) noexcept
+      -> void {
     bool discard_result = false;
     bool start_close = false;
     {
@@ -404,8 +386,7 @@ public:
     if (discard_result) {
       return;
     }
-    publish(std::move(status),
-            terminal_override || policy_t::is_terminal(status));
+    publish(std::move(status), terminal_override || policy_t::is_terminal(status));
   }
 
   auto finish_source_pull_stopped(const pull_op_t *) noexcept -> void {
@@ -425,10 +406,7 @@ public:
   }
 
 private:
-  [[nodiscard]] static constexpr auto initial_capacity() noexcept
-      -> std::size_t {
-    return 4U;
-  }
+  [[nodiscard]] static constexpr auto initial_capacity() noexcept -> std::size_t { return 4U; }
 
   auto release_pull_completion_task(pull_completion_task *task) noexcept -> void {
     std::scoped_lock lock(lock_);
@@ -437,9 +415,7 @@ private:
     }
   }
 
-  auto increment_async_waiter_count_locked() noexcept -> void {
-    ++async_waiter_count_;
-  }
+  auto increment_async_waiter_count_locked() noexcept -> void { ++async_waiter_count_; }
 
   auto decrement_async_waiter_count_locked() noexcept -> void {
     if (async_waiter_count_ > 0U) {
@@ -541,8 +517,8 @@ private:
     }
   }
 
-  auto wake_ready_waiters_locked(sync_ready_buffer_t &sync_ready,
-                                 async_ready_list_t &async_ready) -> void {
+  auto wake_ready_waiters_locked(sync_ready_buffer_t &sync_ready, async_ready_list_t &async_ready)
+      -> void {
     for (auto &reader : readers_) {
       while (reader.sync_waiters.front() != nullptr) {
         if (auto ready = consume_local_locked(reader); ready.has_value()) {
@@ -580,8 +556,7 @@ private:
     }
   }
 
-  [[nodiscard]] auto consume_local_locked(reader_state_t &reader)
-      -> std::optional<result_type> {
+  [[nodiscard]] auto consume_local_locked(reader_state_t &reader) -> std::optional<result_type> {
     if (reader.closed || reader.next_sequence >= write_sequence_locked()) {
       return std::nullopt;
     }
@@ -607,8 +582,7 @@ private:
     next_counts.resize(new_capacity + 1U, 0U);
     const auto base_sequence = base_sequence_locked();
     const auto write_sequence = write_sequence_locked();
-    for (auto sequence = base_sequence; sequence <= write_sequence;
-         ++sequence) {
+    for (auto sequence = base_sequence; sequence <= write_sequence; ++sequence) {
       next_counts[static_cast<std::size_t>(sequence - base_sequence)] =
           sequence_count_at_locked(sequence);
     }
@@ -619,43 +593,37 @@ private:
   }
 
   auto reclaim_prefix_locked() noexcept -> void {
-    while (!slots_.empty() &&
-           sequence_count_at_locked(slots_.front_sequence()) == 0U) {
+    while (!slots_.empty() && sequence_count_at_locked(slots_.front_sequence()) == 0U) {
       clear_sequence_count_locked(slots_.front_sequence());
       slots_.destroy_front();
       advance_counts_base_locked();
     }
   }
 
-  [[nodiscard]] auto
-  sequence_count_index_locked(const std::uint64_t sequence) const noexcept
+  [[nodiscard]] auto sequence_count_index_locked(const std::uint64_t sequence) const noexcept
       -> std::size_t {
     const auto span = capacity_ + 1U;
-    return static_cast<std::size_t>(
-        (reader_counts_base_ + (sequence - base_sequence_locked())) % span);
+    return static_cast<std::size_t>((reader_counts_base_ + (sequence - base_sequence_locked())) %
+                                    span);
   }
 
-  [[nodiscard]] auto
-  sequence_count_at_locked(const std::uint64_t sequence) const noexcept
+  [[nodiscard]] auto sequence_count_at_locked(const std::uint64_t sequence) const noexcept
       -> std::size_t {
     return reader_counts_[sequence_count_index_locked(sequence)];
   }
 
-  auto increment_sequence_count_locked(const std::uint64_t sequence) noexcept
-      -> void {
+  auto increment_sequence_count_locked(const std::uint64_t sequence) noexcept -> void {
     ++reader_counts_[sequence_count_index_locked(sequence)];
   }
 
-  auto decrement_sequence_count_locked(const std::uint64_t sequence) noexcept
-      -> void {
+  auto decrement_sequence_count_locked(const std::uint64_t sequence) noexcept -> void {
     auto &count = reader_counts_[sequence_count_index_locked(sequence)];
     if (count > 0U) {
       --count;
     }
   }
 
-  auto clear_sequence_count_locked(const std::uint64_t sequence) noexcept
-      -> void {
+  auto clear_sequence_count_locked(const std::uint64_t sequence) noexcept -> void {
     reader_counts_[sequence_count_index_locked(sequence)] = 0U;
   }
 
@@ -672,8 +640,7 @@ private:
     return slots_.end_sequence();
   }
 
-  static auto notify_sync_waiters(const sync_ready_buffer_t &ready_waiters)
-      -> void {
+  static auto notify_sync_waiters(const sync_ready_buffer_t &ready_waiters) -> void {
     for (auto *waiter : ready_waiters) {
       waiter->ready.test_and_set(std::memory_order_release);
       waiter->ready.notify_one();

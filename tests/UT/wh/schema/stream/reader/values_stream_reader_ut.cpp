@@ -1,20 +1,20 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <list>
 #include <optional>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "helper/test_thread_wait.hpp"
 #include "wh/core/any.hpp"
 #include "wh/schema/stream/reader/values_stream_reader.hpp"
 
-TEST_CASE("values stream reader factories and range concept cover empty single and generic range cases",
-          "[UT][wh/schema/stream/reader/values_stream_reader.hpp][make_values_stream_reader][condition][branch][boundary]") {
-  static_assert(
-      wh::schema::stream::values_stream_range<std::vector<int>>);
-  static_assert(
-      wh::schema::stream::values_stream_range<std::list<int>>);
+TEST_CASE(
+    "values stream reader factories and range concept cover empty single and generic range cases",
+    "[UT][wh/schema/stream/reader/"
+    "values_stream_reader.hpp][make_values_stream_reader][condition][branch][boundary]") {
+  static_assert(wh::schema::stream::values_stream_range<std::vector<int>>);
+  static_assert(wh::schema::stream::values_stream_range<std::list<int>>);
 
   auto empty = wh::schema::stream::make_empty_stream_reader<int>();
   auto empty_first = empty.read();
@@ -33,8 +33,8 @@ TEST_CASE("values stream reader factories and range concept cover empty single a
   REQUIRE(single_eof.value().is_terminal_eof());
 
   auto reader = wh::schema::stream::make_values_stream_reader(std::list<int>{1, 2, 3});
-  static_assert(std::same_as<decltype(reader),
-                             wh::schema::stream::values_stream_reader<std::list<int>>>);
+  static_assert(
+      std::same_as<decltype(reader), wh::schema::stream::values_stream_reader<std::list<int>>>);
 
   auto first = reader.read();
   auto second = reader.read();
@@ -51,7 +51,8 @@ TEST_CASE("values stream reader factories and range concept cover empty single a
 }
 
 TEST_CASE("values stream reader move close and async paths preserve cursor and closure state",
-          "[UT][wh/schema/stream/reader/values_stream_reader.hpp][values_stream_reader::read_async][branch][boundary]") {
+          "[UT][wh/schema/stream/reader/"
+          "values_stream_reader.hpp][values_stream_reader::read_async][branch][boundary]") {
   auto source = wh::schema::stream::make_values_stream_reader(std::vector<int>{4, 5, 6});
   auto first = source.read();
   REQUIRE(first.has_value());
@@ -62,8 +63,7 @@ TEST_CASE("values stream reader move close and async paths preserve cursor and c
   REQUIRE(second.has_value());
   REQUIRE(second.value().value == std::optional<int>{5});
 
-  auto assigned =
-      wh::schema::stream::make_values_stream_reader(std::vector<int>{8, 9});
+  auto assigned = wh::schema::stream::make_values_stream_reader(std::vector<int>{8, 9});
   assigned = std::move(moved);
   auto third = assigned.read();
   REQUIRE(third.has_value());
@@ -71,8 +71,7 @@ TEST_CASE("values stream reader move close and async paths preserve cursor and c
   REQUIRE(assigned.is_source_closed());
 
   auto async_reader = wh::schema::stream::make_values_stream_reader(std::vector<int>{11});
-  auto async_result =
-      wh::testing::helper::wait_value_on_test_thread(async_reader.read_async());
+  auto async_result = wh::testing::helper::wait_value_on_test_thread(async_reader.read_async());
   REQUIRE(async_result.has_value());
   REQUIRE(async_result.value().value == std::optional<int>{11});
 
@@ -86,7 +85,8 @@ TEST_CASE("values stream reader move close and async paths preserve cursor and c
 }
 
 TEST_CASE("values stream reader preserves vector<any> elements instead of wrapping the whole range",
-          "[UT][wh/schema/stream/reader/values_stream_reader.hpp][make_values_stream_reader][any][boundary]") {
+          "[UT][wh/schema/stream/reader/"
+          "values_stream_reader.hpp][make_values_stream_reader][any][boundary]") {
   std::vector<wh::core::any> values{};
   values.emplace_back(7);
   values.emplace_back(8);

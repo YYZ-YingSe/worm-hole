@@ -40,19 +40,17 @@ inline auto detail::invoke_runtime::pregel_runtime::capture_checkpoint_runtime(
   return {};
 }
 
-inline auto detail::invoke_runtime::pregel_runtime::try_persist_checkpoint()
-    -> void {
+inline auto detail::invoke_runtime::pregel_runtime::try_persist_checkpoint() -> void {
   auto &invoke = session_.invoke_state();
   auto checkpoint = capture_checkpoint_state();
   if (checkpoint.has_error()) {
-    detail::checkpoint_runtime::set_error_detail(
-        invoke.outputs, checkpoint.error(), session_.graph_options().name,
-        "capture_checkpoint_state");
+    detail::checkpoint_runtime::set_error_detail(invoke.outputs, checkpoint.error(),
+                                                 session_.graph_options().name,
+                                                 "capture_checkpoint_state");
     return;
   }
   [[maybe_unused]] const auto persisted = session_.owner_->maybe_persist_checkpoint(
-      session_.context_, std::move(checkpoint).value(), invoke.config,
-      invoke.outputs);
+      session_.context_, std::move(checkpoint).value(), invoke.config, invoke.outputs);
 }
 
 } // namespace wh::compose

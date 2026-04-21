@@ -41,8 +41,7 @@ public:
   }
 
   /// Returns mutable access to the wrapped object.
-  [[nodiscard]] static auto access(reference_counting_wrapper *target) noexcept
-      -> target_t & {
+  [[nodiscard]] static auto access(reference_counting_wrapper *target) noexcept -> target_t & {
     return target->obj_;
   }
 
@@ -53,8 +52,7 @@ public:
     return target;
   }
 
-  static auto destroy(allocator_type &alloc,
-                      reference_counting_wrapper *target) noexcept -> void {
+  static auto destroy(allocator_type &alloc, reference_counting_wrapper *target) noexcept -> void {
     int count = (target->count_).fetch_sub(1, std::memory_order_release) - 1;
     if (count == 0) {
       std::atomic_thread_fence(std::memory_order_acquire);
@@ -83,34 +81,29 @@ public:
   static constexpr bool can_nothrow_construct =
       fn_detail::is_nothrow_direct_constructible_v<stored_type, args_t...>;
 
-  static constexpr bool can_nothrow_copy =
-      can_nothrow_construct<const stored_type &>;
+  static constexpr bool can_nothrow_copy = can_nothrow_construct<const stored_type &>;
 
 protected:
   local_ownership() = default;
   ~local_ownership() = default;
 
   /// Returns a stable reference to the stored target.
-  [[nodiscard]] static auto get_target(const stored_type &stored) noexcept
-      -> const target_t & {
+  [[nodiscard]] static auto get_target(const stored_type &stored) noexcept -> const target_t & {
     return stored;
   }
 
   template <typename... args_t>
-  static auto
-  create(allocator_type &alloc, stored_type *target,
-         args_t &&...args) noexcept(can_nothrow_construct<args_t...>) -> void {
+  static auto create(allocator_type &alloc, stored_type *target,
+                     args_t &&...args) noexcept(can_nothrow_construct<args_t...>) -> void {
     allocator_traits::construct(alloc, target, std::forward<args_t>(args)...);
   }
 
   static auto copy(allocator_type &alloc, const stored_type &source,
-                   stored_type *destination) noexcept(can_nothrow_copy)
-      -> void {
+                   stored_type *destination) noexcept(can_nothrow_copy) -> void {
     allocator_traits::construct(alloc, destination, source);
   }
 
-  static auto destroy(allocator_type &alloc, stored_type *target) noexcept
-      -> void {
+  static auto destroy(allocator_type &alloc, stored_type *target) noexcept -> void {
     allocator_traits::destroy(alloc, target);
   }
 };
@@ -152,8 +145,7 @@ public:
   using allocator_traits = std::allocator_traits<allocator_type>;
   using stored_type = target_t *;
 
-  template <typename... args_t>
-  static constexpr bool can_nothrow_construct = false;
+  template <typename... args_t> static constexpr bool can_nothrow_construct = false;
 
   static constexpr bool can_nothrow_copy = false;
 
@@ -162,37 +154,32 @@ protected:
   ~deep_copy() = default;
 
   /// Returns a stable reference to the owned target.
-  [[nodiscard]] static auto get_target(const stored_type &stored) noexcept
-      -> const target_t & {
+  [[nodiscard]] static auto get_target(const stored_type &stored) noexcept -> const target_t & {
     return *stored;
   }
 
   template <typename... args_t>
-  static auto create(allocator_type &alloc, stored_type *target,
-                     args_t &&...args) -> void {
-    static_assert(
-        fn_detail::is_direct_constructible_v<std::decay_t<target_t>, args_t...>,
+  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args) -> void {
+    static_assert(fn_detail::is_direct_constructible_v<std::decay_t<target_t>, args_t...>,
                   "Target object must be constructible");
 
     *target = allocator_traits::allocate(alloc, 1U);
-    fn_detail::scope_guard allocation_guard{[&alloc, &target]() {
-      allocator_traits::deallocate(alloc, *target, 1U);
-    }};
+    fn_detail::scope_guard allocation_guard{
+        [&alloc, &target]() { allocator_traits::deallocate(alloc, *target, 1U); }};
 
     allocator_traits::construct(alloc, *target, std::forward<args_t>(args)...);
     allocation_guard.disarm();
   }
 
-  static auto copy(allocator_type &alloc, const stored_type &source,
-                   stored_type *destination) -> void {
+  static auto copy(allocator_type &alloc, const stored_type &source, stored_type *destination)
+      -> void {
     static_assert(std::is_copy_constructible_v<std::decay_t<target_t>>,
                   "Target object must be copy-constructible");
 
     create(alloc, destination, *source);
   }
 
-  static auto destroy(allocator_type &alloc, stored_type *target) noexcept
-      -> void {
+  static auto destroy(allocator_type &alloc, stored_type *target) noexcept -> void {
     allocator_traits::destroy(alloc, *target);
     allocator_traits::deallocate(alloc, *target, 1U);
   }
@@ -205,16 +192,14 @@ template <typename target_t, template <typename> class allocator_t>
   requires std::same_as<target_t, std::decay_t<target_t>>
 class reference_counting {
 private:
-  using wrapped_target =
-      fn_detail::reference_counting_wrapper<target_t, allocator_t>;
+  using wrapped_target = fn_detail::reference_counting_wrapper<target_t, allocator_t>;
 
 public:
   using allocator_type = typename wrapped_target::allocator_type;
   using allocator_traits = std::allocator_traits<allocator_type>;
   using stored_type = wrapped_target *;
 
-  template <typename... args_t>
-  static constexpr bool can_nothrow_construct = false;
+  template <typename... args_t> static constexpr bool can_nothrow_construct = false;
 
   static constexpr bool can_nothrow_copy = false;
 
@@ -223,28 +208,24 @@ protected:
   ~reference_counting() = default;
 
   /// Returns a stable reference to the shared target.
-  [[nodiscard]] static auto get_target(const stored_type &stored) noexcept
-      -> const target_t & {
+  [[nodiscard]] static auto get_target(const stored_type &stored) noexcept -> const target_t & {
     return wrapped_target::access(stored);
   }
 
   template <typename... args_t>
-  static auto create(allocator_type &alloc, stored_type *target,
-                     args_t &&...args) -> void {
-    static_assert(
-        fn_detail::is_direct_constructible_v<std::decay_t<target_t>, args_t...>,
+  static auto create(allocator_type &alloc, stored_type *target, args_t &&...args) -> void {
+    static_assert(fn_detail::is_direct_constructible_v<std::decay_t<target_t>, args_t...>,
                   "Target object must be constructible");
 
     *target = wrapped_target::create_new(alloc, std::forward<args_t>(args)...);
   }
 
-  static auto copy(allocator_type &, const stored_type &source,
-                   stored_type *destination) noexcept -> void {
+  static auto copy(allocator_type &, const stored_type &source, stored_type *destination) noexcept
+      -> void {
     *destination = wrapped_target::copy(source);
   }
 
-  static auto destroy(allocator_type &alloc, stored_type *target) noexcept
-      -> void {
+  static auto destroy(allocator_type &alloc, stored_type *target) noexcept -> void {
     wrapped_target::destroy(alloc, *target);
   }
 

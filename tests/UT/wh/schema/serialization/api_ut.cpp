@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/json.hpp"
 #include "wh/schema/serialization/api.hpp"
@@ -38,8 +38,7 @@ auto wh_from_json(const wh::core::json_value &input, custom_point &output)
   }
   const auto x = input.FindMember("x");
   const auto y = input.FindMember("y");
-  if (x == input.MemberEnd() || y == input.MemberEnd() ||
-      !x->value.IsInt() || !y->value.IsInt()) {
+  if (x == input.MemberEnd() || y == input.MemberEnd() || !x->value.IsInt() || !y->value.IsInt()) {
     return wh::core::result<void>::failure(wh::core::errc::parse_error);
   }
   output.x = x->value.GetInt();
@@ -49,15 +48,16 @@ auto wh_from_json(const wh::core::json_value &input, custom_point &output)
 
 } // namespace
 
-TEST_CASE("serialization api fast path and default registry builders cover encode decode and registry preload",
-          "[UT][wh/schema/serialization/api.hpp][make_default_serialization_registry][branch][boundary]") {
+TEST_CASE("serialization api fast path and default registry builders cover encode decode and "
+          "registry preload",
+          "[UT][wh/schema/serialization/"
+          "api.hpp][make_default_serialization_registry][branch][boundary]") {
   const custom_point point{7, 11};
   const auto encoded = wh::schema::serialize_fast(point);
   REQUIRE(encoded.has_value());
   REQUIRE(encoded.value().IsObject());
 
-  const auto decoded =
-      wh::schema::deserialize_fast<custom_point>(encoded.value());
+  const auto decoded = wh::schema::deserialize_fast<custom_point>(encoded.value());
   REQUIRE(decoded.has_value());
   REQUIRE(decoded.value().x == 7);
   REQUIRE(decoded.value().y == 11);
@@ -67,8 +67,7 @@ TEST_CASE("serialization api fast path and default registry builders cover encod
   REQUIRE(to_status.has_value());
   REQUIRE(doc.IsObject());
 
-  const auto mismatch =
-      wh::schema::deserialize_fast<std::int64_t>(encoded.value());
+  const auto mismatch = wh::schema::deserialize_fast<std::int64_t>(encoded.value());
   REQUIRE(mismatch.has_error());
   REQUIRE(mismatch.error() == wh::core::errc::type_mismatch);
 

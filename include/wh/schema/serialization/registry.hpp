@@ -40,8 +40,7 @@ public:
   serialization_registry() = default;
 
   /// Reserves storage for expected type/name entries.
-  auto reserve(const std::size_t type_count, const std::size_t name_count = 0U)
-      -> void {
+  auto reserve(const std::size_t type_count, const std::size_t name_count = 0U) -> void {
     entries_by_key_.reserve(type_count);
     name_to_entry_.reserve(name_count == 0U ? type_count : name_count);
   }
@@ -62,8 +61,7 @@ public:
     constexpr auto key = wh::core::any_type_key_v<normalized_t>;
 
     if (frozen_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     if (primary_name.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -79,15 +77,13 @@ public:
     normalized_aliases.reserve(aliases.size());
     for (const auto alias : aliases) {
       if (alias.empty()) {
-        return wh::core::result<void>::failure(
-            wh::core::errc::invalid_argument);
+        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       }
-      const auto duplicate_alias = std::ranges::any_of(
-          normalized_aliases, [&](const std::string &normalized_alias) {
+      const auto duplicate_alias =
+          std::ranges::any_of(normalized_aliases, [&](const std::string &normalized_alias) {
             return normalized_alias == alias;
           });
-      if (duplicate_alias ||
-          name_to_entry_.find(alias) != name_to_entry_.end() ||
+      if (duplicate_alias || name_to_entry_.find(alias) != name_to_entry_.end() ||
           alias == primary_name) {
         return wh::core::result<void>::failure(wh::core::errc::already_exists);
       }
@@ -120,16 +116,16 @@ public:
   template <typename type_t>
     requires std::default_initializable<wh::core::remove_cvref_t<type_t>>
   auto register_type_with_diagnostic_alias() -> wh::core::result<void> {
-    return register_type<type_t>(wh::internal::diagnostic_type_alias<
-                                 wh::core::remove_cvref_t<type_t>>());
+    return register_type<type_t>(
+        wh::internal::diagnostic_type_alias<wh::core::remove_cvref_t<type_t>>());
   }
 
   /// Registers type using persistent alias as primary name.
   template <typename type_t>
     requires std::default_initializable<wh::core::remove_cvref_t<type_t>>
   auto register_type_with_persistent_alias() -> wh::core::result<void> {
-    return register_type<type_t>(wh::internal::persistent_type_alias<
-                                 wh::core::remove_cvref_t<type_t>>());
+    return register_type<type_t>(
+        wh::internal::persistent_type_alias<wh::core::remove_cvref_t<type_t>>());
   }
 
   /// Resolves runtime key by registered name/alias.
@@ -137,20 +133,17 @@ public:
       -> wh::core::result<wh::core::any_type_key> {
     const auto *entry = find_entry_by_name(name);
     if (entry == nullptr) {
-      return wh::core::result<wh::core::any_type_key>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<wh::core::any_type_key>::failure(wh::core::errc::not_found);
     }
     return entry->key;
   }
 
   /// Resolves primary name by registered runtime key.
-  [[nodiscard]] auto
-  primary_name_for_key(const wh::core::any_type_key key) const
+  [[nodiscard]] auto primary_name_for_key(const wh::core::any_type_key key) const
       -> wh::core::result<std::string_view> {
     const auto *entry = find_entry(key);
     if (entry == nullptr) {
-      return wh::core::result<std::string_view>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<std::string_view>::failure(wh::core::errc::not_found);
     }
     return entry->primary_name;
   }
@@ -161,39 +154,33 @@ public:
       -> wh::core::result<wh::core::json_document> {
     const auto *entry = find_entry(key);
     if (entry == nullptr) {
-      return wh::core::result<wh::core::json_document>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<wh::core::json_document>::failure(wh::core::errc::not_found);
     }
 
     wh::core::json_document output;
     auto encoded = entry->encode_any(value, output, output.GetAllocator());
     if (encoded.has_error()) {
-      return wh::core::result<wh::core::json_document>::failure(
-          encoded.error());
+      return wh::core::result<wh::core::json_document>::failure(encoded.error());
     }
     return output;
   }
 
   /// Serializes type-erased pointer by explicit type key.
-  [[nodiscard]] auto serialize_view(const wh::core::any_type_key key,
-                                    const void *value) const
+  [[nodiscard]] auto serialize_view(const wh::core::any_type_key key, const void *value) const
       -> wh::core::result<wh::core::json_document> {
     if (value == nullptr) {
-      return wh::core::result<wh::core::json_document>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<wh::core::json_document>::failure(wh::core::errc::invalid_argument);
     }
 
     const auto *entry = find_entry(key);
     if (entry == nullptr) {
-      return wh::core::result<wh::core::json_document>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<wh::core::json_document>::failure(wh::core::errc::not_found);
     }
 
     wh::core::json_document output;
     auto encoded = entry->encode_ptr(value, output, output.GetAllocator());
     if (encoded.has_error()) {
-      return wh::core::result<wh::core::json_document>::failure(
-          encoded.error());
+      return wh::core::result<wh::core::json_document>::failure(encoded.error());
     }
     return output;
   }
@@ -204,15 +191,13 @@ public:
       -> wh::core::result<wh::core::any> {
     const auto *entry = find_entry_by_name(name);
     if (entry == nullptr) {
-      return wh::core::result<wh::core::any>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<wh::core::any>::failure(wh::core::errc::not_found);
     }
     return entry->decode_any(input);
   }
 
   /// Deserializes JSON into caller-provided output buffer.
-  auto deserialize_to(const std::string_view name,
-                      const wh::core::any_type_key expected_key,
+  auto deserialize_to(const std::string_view name, const wh::core::any_type_key expected_key,
                       const wh::core::json_value &input, void *output) const
       -> wh::core::result<void> {
     if (output == nullptr) {
@@ -245,8 +230,7 @@ public:
       -> wh::core::result<type_t> {
     using normalized_t = wh::core::remove_cvref_t<type_t>;
     normalized_t output{};
-    auto decoded = deserialize_to(name, wh::core::any_type_key_v<normalized_t>,
-                                  input, &output);
+    auto decoded = deserialize_to(name, wh::core::any_type_key_v<normalized_t>, input, &output);
     if (decoded.has_error()) {
       return wh::core::result<type_t>::failure(decoded.error());
     }
@@ -254,24 +238,20 @@ public:
   }
 
   /// Number of registered concrete types.
-  [[nodiscard]] auto size() const noexcept -> std::size_t {
-    return entries_by_key_.size();
-  }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return entries_by_key_.size(); }
 
 private:
   /// Signature for encoding from `wh::core::any`.
-  using encode_any_function =
-      wh::core::result<void> (*)(const wh::core::any &, wh::core::json_value &,
-                                 wh::core::json_allocator &);
+  using encode_any_function = wh::core::result<void> (*)(const wh::core::any &,
+                                                         wh::core::json_value &,
+                                                         wh::core::json_allocator &);
   /// Signature for encoding from type-erased pointer.
-  using encode_ptr_function = wh::core::result<void> (*)(
-      const void *, wh::core::json_value &, wh::core::json_allocator &);
+  using encode_ptr_function = wh::core::result<void> (*)(const void *, wh::core::json_value &,
+                                                         wh::core::json_allocator &);
   /// Signature for decoding to `wh::core::any`.
-  using decode_any_function =
-      wh::core::result<wh::core::any> (*)(const wh::core::json_value &);
+  using decode_any_function = wh::core::result<wh::core::any> (*)(const wh::core::json_value &);
   /// Signature for decoding into type-erased pointer.
-  using decode_ptr_function =
-      wh::core::result<void> (*)(const wh::core::json_value &, void *);
+  using decode_ptr_function = wh::core::result<void> (*)(const wh::core::json_value &, void *);
 
   /// Internal function table for one registered type.
   struct serialization_entry {
@@ -293,10 +273,8 @@ private:
 
   /// Encodes `type_t` value extracted from `wh::core::any`.
   template <typename type_t>
-  static auto encode_from_any(const wh::core::any &value,
-                              wh::core::json_value &output,
-                              wh::core::json_allocator &allocator)
-      -> wh::core::result<void> {
+  static auto encode_from_any(const wh::core::any &value, wh::core::json_value &output,
+                              wh::core::json_allocator &allocator) -> wh::core::result<void> {
     const auto *typed = wh::core::any_cast<type_t>(&value);
     if (typed == nullptr) {
       return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
@@ -307,19 +285,16 @@ private:
   /// Encodes `type_t` from type-erased pointer.
   template <typename type_t>
   static auto encode_from_ptr(const void *value, wh::core::json_value &output,
-                              wh::core::json_allocator &allocator)
-      -> wh::core::result<void> {
+                              wh::core::json_allocator &allocator) -> wh::core::result<void> {
     if (value == nullptr) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    return wh::internal::to_json(*static_cast<const type_t *>(value), output,
-                                 allocator);
+    return wh::internal::to_json(*static_cast<const type_t *>(value), output, allocator);
   }
 
   /// Decodes JSON into `wh::core::any` containing `type_t`.
   template <typename type_t>
-  static auto decode_to_any(const wh::core::json_value &input)
-      -> wh::core::result<wh::core::any> {
+  static auto decode_to_any(const wh::core::json_value &input) -> wh::core::result<wh::core::any> {
     auto decoded = wh::internal::from_json_value<type_t>(input);
     if (decoded.has_error()) {
       return wh::core::result<wh::core::any>::failure(decoded.error());
@@ -350,20 +325,17 @@ private:
   }
 
   /// Finds entry by primary name or alias.
-  [[nodiscard]] auto
-  find_entry_by_name(const std::string_view name) const noexcept
+  [[nodiscard]] auto find_entry_by_name(const std::string_view name) const noexcept
       -> const serialization_entry * {
     const auto iter = name_to_entry_.find(name);
     return iter == name_to_entry_.end() ? nullptr : iter->second;
   }
 
   /// Main registry indexed by concrete runtime key.
-  std::unordered_map<wh::core::any_type_key, serialization_entry,
-                     wh::core::any_type_key_hash>
+  std::unordered_map<wh::core::any_type_key, serialization_entry, wh::core::any_type_key_hash>
       entries_by_key_{};
   /// Name/alias lookup table pointing to entries in `entries_by_key_`.
-  std::unordered_map<std::string, const serialization_entry *,
-                     detail::transparent_string_hash,
+  std::unordered_map<std::string, const serialization_entry *, detail::transparent_string_hash,
                      detail::transparent_string_equal>
       name_to_entry_{};
   /// Set after freeze to reject further registrations.

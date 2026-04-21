@@ -54,11 +54,8 @@ TEST_CASE("compose chain branch append requires unique predecessor tail",
 
   wh::compose::value_branch branch{};
   REQUIRE(branch
-              .add_case("n2",
-                        [](const wh::compose::graph_value &,
-                           wh::core::run_context &) {
-                          return true;
-                        })
+              .add_case("n2", [](const wh::compose::graph_value &,
+                                 wh::core::run_context &) { return true; })
               .has_value());
   auto branch_result = chain.append_branch(branch);
   REQUIRE(branch_result.has_error());

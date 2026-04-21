@@ -6,9 +6,9 @@
 #include <utility>
 #include <vector>
 
-#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/read_sender.hpp"
 #include "wh/core/cursor_reader/detail/source.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 
 namespace wh::core {
 
@@ -62,10 +62,8 @@ public:
 
   /// Creates a fixed set of cursor readers from one source.
   template <typename source_u>
-    requires std::constructible_from<source_t, source_u &&> &&
-             std::copy_constructible<result_type>
-  [[nodiscard]] static auto make_readers(source_u &&source,
-                                         const std::size_t count)
+    requires std::constructible_from<source_t, source_u &&> && std::copy_constructible<result_type>
+  [[nodiscard]] static auto make_readers(source_u &&source, const std::size_t count)
       -> std::vector<cursor_reader> {
     if (count == 0U) {
       return {};
@@ -111,8 +109,7 @@ public:
   [[nodiscard]] auto read_async() const
     requires cursor_reader_detail::async_source<source_t>
   {
-    return cursor_reader_detail::read_sender<source_t, policy_t>{
-        state_, reader_index_, released_};
+    return cursor_reader_detail::read_sender<source_t, policy_t>{state_, reader_index_, released_};
   }
 
   /// Closes this cursor only.
@@ -159,11 +156,9 @@ private:
 template <cursor_reader_source source_t,
           typename policy_t = cursor_reader_detail::default_policy<source_t>>
   requires cursor_reader_detail::policy_for<source_t, policy_t>
-[[nodiscard]] inline auto make_cursor_readers(source_t &&source,
-                                              const std::size_t count)
+[[nodiscard]] inline auto make_cursor_readers(source_t &&source, const std::size_t count)
     -> std::vector<cursor_reader<std::remove_cvref_t<source_t>, policy_t>>
-  requires std::copy_constructible<
-      cursor_reader_result_t<std::remove_cvref_t<source_t>>>
+  requires std::copy_constructible<cursor_reader_result_t<std::remove_cvref_t<source_t>>>
 {
   return cursor_reader<std::remove_cvref_t<source_t>, policy_t>::make_readers(
       std::forward<source_t>(source), count);

@@ -6,14 +6,11 @@
 namespace wh::compose::detail::checkpoint_runtime {
 
 [[nodiscard]] inline auto capture_pregel_runtime(
-    input_runtime::io_storage &storage,
-    input_runtime::pregel_delivery_store &pregel_delivery,
-    const bool current_superstep_active)
-    -> wh::core::result<checkpoint_pregel_runtime_state> {
+    input_runtime::io_storage &storage, input_runtime::pregel_delivery_store &pregel_delivery,
+    const bool current_superstep_active) -> wh::core::result<checkpoint_pregel_runtime_state> {
   auto captured_io = capture_runtime_io(storage);
   if (captured_io.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        captured_io.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(captured_io.error());
   }
   auto io = std::move(captured_io).value();
 
@@ -51,10 +48,10 @@ namespace wh::compose::detail::checkpoint_runtime {
   return pregel;
 }
 
-inline auto restore_pregel_runtime_io(
-    input_runtime::io_storage &storage,
-    const std::span<const graph_node_state> lifecycle,
-    checkpoint_pregel_runtime_state &pregel) -> wh::core::result<void> {
+inline auto restore_pregel_runtime_io(input_runtime::io_storage &storage,
+                                      const std::span<const graph_node_state> lifecycle,
+                                      checkpoint_pregel_runtime_state &pregel)
+    -> wh::core::result<void> {
   for (const auto &state : lifecycle) {
     if (state.node_id >= storage.node_values.size()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
@@ -66,15 +63,14 @@ inline auto restore_pregel_runtime_io(
 
   return restore_runtime_slots(storage, pregel.node_outputs, pregel.edge_values,
                                pregel.edge_readers, pregel.merged_readers,
-                               pregel.merged_reader_lanes,
-                               pregel.final_output_reader);
+                               pregel.merged_reader_lanes, pregel.final_output_reader);
 }
 
-inline auto restore_pregel_runtime(
-    checkpoint_pregel_runtime_state &pregel, input_runtime::io_storage &storage,
-    const std::span<const graph_node_state> lifecycle,
-    input_runtime::pregel_delivery_store &pregel_delivery,
-    const std::size_t node_count, bool &current_superstep_active)
+inline auto restore_pregel_runtime(checkpoint_pregel_runtime_state &pregel,
+                                   input_runtime::io_storage &storage,
+                                   const std::span<const graph_node_state> lifecycle,
+                                   input_runtime::pregel_delivery_store &pregel_delivery,
+                                   const std::size_t node_count, bool &current_superstep_active)
     -> wh::core::result<void> {
   auto restored_io = restore_pregel_runtime_io(storage, lifecycle, pregel);
   if (restored_io.has_error()) {
@@ -103,23 +99,20 @@ inline auto restore_pregel_runtime(
     };
   }
 
-  pregel_delivery.restore(node_count, std::move(current_inputs),
-                          std::move(next_inputs),
-                          std::move(pregel.current_frontier),
-                          std::move(pregel.next_frontier));
+  pregel_delivery.restore(node_count, std::move(current_inputs), std::move(next_inputs),
+                          std::move(pregel.current_frontier), std::move(pregel.next_frontier));
   current_superstep_active = pregel.current_superstep_active;
   return {};
 }
 
-inline auto mark_restored_pregel_pending_nodes(
-    runtime_state::pending_inputs &pending_inputs,
-    const checkpoint_pregel_runtime_state &pregel,
-    const std::size_t node_count) -> wh::core::result<void> {
+inline auto mark_restored_pregel_pending_nodes(runtime_state::pending_inputs &pending_inputs,
+                                               const checkpoint_pregel_runtime_state &pregel,
+                                               const std::size_t node_count)
+    -> wh::core::result<void> {
   detail::dynamic_bitset seen{};
   seen.reset(node_count, false);
-  const auto mark_one = [&pending_inputs, &seen, node_count](
-                            const std::uint32_t node_id)
-      -> wh::core::result<void> {
+  const auto mark_one = [&pending_inputs, &seen,
+                         node_count](const std::uint32_t node_id) -> wh::core::result<void> {
     if (node_id >= node_count) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }

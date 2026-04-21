@@ -2,8 +2,10 @@
 
 #include "wh/compose/graph/detail/runtime/pending_inputs.hpp"
 
-TEST_CASE("pending input store tracks presence lookup restore flags and active counts across resets",
-          "[UT][wh/compose/graph/detail/runtime/pending_inputs.hpp][pending_inputs::store_input][condition][branch][boundary]") {
+TEST_CASE(
+    "pending input store tracks presence lookup restore flags and active counts across resets",
+    "[UT][wh/compose/graph/detail/runtime/"
+    "pending_inputs.hpp][pending_inputs::store_input][condition][branch][boundary]") {
   wh::compose::detail::runtime_state::pending_inputs inputs{};
   inputs.reset(4U);
   REQUIRE(inputs.active_input_count() == 0U);
@@ -37,8 +39,10 @@ TEST_CASE("pending input store tracks presence lookup restore flags and active c
   REQUIRE_FALSE(inputs.restored_node(1U));
 }
 
-TEST_CASE("pending input store exposes const lookup and rejects out-of-range access after shrink resets",
-          "[UT][wh/compose/graph/detail/runtime/pending_inputs.hpp][pending_inputs::find_input][condition][branch][boundary]") {
+TEST_CASE(
+    "pending input store exposes const lookup and rejects out-of-range access after shrink resets",
+    "[UT][wh/compose/graph/detail/runtime/"
+    "pending_inputs.hpp][pending_inputs::find_input][condition][branch][boundary]") {
   wh::compose::detail::runtime_state::pending_inputs inputs{};
   inputs.reset(1U);
   inputs.store_input(0U, wh::compose::graph_value{4});

@@ -51,26 +51,24 @@ struct rewrite_state {
 
 template <typename retriever_t>
 concept retriever_component =
-    requires(const retriever_t &retriever,
-             const wh::retriever::retriever_request &request,
+    requires(const retriever_t &retriever, const wh::retriever::retriever_request &request,
              wh::core::run_context &context) {
-      { retriever.retrieve(request, context) }
-      -> std::same_as<wh::core::result<wh::retriever::retriever_response>>;
+      {
+        retriever.retrieve(request, context)
+      } -> std::same_as<wh::core::result<wh::retriever::retriever_response>>;
     };
 
 template <typename rewrite_t>
 concept query_rewriter =
     requires(rewrite_t rewrite, const wh::retriever::retriever_request &request,
              wh::core::run_context &context) {
-      { rewrite(request, context) }
-      -> std::same_as<wh::core::result<std::vector<std::string>>>;
+      { rewrite(request, context) } -> std::same_as<wh::core::result<std::vector<std::string>>>;
     };
 
 template <typename fusion_t>
 concept multi_query_fusion =
     requires(fusion_t fusion, const std::vector<query_retrieval> &results) {
-      { fusion(results) }
-      -> std::same_as<wh::core::result<wh::retriever::retriever_response>>;
+      { fusion(results) } -> std::same_as<wh::core::result<wh::retriever::retriever_response>>;
     };
 
 struct original_query_rewriter {
@@ -100,20 +98,17 @@ struct first_hit_fusion {
   }
 };
 
-[[nodiscard]] inline auto render_message_text(const wh::schema::message &message)
-    -> std::string {
+[[nodiscard]] inline auto render_message_text(const wh::schema::message &message) -> std::string {
   std::string rendered{};
   for (const auto &part : message.parts) {
-    if (const auto *text = std::get_if<wh::schema::text_part>(&part);
-        text != nullptr) {
+    if (const auto *text = std::get_if<wh::schema::text_part>(&part); text != nullptr) {
       rendered.append(text->text);
     }
   }
   return rendered;
 }
 
-template <wh::model::chat_model_like model_t>
-class chat_query_rewriter {
+template <wh::model::chat_model_like model_t> class chat_query_rewriter {
 public:
   explicit chat_query_rewriter(model_t model) noexcept : model_(std::move(model)) {}
 
@@ -124,8 +119,7 @@ public:
     wh::schema::message message{};
     message.role = wh::schema::message_role::user;
     message.parts.emplace_back(wh::schema::text_part{
-        "Rewrite the query into up to 5 search variants, one per line:\n" +
-        request.query});
+        "Rewrite the query into up to 5 search variants, one per line:\n" + request.query});
     rewrite_request.messages.push_back(std::move(message));
 
     auto status = model_.invoke(rewrite_request, context);
@@ -137,12 +131,10 @@ public:
     std::istringstream lines{render_message_text(status.value().message)};
     std::string line{};
     while (std::getline(lines, line)) {
-      line.erase(line.begin(),
-                 std::find_if(line.begin(), line.end(), [](unsigned char ch) {
+      line.erase(line.begin(), std::find_if(line.begin(), line.end(), [](unsigned char ch) {
                    return std::isspace(ch) == 0;
                  }));
-      while (!line.empty() &&
-             std::isspace(static_cast<unsigned char>(line.back())) != 0) {
+      while (!line.empty() && std::isspace(static_cast<unsigned char>(line.back())) != 0) {
         line.pop_back();
       }
       if (!line.empty()) {
@@ -156,38 +148,24 @@ private:
   model_t model_;
 };
 
-[[nodiscard]] inline auto request_node_key() -> std::string_view {
-  return "multi_query_request";
-}
+[[nodiscard]] inline auto request_node_key() -> std::string_view { return "multi_query_request"; }
 
-[[nodiscard]] inline auto rewrite_node_key() -> std::string_view {
-  return "multi_query_rewrite";
-}
+[[nodiscard]] inline auto rewrite_node_key() -> std::string_view { return "multi_query_rewrite"; }
 
-[[nodiscard]] inline auto batch_node_key() -> std::string_view {
-  return "multi_query_batch";
-}
+[[nodiscard]] inline auto batch_node_key() -> std::string_view { return "multi_query_batch"; }
 
-[[nodiscard]] inline auto tools_node_key() -> std::string_view {
-  return "multi_query_tools";
-}
+[[nodiscard]] inline auto tools_node_key() -> std::string_view { return "multi_query_tools"; }
 
-[[nodiscard]] inline auto fusion_node_key() -> std::string_view {
-  return "multi_query_fusion";
-}
+[[nodiscard]] inline auto fusion_node_key() -> std::string_view { return "multi_query_fusion"; }
 
-[[nodiscard]] inline auto output_key() -> std::string_view {
-  return "documents";
-}
+[[nodiscard]] inline auto output_key() -> std::string_view { return "documents"; }
 
-[[nodiscard]] inline auto tool_name() -> std::string_view {
-  return "multi_query_retrieve";
-}
+[[nodiscard]] inline auto tool_name() -> std::string_view { return "multi_query_retrieve"; }
 
 template <typename rewrite_t>
-[[nodiscard]] inline auto build_rewrite_state(
-    const rewrite_t &rewriter, const wh::retriever::retriever_request &request,
-    const std::size_t max_queries, wh::core::run_context &context)
+[[nodiscard]] inline auto
+build_rewrite_state(const rewrite_t &rewriter, const wh::retriever::retriever_request &request,
+                    const std::size_t max_queries, wh::core::run_context &context)
     -> wh::core::result<rewrite_state> {
   auto rewritten = rewriter(request, context);
   if (rewritten.has_error()) {
@@ -221,26 +199,25 @@ template <typename rewrite_t>
 }
 
 template <retriever_component retriever_t>
-[[nodiscard]] inline auto make_query_sender(
-    const retriever_t &retriever, const std::string &query,
-    const wh::retriever::retriever_request &base_request,
-    wh::core::run_context &context) {
+[[nodiscard]] inline auto make_query_sender(const retriever_t &retriever, const std::string &query,
+                                            const wh::retriever::retriever_request &base_request,
+                                            wh::core::run_context &context) {
   using query_status = wh::core::result<query_retrieval>;
   auto request = base_request;
   request.query = query;
 
-  if constexpr (requires(const retriever_t &value,
-                         wh::retriever::retriever_request &&owned_request,
+  if constexpr (requires(const retriever_t &value, wh::retriever::retriever_request &&owned_request,
                          wh::core::run_context &run_context) {
-                  { value.async_retrieve(std::move(owned_request), run_context) }
-                  -> stdexec::sender;
+                  {
+                    value.async_retrieve(std::move(owned_request), run_context)
+                  } -> stdexec::sender;
                 }) {
     return wh::core::detail::map_result_sender<query_status>(
         wh::core::detail::normalize_result_sender<
             wh::core::result<wh::retriever::retriever_response>>(
             retriever.async_retrieve(std::move(request), context)),
-        [query = std::string{query}](wh::retriever::retriever_response documents)
-            mutable -> query_status {
+        [query = std::string{query}](
+            wh::retriever::retriever_response documents) mutable -> query_status {
           return query_retrieval{
               .query = std::move(query),
               .documents = std::move(documents),
@@ -259,40 +236,38 @@ template <retriever_component retriever_t>
 }
 
 template <retriever_component retriever_t>
-using query_sender_t = decltype(make_query_sender(
-    std::declval<const retriever_t &>(), std::declval<const std::string &>(),
-    std::declval<const wh::retriever::retriever_request &>(),
-    std::declval<wh::core::run_context &>()));
+using query_sender_t =
+    decltype(make_query_sender(std::declval<const retriever_t &>(),
+                               std::declval<const std::string &>(),
+                               std::declval<const wh::retriever::retriever_request &>(),
+                               std::declval<wh::core::run_context &>()));
 
 template <typename fusion_t>
-[[nodiscard]] inline auto fuse_query_results(
-    const fusion_t &fusion, const rewrite_state &rewrite,
-    std::vector<query_retrieval> query_results, wh::core::run_context &context)
+[[nodiscard]] inline auto fuse_query_results(const fusion_t &fusion, const rewrite_state &rewrite,
+                                             std::vector<query_retrieval> query_results,
+                                             wh::core::run_context &context)
     -> wh::core::result<wh::retriever::retriever_response> {
-  auto sink = wh::callbacks::filter_callback_sink(
-      wh::callbacks::borrow_callback_sink(context), rewrite.base_request.options);
+  auto sink = wh::callbacks::filter_callback_sink(wh::callbacks::borrow_callback_sink(context),
+                                                  rewrite.base_request.options);
 
   wh::retriever::retriever_callback_event event{};
   event.top_k = rewrite.base_request.options.resolve_view().top_k;
-  event.score_threshold =
-      rewrite.base_request.options.resolve_view().score_threshold;
-  event.filter =
-      std::string{rewrite.base_request.options.resolve_view().filter};
+  event.score_threshold = rewrite.base_request.options.resolve_view().score_threshold;
+  event.filter = std::string{rewrite.base_request.options.resolve_view().filter};
   event.extra = std::to_string(query_results.size());
 
   wh::callbacks::run_info run_info{};
   run_info.name = "FusionFunc";
   run_info.type = "FusionFunc";
   run_info.component = wh::core::component_kind::retriever;
-  run_info = wh::callbacks::apply_component_run_info(
-      std::move(run_info), rewrite.base_request.options);
+  run_info =
+      wh::callbacks::apply_component_run_info(std::move(run_info), rewrite.base_request.options);
   wh::callbacks::emit(sink, wh::callbacks::stage::start, event, run_info);
 
   auto fused = fusion(query_results);
   if (fused.has_error()) {
     wh::callbacks::emit(sink, wh::callbacks::stage::error, event, run_info);
-    return wh::core::result<wh::retriever::retriever_response>::failure(
-        fused.error());
+    return wh::core::result<wh::retriever::retriever_response>::failure(fused.error());
   }
 
   event.extra = std::to_string(fused.value().size());
@@ -300,13 +275,12 @@ template <typename fusion_t>
   return fused;
 }
 
-template <retriever_component retriever_t, query_rewriter rewrite_t,
-          multi_query_fusion fusion_t>
+template <retriever_component retriever_t, query_rewriter rewrite_t, multi_query_fusion fusion_t>
 struct authored_state {
   authored_state(retriever_t retriever_value, rewrite_t rewriter_value,
                  fusion_t fusion_value) noexcept
-      : retriever(std::move(retriever_value)),
-        rewriter(std::move(rewriter_value)), fusion(std::move(fusion_value)) {}
+      : retriever(std::move(retriever_value)), rewriter(std::move(rewriter_value)),
+        fusion(std::move(fusion_value)) {}
 
   retriever_t retriever;
   rewrite_t rewriter;
@@ -314,15 +288,12 @@ struct authored_state {
   std::size_t max_queries{5U};
 };
 
-template <retriever_component retriever_t, query_rewriter rewrite_t,
-          multi_query_fusion fusion_t>
+template <retriever_component retriever_t, query_rewriter rewrite_t, multi_query_fusion fusion_t>
 struct runtime_state {
-  runtime_state(retriever_t retriever_value, rewrite_t rewriter_value,
-                fusion_t fusion_value,
+  runtime_state(retriever_t retriever_value, rewrite_t rewriter_value, fusion_t fusion_value,
                 const std::size_t max_queries_value) noexcept
-      : retriever(std::move(retriever_value)),
-        rewriter(std::move(rewriter_value)), fusion(std::move(fusion_value)),
-        max_queries(max_queries_value) {}
+      : retriever(std::move(retriever_value)), rewriter(std::move(rewriter_value)),
+        fusion(std::move(fusion_value)), max_queries(max_queries_value) {}
 
   retriever_t retriever;
   rewrite_t rewriter;
@@ -330,11 +301,10 @@ struct runtime_state {
   std::size_t max_queries{5U};
 };
 
-template <retriever_component retriever_t, query_rewriter rewrite_t,
-          multi_query_fusion fusion_t>
-[[nodiscard]] inline auto make_fanout_sender(
-    std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>> state,
-    rewrite_state rewrite, wh::core::run_context &context) {
+template <retriever_component retriever_t, query_rewriter rewrite_t, multi_query_fusion fusion_t>
+[[nodiscard]] inline auto
+make_fanout_sender(std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>> state,
+                   rewrite_state rewrite, wh::core::run_context &context) {
   using query_status = wh::core::result<query_retrieval>;
   using output_status = wh::core::result<wh::retriever::retriever_response>;
   using child_sender_t = query_sender_t<retriever_t>;
@@ -342,15 +312,13 @@ template <retriever_component retriever_t, query_rewriter rewrite_t,
   std::vector<child_sender_t> senders{};
   senders.reserve(rewrite.queries.size());
   for (const auto &query : rewrite.queries) {
-    senders.push_back(make_query_sender(state->retriever, query,
-                                        rewrite.base_request, context));
+    senders.push_back(make_query_sender(state->retriever, query, rewrite.base_request, context));
   }
 
-  return wh::core::detail::make_concurrent_sender_vector<query_status>(
-             std::move(senders), rewrite.queries.size()) |
-         stdexec::then([state, rewrite = std::move(rewrite), &context](
-                           std::vector<query_status> statuses) mutable
-                           -> output_status {
+  return wh::core::detail::make_concurrent_sender_vector<query_status>(std::move(senders),
+                                                                       rewrite.queries.size()) |
+         stdexec::then([state, rewrite = std::move(rewrite),
+                        &context](std::vector<query_status> statuses) mutable -> output_status {
            std::vector<query_retrieval> query_results{};
            query_results.reserve(statuses.size());
            for (auto &status : statuses) {
@@ -359,49 +327,41 @@ template <retriever_component retriever_t, query_rewriter rewrite_t,
              }
              query_results.push_back(std::move(status).value());
            }
-           return fuse_query_results(state->fusion, rewrite,
-                                     std::move(query_results), context);
+           return fuse_query_results(state->fusion, rewrite, std::move(query_results), context);
          });
 }
 
-template <retriever_component retriever_t, query_rewriter rewrite_t,
-          multi_query_fusion fusion_t>
-[[nodiscard]] inline auto make_pipeline_sender(
-    std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>> state,
-    wh::retriever::retriever_request request, wh::core::run_context &context) {
+template <retriever_component retriever_t, query_rewriter rewrite_t, multi_query_fusion fusion_t>
+[[nodiscard]] inline auto
+make_pipeline_sender(std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>> state,
+                     wh::retriever::retriever_request request, wh::core::run_context &context) {
   using rewrite_status = wh::core::result<rewrite_state>;
   using output_status = wh::core::result<wh::retriever::retriever_response>;
   using failure_sender_t =
       decltype(stdexec::just(output_status::failure(wh::core::errc::internal_error)));
   using fanout_sender_t = decltype(make_fanout_sender(
-      std::declval<
-          std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>>>(),
+      std::declval<std::shared_ptr<const runtime_state<retriever_t, rewrite_t, fusion_t>>>(),
       std::declval<rewrite_state>(), std::declval<wh::core::run_context &>()));
-  using dispatch_sender_t =
-      wh::core::detail::variant_sender<failure_sender_t, fanout_sender_t>;
+  using dispatch_sender_t = wh::core::detail::variant_sender<failure_sender_t, fanout_sender_t>;
 
-  auto rewrite_sender = stdexec::just() | stdexec::then(
-      [state, request = std::move(request), &context]() mutable -> rewrite_status {
-        return build_rewrite_state(state->rewriter, request, state->max_queries,
-                                   context);
+  auto rewrite_sender =
+      stdexec::just() |
+      stdexec::then([state, request = std::move(request), &context]() mutable -> rewrite_status {
+        return build_rewrite_state(state->rewriter, request, state->max_queries, context);
       });
 
   return stdexec::let_value(
-      std::move(rewrite_sender),
-      [state, &context](rewrite_status rewritten) mutable {
+      std::move(rewrite_sender), [state, &context](rewrite_status rewritten) mutable {
         if (rewritten.has_error()) {
-          return dispatch_sender_t{
-              stdexec::just(output_status::failure(rewritten.error()))};
+          return dispatch_sender_t{stdexec::just(output_status::failure(rewritten.error()))};
         }
-        return dispatch_sender_t{
-            make_fanout_sender(state, std::move(rewritten).value(), context)};
+        return dispatch_sender_t{make_fanout_sender(state, std::move(rewritten).value(), context)};
       });
 }
 
 [[nodiscard]] inline auto map_multi_query_result_sender(auto &&sender) {
   return wh::core::detail::normalize_result_sender<
-      wh::core::result<wh::retriever::retriever_response>>(
-      std::forward<decltype(sender)>(sender));
+      wh::core::result<wh::retriever::retriever_response>>(std::forward<decltype(sender)>(sender));
 }
 
 } // namespace detail::multi_query
@@ -410,19 +370,14 @@ template <retriever_component retriever_t, query_rewriter rewrite_t,
 template <detail::multi_query::retriever_component retriever_t,
           detail::multi_query::query_rewriter rewrite_t =
               detail::multi_query::original_query_rewriter,
-          detail::multi_query::multi_query_fusion fusion_t =
-              detail::multi_query::first_hit_fusion>
+          detail::multi_query::multi_query_fusion fusion_t = detail::multi_query::first_hit_fusion>
 class multi_query {
-  using authored_state_t =
-      detail::multi_query::authored_state<retriever_t, rewrite_t, fusion_t>;
-  using runtime_state_t =
-      detail::multi_query::runtime_state<retriever_t, rewrite_t, fusion_t>;
+  using authored_state_t = detail::multi_query::authored_state<retriever_t, rewrite_t, fusion_t>;
+  using runtime_state_t = detail::multi_query::runtime_state<retriever_t, rewrite_t, fusion_t>;
 
 public:
-  multi_query(retriever_t retriever, rewrite_t rewriter = {},
-              fusion_t fusion = {}) noexcept
-      : authored_(std::in_place, std::move(retriever), std::move(rewriter),
-                  std::move(fusion)) {}
+  multi_query(retriever_t retriever, rewrite_t rewriter = {}, fusion_t fusion = {}) noexcept
+      : authored_(std::in_place, std::move(retriever), std::move(rewriter), std::move(fusion)) {}
 
   multi_query(const multi_query &) = default;
   auto operator=(const multi_query &) -> multi_query & = default;
@@ -441,8 +396,7 @@ public:
   /// Replaces the maximum query fanout. Zero falls back to 5.
   auto set_max_queries(const std::size_t max_queries) -> wh::core::result<void> {
     if (!authored_.has_value() || runtime_ != nullptr) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     authored_->max_queries = max_queries == 0U ? 5U : max_queries;
     return {};
@@ -479,9 +433,8 @@ public:
   }
 
   /// Async component-node entry that forwards one frozen retriever-like sender.
-  [[nodiscard]] auto async_retrieve(
-      const wh::retriever::retriever_request &request,
-      wh::core::run_context &context) const {
+  [[nodiscard]] auto async_retrieve(const wh::retriever::retriever_request &request,
+                                    wh::core::run_context &context) const {
     return dispatch_request(wh::retriever::retriever_request{request}, context);
   }
 
@@ -493,33 +446,26 @@ public:
 
 private:
   template <typename request_t>
-    requires std::same_as<std::remove_cvref_t<request_t>,
-                          wh::retriever::retriever_request>
-  [[nodiscard]] auto dispatch_request(request_t &&request,
-                                      wh::core::run_context &context) const {
+    requires std::same_as<std::remove_cvref_t<request_t>, wh::retriever::retriever_request>
+  [[nodiscard]] auto dispatch_request(request_t &&request, wh::core::run_context &context) const {
     using output_status = wh::core::result<wh::retriever::retriever_response>;
-    using failure_sender_t = decltype(
-        wh::core::detail::failure_result_sender<output_status>(
-            wh::core::errc::internal_error));
-    using pipeline_sender_t = decltype(
-        detail::multi_query::map_multi_query_result_sender(
-            detail::multi_query::make_pipeline_sender(
-                std::declval<std::shared_ptr<const runtime_state_t>>(),
-                std::declval<wh::retriever::retriever_request>(),
-                std::declval<wh::core::run_context &>())));
-    using dispatch_sender_t =
-        wh::core::detail::variant_sender<failure_sender_t, pipeline_sender_t>;
+    using failure_sender_t = decltype(wh::core::detail::failure_result_sender<output_status>(
+        wh::core::errc::internal_error));
+    using pipeline_sender_t = decltype(detail::multi_query::map_multi_query_result_sender(
+        detail::multi_query::make_pipeline_sender(
+            std::declval<std::shared_ptr<const runtime_state_t>>(),
+            std::declval<wh::retriever::retriever_request>(),
+            std::declval<wh::core::run_context &>())));
+    using dispatch_sender_t = wh::core::detail::variant_sender<failure_sender_t, pipeline_sender_t>;
 
     if (runtime_ == nullptr) {
-      return dispatch_sender_t{
-          wh::core::detail::failure_result_sender<output_status>(
-              wh::core::errc::contract_violation)};
+      return dispatch_sender_t{wh::core::detail::failure_result_sender<output_status>(
+          wh::core::errc::contract_violation)};
     }
 
     return dispatch_sender_t{detail::multi_query::map_multi_query_result_sender(
         detail::multi_query::make_pipeline_sender(
-            runtime_,
-            wh::retriever::retriever_request{std::forward<request_t>(request)},
+            runtime_, wh::retriever::retriever_request{std::forward<request_t>(request)},
             context))};
   }
 

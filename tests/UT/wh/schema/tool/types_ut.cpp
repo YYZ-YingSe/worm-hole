@@ -1,4 +1,5 @@
 #include <array>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/tool/types.hpp"
@@ -8,17 +9,15 @@ TEST_CASE("tool schema types build sorted parameter json schema with required fi
   wh::schema::tool_parameter_schema tags{};
   tags.name = "tags";
   tags.type = wh::schema::tool_parameter_type::array;
-  tags.item_types.push_back(
-      wh::schema::tool_parameter_schema{.name = "tag",
-                                        .type = wh::schema::tool_parameter_type::string});
+  tags.item_types.push_back(wh::schema::tool_parameter_schema{
+      .name = "tag", .type = wh::schema::tool_parameter_type::string});
 
   wh::schema::tool_parameter_schema id{};
   id.name = "id";
   id.type = wh::schema::tool_parameter_type::integer;
   id.required = true;
 
-  auto schema =
-      wh::schema::build_parameters_json_schema(std::array{id, tags});
+  auto schema = wh::schema::build_parameters_json_schema(std::array{id, tags});
   REQUIRE(schema.has_value());
 
   auto properties = wh::core::json_find_member(schema.value(), "properties");
@@ -49,18 +48,18 @@ TEST_CASE("tool schema types build default function export and reject invalid ra
 
 TEST_CASE("tool schema types expose parameter type names and default tool choice",
           "[UT][wh/schema/tool/types.hpp][detail::parameter_type_name][condition]") {
-  REQUIRE(wh::schema::detail::parameter_type_name(
-              wh::schema::tool_parameter_type::string) == "string");
-  REQUIRE(wh::schema::detail::parameter_type_name(
-              wh::schema::tool_parameter_type::integer) == "integer");
-  REQUIRE(wh::schema::detail::parameter_type_name(
-              wh::schema::tool_parameter_type::number) == "number");
-  REQUIRE(wh::schema::detail::parameter_type_name(
-              wh::schema::tool_parameter_type::boolean) == "boolean");
-  REQUIRE(wh::schema::detail::parameter_type_name(
-              wh::schema::tool_parameter_type::object) == "object");
-  REQUIRE(wh::schema::detail::parameter_type_name(
-              wh::schema::tool_parameter_type::array) == "array");
+  REQUIRE(wh::schema::detail::parameter_type_name(wh::schema::tool_parameter_type::string) ==
+          "string");
+  REQUIRE(wh::schema::detail::parameter_type_name(wh::schema::tool_parameter_type::integer) ==
+          "integer");
+  REQUIRE(wh::schema::detail::parameter_type_name(wh::schema::tool_parameter_type::number) ==
+          "number");
+  REQUIRE(wh::schema::detail::parameter_type_name(wh::schema::tool_parameter_type::boolean) ==
+          "boolean");
+  REQUIRE(wh::schema::detail::parameter_type_name(wh::schema::tool_parameter_type::object) ==
+          "object");
+  REQUIRE(wh::schema::detail::parameter_type_name(wh::schema::tool_parameter_type::array) ==
+          "array");
 
   wh::schema::tool_choice choice{};
   REQUIRE(choice.mode == wh::schema::tool_call_mode::allow);

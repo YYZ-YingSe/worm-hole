@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <optional>
 #include <string>
@@ -9,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/core/type_traits.hpp"
 
 namespace {
@@ -16,9 +16,7 @@ namespace {
 struct not_container {};
 
 struct callable_probe {
-  auto operator()(const int value) const noexcept -> long {
-    return static_cast<long>(value + 1);
-  }
+  auto operator()(const int value) const noexcept -> long { return static_cast<long>(value + 1); }
 };
 
 } // namespace
@@ -52,8 +50,7 @@ static_assert(!wh::core::is_pointer_like_v<int>);
 
 static_assert(wh::core::callable_with<callable_probe, int>);
 static_assert(!wh::core::callable_with<callable_probe, std::string>);
-static_assert(
-    std::same_as<wh::core::callable_result_t<callable_probe, int>, long>);
+static_assert(std::same_as<wh::core::callable_result_t<callable_probe, int>, long>);
 
 static_assert(wh::core::is_result_v<wh::core::result<int>>);
 static_assert(wh::core::result_like<wh::core::result<int>>);
@@ -116,8 +113,7 @@ TEST_CASE("type_traits concepts classify containers pairs optionals pointers cal
 
   STATIC_REQUIRE(wh::core::callable_with<callable_probe, int>);
   STATIC_REQUIRE_FALSE(wh::core::callable_with<callable_probe, std::string>);
-  STATIC_REQUIRE(
-      std::same_as<wh::core::callable_result_t<callable_probe, int>, long>);
+  STATIC_REQUIRE(std::same_as<wh::core::callable_result_t<callable_probe, int>, long>);
 
   STATIC_REQUIRE(wh::core::is_result_v<wh::core::result<int>>);
   STATIC_REQUIRE(wh::core::result_like<wh::core::result<int>>);

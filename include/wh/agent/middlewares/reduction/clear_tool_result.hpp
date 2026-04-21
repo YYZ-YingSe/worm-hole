@@ -16,14 +16,12 @@
 namespace wh::agent::middlewares::reduction {
 
 /// Token estimator used by tool-result reduction.
-using token_estimator =
-    wh::core::callback_function<std::size_t(const wh::schema::message &) const>;
+using token_estimator = wh::core::callback_function<std::size_t(const wh::schema::message &) const>;
 
 /// Request mutator used by callers to shrink old tool results before the next
 /// model turn begins.
 using clear_tool_result_middleware =
-    wh::core::callback_function<wh::core::result<void>(
-        wh::model::chat_request &) const>;
+    wh::core::callback_function<wh::core::result<void>(wh::model::chat_request &) const>;
 
 /// Public configuration for the clear-tool-result request mutator.
 struct clear_tool_result_options {
@@ -43,21 +41,18 @@ struct clear_tool_result_options {
 
 namespace detail {
 
-[[nodiscard]] inline auto
-count_part_tokens(const wh::schema::message_part &part) -> std::size_t {
-  if (const auto *text = std::get_if<wh::schema::text_part>(&part);
-      text != nullptr) {
+[[nodiscard]] inline auto count_part_tokens(const wh::schema::message_part &part) -> std::size_t {
+  if (const auto *text = std::get_if<wh::schema::text_part>(&part); text != nullptr) {
     return (text->text.size() + 3U) / 4U;
   }
-  if (const auto *tool = std::get_if<wh::schema::tool_call_part>(&part);
-      tool != nullptr) {
+  if (const auto *tool = std::get_if<wh::schema::tool_call_part>(&part); tool != nullptr) {
     return (tool->arguments.size() + 3U) / 4U;
   }
   return 0U;
 }
 
-[[nodiscard]] inline auto
-default_estimate_tokens(const wh::schema::message &message) -> std::size_t {
+[[nodiscard]] inline auto default_estimate_tokens(const wh::schema::message &message)
+    -> std::size_t {
   std::size_t total = 0U;
   for (const auto &part : message.parts) {
     total += count_part_tokens(part);
@@ -65,9 +60,8 @@ default_estimate_tokens(const wh::schema::message &message) -> std::size_t {
   return total;
 }
 
-[[nodiscard]] inline auto
-should_reduce_message(const wh::schema::message &message,
-                      const clear_tool_result_options &options) -> bool {
+[[nodiscard]] inline auto should_reduce_message(const wh::schema::message &message,
+                                                const clear_tool_result_options &options) -> bool {
   return message.role == wh::schema::message_role::tool &&
          !options.excluded_tool_names.contains(message.tool_name);
 }
@@ -76,20 +70,17 @@ should_reduce_message(const wh::schema::message &message,
 
 /// Creates a request mutator that clears old tool-message content once the
 /// configured total-token threshold is exceeded.
-[[nodiscard]] inline auto
-make_clear_tool_result_middleware(clear_tool_result_options options = {})
+[[nodiscard]] inline auto make_clear_tool_result_middleware(clear_tool_result_options options = {})
     -> clear_tool_result_middleware {
   if (options.placeholder.empty()) {
     options.placeholder = "[tool result omitted]";
   }
 
   return clear_tool_result_middleware{
-      [options = std::move(options)](
-          wh::model::chat_request &request) -> wh::core::result<void> {
-        const auto &estimate =
-            static_cast<bool>(options.estimate_tokens)
-                ? options.estimate_tokens
-                : token_estimator{detail::default_estimate_tokens};
+      [options = std::move(options)](wh::model::chat_request &request) -> wh::core::result<void> {
+        const auto &estimate = static_cast<bool>(options.estimate_tokens)
+                                   ? options.estimate_tokens
+                                   : token_estimator{detail::default_estimate_tokens};
 
         std::size_t total_tokens = 0U;
         for (const auto &message : request.messages) {
@@ -101,8 +92,7 @@ make_clear_tool_result_middleware(clear_tool_result_options options = {})
 
         std::size_t protected_tokens = 0U;
         std::size_t protected_begin = request.messages.size();
-        while (protected_begin > 0U &&
-               protected_tokens < options.protected_recent_tokens) {
+        while (protected_begin > 0U && protected_tokens < options.protected_recent_tokens) {
           --protected_begin;
           protected_tokens += estimate(request.messages[protected_begin]);
         }
@@ -113,8 +103,7 @@ make_clear_tool_result_middleware(clear_tool_result_options options = {})
             continue;
           }
           message.parts.clear();
-          message.parts.emplace_back(
-              wh::schema::text_part{options.placeholder});
+          message.parts.emplace_back(wh::schema::text_part{options.placeholder});
         }
         return {};
       }};

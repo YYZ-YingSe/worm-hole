@@ -15,17 +15,14 @@ TEST_CASE("echo chat model echoes last user text for invoke and stream",
   wh::core::run_context context{};
   auto invoked = model.invoke(request, context);
   REQUIRE(invoked.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(invoked.value().message.parts.front()).text ==
-          "hello");
+  REQUIRE(std::get<wh::schema::text_part>(invoked.value().message.parts.front()).text == "hello");
 
   auto streamed = model.stream(request, context);
   REQUIRE(streamed.has_value());
-  auto collected =
-      wh::schema::stream::collect_stream_reader(std::move(streamed).value());
+  auto collected = wh::schema::stream::collect_stream_reader(std::move(streamed).value());
   REQUIRE(collected.has_value());
   REQUIRE(collected.value().size() == 1U);
-  REQUIRE(std::get<wh::schema::text_part>(collected.value().front().parts.front()).text ==
-          "hello");
+  REQUIRE(std::get<wh::schema::text_part>(collected.value().front().parts.front()).text == "hello");
 
   auto invalid = model.invoke(wh::model::chat_request{}, context);
   REQUIRE(invalid.has_error());
@@ -48,8 +45,9 @@ TEST_CASE("echo chat model binds tools and reports fixed stream event metadata",
   REQUIRE(event.usage.total_tokens == 2);
 }
 
-TEST_CASE("echo chat model detail helpers handle non-text parts and invalid empty requests",
-          "[UT][wh/model/echo_chat_model.hpp][detail::make_echo_response][condition][branch][boundary]") {
+TEST_CASE(
+    "echo chat model detail helpers handle non-text parts and invalid empty requests",
+    "[UT][wh/model/echo_chat_model.hpp][detail::make_echo_response][condition][branch][boundary]") {
   wh::schema::message non_text{};
   non_text.role = wh::schema::message_role::user;
   non_text.parts.emplace_back(wh::schema::tool_call_part{});
@@ -59,8 +57,7 @@ TEST_CASE("echo chat model detail helpers handle non-text parts and invalid empt
   request.messages.push_back(non_text);
   auto echoed = wh::model::detail::make_echo_response(request);
   REQUIRE(echoed.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(echoed.value().message.parts.front()).text
-          .empty());
+  REQUIRE(std::get<wh::schema::text_part>(echoed.value().message.parts.front()).text.empty());
   REQUIRE(echoed.value().meta.usage.total_tokens == 2);
 
   auto invalid = wh::model::detail::make_echo_response(wh::model::chat_request{});

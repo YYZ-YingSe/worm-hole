@@ -10,17 +10,16 @@ TEST_CASE("mode graph fixes runtime mode and graph name defaults",
 
   wh::compose::graph_compile_options options{};
   options.name = "x";
-  wh::compose::mode_graph<wh::compose::graph_runtime_mode::pregel> pregel{
-      std::move(options)};
+  wh::compose::mode_graph<wh::compose::graph_runtime_mode::pregel> pregel{std::move(options)};
   REQUIRE(pregel.options().mode == wh::compose::graph_runtime_mode::pregel);
   REQUIRE(pregel.options().name == "x");
 }
 
-TEST_CASE("mode graph keeps fixed runtime mode through compile snapshot and release_graph",
-          "[UT][wh/compose/graph/mode.hpp][mode_graph::release_graph][condition][branch][boundary]") {
+TEST_CASE(
+    "mode graph keeps fixed runtime mode through compile snapshot and release_graph",
+    "[UT][wh/compose/graph/mode.hpp][mode_graph::release_graph][condition][branch][boundary]") {
   wh::compose::mode_graph<wh::compose::graph_runtime_mode::dag> dag{};
-  REQUIRE(dag.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(dag.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(dag.add_entry_edge("worker").has_value());
   REQUIRE(dag.add_exit_edge("worker").has_value());
   REQUIRE(dag.compile().has_value());

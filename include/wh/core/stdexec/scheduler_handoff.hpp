@@ -16,8 +16,7 @@ namespace detail {
 
 template <typename scheduler_t>
 concept same_scheduler_queryable =
-    requires(const std::remove_cvref_t<scheduler_t> &scheduler,
-             const same_scheduler_t &cpo) {
+    requires(const std::remove_cvref_t<scheduler_t> &scheduler, const same_scheduler_t &cpo) {
       { scheduler.query(cpo) } -> std::convertible_to<bool>;
     };
 
@@ -25,8 +24,7 @@ concept same_scheduler_queryable =
 
 struct same_scheduler_t {
   template <typename scheduler_t>
-  [[nodiscard]] constexpr auto
-  operator()(const scheduler_t &scheduler) const noexcept -> bool {
+  [[nodiscard]] constexpr auto operator()(const scheduler_t &scheduler) const noexcept -> bool {
     if constexpr (detail::same_scheduler_queryable<scheduler_t>) {
       return static_cast<bool>(scheduler.query(*this));
     } else {
@@ -41,20 +39,18 @@ template <typename scheduler_t> class schedule_handoff_sender;
 template <typename scheduler_t> class try_schedule_handoff_sender;
 
 template <typename sender_t>
-concept schedule_handoff_sender_like =
-    requires(const std::remove_cvref_t<sender_t> &sender) {
-      typename std::remove_cvref_t<sender_t>::wh_scheduler_handoff_sender_tag;
-      requires !std::remove_cvref_t<sender_t>::is_try_sender;
-      sender.target_scheduler();
-    };
+concept schedule_handoff_sender_like = requires(const std::remove_cvref_t<sender_t> &sender) {
+  typename std::remove_cvref_t<sender_t>::wh_scheduler_handoff_sender_tag;
+  requires !std::remove_cvref_t<sender_t>::is_try_sender;
+  sender.target_scheduler();
+};
 
 template <typename sender_t>
-concept try_schedule_handoff_sender_like =
-    requires(const std::remove_cvref_t<sender_t> &sender) {
-      typename std::remove_cvref_t<sender_t>::wh_scheduler_handoff_sender_tag;
-      requires std::remove_cvref_t<sender_t>::is_try_sender;
-      sender.target_scheduler();
-    };
+concept try_schedule_handoff_sender_like = requires(const std::remove_cvref_t<sender_t> &sender) {
+  typename std::remove_cvref_t<sender_t>::wh_scheduler_handoff_sender_tag;
+  requires std::remove_cvref_t<sender_t>::is_try_sender;
+  sender.target_scheduler();
+};
 
 template <typename scheduler_t> struct sender_env {
   scheduler_t scheduler;
@@ -79,8 +75,8 @@ template <typename scheduler_t> struct sender_env {
 template <typename scheduler_t> class schedule_handoff_sender {
 public:
   using sender_concept = stdexec::sender_t;
-  using completion_signatures = stdexec::__completion_signatures_of_t<
-      stdexec::schedule_result_t<scheduler_t>>;
+  using completion_signatures =
+      stdexec::__completion_signatures_of_t<stdexec::schedule_result_t<scheduler_t>>;
   using wh_scheduler_handoff_sender_tag = void;
   static constexpr bool is_try_sender = false;
 
@@ -90,8 +86,7 @@ public:
 
   template <typename receiver_t>
   [[nodiscard]] auto connect(receiver_t receiver) const
-      -> stdexec::connect_result_t<stdexec::schedule_result_t<scheduler_t>,
-                                   receiver_t> {
+      -> stdexec::connect_result_t<stdexec::schedule_result_t<scheduler_t>, receiver_t> {
     return stdexec::connect(stdexec::schedule(scheduler_), std::move(receiver));
   }
 
@@ -99,9 +94,7 @@ public:
     return sender_env<scheduler_t>{scheduler_};
   }
 
-  [[nodiscard]] auto target_scheduler() const noexcept -> const scheduler_t & {
-    return scheduler_;
-  }
+  [[nodiscard]] auto target_scheduler() const noexcept -> const scheduler_t & { return scheduler_; }
 
 private:
   scheduler_t scheduler_;
@@ -110,8 +103,8 @@ private:
 template <typename scheduler_t> class try_schedule_handoff_sender {
 public:
   using sender_concept = stdexec::sender_t;
-  using completion_signatures = stdexec::__completion_signatures_of_t<
-      wh::core::try_schedule_result_t<scheduler_t>>;
+  using completion_signatures =
+      stdexec::__completion_signatures_of_t<wh::core::try_schedule_result_t<scheduler_t>>;
   using wh_scheduler_handoff_sender_tag = void;
   static constexpr bool is_try_sender = true;
 
@@ -121,19 +114,15 @@ public:
 
   template <typename receiver_t>
   [[nodiscard]] auto connect(receiver_t receiver) const
-      -> stdexec::connect_result_t<wh::core::try_schedule_result_t<scheduler_t>,
-                                   receiver_t> {
-    return stdexec::connect(wh::core::try_schedule(scheduler_),
-                            std::move(receiver));
+      -> stdexec::connect_result_t<wh::core::try_schedule_result_t<scheduler_t>, receiver_t> {
+    return stdexec::connect(wh::core::try_schedule(scheduler_), std::move(receiver));
   }
 
   [[nodiscard]] auto get_env() const noexcept -> sender_env<scheduler_t> {
     return sender_env<scheduler_t>{scheduler_};
   }
 
-  [[nodiscard]] auto target_scheduler() const noexcept -> const scheduler_t & {
-    return scheduler_;
-  }
+  [[nodiscard]] auto target_scheduler() const noexcept -> const scheduler_t & { return scheduler_; }
 
 private:
   scheduler_t scheduler_;
@@ -142,16 +131,14 @@ private:
 template <typename scheduler_t>
 [[nodiscard]] auto make_schedule_handoff_sender(scheduler_t scheduler)
     -> schedule_handoff_sender<std::remove_cvref_t<scheduler_t>> {
-  return schedule_handoff_sender<std::remove_cvref_t<scheduler_t>>{
-      std::move(scheduler)};
+  return schedule_handoff_sender<std::remove_cvref_t<scheduler_t>>{std::move(scheduler)};
 }
 
 template <typename scheduler_t>
   requires wh::core::try_scheduler<std::remove_cvref_t<scheduler_t>>
 [[nodiscard]] auto make_try_schedule_handoff_sender(scheduler_t scheduler)
     -> try_schedule_handoff_sender<std::remove_cvref_t<scheduler_t>> {
-  return try_schedule_handoff_sender<std::remove_cvref_t<scheduler_t>>{
-      std::move(scheduler)};
+  return try_schedule_handoff_sender<std::remove_cvref_t<scheduler_t>>{std::move(scheduler)};
 }
 
 } // namespace wh::core::detail::scheduler_handoff

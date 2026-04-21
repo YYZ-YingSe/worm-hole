@@ -1,38 +1,34 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <atomic>
 #include <optional>
 #include <utility>
 #include <variant>
 
 #include <stdexec/execution.hpp>
 
-#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/shared_state.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/stdexec.hpp"
 #include "wh/core/stdexec/manual_lifetime.hpp"
 
 namespace wh::core::cursor_reader_detail {
 
-template <wh::core::cursor_reader_source source_t, typename policy_t,
-          typename receiver_t>
+template <wh::core::cursor_reader_source source_t, typename policy_t, typename receiver_t>
   requires wh::core::cursor_reader_detail::policy_for<source_t, policy_t>
-struct read_operation final
-    : async_waiter_base<typename policy_t::result_type> {
+struct read_operation final : async_waiter_base<typename policy_t::result_type> {
   using result_type = typename policy_t::result_type;
   using shared_state_t = shared_state<source_t, policy_t>;
   using async_waiter_t = async_waiter_base<result_type>;
-  using scheduler_t =
-      wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>;
+  using scheduler_t = wh::core::detail::resume_scheduler_t<stdexec::env_of_t<receiver_t>>;
   using stop_token_t = stdexec::stop_token_of_t<stdexec::env_of_t<receiver_t>>;
   using handoff_sender_t = stdexec::schedule_result_t<scheduler_t>;
   struct handoff_value_tag {};
   struct handoff_stopped_tag {};
   using handoff_completion_t =
-      std::variant<handoff_value_tag, std::exception_ptr,
-                   handoff_stopped_tag>;
+      std::variant<handoff_value_tag, std::exception_ptr, handoff_stopped_tag>;
 
   struct stop_callback;
   struct handoff_receiver {
@@ -41,29 +37,23 @@ struct read_operation final
     read_operation *self{nullptr};
 
     auto set_value() noexcept -> void {
-      self->publish_handoff_completion(handoff_completion_t{
-          handoff_value_tag{}});
+      self->publish_handoff_completion(handoff_completion_t{handoff_value_tag{}});
     }
 
-    template <typename error_t>
-    auto set_error(error_t &&error) noexcept -> void {
+    template <typename error_t> auto set_error(error_t &&error) noexcept -> void {
       self->publish_handoff_completion(handoff_completion_t{
-          wh::core::cursor_reader_detail::to_exception_ptr(
-              std::forward<error_t>(error))});
+          wh::core::cursor_reader_detail::to_exception_ptr(std::forward<error_t>(error))});
     }
 
     auto set_stopped() noexcept -> void {
-      self->publish_handoff_completion(handoff_completion_t{
-          handoff_stopped_tag{}});
+      self->publish_handoff_completion(handoff_completion_t{handoff_stopped_tag{}});
     }
 
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
   };
 
-  using stop_callback_t =
-      stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
-  using handoff_op_t =
-      stdexec::connect_result_t<handoff_sender_t, handoff_receiver>;
+  using stop_callback_t = stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
+  using handoff_op_t = stdexec::connect_result_t<handoff_sender_t, handoff_receiver>;
 
   struct stop_callback {
     read_operation *self{nullptr};
@@ -79,12 +69,9 @@ struct read_operation final
   bool released{true};
   receiver_t receiver_;
   scheduler_t scheduler_;
-  wh::core::detail::manual_storage<sizeof(handoff_op_t), alignof(handoff_op_t)>
-      handoff_op_{};
+  wh::core::detail::manual_storage<sizeof(handoff_op_t), alignof(handoff_op_t)> handoff_op_{};
   bool handoff_engaged_{false};
-  wh::core::detail::manual_storage<sizeof(stop_callback_t),
-                                   alignof(stop_callback_t)>
-      on_stop_{};
+  wh::core::detail::manual_storage<sizeof(stop_callback_t), alignof(stop_callback_t)> on_stop_{};
   bool on_stop_engaged_{false};
   std::atomic<bool> stop_requested_{false};
   bool stopped_{false};
@@ -96,17 +83,15 @@ struct read_operation final
   template <typename receiver_u>
     requires std::constructible_from<receiver_t, receiver_u &&>
   read_operation(wh::core::detail::intrusive_ptr<shared_state_t> state,
-                 const std::size_t reader_index_value,
-                 const bool released_value, receiver_u &&receiver)
-      : state_(std::move(state)), reader_index(reader_index_value),
-        released(released_value), receiver_(std::forward<receiver_u>(receiver)),
-        scheduler_(
-            wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
-                stdexec::get_env(receiver_))) {
-    static constexpr typename async_waiter_t::ops_type ops{
-        [](async_waiter_t *base) noexcept {
-          static_cast<read_operation *>(base)->complete_ready();
-        }};
+                 const std::size_t reader_index_value, const bool released_value,
+                 receiver_u &&receiver)
+      : state_(std::move(state)), reader_index(reader_index_value), released(released_value),
+        receiver_(std::forward<receiver_u>(receiver)),
+        scheduler_(wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(
+            stdexec::get_env(receiver_))) {
+    static constexpr typename async_waiter_t::ops_type ops{[](async_waiter_t *base) noexcept {
+      static_cast<read_operation *>(base)->complete_ready();
+    }};
     this->ops = &ops;
   }
 
@@ -140,8 +125,7 @@ struct read_operation final
     if constexpr (!stdexec::unstoppable_token<stop_token_t>) {
       try {
         [[maybe_unused]] auto &callback =
-            on_stop_.template construct<stop_callback_t>(stop_token,
-                                                         stop_callback{this});
+            on_stop_.template construct<stop_callback_t>(stop_token, stop_callback{this});
         on_stop_engaged_ = true;
       } catch (...) {
         stdexec::set_error(std::move(receiver_), std::current_exception());
@@ -170,8 +154,7 @@ struct read_operation final
     }
 
     if (ticket.start_pull) {
-      state_->start_async_pull(
-          wh::core::detail::erase_resume_scheduler(scheduler_));
+      state_->start_async_pull(wh::core::detail::erase_resume_scheduler(scheduler_));
     }
   }
 
@@ -190,8 +173,7 @@ private:
         return false;
       }
       const auto updated = static_cast<std::uint8_t>(state_bits | claimed_bit_);
-      if (state_bits_.compare_exchange_weak(state_bits, updated,
-                                            std::memory_order_acq_rel,
+      if (state_bits_.compare_exchange_weak(state_bits, updated, std::memory_order_acq_rel,
                                             std::memory_order_acquire)) {
         return true;
       }
@@ -199,8 +181,8 @@ private:
   }
 
   [[nodiscard]] auto start_delivery() noexcept -> bool {
-    return (state_bits_.fetch_or(delivering_bit_, std::memory_order_acq_rel) &
-            delivering_bit_) == 0U;
+    return (state_bits_.fetch_or(delivering_bit_, std::memory_order_acq_rel) & delivering_bit_) ==
+           0U;
   }
 
   auto reset_stop_callback() noexcept -> void {
@@ -254,9 +236,8 @@ private:
     try {
       [[maybe_unused]] auto &handoff_op =
           handoff_op_.template construct_with<handoff_op_t>([&]() -> handoff_op_t {
-        return stdexec::connect(stdexec::schedule(scheduler_),
-                                handoff_receiver{this});
-      });
+            return stdexec::connect(stdexec::schedule(scheduler_), handoff_receiver{this});
+          });
       handoff_engaged_ = true;
       handoff_start_returned_.store(false, std::memory_order_release);
       stdexec::start(handoff_op_.template get<handoff_op_t>());
@@ -271,10 +252,8 @@ private:
     }
   }
 
-  auto publish_handoff_completion(handoff_completion_t completion) noexcept
-      -> void {
-    wh_invariant(
-        !handoff_completion_ready_.load(std::memory_order_acquire));
+  auto publish_handoff_completion(handoff_completion_t completion) noexcept -> void {
+    wh_invariant(!handoff_completion_ready_.load(std::memory_order_acquire));
     handoff_completion_.emplace(std::move(completion));
     handoff_completion_ready_.store(true, std::memory_order_release);
     if (handoff_start_returned_.load(std::memory_order_acquire)) {
@@ -313,15 +292,13 @@ private:
     stdexec::set_value(std::move(receiver_), this->take_ready());
   }
 
-  template <typename error_t> auto deliver_error(error_t &&error) noexcept
-      -> void {
+  template <typename error_t> auto deliver_error(error_t &&error) noexcept -> void {
     if (!start_delivery()) {
       return;
     }
     release_stop();
-    stdexec::set_error(std::move(receiver_),
-                       wh::core::cursor_reader_detail::to_exception_ptr(
-                           std::forward<error_t>(error)));
+    stdexec::set_error(std::move(receiver_), wh::core::cursor_reader_detail::to_exception_ptr(
+                                                 std::forward<error_t>(error)));
   }
 
   auto deliver_stopped() noexcept -> void {
@@ -350,22 +327,21 @@ struct read_sender {
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver) && -> read_operation<
-      source_t, policy_t, std::remove_cvref_t<receiver_t>> {
+  [[nodiscard]] auto connect(receiver_t receiver)
+      && -> read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>> {
     return read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>>{
         std::move(state_), reader_index, released, std::move(receiver)};
   }
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
     requires wh::core::detail::receiver_with_resume_scheduler<receiver_t>
-  [[nodiscard]] auto connect(receiver_t receiver) const
-      & -> read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>> {
+  [[nodiscard]] auto connect(receiver_t receiver)
+      const & -> read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>> {
     return read_operation<source_t, policy_t, std::remove_cvref_t<receiver_t>>{
         state_, reader_index, released, std::move(receiver)};
   }
 
-  [[nodiscard]] auto get_env() const noexcept
-      -> wh::core::detail::async_completion_env {
+  [[nodiscard]] auto get_env() const noexcept -> wh::core::detail::async_completion_env {
     return {};
   }
 };

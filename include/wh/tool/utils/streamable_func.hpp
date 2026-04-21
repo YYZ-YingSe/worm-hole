@@ -17,13 +17,12 @@ template <typename function_t>
 [[nodiscard]] inline auto make_streamable_func(function_t &&function) {
   using stored_function_t = wh::core::remove_cvref_t<function_t>;
   return [function = stored_function_t{std::forward<function_t>(function)}](
-             const std::string_view input, const tool_options &options)
-             -> wh::core::result<tool_output_stream_reader> {
+             const std::string_view input,
+             const tool_options &options) -> wh::core::result<tool_output_stream_reader> {
     [[maybe_unused]] const auto *captured_function = &function;
-    using output_t = wh::core::remove_cvref_t<wh::core::callable_result_t<
-        stored_function_t, std::string_view, const tool_options &>>;
-    if constexpr (std::same_as<output_t,
-                               wh::core::result<tool_output_stream_reader>>) {
+    using output_t = wh::core::remove_cvref_t<
+        wh::core::callable_result_t<stored_function_t, std::string_view, const tool_options &>>;
+    if constexpr (std::same_as<output_t, wh::core::result<tool_output_stream_reader>>) {
       return std::invoke(function, input, options);
     } else if constexpr (std::same_as<output_t, tool_output_stream_reader>) {
       return std::invoke(function, input, options);

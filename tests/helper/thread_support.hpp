@@ -18,8 +18,7 @@ public:
 
   template <typename function_t, typename... args_t>
   explicit joining_thread(function_t &&function, args_t &&...args)
-      : thread_(std::forward<function_t>(function),
-                std::forward<args_t>(args)...) {}
+      : thread_(std::forward<function_t>(function), std::forward<args_t>(args)...) {}
 
   joining_thread(const joining_thread &) = delete;
   auto operator=(const joining_thread &) -> joining_thread & = delete;
@@ -36,9 +35,7 @@ public:
 
   ~joining_thread() { join_if_needed(); }
 
-  [[nodiscard]] auto joinable() const noexcept -> bool {
-    return thread_.joinable();
-  }
+  [[nodiscard]] auto joinable() const noexcept -> bool { return thread_.joinable(); }
 
   auto join() -> void { thread_.join(); }
 

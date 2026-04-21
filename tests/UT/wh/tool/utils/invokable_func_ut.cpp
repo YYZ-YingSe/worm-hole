@@ -18,8 +18,7 @@ TEST_CASE("invokable func decodes typed inputs and normalizes outputs",
   REQUIRE(typed_result.has_value());
   REQUIRE(typed_result.value() == "8");
 
-  auto void_result = wh::tool::utils::detail::normalize_invokable_output(
-      wh::core::result<void>{});
+  auto void_result = wh::tool::utils::detail::normalize_invokable_output(wh::core::result<void>{});
   REQUIRE(void_result.has_value());
   REQUIRE(void_result.value().empty());
 }
@@ -27,11 +26,10 @@ TEST_CASE("invokable func decodes typed inputs and normalizes outputs",
 TEST_CASE("invokable func supports custom deserializers and propagates decode failures",
           "[UT][wh/tool/utils/invokable_func.hpp][decode_tool_input][branch]") {
   auto decoded = wh::tool::utils::decode_tool_input<int>(
-      "ignored",
-      wh::tool::utils::input_deserializer<int>{
-          [](const std::string_view text) -> wh::core::result<int> {
-            return static_cast<int>(text.size());
-          }});
+      "ignored", wh::tool::utils::input_deserializer<int>{
+                     [](const std::string_view text) -> wh::core::result<int> {
+                       return static_cast<int>(text.size());
+                     }});
   REQUIRE(decoded.has_value());
   REQUIRE(decoded.value() == 7);
 
@@ -40,7 +38,8 @@ TEST_CASE("invokable func supports custom deserializers and propagates decode fa
 }
 
 TEST_CASE("invokable func serializes structured outputs and propagates custom deserializer errors",
-          "[UT][wh/tool/utils/invokable_func.hpp][detail::normalize_invokable_output][condition][branch][boundary]") {
+          "[UT][wh/tool/utils/"
+          "invokable_func.hpp][detail::normalize_invokable_output][condition][branch][boundary]") {
   auto structured = wh::tool::utils::make_invokable_func<int>(
       [](const int value, const wh::tool::tool_options &) {
         return std::vector<int>{value, value + 1};
@@ -51,11 +50,9 @@ TEST_CASE("invokable func serializes structured outputs and propagates custom de
 
   auto failing = wh::tool::utils::make_invokable_func<int>(
       [](const int value, const wh::tool::tool_options &) { return value; },
-      wh::tool::utils::input_deserializer<int>{
-          [](const std::string_view) -> wh::core::result<int> {
-            return wh::core::result<int>::failure(
-                wh::core::errc::invalid_argument);
-          }});
+      wh::tool::utils::input_deserializer<int>{[](const std::string_view) -> wh::core::result<int> {
+        return wh::core::result<int>::failure(wh::core::errc::invalid_argument);
+      }});
   auto failed = failing("ignored", wh::tool::tool_options{});
   REQUIRE(failed.has_error());
   REQUIRE(failed.error() == wh::core::errc::invalid_argument);

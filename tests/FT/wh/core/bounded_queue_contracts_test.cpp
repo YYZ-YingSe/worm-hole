@@ -1,11 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <chrono>
 #include <optional>
 #include <semaphore>
 #include <stop_token>
 #include <thread>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/manual_scheduler.hpp"
@@ -19,8 +18,7 @@ struct would_block {};
 
 using scheduler_t = wh::testing::helper::manual_scheduler<would_block>;
 using scheduler_env_t =
-    wh::testing::helper::scheduler_env<scheduler_t,
-                                       wh::testing::helper::stop_token>;
+    wh::testing::helper::scheduler_env<scheduler_t, wh::testing::helper::stop_token>;
 
 } // namespace
 
@@ -69,8 +67,7 @@ TEST_CASE("bounded queue async public facade wakes pending push and pop on sched
   wh::testing::helper::sender_capture<void> push_capture{};
   auto push_operation = stdexec::connect(
       queue.async_push(2),
-      wh::testing::helper::sender_capture_receiver<void, scheduler_env_t>{
-          &push_capture, env});
+      wh::testing::helper::sender_capture_receiver<void, scheduler_env_t>{&push_capture, env});
   stdexec::start(push_operation);
   REQUIRE_FALSE(push_capture.ready.try_acquire());
 
@@ -79,34 +76,29 @@ TEST_CASE("bounded queue async public facade wakes pending push and pop on sched
   REQUIRE(first.value() == 1);
   REQUIRE(scheduler_state.run_one());
   REQUIRE(push_capture.ready.try_acquire());
-  REQUIRE(push_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(push_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
 
   wh::testing::helper::sender_capture<int> pop_capture{};
   auto pop_operation = stdexec::connect(
       queue.async_pop(),
-      wh::testing::helper::sender_capture_receiver<int, scheduler_env_t>{
-          &pop_capture, env});
+      wh::testing::helper::sender_capture_receiver<int, scheduler_env_t>{&pop_capture, env});
   stdexec::start(pop_operation);
   if (!pop_capture.ready.try_acquire()) {
     REQUIRE(scheduler_state.run_one());
     REQUIRE(pop_capture.ready.try_acquire());
   }
-  REQUIRE(pop_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(pop_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
   REQUIRE(pop_capture.value.has_value());
   REQUIRE(*pop_capture.value == 2);
 
   wh::testing::helper::sender_capture<int> closed_capture{};
   auto closed_operation = stdexec::connect(
       queue.async_pop(),
-      wh::testing::helper::sender_capture_receiver<int, scheduler_env_t>{
-          &closed_capture, env});
+      wh::testing::helper::sender_capture_receiver<int, scheduler_env_t>{&closed_capture, env});
   stdexec::start(closed_operation);
   REQUIRE_FALSE(closed_capture.ready.try_acquire());
   queue.close();
   REQUIRE(scheduler_state.run_one());
   REQUIRE(closed_capture.ready.try_acquire());
-  REQUIRE(closed_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::error);
+  REQUIRE(closed_capture.terminal == wh::testing::helper::sender_terminal_kind::error);
 }

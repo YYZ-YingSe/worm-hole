@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/bind.hpp"
@@ -41,91 +41,77 @@ TEST_CASE("plan execute shell public binding executes planner executor and repla
                                      wh::core::run_context &)
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *planner_requests += 1U;
-                    if (context.current_plan.has_value() ||
-                        !context.executed_steps.empty() ||
+                    if (context.current_plan.has_value() || !context.executed_steps.empty() ||
                         context.input_messages.size() != 1U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
                         make_text_message(wh::schema::message_role::user, "plan")};
                   })
               .has_value());
-  REQUIRE(authored
-              .set_executor_request_builder(
-                  [executor_requests](const wh::agent::plan_execute_context &context,
-                                      wh::core::run_context &)
-                      -> wh::core::result<std::vector<wh::schema::message>> {
-                    *executor_requests += 1U;
-                    const auto expected_step =
-                        *executor_requests == 1U ? "inspect" : "summarize";
-                    const auto expected_executed =
-                        *executor_requests == 1U ? 0U : 1U;
-                    if (!context.current_plan.has_value() ||
-                        context.current_plan->steps.size() != 1U ||
-                        context.current_plan->steps.front() != expected_step ||
-                        context.executed_steps.size() != expected_executed ||
-                        *executor_requests > 2U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          context.current_plan->steps.front())};
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_executor_request_builder(
+              [executor_requests](
+                  const wh::agent::plan_execute_context &context,
+                  wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::message>> {
+                *executor_requests += 1U;
+                const auto expected_step = *executor_requests == 1U ? "inspect" : "summarize";
+                const auto expected_executed = *executor_requests == 1U ? 0U : 1U;
+                if (!context.current_plan.has_value() || context.current_plan->steps.size() != 1U ||
+                    context.current_plan->steps.front() != expected_step ||
+                    context.executed_steps.size() != expected_executed || *executor_requests > 2U) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                return std::vector<wh::schema::message>{make_text_message(
+                    wh::schema::message_role::user, context.current_plan->steps.front())};
+              })
+          .has_value());
   REQUIRE(authored
               .set_replanner_request_builder(
                   [replanner_requests](const wh::agent::plan_execute_context &context,
                                        wh::core::run_context &)
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *replanner_requests += 1U;
-                    if (!context.current_plan.has_value() ||
-                        !context.current_plan->steps.empty() ||
+                    if (!context.current_plan.has_value() || !context.current_plan->steps.empty() ||
                         context.executed_steps.size() != *replanner_requests ||
                         *replanner_requests > 2U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          "replan")};
+                        make_text_message(wh::schema::message_role::user, "replan")};
                   })
               .has_value());
   REQUIRE(authored
-              .set_planner_plan_reader(
-                  [](const wh::agent::agent_output &, wh::core::run_context &)
-                      -> wh::core::result<wh::agent::plan_execute_plan> {
-                    return wh::agent::plan_execute_plan{.steps = {"inspect"}};
-                  })
+              .set_planner_plan_reader([](const wh::agent::agent_output &, wh::core::run_context &)
+                                           -> wh::core::result<wh::agent::plan_execute_plan> {
+                return wh::agent::plan_execute_plan{.steps = {"inspect"}};
+              })
               .has_value());
-  REQUIRE(authored
-              .set_executor_step_reader(
-                  [](const wh::agent::agent_output &, wh::core::run_context &)
-                      -> wh::core::result<std::string> {
-                    return std::string{"step-result"};
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_executor_step_reader([](const wh::agent::agent_output &,
+                                       wh::core::run_context &) -> wh::core::result<std::string> {
+            return std::string{"step-result"};
+          })
+          .has_value());
   REQUIRE(authored
               .set_replanner_decision_reader(
-                  [replanner_decisions](const wh::agent::agent_output &,
-                                        wh::core::run_context &)
+                  [replanner_decisions](const wh::agent::agent_output &, wh::core::run_context &)
                       -> wh::core::result<wh::agent::plan_execute_decision> {
                     *replanner_decisions += 1U;
                     if (*replanner_decisions == 1U) {
                       return wh::agent::plan_execute_decision{
                           .kind = wh::agent::plan_execute_decision_kind::plan,
-                          .next_plan =
-                              wh::agent::plan_execute_plan{.steps = {"summarize"}},
+                          .next_plan = wh::agent::plan_execute_plan{.steps = {"summarize"}},
                       };
                     }
                     return wh::agent::plan_execute_decision{
                         .kind = wh::agent::plan_execute_decision_kind::respond,
-                        .response = make_text_message(
-                            wh::schema::message_role::assistant, "done"),
+                        .response = make_text_message(wh::schema::message_role::assistant, "done"),
                     };
                   })
               .has_value());
@@ -140,9 +126,8 @@ TEST_CASE("plan execute shell public binding executes planner executor and repla
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {make_text_message(wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(graph.value(),
+                                   {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
@@ -164,50 +149,46 @@ TEST_CASE("self refine shell public binding executes worker fallback reviewer pa
 
   wh::agent::self_refine authored{"self-refine"};
   REQUIRE(authored.set_worker(std::move(*worker)).has_value());
-  REQUIRE(authored
-              .set_worker_request_builder(
-                  [worker_requests](const wh::agent::revision_context &context,
-                                    wh::core::run_context &)
-                      -> wh::core::result<std::vector<wh::schema::message>> {
-                    *worker_requests += 1U;
-                    if (context.current_draft != nullptr ||
-                        context.current_review != nullptr ||
-                        context.input_messages.size() != 1U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user, "draft")};
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_worker_request_builder(
+              [worker_requests](const wh::agent::revision_context &context, wh::core::run_context &)
+                  -> wh::core::result<std::vector<wh::schema::message>> {
+                *worker_requests += 1U;
+                if (context.current_draft != nullptr || context.current_review != nullptr ||
+                    context.input_messages.size() != 1U) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                return std::vector<wh::schema::message>{
+                    make_text_message(wh::schema::message_role::user, "draft")};
+              })
+          .has_value());
   REQUIRE(authored
               .set_reviewer_request_builder(
                   [reviewer_requests](const wh::agent::revision_context &context,
                                       wh::core::run_context &)
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *reviewer_requests += 1U;
-                    if (context.current_draft == nullptr ||
-                        context.current_review != nullptr) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                    if (context.current_draft == nullptr || context.current_review != nullptr) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          "review")};
+                        make_text_message(wh::schema::message_role::user, "review")};
                   })
               .has_value());
-  REQUIRE(authored
-              .set_review_decision_reader(
-                  [decisions](const wh::agent::agent_output &, wh::core::run_context &)
-                      -> wh::core::result<wh::agent::review_decision> {
-                    *decisions += 1U;
-                    return wh::agent::review_decision{
-                        .kind = wh::agent::review_decision_kind::accept,
-                    };
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_review_decision_reader(
+              [decisions](const wh::agent::agent_output &,
+                          wh::core::run_context &) -> wh::core::result<wh::agent::review_decision> {
+                *decisions += 1U;
+                return wh::agent::review_decision{
+                    .kind = wh::agent::review_decision_kind::accept,
+                };
+              })
+          .has_value());
 
   REQUIRE(authored.freeze().has_value());
   auto lowered = std::move(authored).into_agent();
@@ -218,9 +199,8 @@ TEST_CASE("self refine shell public binding executes worker fallback reviewer pa
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {make_text_message(wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(graph.value(),
+                                   {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
@@ -241,35 +221,30 @@ TEST_CASE("self refine shell public binding executes revise loop before final ou
 
   wh::agent::self_refine authored{"self-refine-loop"};
   REQUIRE(authored.set_worker(std::move(*worker)).has_value());
-  REQUIRE(authored
-              .set_worker_request_builder(
-                  [worker_requests](const wh::agent::revision_context &context,
-                                    wh::core::run_context &)
-                      -> wh::core::result<std::vector<wh::schema::message>> {
-                    *worker_requests += 1U;
-                    if (*worker_requests == 1U &&
-                        (context.current_draft != nullptr ||
-                         context.current_review != nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    if (*worker_requests == 2U &&
-                        (context.current_draft == nullptr ||
-                         context.current_review == nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    if (*worker_requests > 2U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user, "draft")};
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_worker_request_builder(
+              [worker_requests](const wh::agent::revision_context &context, wh::core::run_context &)
+                  -> wh::core::result<std::vector<wh::schema::message>> {
+                *worker_requests += 1U;
+                if (*worker_requests == 1U &&
+                    (context.current_draft != nullptr || context.current_review != nullptr)) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                if (*worker_requests == 2U &&
+                    (context.current_draft == nullptr || context.current_review == nullptr)) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                if (*worker_requests > 2U) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                return std::vector<wh::schema::message>{
+                    make_text_message(wh::schema::message_role::user, "draft")};
+              })
+          .has_value());
   REQUIRE(authored
               .set_reviewer_request_builder(
                   [reviewer_requests](const wh::agent::revision_context &context,
@@ -277,41 +252,35 @@ TEST_CASE("self refine shell public binding executes revise loop before final ou
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *reviewer_requests += 1U;
                     if (*reviewer_requests == 1U &&
-                        (context.current_draft == nullptr ||
-                         context.current_review != nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                        (context.current_draft == nullptr || context.current_review != nullptr)) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     if (*reviewer_requests == 2U &&
-                        (context.current_draft == nullptr ||
-                         context.current_review == nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                        (context.current_draft == nullptr || context.current_review == nullptr)) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     if (*reviewer_requests > 2U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          "review")};
+                        make_text_message(wh::schema::message_role::user, "review")};
                   })
               .has_value());
-  REQUIRE(authored
-              .set_review_decision_reader(
-                  [decisions](const wh::agent::agent_output &, wh::core::run_context &)
-                      -> wh::core::result<wh::agent::review_decision> {
-                    *decisions += 1U;
-                    return wh::agent::review_decision{
-                        .kind = *decisions == 1U
-                                    ? wh::agent::review_decision_kind::revise
-                                    : wh::agent::review_decision_kind::accept,
-                    };
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_review_decision_reader(
+              [decisions](const wh::agent::agent_output &,
+                          wh::core::run_context &) -> wh::core::result<wh::agent::review_decision> {
+                *decisions += 1U;
+                return wh::agent::review_decision{
+                    .kind = *decisions == 1U ? wh::agent::review_decision_kind::revise
+                                             : wh::agent::review_decision_kind::accept,
+                };
+              })
+          .has_value());
 
   REQUIRE(authored.freeze().has_value());
   auto lowered = std::move(authored).into_agent();
@@ -322,9 +291,8 @@ TEST_CASE("self refine shell public binding executes revise loop before final ou
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {make_text_message(wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(graph.value(),
+                                   {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
@@ -354,11 +322,9 @@ TEST_CASE("reviewer executor shell public binding executes accepted executor dra
                                       wh::core::run_context &)
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *executor_requests += 1U;
-                    if (context.current_draft != nullptr ||
-                        context.current_review != nullptr ||
+                    if (context.current_draft != nullptr || context.current_review != nullptr ||
                         context.input_messages.size() != 1U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
@@ -371,27 +337,25 @@ TEST_CASE("reviewer executor shell public binding executes accepted executor dra
                                       wh::core::run_context &)
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *reviewer_requests += 1U;
-                    if (context.current_draft == nullptr ||
-                        context.current_review != nullptr) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                    if (context.current_draft == nullptr || context.current_review != nullptr) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          "review")};
+                        make_text_message(wh::schema::message_role::user, "review")};
                   })
               .has_value());
-  REQUIRE(authored
-              .set_review_decision_reader(
-                  [decisions](const wh::agent::agent_output &, wh::core::run_context &)
-                      -> wh::core::result<wh::agent::review_decision> {
-                    *decisions += 1U;
-                    return wh::agent::review_decision{
-                        .kind = wh::agent::review_decision_kind::accept,
-                    };
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_review_decision_reader(
+              [decisions](const wh::agent::agent_output &,
+                          wh::core::run_context &) -> wh::core::result<wh::agent::review_decision> {
+                *decisions += 1U;
+                return wh::agent::review_decision{
+                    .kind = wh::agent::review_decision_kind::accept,
+                };
+              })
+          .has_value());
 
   REQUIRE(authored.freeze().has_value());
   auto lowered = std::move(authored).into_agent();
@@ -402,9 +366,8 @@ TEST_CASE("reviewer executor shell public binding executes accepted executor dra
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {make_text_message(wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(graph.value(),
+                                   {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
@@ -435,22 +398,17 @@ TEST_CASE("reviewer executor shell public binding executes revise loop before fi
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *executor_requests += 1U;
                     if (*executor_requests == 1U &&
-                        (context.current_draft != nullptr ||
-                         context.current_review != nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                        (context.current_draft != nullptr || context.current_review != nullptr)) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     if (*executor_requests == 2U &&
-                        (context.current_draft == nullptr ||
-                         context.current_review == nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                        (context.current_draft == nullptr || context.current_review == nullptr)) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     if (*executor_requests > 2U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
@@ -464,41 +422,35 @@ TEST_CASE("reviewer executor shell public binding executes revise loop before fi
                       -> wh::core::result<std::vector<wh::schema::message>> {
                     *reviewer_requests += 1U;
                     if (*reviewer_requests == 1U &&
-                        (context.current_draft == nullptr ||
-                         context.current_review != nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                        (context.current_draft == nullptr || context.current_review != nullptr)) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     if (*reviewer_requests == 2U &&
-                        (context.current_draft == nullptr ||
-                         context.current_review == nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                        (context.current_draft == nullptr || context.current_review == nullptr)) {
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     if (*reviewer_requests > 2U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
+                      return wh::core::result<std::vector<wh::schema::message>>::failure(
                           wh::core::errc::contract_violation);
                     }
                     return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          "review")};
+                        make_text_message(wh::schema::message_role::user, "review")};
                   })
               .has_value());
-  REQUIRE(authored
-              .set_review_decision_reader(
-                  [decisions](const wh::agent::agent_output &, wh::core::run_context &)
-                      -> wh::core::result<wh::agent::review_decision> {
-                    *decisions += 1U;
-                    return wh::agent::review_decision{
-                        .kind = *decisions == 1U
-                                    ? wh::agent::review_decision_kind::revise
-                                    : wh::agent::review_decision_kind::accept,
-                    };
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_review_decision_reader(
+              [decisions](const wh::agent::agent_output &,
+                          wh::core::run_context &) -> wh::core::result<wh::agent::review_decision> {
+                *decisions += 1U;
+                return wh::agent::review_decision{
+                    .kind = *decisions == 1U ? wh::agent::review_decision_kind::revise
+                                             : wh::agent::review_decision_kind::accept,
+                };
+              })
+          .has_value());
 
   REQUIRE(authored.freeze().has_value());
   auto lowered = std::move(authored).into_agent();
@@ -509,9 +461,8 @@ TEST_CASE("reviewer executor shell public binding executes revise loop before fi
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {make_text_message(wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(graph.value(),
+                                   {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
@@ -539,80 +490,70 @@ TEST_CASE("reflexion shell public binding executes optional memory writer path",
   REQUIRE(authored.set_actor(std::move(*actor)).has_value());
   REQUIRE(authored.set_critic(std::move(*critic)).has_value());
   REQUIRE(authored.set_memory_writer(std::move(*memory)).has_value());
-  REQUIRE(authored
-              .set_actor_request_builder(
-                  [actor_requests](const wh::agent::revision_context &context,
-                                   wh::core::run_context &)
-                      -> wh::core::result<std::vector<wh::schema::message>> {
-                    *actor_requests += 1U;
-                    if (*actor_requests == 1U &&
-                        (context.current_draft != nullptr ||
-                         context.current_review != nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    if (*actor_requests == 2U &&
-                        (context.current_draft == nullptr ||
-                         context.current_review == nullptr)) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    if (*actor_requests > 2U) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user, "draft")};
-                  })
-              .has_value());
-  REQUIRE(authored
-              .set_critic_request_builder(
-                  [critic_requests](const wh::agent::revision_context &context,
-                                    wh::core::run_context &)
-                      -> wh::core::result<std::vector<wh::schema::message>> {
-                    *critic_requests += 1U;
-                    if (context.current_draft == nullptr) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          "critique")};
-                  })
-              .has_value());
-  REQUIRE(authored
-              .set_memory_writer_request_builder(
-                  [memory_requests](const wh::agent::revision_context &context,
-                                    wh::core::run_context &)
-                      -> wh::core::result<std::vector<wh::schema::message>> {
-                    *memory_requests += 1U;
-                    if (context.current_draft == nullptr ||
-                        context.current_review == nullptr) {
-                      return wh::core::result<
-                          std::vector<wh::schema::message>>::failure(
-                          wh::core::errc::contract_violation);
-                    }
-                    return std::vector<wh::schema::message>{
-                        make_text_message(wh::schema::message_role::user,
-                                          "memory")};
-                  })
-              .has_value());
-  REQUIRE(authored
-              .set_review_decision_reader(
-                  [decisions](const wh::agent::agent_output &, wh::core::run_context &)
-                      -> wh::core::result<wh::agent::review_decision> {
-                    *decisions += 1U;
-                    return wh::agent::review_decision{
-                        .kind = *decisions == 1U
-                                    ? wh::agent::review_decision_kind::revise
-                                    : wh::agent::review_decision_kind::accept,
-                    };
-                  })
-              .has_value());
+  REQUIRE(
+      authored
+          .set_actor_request_builder(
+              [actor_requests](const wh::agent::revision_context &context, wh::core::run_context &)
+                  -> wh::core::result<std::vector<wh::schema::message>> {
+                *actor_requests += 1U;
+                if (*actor_requests == 1U &&
+                    (context.current_draft != nullptr || context.current_review != nullptr)) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                if (*actor_requests == 2U &&
+                    (context.current_draft == nullptr || context.current_review == nullptr)) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                if (*actor_requests > 2U) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                return std::vector<wh::schema::message>{
+                    make_text_message(wh::schema::message_role::user, "draft")};
+              })
+          .has_value());
+  REQUIRE(
+      authored
+          .set_critic_request_builder(
+              [critic_requests](const wh::agent::revision_context &context, wh::core::run_context &)
+                  -> wh::core::result<std::vector<wh::schema::message>> {
+                *critic_requests += 1U;
+                if (context.current_draft == nullptr) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                return std::vector<wh::schema::message>{
+                    make_text_message(wh::schema::message_role::user, "critique")};
+              })
+          .has_value());
+  REQUIRE(
+      authored
+          .set_memory_writer_request_builder(
+              [memory_requests](const wh::agent::revision_context &context, wh::core::run_context &)
+                  -> wh::core::result<std::vector<wh::schema::message>> {
+                *memory_requests += 1U;
+                if (context.current_draft == nullptr || context.current_review == nullptr) {
+                  return wh::core::result<std::vector<wh::schema::message>>::failure(
+                      wh::core::errc::contract_violation);
+                }
+                return std::vector<wh::schema::message>{
+                    make_text_message(wh::schema::message_role::user, "memory")};
+              })
+          .has_value());
+  REQUIRE(
+      authored
+          .set_review_decision_reader(
+              [decisions](const wh::agent::agent_output &,
+                          wh::core::run_context &) -> wh::core::result<wh::agent::review_decision> {
+                *decisions += 1U;
+                return wh::agent::review_decision{
+                    .kind = *decisions == 1U ? wh::agent::review_decision_kind::revise
+                                             : wh::agent::review_decision_kind::accept,
+                };
+              })
+          .has_value());
 
   REQUIRE(authored.freeze().has_value());
   auto lowered = std::move(authored).into_agent();
@@ -623,9 +564,8 @@ TEST_CASE("reflexion shell public binding executes optional memory writer path",
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {make_text_message(wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(graph.value(),
+                                   {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);

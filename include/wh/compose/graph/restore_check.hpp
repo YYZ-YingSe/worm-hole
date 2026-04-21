@@ -59,22 +59,17 @@ struct restore_diff {
   std::vector<restore_diff_entry> entries{};
 
   /// Returns entry count for one diff kind.
-  [[nodiscard]] auto count(const restore_diff_kind kind) const noexcept
-      -> std::size_t {
-    return static_cast<std::size_t>(
-        std::count_if(entries.begin(), entries.end(),
-                      [kind](const restore_diff_entry &entry) -> bool {
-                        return entry.kind == kind;
-                      }));
+  [[nodiscard]] auto count(const restore_diff_kind kind) const noexcept -> std::size_t {
+    return static_cast<std::size_t>(std::count_if(
+        entries.begin(), entries.end(),
+        [kind](const restore_diff_entry &entry) -> bool { return entry.kind == kind; }));
   }
 
   /// Returns true when at least one entry of `kind` exists.
-  [[nodiscard]] auto contains(const restore_diff_kind kind) const noexcept
-      -> bool {
-    return std::any_of(entries.begin(), entries.end(),
-                       [kind](const restore_diff_entry &entry) -> bool {
-                         return entry.kind == kind;
-                       });
+  [[nodiscard]] auto contains(const restore_diff_kind kind) const noexcept -> bool {
+    return std::any_of(
+        entries.begin(), entries.end(),
+        [kind](const restore_diff_entry &entry) -> bool { return entry.kind == kind; });
   }
 };
 
@@ -114,32 +109,27 @@ struct result {
   std::vector<issue> issues{};
 };
 
-using path_set =
-    std::unordered_set<std::string, wh::core::transparent_string_hash,
-                       wh::core::transparent_string_equal>;
+using path_set = std::unordered_set<std::string, wh::core::transparent_string_hash,
+                                    wh::core::transparent_string_equal>;
 
 [[nodiscard]] inline auto bool_text(const bool value) -> std::string {
   return value ? "true" : "false";
 }
 
-[[nodiscard]] inline auto mode_text(const graph_runtime_mode mode)
-    -> std::string_view {
+[[nodiscard]] inline auto mode_text(const graph_runtime_mode mode) -> std::string_view {
   return mode == graph_runtime_mode::pregel ? "pregel" : "dag";
 }
 
-[[nodiscard]] inline auto
-dispatch_policy_text(const graph_dispatch_policy policy) -> std::string_view {
+[[nodiscard]] inline auto dispatch_policy_text(const graph_dispatch_policy policy)
+    -> std::string_view {
   return policy == graph_dispatch_policy::next_wave ? "next_wave" : "same_wave";
 }
 
-[[nodiscard]] inline auto trigger_mode_text(const graph_trigger_mode mode)
-    -> std::string_view {
-  return mode == graph_trigger_mode::all_predecessors ? "all_predecessors"
-                                                      : "any_predecessor";
+[[nodiscard]] inline auto trigger_mode_text(const graph_trigger_mode mode) -> std::string_view {
+  return mode == graph_trigger_mode::all_predecessors ? "all_predecessors" : "any_predecessor";
 }
 
-[[nodiscard]] inline auto fan_in_policy_text(const graph_fan_in_policy policy)
-    -> std::string_view {
+[[nodiscard]] inline auto fan_in_policy_text(const graph_fan_in_policy policy) -> std::string_view {
   switch (policy) {
   case graph_fan_in_policy::allow_partial:
     return "allow_partial";
@@ -149,8 +139,7 @@ dispatch_policy_text(const graph_dispatch_policy policy) -> std::string_view {
   return "allow_partial";
 }
 
-[[nodiscard]] inline auto node_kind_text(const node_kind kind)
-    -> std::string_view {
+[[nodiscard]] inline auto node_kind_text(const node_kind kind) -> std::string_view {
   switch (kind) {
   case node_kind::component:
     return "component";
@@ -166,8 +155,7 @@ dispatch_policy_text(const graph_dispatch_policy policy) -> std::string_view {
   return "component";
 }
 
-[[nodiscard]] inline auto join_shape_path(const std::string_view prefix,
-                                          const std::string_view key)
+[[nodiscard]] inline auto join_shape_path(const std::string_view prefix, const std::string_view key)
     -> std::string {
   if (prefix.empty()) {
     return std::string{key};
@@ -179,15 +167,12 @@ dispatch_policy_text(const graph_dispatch_policy policy) -> std::string_view {
 }
 
 [[nodiscard]] inline auto edge_subject(const std::string_view prefix,
-                                       const graph_restore_edge &edge)
-    -> std::string {
-  return join_shape_path(prefix, edge.from) + "->" +
-         join_shape_path(prefix, edge.to);
+                                       const graph_restore_edge &edge) -> std::string {
+  return join_shape_path(prefix, edge.from) + "->" + join_shape_path(prefix, edge.to);
 }
 
-inline auto collect_shape_paths(const graph_restore_shape &shape,
-                                const std::string_view prefix, path_set &paths)
-    -> void {
+inline auto collect_shape_paths(const graph_restore_shape &shape, const std::string_view prefix,
+                                path_set &paths) -> void {
   paths.insert(join_shape_path(prefix, graph_start_node_key));
   paths.insert(join_shape_path(prefix, graph_end_node_key));
   for (const auto &node : shape.nodes) {
@@ -219,8 +204,8 @@ inline auto collect_shape_paths(const graph_restore_shape &shape,
   return path;
 }
 
-inline auto append_issue(result &validation, const issue_kind kind,
-                         std::string subject, std::string message) -> void {
+inline auto append_issue(result &validation, const issue_kind kind, std::string subject,
+                         std::string message) -> void {
   validation.restorable = false;
   validation.issues.push_back(issue{
       .kind = kind,
@@ -229,9 +214,8 @@ inline auto append_issue(result &validation, const issue_kind kind,
   });
 }
 
-inline auto append_diff(restore_diff &restore_diff,
-                        const restore_diff_kind kind, std::string subject,
-                        std::string detail, std::string before,
+inline auto append_diff(restore_diff &restore_diff, const restore_diff_kind kind,
+                        std::string subject, std::string detail, std::string before,
                         std::string after) -> void {
   restore_diff.entries.push_back(restore_diff_entry{
       .kind = kind,
@@ -242,21 +226,17 @@ inline auto append_diff(restore_diff &restore_diff,
   });
 }
 
-inline auto compare_restore_shapes(restore_diff &restore_diff,
-                                   const graph_restore_shape &baseline,
+inline auto compare_restore_shapes(restore_diff &restore_diff, const graph_restore_shape &baseline,
                                    const graph_restore_shape &current,
                                    const std::string_view prefix) -> void;
 
-inline auto compare_graph_options(restore_diff &restore_diff,
-                                  const graph_restore_shape &baseline,
-                                  const graph_restore_shape &current,
-                                  const std::string_view prefix) -> void {
-  const std::string subject =
-      prefix.empty() ? std::string{"graph"} : std::string{prefix};
+inline auto compare_graph_options(restore_diff &restore_diff, const graph_restore_shape &baseline,
+                                  const graph_restore_shape &current, const std::string_view prefix)
+    -> void {
+  const std::string subject = prefix.empty() ? std::string{"graph"} : std::string{prefix};
   if (baseline.options.boundary.input != current.options.boundary.input ||
       baseline.options.boundary.output != current.options.boundary.output) {
-    append_diff(restore_diff, restore_diff_kind::graph_option, subject,
-                "boundary",
+    append_diff(restore_diff, restore_diff_kind::graph_option, subject, "boundary",
                 std::string{to_string(baseline.options.boundary.input)} + "->" +
                     std::string{to_string(baseline.options.boundary.output)},
                 std::string{to_string(current.options.boundary.input)} + "->" +
@@ -268,46 +248,38 @@ inline auto compare_graph_options(restore_diff &restore_diff,
                 std::string{mode_text(current.options.mode)});
   }
   if (baseline.options.dispatch_policy != current.options.dispatch_policy) {
-    append_diff(
-        restore_diff, restore_diff_kind::graph_option, subject,
-        "dispatch_policy",
-        std::string{dispatch_policy_text(baseline.options.dispatch_policy)},
-        std::string{dispatch_policy_text(current.options.dispatch_policy)});
+    append_diff(restore_diff, restore_diff_kind::graph_option, subject, "dispatch_policy",
+                std::string{dispatch_policy_text(baseline.options.dispatch_policy)},
+                std::string{dispatch_policy_text(current.options.dispatch_policy)});
   }
   if (baseline.options.trigger_mode != current.options.trigger_mode) {
-    append_diff(restore_diff, restore_diff_kind::graph_option, subject,
-                "trigger_mode",
+    append_diff(restore_diff, restore_diff_kind::graph_option, subject, "trigger_mode",
                 std::string{trigger_mode_text(baseline.options.trigger_mode)},
                 std::string{trigger_mode_text(current.options.trigger_mode)});
   }
   if (baseline.options.fan_in_policy != current.options.fan_in_policy) {
-    append_diff(restore_diff, restore_diff_kind::graph_option, subject,
-                "fan_in_policy",
+    append_diff(restore_diff, restore_diff_kind::graph_option, subject, "fan_in_policy",
                 std::string{fan_in_policy_text(baseline.options.fan_in_policy)},
                 std::string{fan_in_policy_text(current.options.fan_in_policy)});
   }
 }
 
-inline auto compare_nodes(restore_diff &restore_diff,
-                          const graph_restore_shape &baseline,
-                          const graph_restore_shape &current,
-                          const std::string_view prefix) -> void {
+inline auto compare_nodes(restore_diff &restore_diff, const graph_restore_shape &baseline,
+                          const graph_restore_shape &current, const std::string_view prefix)
+    -> void {
   std::size_t baseline_index = 0U;
   std::size_t current_index = 0U;
-  while (baseline_index < baseline.nodes.size() ||
-         current_index < current.nodes.size()) {
+  while (baseline_index < baseline.nodes.size() || current_index < current.nodes.size()) {
     if (baseline_index == baseline.nodes.size()) {
       const auto &node = current.nodes[current_index++];
-      append_diff(restore_diff, restore_diff_kind::node_added,
-                  join_shape_path(prefix, node.key), "node", "",
-                  std::string{node_kind_text(node.kind)});
+      append_diff(restore_diff, restore_diff_kind::node_added, join_shape_path(prefix, node.key),
+                  "node", "", std::string{node_kind_text(node.kind)});
       continue;
     }
     if (current_index == current.nodes.size()) {
       const auto &node = baseline.nodes[baseline_index++];
-      append_diff(restore_diff, restore_diff_kind::node_removed,
-                  join_shape_path(prefix, node.key), "node",
-                  std::string{node_kind_text(node.kind)}, "");
+      append_diff(restore_diff, restore_diff_kind::node_removed, join_shape_path(prefix, node.key),
+                  "node", std::string{node_kind_text(node.kind)}, "");
       continue;
     }
 
@@ -335,44 +307,40 @@ inline auto compare_nodes(restore_diff &restore_diff,
                   std::string{node_kind_text(current_node.kind)});
     }
     if (baseline_node.input_contract != current_node.input_contract) {
-      append_diff(restore_diff, restore_diff_kind::node_shape, subject,
-                  "input_contract",
+      append_diff(restore_diff, restore_diff_kind::node_shape, subject, "input_contract",
                   std::string{to_string(baseline_node.input_contract)},
                   std::string{to_string(current_node.input_contract)});
     }
     if (baseline_node.allow_no_control != current_node.allow_no_control) {
-      append_diff(restore_diff, restore_diff_kind::node_shape, subject,
-                  "allow_no_control", bool_text(baseline_node.allow_no_control),
+      append_diff(restore_diff, restore_diff_kind::node_shape, subject, "allow_no_control",
+                  bool_text(baseline_node.allow_no_control),
                   bool_text(current_node.allow_no_control));
     }
     if (baseline_node.allow_no_data != current_node.allow_no_data) {
-      append_diff(restore_diff, restore_diff_kind::node_shape, subject,
-                  "allow_no_data", bool_text(baseline_node.allow_no_data),
-                  bool_text(current_node.allow_no_data));
+      append_diff(restore_diff, restore_diff_kind::node_shape, subject, "allow_no_data",
+                  bool_text(baseline_node.allow_no_data), bool_text(current_node.allow_no_data));
     }
     ++baseline_index;
     ++current_index;
   }
 }
 
-inline auto compare_edges(restore_diff &restore_diff,
-                          const graph_restore_shape &baseline,
-                          const graph_restore_shape &current,
-                          const std::string_view prefix) -> void {
+inline auto compare_edges(restore_diff &restore_diff, const graph_restore_shape &baseline,
+                          const graph_restore_shape &current, const std::string_view prefix)
+    -> void {
   std::size_t baseline_index = 0U;
   std::size_t current_index = 0U;
-  while (baseline_index < baseline.edges.size() ||
-         current_index < current.edges.size()) {
+  while (baseline_index < baseline.edges.size() || current_index < current.edges.size()) {
     if (baseline_index == baseline.edges.size()) {
       const auto &edge = current.edges[current_index++];
-      append_diff(restore_diff, restore_diff_kind::edge_added,
-                  edge_subject(prefix, edge), "edge", "", "present");
+      append_diff(restore_diff, restore_diff_kind::edge_added, edge_subject(prefix, edge), "edge",
+                  "", "present");
       continue;
     }
     if (current_index == current.edges.size()) {
       const auto &edge = baseline.edges[baseline_index++];
-      append_diff(restore_diff, restore_diff_kind::edge_removed,
-                  edge_subject(prefix, edge), "edge", "present", "");
+      append_diff(restore_diff, restore_diff_kind::edge_removed, edge_subject(prefix, edge), "edge",
+                  "present", "");
       continue;
     }
 
@@ -387,32 +355,28 @@ inline auto compare_edges(restore_diff &restore_diff,
       continue;
     }
     if (current_key < baseline_key) {
-      append_diff(restore_diff, restore_diff_kind::edge_added,
-                  edge_subject(prefix, current_edge), "edge", "", "present");
+      append_diff(restore_diff, restore_diff_kind::edge_added, edge_subject(prefix, current_edge),
+                  "edge", "", "present");
       ++current_index;
       continue;
     }
 
     const auto subject = edge_subject(prefix, baseline_edge);
     if (baseline_edge.no_control != current_edge.no_control) {
-      append_diff(restore_diff, restore_diff_kind::edge_shape, subject,
-                  "no_control", bool_text(baseline_edge.no_control),
-                  bool_text(current_edge.no_control));
+      append_diff(restore_diff, restore_diff_kind::edge_shape, subject, "no_control",
+                  bool_text(baseline_edge.no_control), bool_text(current_edge.no_control));
     }
     if (baseline_edge.no_data != current_edge.no_data) {
-      append_diff(restore_diff, restore_diff_kind::edge_shape, subject,
-                  "no_data", bool_text(baseline_edge.no_data),
-                  bool_text(current_edge.no_data));
+      append_diff(restore_diff, restore_diff_kind::edge_shape, subject, "no_data",
+                  bool_text(baseline_edge.no_data), bool_text(current_edge.no_data));
     }
     if (baseline_edge.lowering_kind != current_edge.lowering_kind) {
-      append_diff(restore_diff, restore_diff_kind::edge_shape, subject,
-                  "lowering_kind",
+      append_diff(restore_diff, restore_diff_kind::edge_shape, subject, "lowering_kind",
                   std::string{to_string(baseline_edge.lowering_kind)},
                   std::string{to_string(current_edge.lowering_kind)});
     }
     if (baseline_edge.has_custom_lowering != current_edge.has_custom_lowering) {
-      append_diff(restore_diff, restore_diff_kind::edge_shape, subject,
-                  "has_custom_lowering",
+      append_diff(restore_diff, restore_diff_kind::edge_shape, subject, "has_custom_lowering",
                   bool_text(baseline_edge.has_custom_lowering),
                   bool_text(current_edge.has_custom_lowering));
     }
@@ -421,14 +385,12 @@ inline auto compare_edges(restore_diff &restore_diff,
   }
 }
 
-inline auto compare_branches(restore_diff &restore_diff,
-                             const graph_restore_shape &baseline,
-                             const graph_restore_shape &current,
-                             const std::string_view prefix) -> void {
+inline auto compare_branches(restore_diff &restore_diff, const graph_restore_shape &baseline,
+                             const graph_restore_shape &current, const std::string_view prefix)
+    -> void {
   std::size_t baseline_index = 0U;
   std::size_t current_index = 0U;
-  while (baseline_index < baseline.branches.size() ||
-         current_index < current.branches.size()) {
+  while (baseline_index < baseline.branches.size() || current_index < current.branches.size()) {
     if (baseline_index == baseline.branches.size()) {
       const auto &branch = current.branches[current_index++];
       append_diff(restore_diff, restore_diff_kind::branch_destinations,
@@ -440,8 +402,7 @@ inline auto compare_branches(restore_diff &restore_diff,
       const auto &branch = baseline.branches[baseline_index++];
       append_diff(restore_diff, restore_diff_kind::branch_destinations,
                   join_shape_path(prefix, branch.from), "destinations",
-                  std::to_string(branch.end_nodes.size()) + " destinations",
-                  "");
+                  std::to_string(branch.end_nodes.size()) + " destinations", "");
       continue;
     }
 
@@ -450,24 +411,20 @@ inline auto compare_branches(restore_diff &restore_diff,
     if (baseline_branch.from < current_branch.from) {
       append_diff(restore_diff, restore_diff_kind::branch_destinations,
                   join_shape_path(prefix, baseline_branch.from), "destinations",
-                  std::to_string(baseline_branch.end_nodes.size()) +
-                      " destinations",
-                  "");
+                  std::to_string(baseline_branch.end_nodes.size()) + " destinations", "");
       ++baseline_index;
       continue;
     }
     if (current_branch.from < baseline_branch.from) {
-      append_diff(
-          restore_diff, restore_diff_kind::branch_destinations,
-          join_shape_path(prefix, current_branch.from), "destinations", "",
-          std::to_string(current_branch.end_nodes.size()) + " destinations");
+      append_diff(restore_diff, restore_diff_kind::branch_destinations,
+                  join_shape_path(prefix, current_branch.from), "destinations", "",
+                  std::to_string(current_branch.end_nodes.size()) + " destinations");
       ++current_index;
       continue;
     }
 
     if (baseline_branch.end_nodes != current_branch.end_nodes) {
-      auto join_end_nodes =
-          [](const std::vector<std::string> &end_nodes) -> std::string {
+      auto join_end_nodes = [](const std::vector<std::string> &end_nodes) -> std::string {
         std::string text{};
         for (std::size_t index = 0U; index < end_nodes.size(); ++index) {
           if (index > 0U) {
@@ -487,10 +444,9 @@ inline auto compare_branches(restore_diff &restore_diff,
   }
 }
 
-inline auto compare_subgraphs(restore_diff &restore_diff,
-                              const graph_restore_shape &baseline,
-                              const graph_restore_shape &current,
-                              const std::string_view prefix) -> void {
+inline auto compare_subgraphs(restore_diff &restore_diff, const graph_restore_shape &baseline,
+                              const graph_restore_shape &current, const std::string_view prefix)
+    -> void {
   std::vector<std::string_view> baseline_keys{};
   baseline_keys.reserve(baseline.subgraphs.size());
   for (const auto &[key, _] : baseline.subgraphs) {
@@ -507,18 +463,17 @@ inline auto compare_subgraphs(restore_diff &restore_diff,
 
   std::size_t baseline_index = 0U;
   std::size_t current_index = 0U;
-  while (baseline_index < baseline_keys.size() ||
-         current_index < current_keys.size()) {
+  while (baseline_index < baseline_keys.size() || current_index < current_keys.size()) {
     if (baseline_index == baseline_keys.size()) {
       const auto key = current_keys[current_index++];
-      append_diff(restore_diff, restore_diff_kind::node_shape,
-                  join_shape_path(prefix, key), "subgraph", "", "present");
+      append_diff(restore_diff, restore_diff_kind::node_shape, join_shape_path(prefix, key),
+                  "subgraph", "", "present");
       continue;
     }
     if (current_index == current_keys.size()) {
       const auto key = baseline_keys[baseline_index++];
-      append_diff(restore_diff, restore_diff_kind::node_shape,
-                  join_shape_path(prefix, key), "subgraph", "present", "");
+      append_diff(restore_diff, restore_diff_kind::node_shape, join_shape_path(prefix, key),
+                  "subgraph", "present", "");
       continue;
     }
 
@@ -526,26 +481,21 @@ inline auto compare_subgraphs(restore_diff &restore_diff,
     const auto current_key = current_keys[current_index];
     if (baseline_key < current_key) {
       append_diff(restore_diff, restore_diff_kind::node_shape,
-                  join_shape_path(prefix, baseline_key), "subgraph", "present",
-                  "");
+                  join_shape_path(prefix, baseline_key), "subgraph", "present", "");
       ++baseline_index;
       continue;
     }
     if (current_key < baseline_key) {
-      append_diff(restore_diff, restore_diff_kind::node_shape,
-                  join_shape_path(prefix, current_key), "subgraph", "",
-                  "present");
+      append_diff(restore_diff, restore_diff_kind::node_shape, join_shape_path(prefix, current_key),
+                  "subgraph", "", "present");
       ++current_index;
       continue;
     }
 
-    const auto baseline_iter =
-        baseline.subgraphs.find(std::string{baseline_key});
+    const auto baseline_iter = baseline.subgraphs.find(std::string{baseline_key});
     const auto current_iter = current.subgraphs.find(std::string{current_key});
-    if (baseline_iter != baseline.subgraphs.end() &&
-        current_iter != current.subgraphs.end()) {
-      compare_restore_shapes(restore_diff, baseline_iter->second,
-                             current_iter->second,
+    if (baseline_iter != baseline.subgraphs.end() && current_iter != current.subgraphs.end()) {
+      compare_restore_shapes(restore_diff, baseline_iter->second, current_iter->second,
                              join_shape_path(prefix, baseline_key));
     }
     ++baseline_index;
@@ -553,8 +503,7 @@ inline auto compare_subgraphs(restore_diff &restore_diff,
   }
 }
 
-inline auto compare_restore_shapes(restore_diff &restore_diff,
-                                   const graph_restore_shape &baseline,
+inline auto compare_restore_shapes(restore_diff &restore_diff, const graph_restore_shape &baseline,
                                    const graph_restore_shape &current,
                                    const std::string_view prefix) -> void {
   compare_graph_options(restore_diff, baseline, current, prefix);
@@ -564,25 +513,22 @@ inline auto compare_restore_shapes(restore_diff &restore_diff,
   compare_subgraphs(restore_diff, baseline, current, prefix);
 }
 
-[[nodiscard]] inline auto
-compare_restore_shapes(const graph_restore_shape &baseline,
-                       const graph_restore_shape &current) -> restore_diff {
+[[nodiscard]] inline auto compare_restore_shapes(const graph_restore_shape &baseline,
+                                                 const graph_restore_shape &current)
+    -> restore_diff {
   restore_diff restore_diff{};
   compare_restore_shapes(restore_diff, baseline, current, "");
   return restore_diff;
 }
 
-[[nodiscard]] inline auto
-has_blocking_diff(const restore_diff &restore_diff) noexcept -> bool {
+[[nodiscard]] inline auto has_blocking_diff(const restore_diff &restore_diff) noexcept -> bool {
   return !restore_diff.entries.empty();
 }
 
 [[nodiscard]] inline auto validate(const graph_restore_shape &current_shape,
-                                   const checkpoint_state &checkpoint)
-    -> result {
+                                   const checkpoint_state &checkpoint) -> result {
   result validation{};
-  validation.diff =
-      compare_restore_shapes(checkpoint.restore_shape, current_shape);
+  validation.diff = compare_restore_shapes(checkpoint.restore_shape, current_shape);
   if (has_blocking_diff(validation.diff)) {
     append_issue(validation, issue_kind::graph_changed, "graph",
                  "current graph restore shape differs from checkpoint payload");
@@ -593,20 +539,17 @@ has_blocking_diff(const restore_diff &restore_diff) noexcept -> bool {
 
   for (const auto &state : checkpoint.runtime.lifecycle) {
     if (!state.key.empty() && !valid_paths.contains(state.key)) {
-      append_issue(
-          validation, issue_kind::missing_node_state, state.key,
-          "checkpoint node state targets a node that no longer exists");
+      append_issue(validation, issue_kind::missing_node_state, state.key,
+                   "checkpoint node state targets a node that no longer exists");
     }
   }
 
-  const auto validate_pending_inputs = [&](const checkpoint_pending_inputs &pending)
-      -> void {
+  const auto validate_pending_inputs = [&](const checkpoint_pending_inputs &pending) -> void {
     for (const auto &node_input : pending.nodes) {
       const auto &node_key = node_input.key;
       if (!valid_paths.contains(node_key)) {
-        append_issue(
-            validation, issue_kind::missing_node_input, node_key,
-            "checkpoint node input targets a node that no longer exists");
+        append_issue(validation, issue_kind::missing_node_input, node_key,
+                     "checkpoint node input targets a node that no longer exists");
       }
     }
   };
@@ -620,9 +563,8 @@ has_blocking_diff(const restore_diff &restore_diff) noexcept -> bool {
   for (const auto &interrupt_id : checkpoint.resume_snapshot.interrupt_ids()) {
     auto location = checkpoint.resume_snapshot.location_of(interrupt_id);
     if (location.has_error()) {
-      append_issue(
-          validation, issue_kind::missing_resume_target, interrupt_id,
-          "checkpoint resume target has no address in the stored snapshot");
+      append_issue(validation, issue_kind::missing_resume_target, interrupt_id,
+                   "checkpoint resume target has no address in the stored snapshot");
       continue;
     }
     auto path = strip_graph_root(location.value().get());
@@ -638,8 +580,7 @@ has_blocking_diff(const restore_diff &restore_diff) noexcept -> bool {
        checkpoint.interrupt_snapshot.interrupt_id_to_address) {
     auto path = strip_graph_root(location);
     if (!path.has_value() || path->empty() || !valid_paths.contains(*path)) {
-      append_issue(validation, issue_kind::missing_interrupt_target,
-                   location.to_string(),
+      append_issue(validation, issue_kind::missing_interrupt_target, location.to_string(),
                    "checkpoint interrupt target address no longer exists in "
                    "the current graph");
     }

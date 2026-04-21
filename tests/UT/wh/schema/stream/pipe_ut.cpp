@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/stream/pipe.hpp"
 
@@ -14,8 +14,8 @@ TEST_CASE("pipe facade creates connected reader writer pair and normalizes zero 
   REQUIRE(second.has_error());
   REQUIRE(second.error() == wh::core::errc::queue_full);
 
-  auto first = std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(reader.try_read());
+  auto first = std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(
+      reader.try_read());
   REQUIRE(first.has_value());
   REQUIRE(first.value().value == std::optional<int>{1});
 }

@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/stream/core/types.hpp"
 

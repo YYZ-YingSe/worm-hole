@@ -6,13 +6,13 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <exec/trampoline_scheduler.hpp>
 #include <memory>
 #include <optional>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <exec/trampoline_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/core/compiler.hpp"
@@ -26,8 +26,7 @@ template <typename result_t, stdexec::sender sender_t>
   requires result_like<result_t>
 class concurrent_sender_vector {
   template <typename receiver_t> class operation {
-    using receiver_env_t =
-        decltype(stdexec::get_env(std::declval<const receiver_t &>()));
+    using receiver_env_t = decltype(stdexec::get_env(std::declval<const receiver_t &>()));
     using outer_stop_token_t = stdexec::stop_token_of_t<receiver_env_t>;
     using stop_token_env_t =
         decltype(stdexec::prop{stdexec::get_stop_token, stdexec::inplace_stop_token{}});
@@ -54,10 +53,8 @@ class concurrent_sender_vector {
         op->finish_child(index, std::move(status));
       }
 
-      template <typename error_t>
-      auto set_error(error_t &&) && noexcept -> void {
-        op->finish_child(index,
-                         result_t::failure(wh::core::errc::internal_error));
+      template <typename error_t> auto set_error(error_t &&) && noexcept -> void {
+        op->finish_child(index, result_t::failure(wh::core::errc::internal_error));
       }
 
       auto set_stopped() && noexcept -> void {
@@ -74,24 +71,18 @@ class concurrent_sender_vector {
       completed,
     };
 
-    using child_sender_t =
-        decltype(stdexec::starts_on(exec::trampoline_scheduler{},
-                                    stdexec::write_env(
-                                        std::declval<sender_t>(),
-                                        std::declval<stop_token_env_t>())));
-    using child_op_t =
-        stdexec::connect_result_t<child_sender_t, child_receiver>;
-    using stop_callback_t =
-        stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
+    using child_sender_t = decltype(stdexec::starts_on(
+        exec::trampoline_scheduler{},
+        stdexec::write_env(std::declval<sender_t>(), std::declval<stop_token_env_t>())));
+    using child_op_t = stdexec::connect_result_t<child_sender_t, child_receiver>;
+    using stop_callback_t = stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
 
   public:
-    explicit operation(std::vector<sender_t> senders,
-                       const std::size_t max_in_flight, receiver_t receiver)
+    explicit operation(std::vector<sender_t> senders, const std::size_t max_in_flight,
+                       receiver_t receiver)
         : receiver_(std::move(receiver)), env_(stdexec::get_env(receiver_)),
-          senders_(std::move(senders)),
-          results_(allocate_results(senders_.size())),
-          result_engaged_(senders_.size(), 0U),
-          child_ops_(allocate_child_ops(senders_.size())),
+          senders_(std::move(senders)), results_(allocate_results(senders_.size())),
+          result_engaged_(senders_.size(), 0U), child_ops_(allocate_child_ops(senders_.size())),
           child_engaged_(senders_.size(), 0U),
           max_in_flight_(resolve_max_in_flight(max_in_flight, senders_.size())),
           remaining_(senders_.size()) {}
@@ -156,8 +147,7 @@ class concurrent_sender_vector {
     auto mark_stopped() noexcept -> void {
       auto expected = control_state::started;
       if (state_.compare_exchange_strong(expected, control_state::stopped,
-                                         std::memory_order_acq_rel,
-                                         std::memory_order_acquire)) {
+                                         std::memory_order_acq_rel, std::memory_order_acquire)) {
         stop_source_.request_stop();
       }
     }
@@ -168,9 +158,9 @@ class concurrent_sender_vector {
       arrive();
     }
 
-    [[nodiscard]] static auto
-    resolve_max_in_flight(const std::size_t requested,
-                          const std::size_t total) noexcept -> std::size_t {
+    [[nodiscard]] static auto resolve_max_in_flight(const std::size_t requested,
+                                                    const std::size_t total) noexcept
+        -> std::size_t {
       if (total == 0U) {
         return 0U;
       }
@@ -180,24 +170,20 @@ class concurrent_sender_vector {
       return requested;
     }
 
-    [[nodiscard]] static auto
-    allocate_child_ops(const std::size_t count)
+    [[nodiscard]] static auto allocate_child_ops(const std::size_t count)
         -> std::unique_ptr<wh::core::detail::manual_lifetime<child_op_t>[]> {
       if (count == 0U) {
         return {};
       }
-      return std::make_unique<wh::core::detail::manual_lifetime<child_op_t>[]>(
-          count);
+      return std::make_unique<wh::core::detail::manual_lifetime<child_op_t>[]>(count);
     }
 
-    [[nodiscard]] static auto
-    allocate_results(const std::size_t count)
+    [[nodiscard]] static auto allocate_results(const std::size_t count)
         -> std::unique_ptr<wh::core::detail::manual_lifetime<result_t>[]> {
       if (count == 0U) {
         return {};
       }
-      return std::make_unique<wh::core::detail::manual_lifetime<result_t>[]>(
-          count);
+      return std::make_unique<wh::core::detail::manual_lifetime<result_t>[]>(count);
     }
 
     auto destroy_children() noexcept -> void {
@@ -227,8 +213,7 @@ class concurrent_sender_vector {
     }
 
     auto arrive() noexcept -> void {
-      if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U &&
-          should_complete()) {
+      if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U && should_complete()) {
         complete();
       }
     }
@@ -240,13 +225,11 @@ class concurrent_sender_vector {
       return remaining_.load(std::memory_order_acquire) == 0U;
     }
 
-    auto finish_child(const std::uint32_t index, result_t status) noexcept
-        -> void {
+    auto finish_child(const std::uint32_t index, result_t status) noexcept -> void {
       const auto completed = emplace_result(index, std::move(status));
       wh_invariant(active_.load(std::memory_order_acquire) != 0U);
       active_.fetch_sub(1U, std::memory_order_acq_rel);
-      if (!completed &&
-          state_.load(std::memory_order_acquire) == control_state::started) {
+      if (!completed && state_.load(std::memory_order_acquire) == control_state::started) {
         static_cast<void>(start_next());
       }
       arrive();
@@ -268,25 +251,22 @@ class concurrent_sender_vector {
       }
     }
 
-    [[nodiscard]] auto start_child(const std::size_t index) noexcept
-        -> start_result {
+    [[nodiscard]] auto start_child(const std::size_t index) noexcept -> start_result {
       wh_invariant(index < senders_.size());
       wh_invariant(child_engaged_[index] == 0U);
 
       try {
-        [[maybe_unused]] auto &child_op =
-            child_ops_[index].construct_with([&]() -> child_op_t {
+        [[maybe_unused]] auto &child_op = child_ops_[index].construct_with([&]() -> child_op_t {
           return stdexec::connect(
               stdexec::starts_on(exec::trampoline_scheduler{},
-                                 stdexec::write_env(
-                                     std::move(senders_[index]),
-                                     stdexec::prop{stdexec::get_stop_token,
-                                                   stop_source_.get_token()})),
-                                  child_receiver{
-                                      this,
-                                      static_cast<std::uint32_t>(index),
-                                      env_,
-                                  });
+                                 stdexec::write_env(std::move(senders_[index]),
+                                                    stdexec::prop{stdexec::get_stop_token,
+                                                                  stop_source_.get_token()})),
+              child_receiver{
+                  this,
+                  static_cast<std::uint32_t>(index),
+                  env_,
+              });
         });
         child_engaged_[index] = 1U;
         count_.fetch_add(1U, std::memory_order_relaxed);
@@ -298,16 +278,14 @@ class concurrent_sender_vector {
           child_ops_[index].destruct();
           child_engaged_[index] = 0U;
         }
-        if (emplace_result(index,
-                           result_t::failure(wh::core::errc::internal_error))) {
+        if (emplace_result(index, result_t::failure(wh::core::errc::internal_error))) {
           return start_result::completed;
         }
         return start_result::advance;
       }
     }
 
-    [[nodiscard]] auto emplace_result(const std::size_t index,
-                                      result_t status) noexcept -> bool {
+    [[nodiscard]] auto emplace_result(const std::size_t index, result_t status) noexcept -> bool {
       wh_invariant(index < result_engaged_.size());
       wh_invariant(result_engaged_[index] == 0U);
       [[maybe_unused]] auto &result = results_[index].construct(std::move(status));
@@ -345,8 +323,7 @@ class concurrent_sender_vector {
     std::vector<sender_t> senders_{};
     std::unique_ptr<wh::core::detail::manual_lifetime<result_t>[]> results_{};
     std::vector<std::uint8_t> result_engaged_{};
-    std::unique_ptr<wh::core::detail::manual_lifetime<child_op_t>[]>
-        child_ops_{};
+    std::unique_ptr<wh::core::detail::manual_lifetime<child_op_t>[]> child_ops_{};
     std::vector<std::uint8_t> child_engaged_{};
     std::optional<stop_callback_t> on_stop_{};
     stdexec::inplace_stop_source stop_source_{};
@@ -362,31 +339,25 @@ class concurrent_sender_vector {
 public:
   using sender_concept = stdexec::sender_t;
 
-  explicit concurrent_sender_vector(std::vector<sender_t> senders,
-                                    const std::size_t max_in_flight)
+  explicit concurrent_sender_vector(std::vector<sender_t> senders, const std::size_t max_in_flight)
       : senders_(std::move(senders)), max_in_flight_(max_in_flight) {}
 
   template <typename self_t, stdexec::receiver receiver_t>
-    requires std::same_as<std::remove_cvref_t<self_t>,
-                          concurrent_sender_vector> &&
+    requires std::same_as<std::remove_cvref_t<self_t>, concurrent_sender_vector> &&
              (!std::is_const_v<std::remove_reference_t<self_t>>)
-  STDEXEC_EXPLICIT_THIS_BEGIN(auto connect)(this self_t &&self,
-                                            receiver_t receiver) {
+  STDEXEC_EXPLICIT_THIS_BEGIN(auto connect)(this self_t &&self, receiver_t receiver) {
     using stored_receiver_t = std::remove_cvref_t<receiver_t>;
-    return operation<stored_receiver_t>{std::move(self).senders_,
-                                        std::move(self).max_in_flight_,
+    return operation<stored_receiver_t>{std::move(self).senders_, std::move(self).max_in_flight_,
                                         std::move(receiver)};
   }
   STDEXEC_EXPLICIT_THIS_END(connect)
 
   template <typename self_t, typename... env_t>
-    requires std::same_as<std::remove_cvref_t<self_t>,
-                          concurrent_sender_vector> &&
+    requires std::same_as<std::remove_cvref_t<self_t>, concurrent_sender_vector> &&
              (sizeof...(env_t) >= 1U)
   static consteval auto get_completion_signatures() {
-    return stdexec::completion_signatures<stdexec::set_value_t(
-        std::vector<result_t>),
-        stdexec::set_stopped_t()>{};
+    return stdexec::completion_signatures<stdexec::set_value_t(std::vector<result_t>),
+                                          stdexec::set_stopped_t()>{};
   }
 
 private:
@@ -396,12 +367,10 @@ private:
 
 template <typename result_t, stdexec::sender sender_t>
   requires result_like<result_t>
-[[nodiscard]] inline auto
-make_concurrent_sender_vector(std::vector<sender_t> senders,
-                              const std::size_t max_in_flight)
+[[nodiscard]] inline auto make_concurrent_sender_vector(std::vector<sender_t> senders,
+                                                        const std::size_t max_in_flight)
     -> concurrent_sender_vector<result_t, sender_t> {
-  return concurrent_sender_vector<result_t, sender_t>{std::move(senders),
-                                                      max_in_flight};
+  return concurrent_sender_vector<result_t, sender_t>{std::move(senders), max_in_flight};
 }
 
 } // namespace wh::core::detail

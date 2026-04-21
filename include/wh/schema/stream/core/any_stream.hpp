@@ -28,24 +28,19 @@
 
 namespace wh::schema::stream {
 
-template <typename value_t, std::size_t storage_size = 128U>
-class any_stream_reader;
-template <typename value_t, std::size_t storage_size = 64U>
-class any_stream_writer;
-template <typename value_t, std::size_t storage_size = 128U>
-class any_stream_read_sender;
-template <typename value_t, std::size_t storage_size = 64U>
-class any_stream_write_sender;
+template <typename value_t, std::size_t storage_size = 128U> class any_stream_reader;
+template <typename value_t, std::size_t storage_size = 64U> class any_stream_writer;
+template <typename value_t, std::size_t storage_size = 128U> class any_stream_read_sender;
+template <typename value_t, std::size_t storage_size = 64U> class any_stream_write_sender;
 
 namespace detail {
 
 template <typename receiver_t>
 [[noreturn]] inline auto missing_receiver_scheduler() noexcept
     -> wh::core::detail::any_resume_scheduler_t {
-  static_assert(
-      wh::core::detail::receiver_with_resume_scheduler<receiver_t>,
-      "any_stream async sender requires receiver env to expose scheduler or "
-      "completion scheduler");
+  static_assert(wh::core::detail::receiver_with_resume_scheduler<receiver_t>,
+                "any_stream async sender requires receiver env to expose scheduler or "
+                "completion scheduler");
   std::abort();
 }
 
@@ -55,44 +50,36 @@ template <std::size_t storage_size> struct erased_storage {
 
 template <typename model_t, std::size_t storage_size>
 inline constexpr bool fits_erased_storage_v =
-    sizeof(model_t) <= storage_size &&
-    alignof(model_t) <= alignof(erased_storage<storage_size>) &&
+    sizeof(model_t) <= storage_size && alignof(model_t) <= alignof(erased_storage<storage_size>) &&
     std::is_nothrow_move_constructible_v<model_t>;
 
 template <typename model_t, std::size_t storage_size>
-[[nodiscard]] inline auto
-storage_ptr(erased_storage<storage_size> &storage) noexcept -> model_t * {
+[[nodiscard]] inline auto storage_ptr(erased_storage<storage_size> &storage) noexcept -> model_t * {
   return std::launder(reinterpret_cast<model_t *>(storage.data.data()));
 }
 
 template <typename model_t, std::size_t storage_size>
-[[nodiscard]] inline auto
-storage_ptr(const erased_storage<storage_size> &storage) noexcept
+[[nodiscard]] inline auto storage_ptr(const erased_storage<storage_size> &storage) noexcept
     -> const model_t * {
   return std::launder(reinterpret_cast<const model_t *>(storage.data.data()));
 }
 
-template <typename value_t>
-using chunk_result_t = stream_result<stream_chunk<value_t>>;
+template <typename value_t> using chunk_result_t = stream_result<stream_chunk<value_t>>;
 
-template <typename value_t>
-using chunk_try_result_t = stream_try_result<stream_chunk<value_t>>;
+template <typename value_t> using chunk_try_result_t = stream_try_result<stream_chunk<value_t>>;
 
 template <typename model_t, std::size_t storage_size>
-using erased_storage_model_t =
-    std::conditional_t<fits_erased_storage_v<model_t, storage_size>, model_t,
-                       std::unique_ptr<model_t>>;
+using erased_storage_model_t = std::conditional_t<fits_erased_storage_v<model_t, storage_size>,
+                                                  model_t, std::unique_ptr<model_t>>;
 
 template <typename model_t, std::size_t storage_size>
-[[nodiscard]] inline auto
-storage_model_ptr(erased_storage<storage_size> &storage) noexcept
+[[nodiscard]] inline auto storage_model_ptr(erased_storage<storage_size> &storage) noexcept
     -> erased_storage_model_t<model_t, storage_size> * {
   return storage_ptr<erased_storage_model_t<model_t, storage_size>>(storage);
 }
 
 template <typename model_t, std::size_t storage_size>
-[[nodiscard]] inline auto
-storage_model_ptr(const erased_storage<storage_size> &storage) noexcept
+[[nodiscard]] inline auto storage_model_ptr(const erased_storage<storage_size> &storage) noexcept
     -> const erased_storage_model_t<model_t, storage_size> * {
   return storage_ptr<erased_storage_model_t<model_t, storage_size>>(storage);
 }
@@ -100,22 +87,19 @@ storage_model_ptr(const erased_storage<storage_size> &storage) noexcept
 template <typename model_t, std::size_t storage_size>
 [[nodiscard]] inline auto storage_model_ptr(void *storage) noexcept
     -> erased_storage_model_t<model_t, storage_size> * {
-  return std::launder(
-      reinterpret_cast<erased_storage_model_t<model_t, storage_size> *>(
-          storage));
+  return std::launder(reinterpret_cast<erased_storage_model_t<model_t, storage_size> *>(storage));
 }
 
 template <typename model_t, std::size_t storage_size>
 [[nodiscard]] inline auto storage_model_ptr(const void *storage) noexcept
     -> const erased_storage_model_t<model_t, storage_size> * {
   return std::launder(
-      reinterpret_cast<const erased_storage_model_t<model_t, storage_size> *>(
-          storage));
+      reinterpret_cast<const erased_storage_model_t<model_t, storage_size> *>(storage));
 }
 
 template <typename model_t, std::size_t storage_size>
-[[nodiscard]] inline auto
-storage_object(erased_storage<storage_size> &storage) noexcept -> model_t * {
+[[nodiscard]] inline auto storage_object(erased_storage<storage_size> &storage) noexcept
+    -> model_t * {
   if constexpr (fits_erased_storage_v<model_t, storage_size>) {
     return storage_ptr<model_t>(storage);
   } else {
@@ -124,8 +108,7 @@ storage_object(erased_storage<storage_size> &storage) noexcept -> model_t * {
 }
 
 template <typename model_t, std::size_t storage_size>
-[[nodiscard]] inline auto
-storage_object(const erased_storage<storage_size> &storage) noexcept
+[[nodiscard]] inline auto storage_object(const erased_storage<storage_size> &storage) noexcept
     -> const model_t * {
   if constexpr (fits_erased_storage_v<model_t, storage_size>) {
     return storage_ptr<model_t>(storage);
@@ -144,8 +127,7 @@ template <typename model_t, std::size_t storage_size>
 }
 
 template <typename model_t, std::size_t storage_size>
-[[nodiscard]] inline auto storage_object(const void *storage) noexcept
-    -> const model_t * {
+[[nodiscard]] inline auto storage_object(const void *storage) noexcept -> const model_t * {
   if constexpr (fits_erased_storage_v<model_t, storage_size>) {
     return std::launder(reinterpret_cast<const model_t *>(storage));
   } else {
@@ -193,8 +175,7 @@ public:
     }
   }
 
-  auto bind(void *object,
-            const stream_op_vtable<receiver_ref_t> *vtable) noexcept -> void {
+  auto bind(void *object, const stream_op_vtable<receiver_ref_t> *vtable) noexcept -> void {
     reset();
     object_ = object;
     vtable_ = vtable;
@@ -205,8 +186,7 @@ private:
   const stream_op_vtable<receiver_ref_t> *vtable_{nullptr};
 };
 
-template <stdexec::sender sender_t, typename receiver_ref_t>
-class stream_op_model {
+template <stdexec::sender sender_t, typename receiver_ref_t> class stream_op_model {
 public:
   using operation_t = stdexec::connect_result_t<sender_t, receiver_ref_t>;
 
@@ -234,28 +214,21 @@ using erased_resume_scheduler = wh::core::detail::any_resume_scheduler_t;
 
 struct receiver_env_vtable {
   erased_resume_scheduler (*get_scheduler)(const void *) noexcept {nullptr};
-  erased_resume_scheduler (*get_delegation_scheduler)(const void *) noexcept {
-      nullptr};
-  erased_resume_scheduler (*get_value_scheduler)(const void *) noexcept {
-      nullptr};
-  erased_resume_scheduler (*get_error_scheduler)(const void *) noexcept {
-      nullptr};
-  erased_resume_scheduler (*get_stopped_scheduler)(const void *) noexcept {
-      nullptr};
-  stdexec::inplace_stop_token (*get_stop_token)(const void *) noexcept {
-      nullptr};
+  erased_resume_scheduler (*get_delegation_scheduler)(const void *) noexcept {nullptr};
+  erased_resume_scheduler (*get_value_scheduler)(const void *) noexcept {nullptr};
+  erased_resume_scheduler (*get_error_scheduler)(const void *) noexcept {nullptr};
+  erased_resume_scheduler (*get_stopped_scheduler)(const void *) noexcept {nullptr};
+  stdexec::inplace_stop_token (*get_stop_token)(const void *) noexcept {nullptr};
 };
 
 class receiver_env_ref {
 public:
   receiver_env_ref() = default;
 
-  receiver_env_ref(const void *object,
-                   const receiver_env_vtable *vtable) noexcept
+  receiver_env_ref(const void *object, const receiver_env_vtable *vtable) noexcept
       : object_(object), vtable_(vtable) {}
 
-  [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept
-      -> erased_resume_scheduler {
+  [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> erased_resume_scheduler {
     return vtable_->get_scheduler(object_);
   }
 
@@ -264,21 +237,19 @@ public:
     return vtable_->get_delegation_scheduler(object_);
   }
 
-  [[nodiscard]] auto query(
-      stdexec::get_completion_scheduler_t<stdexec::set_value_t>) const noexcept
+  [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<stdexec::set_value_t>) const noexcept
       -> erased_resume_scheduler {
     return vtable_->get_value_scheduler(object_);
   }
 
-  [[nodiscard]] auto query(
-      stdexec::get_completion_scheduler_t<stdexec::set_error_t>) const noexcept
+  [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<stdexec::set_error_t>) const noexcept
       -> erased_resume_scheduler {
     return vtable_->get_error_scheduler(object_);
   }
 
   [[nodiscard]] auto
-  query(stdexec::get_completion_scheduler_t<stdexec::set_stopped_t>)
-      const noexcept -> erased_resume_scheduler {
+  query(stdexec::get_completion_scheduler_t<stdexec::set_stopped_t>) const noexcept
+      -> erased_resume_scheduler {
     return vtable_->get_stopped_scheduler(object_);
   }
 
@@ -294,19 +265,15 @@ private:
 
 template <typename receiver_t> struct receiver_env_model {
   template <typename cpo_t>
-  [[nodiscard]] static auto
-  select_completion_scheduler(const void *object) noexcept
+  [[nodiscard]] static auto select_completion_scheduler(const void *object) noexcept
       -> erased_resume_scheduler {
     const auto &receiver = *static_cast<const receiver_t *>(object);
     const auto &env = stdexec::get_env(receiver);
-    if constexpr (requires {
-                    wh::core::detail::select_resume_scheduler<cpo_t>(env);
-                  }) {
+    if constexpr (requires { wh::core::detail::select_resume_scheduler<cpo_t>(env); }) {
       return wh::core::detail::erase_resume_scheduler(
           wh::core::detail::select_resume_scheduler<cpo_t>(env));
     } else if constexpr (requires {
-                           wh::core::detail::select_resume_scheduler<
-                               stdexec::set_value_t>(env);
+                           wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env);
                          }) {
       return wh::core::detail::erase_resume_scheduler(
           wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env));
@@ -315,13 +282,10 @@ template <typename receiver_t> struct receiver_env_model {
     }
   }
 
-  [[nodiscard]] static auto get_scheduler(const void *object) noexcept
-      -> erased_resume_scheduler {
+  [[nodiscard]] static auto get_scheduler(const void *object) noexcept -> erased_resume_scheduler {
     const auto &receiver = *static_cast<const receiver_t *>(object);
     const auto &env = stdexec::get_env(receiver);
-    if constexpr (requires {
-                    wh::core::detail::select_launch_scheduler(env);
-                  }) {
+    if constexpr (requires { wh::core::detail::select_launch_scheduler(env); }) {
       return wh::core::detail::erase_resume_scheduler(
           wh::core::detail::select_launch_scheduler(env));
     } else {
@@ -329,14 +293,12 @@ template <typename receiver_t> struct receiver_env_model {
     }
   }
 
-  [[nodiscard]] static auto
-  get_delegation_scheduler(const void *object) noexcept
+  [[nodiscard]] static auto get_delegation_scheduler(const void *object) noexcept
       -> erased_resume_scheduler {
     const auto &receiver = *static_cast<const receiver_t *>(object);
     const auto &env = stdexec::get_env(receiver);
     if constexpr (requires { stdexec::get_delegation_scheduler(env); }) {
-      return wh::core::detail::erase_resume_scheduler(
-          stdexec::get_delegation_scheduler(env));
+      return wh::core::detail::erase_resume_scheduler(stdexec::get_delegation_scheduler(env));
     } else {
       return get_scheduler(object);
     }
@@ -347,9 +309,7 @@ template <typename receiver_t> struct receiver_env_model {
     const auto &receiver = *static_cast<const receiver_t *>(object);
     const auto &env = stdexec::get_env(receiver);
     if constexpr (requires {
-                    {
-                      stdexec::get_stop_token(env)
-                    } -> std::same_as<stdexec::inplace_stop_token>;
+                    { stdexec::get_stop_token(env) } -> std::same_as<stdexec::inplace_stop_token>;
                   }) {
       return stdexec::get_stop_token(env);
     } else {
@@ -361,14 +321,11 @@ template <typename receiver_t> struct receiver_env_model {
       .get_scheduler = &receiver_env_model::get_scheduler,
       .get_delegation_scheduler = &receiver_env_model::get_delegation_scheduler,
       .get_value_scheduler =
-          &receiver_env_model::template select_completion_scheduler<
-              stdexec::set_value_t>,
+          &receiver_env_model::template select_completion_scheduler<stdexec::set_value_t>,
       .get_error_scheduler =
-          &receiver_env_model::template select_completion_scheduler<
-              stdexec::set_error_t>,
+          &receiver_env_model::template select_completion_scheduler<stdexec::set_error_t>,
       .get_stopped_scheduler =
-          &receiver_env_model::template select_completion_scheduler<
-              stdexec::set_stopped_t>,
+          &receiver_env_model::template select_completion_scheduler<stdexec::set_stopped_t>,
       .get_stop_token = &receiver_env_model::get_stop_token,
   };
 };
@@ -382,22 +339,18 @@ template <typename... value_ts> struct receiver_ref_vtable {
 
 template <typename receiver_t, typename... value_ts> struct receiver_ref_model {
   static auto set_value(void *object, value_ts... values) noexcept -> void {
-    stdexec::set_value(std::move(*static_cast<receiver_t *>(object)),
-                       std::move(values)...);
+    stdexec::set_value(std::move(*static_cast<receiver_t *>(object)), std::move(values)...);
   }
 
-  static auto set_error(void *object, std::exception_ptr error) noexcept
-      -> void {
-    stdexec::set_error(std::move(*static_cast<receiver_t *>(object)),
-                       std::move(error));
+  static auto set_error(void *object, std::exception_ptr error) noexcept -> void {
+    stdexec::set_error(std::move(*static_cast<receiver_t *>(object)), std::move(error));
   }
 
   static auto set_stopped(void *object) noexcept -> void {
     stdexec::set_stopped(std::move(*static_cast<receiver_t *>(object)));
   }
 
-  [[nodiscard]] static auto get_env(const void *object) noexcept
-      -> receiver_env_ref {
+  [[nodiscard]] static auto get_env(const void *object) noexcept -> receiver_env_ref {
     return receiver_env_ref{object, &receiver_env_model<receiver_t>::vtable};
   }
 
@@ -419,22 +372,16 @@ public:
 
   basic_receiver_ref(const basic_receiver_ref &) noexcept = default;
   basic_receiver_ref(basic_receiver_ref &&) noexcept = default;
-  auto operator=(const basic_receiver_ref &) noexcept
-      -> basic_receiver_ref & = default;
-  auto operator=(basic_receiver_ref &&) noexcept
-      -> basic_receiver_ref & = default;
+  auto operator=(const basic_receiver_ref &) noexcept -> basic_receiver_ref & = default;
+  auto operator=(basic_receiver_ref &&) noexcept -> basic_receiver_ref & = default;
 
   template <typename receiver_t>
-    requires(!std::same_as<std::remove_cvref_t<receiver_t>,
-                           basic_receiver_ref> &&
-             stdexec::receiver_of<std::remove_cvref_t<receiver_t>,
-                                  completion_signatures> &&
-             wh::core::detail::receiver_with_resume_scheduler<
-                 std::remove_cvref_t<receiver_t>>)
+    requires(!std::same_as<std::remove_cvref_t<receiver_t>, basic_receiver_ref> &&
+             stdexec::receiver_of<std::remove_cvref_t<receiver_t>, completion_signatures> &&
+             wh::core::detail::receiver_with_resume_scheduler<std::remove_cvref_t<receiver_t>>)
   basic_receiver_ref(receiver_t &receiver) noexcept
       : object_(std::addressof(receiver)),
-        vtable_(&receiver_ref_model<std::remove_cvref_t<receiver_t>,
-                                    value_ts...>::vtable) {}
+        vtable_(&receiver_ref_model<std::remove_cvref_t<receiver_t>, value_ts...>::vtable) {}
 
   auto set_value(value_ts... values) noexcept -> void {
     vtable_->set_value(object_, std::move(values)...);
@@ -455,14 +402,11 @@ private:
   const receiver_ref_vtable<value_ts...> *vtable_{nullptr};
 };
 
-template <typename value_t>
-using receiver_ref = basic_receiver_ref<chunk_result_t<value_t>>;
+template <typename value_t> using receiver_ref = basic_receiver_ref<chunk_result_t<value_t>>;
 
-template <typename value_t>
-using write_receiver_ref = basic_receiver_ref<wh::core::result<void>>;
+template <typename value_t> using write_receiver_ref = basic_receiver_ref<wh::core::result<void>>;
 
-template <typename value_t, std::size_t storage_size>
-struct any_stream_reader_vtable {
+template <typename value_t, std::size_t storage_size> struct any_stream_reader_vtable {
   using chunk_result_type = chunk_result_t<value_t>;
   using chunk_try_result_type = chunk_try_result_t<value_t>;
   using receiver_ref_t = receiver_ref<value_t>;
@@ -475,13 +419,11 @@ struct any_stream_reader_vtable {
   wh::core::result<void> (*close)(void *){nullptr};
   bool (*is_closed)(const void *) noexcept {nullptr};
   bool (*is_source_closed)(const void *) noexcept {nullptr};
-  void (*set_automatic_close)(void *,
-                              const auto_close_options &) noexcept {nullptr};
+  void (*set_automatic_close)(void *, const auto_close_options &) noexcept {nullptr};
   op_handle_t (*connect_read_async)(void *, receiver_ref_t){nullptr};
 };
 
-template <typename value_t, std::size_t storage_size>
-struct any_stream_writer_vtable {
+template <typename value_t, std::size_t storage_size> struct any_stream_writer_vtable {
   using receiver_ref_t = write_receiver_ref<value_t>;
   using op_handle_t = stream_op_handle<receiver_ref_t>;
 
@@ -538,12 +480,10 @@ struct any_stream_reader_model {
     return reader->is_closed();
   }
 
-  static auto set_automatic_close(void *object,
-                                  const auto_close_options &options) noexcept
+  static auto set_automatic_close(void *object, const auto_close_options &options) noexcept
       -> void {
     auto *reader = storage_object<reader_t, storage_size>(object);
-    if constexpr (requires(reader_t &candidate,
-                           const auto_close_options &value) {
+    if constexpr (requires(reader_t &candidate, const auto_close_options &value) {
                     candidate.set_automatic_close(value);
                   }) {
       reader->set_automatic_close(options);
@@ -553,8 +493,7 @@ struct any_stream_reader_model {
     }
   }
 
-  static auto connect_read_async(void *object, receiver_ref_t receiver)
-      -> op_handle_t {
+  static auto connect_read_async(void *object, receiver_ref_t receiver) -> op_handle_t {
     auto *reader = storage_object<reader_t, storage_size>(object);
     auto sender = reader->read_async();
     using sender_t = std::remove_cvref_t<decltype(sender)>;
@@ -595,20 +534,16 @@ struct any_stream_writer_model {
     typed_source->~storage_model_t();
   }
 
-  static auto try_write_copy(void *object, const value_t &value)
-      -> wh::core::result<void> {
+  static auto try_write_copy(void *object, const value_t &value) -> wh::core::result<void> {
     auto *typed = storage_object<writer_t, storage_size>(object);
-    if constexpr (requires(writer_t &writer, const value_t &input) {
-                    writer.try_write(input);
-                  }) {
+    if constexpr (requires(writer_t &writer, const value_t &input) { writer.try_write(input); }) {
       return typed->try_write(value);
     } else if constexpr (std::copy_constructible<value_t>) {
       wh::core::result<value_t> copied{};
       try {
         copied = value_t(value);
       } catch (...) {
-        return wh::core::result<void>::failure(
-            wh::core::map_current_exception());
+        return wh::core::result<void>::failure(wh::core::map_current_exception());
       }
       if (copied.has_error()) {
         return wh::core::result<void>::failure(copied.error());
@@ -620,8 +555,7 @@ struct any_stream_writer_model {
     }
   }
 
-  static auto try_write_move(void *object, value_t &&value)
-      -> wh::core::result<void> {
+  static auto try_write_move(void *object, value_t &&value) -> wh::core::result<void> {
     auto *typed = storage_object<writer_t, storage_size>(object);
     if constexpr (requires(writer_t &writer, value_t &&input) {
                     writer.try_write(std::move(input));
@@ -640,8 +574,8 @@ struct any_stream_writer_model {
     return storage_object<writer_t, storage_size>(object)->is_closed();
   }
 
-  static auto connect_write_async(void *object, value_t value,
-                                  receiver_ref_t receiver) -> op_handle_t {
+  static auto connect_write_async(void *object, value_t value, receiver_ref_t receiver)
+      -> op_handle_t {
     auto *typed = storage_object<writer_t, storage_size>(object);
     auto make_sender = [&]() {
       if constexpr (requires(const writer_t &writer, value_t &&input) {
@@ -694,8 +628,7 @@ public:
   template <typename reader_t>
     requires(!std::same_as<std::remove_cvref_t<reader_t>, any_stream_reader>) &&
             detail::async_stream_reader<std::remove_cvref_t<reader_t>> &&
-            std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
-                         value_t> &&
+            std::same_as<typename std::remove_cvref_t<reader_t>::value_type, value_t> &&
             std::constructible_from<std::remove_cvref_t<reader_t>, reader_t>
   any_stream_reader(reader_t &&reader) {
     emplace<std::remove_cvref_t<reader_t>>(std::forward<reader_t>(reader));
@@ -705,9 +638,7 @@ public:
   auto operator=(const any_stream_reader &) -> any_stream_reader & = delete;
 
   /// Moves the concrete backend without exposing its concrete type.
-  any_stream_reader(any_stream_reader &&other) noexcept {
-    move_from(std::move(other));
-  }
+  any_stream_reader(any_stream_reader &&other) noexcept { move_from(std::move(other)); }
 
   /// Replaces current backend with the moved backend from `other`.
   auto operator=(any_stream_reader &&other) noexcept -> any_stream_reader & {
@@ -739,9 +670,7 @@ public:
   }
 
   /// Starts one sender-based async read using the erased backend.
-  [[nodiscard]] auto read_async() & -> read_sender_type {
-    return read_sender_type{*this};
-  }
+  [[nodiscard]] auto read_async() & -> read_sender_type { return read_sender_type{*this}; }
 
   /// Starts one sender-based async read, transferring reader ownership into the
   /// sender.
@@ -775,47 +704,36 @@ public:
   }
 
   /// Returns the concrete backend pointer when `reader_t` is active.
-  template <typename reader_t>
-  [[nodiscard]] auto target_if() noexcept -> reader_t * {
-    if (vtable_ == &detail::any_stream_reader_model<value_t, storage_size,
-                                                    reader_t>::vtable) {
+  template <typename reader_t> [[nodiscard]] auto target_if() noexcept -> reader_t * {
+    if (vtable_ == &detail::any_stream_reader_model<value_t, storage_size, reader_t>::vtable) {
       return detail::storage_object<reader_t>(storage_);
     }
     return nullptr;
   }
 
   /// Returns the concrete backend pointer when `reader_t` is active.
-  template <typename reader_t>
-  [[nodiscard]] auto target_if() const noexcept -> const reader_t * {
-    if (vtable_ == &detail::any_stream_reader_model<value_t, storage_size,
-                                                    reader_t>::vtable) {
+  template <typename reader_t> [[nodiscard]] auto target_if() const noexcept -> const reader_t * {
+    if (vtable_ == &detail::any_stream_reader_model<value_t, storage_size, reader_t>::vtable) {
       return detail::storage_object<reader_t>(storage_);
     }
     return nullptr;
   }
 
 private:
-  template <typename value_u, std::size_t storage_u>
-  friend class any_stream_read_sender;
+  template <typename value_u, std::size_t storage_u> friend class any_stream_read_sender;
 
-  [[nodiscard]] auto has_value() const noexcept -> bool {
-    return vtable_ != nullptr;
-  }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return vtable_ != nullptr; }
 
-  template <typename reader_t, typename... arg_ts>
-  auto emplace(arg_ts &&...args) -> void {
+  template <typename reader_t, typename... arg_ts> auto emplace(arg_ts &&...args) -> void {
     using model_t = std::remove_cvref_t<reader_t>;
-    using storage_model_t =
-        detail::erased_storage_model_t<model_t, storage_size>;
+    using storage_model_t = detail::erased_storage_model_t<model_t, storage_size>;
     if constexpr (detail::fits_erased_storage_v<model_t, storage_size>) {
-      ::new (storage_.data.data())
-          storage_model_t(std::forward<arg_ts>(args)...);
+      ::new (storage_.data.data()) storage_model_t(std::forward<arg_ts>(args)...);
     } else {
-      ::new (storage_.data.data()) storage_model_t(
-          std::make_unique<model_t>(std::forward<arg_ts>(args)...));
+      ::new (storage_.data.data())
+          storage_model_t(std::make_unique<model_t>(std::forward<arg_ts>(args)...));
     }
-    vtable_ = &detail::any_stream_reader_model<value_t, storage_size,
-                                               model_t>::vtable;
+    vtable_ = &detail::any_stream_reader_model<value_t, storage_size, model_t>::vtable;
   }
 
   auto reset() noexcept -> void {
@@ -833,44 +751,34 @@ private:
     vtable_ = std::exchange(other.vtable_, nullptr);
   }
 
-  [[nodiscard]] auto object_ptr() noexcept -> void * {
-    return storage_.data.data();
-  }
-  [[nodiscard]] auto object_ptr() const noexcept -> const void * {
-    return storage_.data.data();
-  }
+  [[nodiscard]] auto object_ptr() noexcept -> void * { return storage_.data.data(); }
+  [[nodiscard]] auto object_ptr() const noexcept -> const void * { return storage_.data.data(); }
 
   detail::erased_storage<storage_size> storage_{};
-  const detail::any_stream_reader_vtable<value_t, storage_size> *vtable_{
-      nullptr};
+  const detail::any_stream_reader_vtable<value_t, storage_size> *vtable_{nullptr};
 };
 
 /// Stable async sender returned by `any_stream_reader::read_async()`.
-template <typename value_t, std::size_t storage_size>
-class any_stream_read_sender final {
+template <typename value_t, std::size_t storage_size> class any_stream_read_sender final {
 public:
   using sender_concept = stdexec::sender_t;
-  using completion_signatures = stdexec::completion_signatures<
-      stdexec::set_value_t(detail::chunk_result_t<value_t>),
-      stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
+  using completion_signatures =
+      stdexec::completion_signatures<stdexec::set_value_t(detail::chunk_result_t<value_t>),
+                                     stdexec::set_error_t(std::exception_ptr),
+                                     stdexec::set_stopped_t()>;
 
-  explicit any_stream_read_sender(
-      any_stream_reader<value_t, storage_size> &reader) noexcept
+  explicit any_stream_read_sender(any_stream_reader<value_t, storage_size> &reader) noexcept
       : borrowed_(std::addressof(reader)) {}
 
-  explicit any_stream_read_sender(
-      any_stream_reader<value_t, storage_size> &&reader) noexcept
+  explicit any_stream_read_sender(any_stream_reader<value_t, storage_size> &&reader) noexcept
       : owned_(std::move(reader)) {}
 
   any_stream_read_sender(const any_stream_read_sender &) = delete;
-  auto operator=(const any_stream_read_sender &)
-      -> any_stream_read_sender & = delete;
+  auto operator=(const any_stream_read_sender &) -> any_stream_read_sender & = delete;
   any_stream_read_sender(any_stream_read_sender &&) noexcept = default;
-  auto operator=(any_stream_read_sender &&) noexcept
-      -> any_stream_read_sender & = default;
+  auto operator=(any_stream_read_sender &&) noexcept -> any_stream_read_sender & = default;
 
-  template <stdexec::receiver_of<completion_signatures> receiver_t>
-  class operation {
+  template <stdexec::receiver_of<completion_signatures> receiver_t> class operation {
     using receiver_ref_t = detail::receiver_ref<value_t>;
     using bridge_t = wh::core::detail::receiver_stop_bridge<receiver_t>;
 
@@ -879,8 +787,7 @@ public:
 
       bridge_t *bridge{nullptr};
 
-      auto set_value(detail::chunk_result_t<value_t> status) && noexcept
-          -> void {
+      auto set_value(detail::chunk_result_t<value_t> status) && noexcept -> void {
         bridge->set_value(std::move(status));
       }
 
@@ -890,8 +797,7 @@ public:
 
       auto set_stopped() && noexcept -> void { bridge->set_stopped(); }
 
-      [[nodiscard]] auto get_env() const noexcept ->
-          typename bridge_t::stop_env_t {
+      [[nodiscard]] auto get_env() const noexcept -> typename bridge_t::stop_env_t {
         return bridge->env();
       }
     };
@@ -899,19 +805,16 @@ public:
   public:
     using operation_state_concept = stdexec::operation_state_t;
 
-    operation(any_stream_reader<value_t, storage_size> *reader,
-              receiver_t receiver) noexcept
+    operation(any_stream_reader<value_t, storage_size> *reader, receiver_t receiver) noexcept
         : borrowed_(reader), receiver_(std::move(receiver)) {}
 
-    operation(any_stream_reader<value_t, storage_size> &&reader,
-              receiver_t receiver) noexcept
+    operation(any_stream_reader<value_t, storage_size> &&reader, receiver_t receiver) noexcept
         : owned_(std::move(reader)), receiver_(std::move(receiver)) {}
 
     auto start() & noexcept -> void {
       auto *reader = active_reader();
       if (reader == nullptr || !reader->has_value()) {
-        stdexec::set_value(std::move(receiver_),
-                           detail::make_reader_not_found<value_t>());
+        stdexec::set_value(std::move(receiver_), detail::make_reader_not_found<value_t>());
         return;
       }
 
@@ -929,8 +832,8 @@ public:
 
       child_receiver_.bridge = std::addressof(*bridge_);
       try {
-        auto child = reader->vtable_->connect_read_async(
-            reader->object_ptr(), receiver_ref_t{child_receiver_});
+        auto child = reader->vtable_->connect_read_async(reader->object_ptr(),
+                                                         receiver_ref_t{child_receiver_});
         child_ = std::move(child);
         child_.start();
       } catch (...) {
@@ -939,8 +842,7 @@ public:
     }
 
   private:
-    [[nodiscard]] auto active_reader() noexcept
-        -> any_stream_reader<value_t, storage_size> * {
+    [[nodiscard]] auto active_reader() noexcept -> any_stream_reader<value_t, storage_size> * {
       if (owned_.has_value()) {
         return std::addressof(*owned_);
       }
@@ -952,13 +854,11 @@ public:
     receiver_t receiver_;
     std::optional<bridge_t> bridge_{};
     child_receiver child_receiver_{};
-    typename detail::any_stream_reader_vtable<
-        value_t, storage_size>::op_handle_t child_{};
+    typename detail::any_stream_reader_vtable<value_t, storage_size>::op_handle_t child_{};
   };
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
-    requires wh::core::detail::receiver_with_resume_scheduler<
-        std::remove_cvref_t<receiver_t>>
+    requires wh::core::detail::receiver_with_resume_scheduler<std::remove_cvref_t<receiver_t>>
   [[nodiscard]] auto connect(receiver_t receiver) && -> operation<receiver_t> {
     if (owned_.has_value()) {
       return operation<receiver_t>{std::move(*owned_), std::move(receiver)};
@@ -966,8 +866,7 @@ public:
     return operation<receiver_t>{borrowed_, std::move(receiver)};
   }
 
-  [[nodiscard]] auto get_env() const noexcept
-      -> wh::core::detail::async_completion_env {
+  [[nodiscard]] auto get_env() const noexcept -> wh::core::detail::async_completion_env {
     return {};
   }
 
@@ -977,8 +876,7 @@ private:
 };
 
 /// Type-erased stream writer handle used to unify writer-facing stream APIs.
-template <typename value_t, std::size_t storage_size>
-class any_stream_writer final {
+template <typename value_t, std::size_t storage_size> class any_stream_writer final {
 public:
   using value_type = value_t;
   using write_sender_type = any_stream_write_sender<value_t, storage_size>;
@@ -998,9 +896,7 @@ public:
   auto operator=(const any_stream_writer &) -> any_stream_writer & = delete;
 
   /// Moves the concrete backend without exposing its concrete type.
-  any_stream_writer(any_stream_writer &&other) noexcept {
-    move_from(std::move(other));
-  }
+  any_stream_writer(any_stream_writer &&other) noexcept { move_from(std::move(other)); }
 
   /// Replaces current backend with the moved backend from `other`.
   auto operator=(any_stream_writer &&other) noexcept -> any_stream_writer & {
@@ -1038,13 +934,11 @@ public:
       try {
         prepared = value_t(value);
       } catch (...) {
-        prepared = wh::core::result<value_t>::failure(
-            wh::core::map_current_exception());
+        prepared = wh::core::result<value_t>::failure(wh::core::map_current_exception());
       }
     } else {
       (void)value;
-      prepared =
-          wh::core::result<value_t>::failure(wh::core::errc::not_supported);
+      prepared = wh::core::result<value_t>::failure(wh::core::errc::not_supported);
     }
     return write_sender_type{*this, std::move(prepared)};
   }
@@ -1055,8 +949,7 @@ public:
     try {
       prepared = std::move(value);
     } catch (...) {
-      prepared =
-          wh::core::result<value_t>::failure(wh::core::map_current_exception());
+      prepared = wh::core::result<value_t>::failure(wh::core::map_current_exception());
     }
     return write_sender_type{*this, std::move(prepared)};
   }
@@ -1069,13 +962,11 @@ public:
       try {
         prepared = value_t(value);
       } catch (...) {
-        prepared = wh::core::result<value_t>::failure(
-            wh::core::map_current_exception());
+        prepared = wh::core::result<value_t>::failure(wh::core::map_current_exception());
       }
     } else {
       (void)value;
-      prepared =
-          wh::core::result<value_t>::failure(wh::core::errc::not_supported);
+      prepared = wh::core::result<value_t>::failure(wh::core::errc::not_supported);
     }
     return write_sender_type{std::move(*this), std::move(prepared)};
   }
@@ -1087,8 +978,7 @@ public:
     try {
       prepared = std::move(value);
     } catch (...) {
-      prepared =
-          wh::core::result<value_t>::failure(wh::core::map_current_exception());
+      prepared = wh::core::result<value_t>::failure(wh::core::map_current_exception());
     }
     return write_sender_type{std::move(*this), std::move(prepared)};
   }
@@ -1107,27 +997,20 @@ public:
   }
 
 private:
-  template <typename value_u, std::size_t storage_u>
-  friend class any_stream_write_sender;
+  template <typename value_u, std::size_t storage_u> friend class any_stream_write_sender;
 
-  [[nodiscard]] auto has_value() const noexcept -> bool {
-    return vtable_ != nullptr;
-  }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return vtable_ != nullptr; }
 
-  template <typename writer_t, typename... arg_ts>
-  auto emplace(arg_ts &&...args) -> void {
+  template <typename writer_t, typename... arg_ts> auto emplace(arg_ts &&...args) -> void {
     using model_t = std::remove_cvref_t<writer_t>;
-    using storage_model_t =
-        detail::erased_storage_model_t<model_t, storage_size>;
+    using storage_model_t = detail::erased_storage_model_t<model_t, storage_size>;
     if constexpr (detail::fits_erased_storage_v<model_t, storage_size>) {
-      ::new (storage_.data.data())
-          storage_model_t(std::forward<arg_ts>(args)...);
+      ::new (storage_.data.data()) storage_model_t(std::forward<arg_ts>(args)...);
     } else {
-      ::new (storage_.data.data()) storage_model_t(
-          std::make_unique<model_t>(std::forward<arg_ts>(args)...));
+      ::new (storage_.data.data())
+          storage_model_t(std::make_unique<model_t>(std::forward<arg_ts>(args)...));
     }
-    vtable_ = &detail::any_stream_writer_model<value_t, storage_size,
-                                               model_t>::vtable;
+    vtable_ = &detail::any_stream_writer_model<value_t, storage_size, model_t>::vtable;
   }
 
   auto reset() noexcept -> void {
@@ -1145,26 +1028,21 @@ private:
     vtable_ = std::exchange(other.vtable_, nullptr);
   }
 
-  [[nodiscard]] auto object_ptr() noexcept -> void * {
-    return storage_.data.data();
-  }
-  [[nodiscard]] auto object_ptr() const noexcept -> const void * {
-    return storage_.data.data();
-  }
+  [[nodiscard]] auto object_ptr() noexcept -> void * { return storage_.data.data(); }
+  [[nodiscard]] auto object_ptr() const noexcept -> const void * { return storage_.data.data(); }
 
   detail::erased_storage<storage_size> storage_{};
-  const detail::any_stream_writer_vtable<value_t, storage_size> *vtable_{
-      nullptr};
+  const detail::any_stream_writer_vtable<value_t, storage_size> *vtable_{nullptr};
 };
 
 /// Stable async sender returned by `any_stream_writer::write_async()`.
-template <typename value_t, std::size_t storage_size>
-class any_stream_write_sender final {
+template <typename value_t, std::size_t storage_size> class any_stream_write_sender final {
 public:
   using sender_concept = stdexec::sender_t;
-  using completion_signatures = stdexec::completion_signatures<
-      stdexec::set_value_t(wh::core::result<void>),
-      stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
+  using completion_signatures =
+      stdexec::completion_signatures<stdexec::set_value_t(wh::core::result<void>),
+                                     stdexec::set_error_t(std::exception_ptr),
+                                     stdexec::set_stopped_t()>;
 
   any_stream_write_sender(any_stream_writer<value_t, storage_size> &&writer,
                           wh::core::result<value_t> prepared)
@@ -1175,14 +1053,11 @@ public:
       : borrowed_(std::addressof(writer)), prepared_(std::move(prepared)) {}
 
   any_stream_write_sender(const any_stream_write_sender &) = delete;
-  auto operator=(const any_stream_write_sender &)
-      -> any_stream_write_sender & = delete;
+  auto operator=(const any_stream_write_sender &) -> any_stream_write_sender & = delete;
   any_stream_write_sender(any_stream_write_sender &&) noexcept = default;
-  auto operator=(any_stream_write_sender &&) noexcept
-      -> any_stream_write_sender & = default;
+  auto operator=(any_stream_write_sender &&) noexcept -> any_stream_write_sender & = default;
 
-  template <stdexec::receiver_of<completion_signatures> receiver_t>
-  class operation {
+  template <stdexec::receiver_of<completion_signatures> receiver_t> class operation {
     using receiver_ref_t = detail::write_receiver_ref<value_t>;
     using bridge_t = wh::core::detail::receiver_stop_bridge<receiver_t>;
 
@@ -1201,8 +1076,7 @@ public:
 
       auto set_stopped() && noexcept -> void { bridge->set_stopped(); }
 
-      [[nodiscard]] auto get_env() const noexcept ->
-          typename bridge_t::stop_env_t {
+      [[nodiscard]] auto get_env() const noexcept -> typename bridge_t::stop_env_t {
         return bridge->env();
       }
     };
@@ -1210,22 +1084,20 @@ public:
   public:
     using operation_state_concept = stdexec::operation_state_t;
 
-    operation(any_stream_writer<value_t, storage_size> *writer,
-              wh::core::result<value_t> prepared, receiver_t receiver) noexcept
-        : borrowed_(writer), prepared_(std::move(prepared)),
-          receiver_(std::move(receiver)) {}
+    operation(any_stream_writer<value_t, storage_size> *writer, wh::core::result<value_t> prepared,
+              receiver_t receiver) noexcept
+        : borrowed_(writer), prepared_(std::move(prepared)), receiver_(std::move(receiver)) {}
 
-    operation(any_stream_writer<value_t, storage_size> &&writer,
-              wh::core::result<value_t> prepared, receiver_t receiver)
+    operation(any_stream_writer<value_t, storage_size> &&writer, wh::core::result<value_t> prepared,
+              receiver_t receiver)
         : owned_(std::move(writer)), prepared_(std::move(prepared)),
           receiver_(std::move(receiver)) {}
 
     auto start() & noexcept -> void {
       auto *writer = active_writer();
       if (writer == nullptr || !writer->has_value()) {
-        stdexec::set_value(
-            std::move(receiver_),
-            wh::core::result<void>::failure(wh::core::errc::not_found));
+        stdexec::set_value(std::move(receiver_),
+                           wh::core::result<void>::failure(wh::core::errc::not_found));
         return;
       }
       if (prepared_.has_error()) {
@@ -1249,8 +1121,7 @@ public:
       child_receiver_.bridge = std::addressof(*bridge_);
       try {
         auto child = writer->vtable_->connect_write_async(
-            writer->object_ptr(), std::move(prepared_).value(),
-            receiver_ref_t{child_receiver_});
+            writer->object_ptr(), std::move(prepared_).value(), receiver_ref_t{child_receiver_});
         child_ = std::move(child);
         child_.start();
       } catch (...) {
@@ -1259,8 +1130,7 @@ public:
     }
 
   private:
-    [[nodiscard]] auto active_writer() noexcept
-        -> any_stream_writer<value_t, storage_size> * {
+    [[nodiscard]] auto active_writer() noexcept -> any_stream_writer<value_t, storage_size> * {
       if (owned_.has_value()) {
         return std::addressof(*owned_);
       }
@@ -1273,24 +1143,19 @@ public:
     receiver_t receiver_;
     std::optional<bridge_t> bridge_{};
     child_receiver child_receiver_{};
-    typename detail::any_stream_writer_vtable<
-        value_t, storage_size>::op_handle_t child_{};
+    typename detail::any_stream_writer_vtable<value_t, storage_size>::op_handle_t child_{};
   };
 
   template <stdexec::receiver_of<completion_signatures> receiver_t>
-    requires wh::core::detail::receiver_with_resume_scheduler<
-        std::remove_cvref_t<receiver_t>>
+    requires wh::core::detail::receiver_with_resume_scheduler<std::remove_cvref_t<receiver_t>>
   [[nodiscard]] auto connect(receiver_t receiver) && -> operation<receiver_t> {
     if (owned_.has_value()) {
-      return operation<receiver_t>{std::move(*owned_), std::move(prepared_),
-                                   std::move(receiver)};
+      return operation<receiver_t>{std::move(*owned_), std::move(prepared_), std::move(receiver)};
     }
-    return operation<receiver_t>{borrowed_, std::move(prepared_),
-                                 std::move(receiver)};
+    return operation<receiver_t>{borrowed_, std::move(prepared_), std::move(receiver)};
   }
 
-  [[nodiscard]] auto get_env() const noexcept
-      -> wh::core::detail::async_completion_env {
+  [[nodiscard]] auto get_env() const noexcept -> wh::core::detail::async_completion_env {
     return {};
   }
 

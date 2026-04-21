@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <memory>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/tool/interrupt.hpp"
 
@@ -31,13 +31,12 @@ TEST_CASE("tool interrupt converts to core signals and injects resume payloads",
   REQUIRE(injected.has_value());
   REQUIRE(state.contains_interrupt_id("int-1"));
   REQUIRE(wh::tool::is_resume_target(interrupt, state));
-  REQUIRE_FALSE(
-      wh::tool::is_resume_target(
-          wh::tool::tool_interrupt{
-              .interrupt_id = "int-2",
-              .location = wh::core::make_address({"tool"}),
-          },
-          state, true));
+  REQUIRE_FALSE(wh::tool::is_resume_target(
+      wh::tool::tool_interrupt{
+          .interrupt_id = "int-2",
+          .location = wh::core::make_address({"tool"}),
+      },
+      state, true));
 }
 
 TEST_CASE("tool interrupt aggregation reports root causes and rejects empty sets",
@@ -66,8 +65,7 @@ TEST_CASE("tool interrupt aggregation reports root causes and rejects empty sets
   REQUIRE(aggregated.value().interrupts.size() == 2U);
   REQUIRE(aggregated.value().root_cause == root);
 
-  auto empty = wh::tool::aggregate_interrupts(
-      std::span<const wh::tool::tool_interrupt>{});
+  auto empty = wh::tool::aggregate_interrupts(std::span<const wh::tool::tool_interrupt>{});
   REQUIRE(empty.has_error());
   REQUIRE(empty.error() == wh::core::errc::not_found);
 }

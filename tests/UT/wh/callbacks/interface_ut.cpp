@@ -1,15 +1,14 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <functional>
 #include <memory>
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/callbacks/interface.hpp"
 
 namespace {
 
-using timing_checker_t =
-    decltype([](const wh::callbacks::stage) noexcept { return true; });
+using timing_checker_t = decltype([](const wh::callbacks::stage) noexcept { return true; });
 using stage_view_callback_t =
     decltype([](const wh::callbacks::stage, const wh::callbacks::event_view,
                 const wh::callbacks::run_info &) {});
@@ -48,24 +47,19 @@ TEST_CASE("callbacks interface builds event views for mutable and const lvalues"
   REQUIRE(*const_view.get_if<int>() == 9);
 }
 
-TEST_CASE(
-    "callbacks interface payload accessors cover hit miss and reverse-stage checks",
-    "[UT][wh/callbacks/interface.hpp][event_get_if][condition][branch][boundary]") {
+TEST_CASE("callbacks interface payload accessors cover hit miss and reverse-stage checks",
+          "[UT][wh/callbacks/interface.hpp][event_get_if][condition][branch][boundary]") {
   auto payload = wh::callbacks::make_event_payload(std::string{"hello"});
 
   REQUIRE(wh::callbacks::event_get_if<std::string>(payload) != nullptr);
   REQUIRE(wh::callbacks::event_get_if<int>(payload) == nullptr);
   REQUIRE(wh::callbacks::event_as<std::string>(payload).value() == "hello");
-  REQUIRE(wh::callbacks::event_as<int>(payload).error() ==
-          wh::core::errc::type_mismatch);
-  REQUIRE(wh::callbacks::event_cref_as<std::string>(payload).value().get() ==
-          "hello");
-  REQUIRE(wh::callbacks::event_cref_as<int>(payload).error() ==
-          wh::core::errc::type_mismatch);
+  REQUIRE(wh::callbacks::event_as<int>(payload).error() == wh::core::errc::type_mismatch);
+  REQUIRE(wh::callbacks::event_cref_as<std::string>(payload).value().get() == "hello");
+  REQUIRE(wh::callbacks::event_cref_as<int>(payload).error() == wh::core::errc::type_mismatch);
   REQUIRE(wh::callbacks::is_reverse_stage(wh::callbacks::stage::start));
   REQUIRE_FALSE(wh::callbacks::is_reverse_stage(wh::callbacks::stage::end));
-  REQUIRE_FALSE(wh::callbacks::is_reverse_stage(
-      wh::callbacks::stage::stream_end));
+  REQUIRE_FALSE(wh::callbacks::is_reverse_stage(wh::callbacks::stage::stream_end));
 }
 
 TEST_CASE("callbacks interface moves payloads out of rvalue event payload storage",

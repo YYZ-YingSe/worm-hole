@@ -78,8 +78,7 @@ public:
   component_options() = default;
 
   /// Sets base options applied to all invocations.
-  auto set_base(const component_common_options &options)
-      -> component_options & {
+  auto set_base(const component_common_options &options) -> component_options & {
     base_ = options;
     return *this;
   }
@@ -91,15 +90,13 @@ public:
   }
 
   /// Sets one-shot override options with explicit optional field semantics.
-  auto set_call_override(const component_override_options &options)
-      -> component_options & {
+  auto set_call_override(const component_override_options &options) -> component_options & {
     override_ = options;
     return *this;
   }
 
   /// Sets one-shot override options with explicit optional field semantics.
-  auto set_call_override(component_override_options &&options)
-      -> component_options & {
+  auto set_call_override(component_override_options &&options) -> component_options & {
     override_ = std::move(options);
     return *this;
   }
@@ -111,9 +108,7 @@ public:
   }
 
   /// Returns base options.
-  [[nodiscard]] auto base() const noexcept -> const component_common_options & {
-    return base_;
-  }
+  [[nodiscard]] auto base() const noexcept -> const component_common_options & { return base_; }
 
   /// Returns optional per-call override options.
   [[nodiscard]] auto call_override() const noexcept
@@ -122,8 +117,7 @@ public:
   }
 
   /// Returns a borrowed view of effective options without string copies.
-  [[nodiscard]] auto resolve_view() const noexcept
-      -> resolved_component_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept -> resolved_component_options_view {
     resolved_component_options_view view{};
     view.callbacks_enabled = base_.callbacks_enabled;
     view.trace_id = base_.trace_id;
@@ -164,15 +158,13 @@ public:
   }
 
   /// Stores implementation-specific options by concrete type.
-  template <typename options_t>
-  auto set_impl_specific(options_t &&options) -> component_options & {
+  template <typename options_t> auto set_impl_specific(options_t &&options) -> component_options & {
     using stored_t = std::remove_cvref_t<options_t>;
     const auto key = wh::core::any_type_key_v<stored_t>;
     auto iter = impl_specific_.find(key);
     if (iter == impl_specific_.end()) {
-      impl_specific_.emplace(key,
-                             wh::core::any{std::in_place_type<stored_t>,
-                                           std::forward<options_t>(options)});
+      impl_specific_.emplace(
+          key, wh::core::any{std::in_place_type<stored_t>, std::forward<options_t>(options)});
       return *this;
     }
     iter->second.template emplace<stored_t>(std::forward<options_t>(options));
@@ -180,8 +172,7 @@ public:
   }
 
   /// Returns typed implementation-specific options pointer if present.
-  template <typename options_t>
-  [[nodiscard]] auto impl_specific_if() const -> const options_t * {
+  template <typename options_t> [[nodiscard]] auto impl_specific_if() const -> const options_t * {
     const auto iter = impl_specific_.find(wh::core::any_type_key_v<options_t>);
     if (iter == impl_specific_.end()) {
       return nullptr;
@@ -191,12 +182,10 @@ public:
 
   /// Returns typed implementation-specific options as result reference.
   template <typename options_t>
-  [[nodiscard]] auto impl_specific_as() const
-      -> result<std::reference_wrapper<const options_t>> {
+  [[nodiscard]] auto impl_specific_as() const -> result<std::reference_wrapper<const options_t>> {
     const auto *typed = impl_specific_if<options_t>();
     if (typed == nullptr) {
-      return result<std::reference_wrapper<const options_t>>::failure(
-          errc::not_found);
+      return result<std::reference_wrapper<const options_t>>::failure(errc::not_found);
     }
     return std::cref(*typed);
   }
@@ -207,8 +196,7 @@ private:
   /// Per-call temporary overrides.
   std::optional<component_override_options> override_{};
   /// Type-indexed implementation-specific option payloads.
-  std::unordered_map<wh::core::any_type_key, wh::core::any,
-                     wh::core::any_type_key_hash>
+  std::unordered_map<wh::core::any_type_key, wh::core::any, wh::core::any_type_key_hash>
       impl_specific_{};
 };
 

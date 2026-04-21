@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/agent/revision.hpp"
 
@@ -33,8 +33,7 @@ TEST_CASE("agent revision contracts carry context windows decisions and typed re
   REQUIRE(context.current_review == &reviews.front());
   REQUIRE(context.remaining_iterations == 3U);
 
-  wh::agent::review_decision decision{
-      .kind = wh::agent::review_decision_kind::revise};
+  wh::agent::review_decision decision{.kind = wh::agent::review_decision_kind::revise};
   REQUIRE(decision.kind == wh::agent::review_decision_kind::revise);
 
   wh::agent::revision_request_builder builder =
@@ -49,11 +48,10 @@ TEST_CASE("agent revision contracts carry context windows decisions and typed re
   REQUIRE(built.value().size() == 1U);
 
   wh::agent::review_decision_reader reader =
-      [](const wh::agent::agent_output &, wh::core::run_context &)
-          -> wh::core::result<wh::agent::review_decision> {
-        return wh::agent::review_decision{
-            .kind = wh::agent::review_decision_kind::accept};
-      };
+      [](const wh::agent::agent_output &,
+         wh::core::run_context &) -> wh::core::result<wh::agent::review_decision> {
+    return wh::agent::review_decision{.kind = wh::agent::review_decision_kind::accept};
+  };
   auto read = reader(draft, run);
   REQUIRE(read.has_value());
   REQUIRE(read.value().kind == wh::agent::review_decision_kind::accept);
@@ -90,17 +88,17 @@ TEST_CASE("agent revision request builder can project current draft and review s
   };
 
   wh::agent::revision_request_builder builder =
-      [](const wh::agent::revision_context &revision, wh::core::run_context &)
-          -> wh::core::result<std::vector<wh::schema::message>> {
-        std::vector<wh::schema::message> messages{};
-        if (revision.current_draft != nullptr) {
-          messages.push_back(revision.current_draft->final_message);
-        }
-        if (revision.current_review != nullptr) {
-          messages.push_back(revision.current_review->final_message);
-        }
-        return messages;
-      };
+      [](const wh::agent::revision_context &revision,
+         wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::message>> {
+    std::vector<wh::schema::message> messages{};
+    if (revision.current_draft != nullptr) {
+      messages.push_back(revision.current_draft->final_message);
+    }
+    if (revision.current_review != nullptr) {
+      messages.push_back(revision.current_review->final_message);
+    }
+    return messages;
+  };
 
   wh::core::run_context run{};
   auto built = builder(context, run);

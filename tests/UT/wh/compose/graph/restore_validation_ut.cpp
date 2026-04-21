@@ -4,7 +4,8 @@
 #include "wh/compose/node/passthrough.hpp"
 
 TEST_CASE("restore validation requires compiled graph and validates matching shape",
-          "[UT][wh/compose/graph/restore_validation.hpp][validate_restore][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/"
+          "restore_validation.hpp][validate_restore][condition][branch][boundary]") {
   wh::compose::graph graph{};
   wh::compose::checkpoint_state checkpoint{};
 
@@ -12,8 +13,7 @@ TEST_CASE("restore validation requires compiled graph and validates matching sha
   REQUIRE(uncompiled.has_value());
   REQUIRE_FALSE(uncompiled.value().restorable);
 
-  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
   REQUIRE(graph.compile().has_value());
@@ -25,15 +25,14 @@ TEST_CASE("restore validation requires compiled graph and validates matching sha
 }
 
 TEST_CASE("restore validation aliases restore-check result types through the public header",
-          "[UT][wh/compose/graph/restore_validation.hpp][restore_validation_result][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/"
+          "restore_validation.hpp][restore_validation_result][condition][branch][boundary]") {
   wh::compose::restore_validation_result result{};
   result.restorable = false;
-  result.diff.entries.push_back(
-      {.kind = wh::compose::restore_diff_kind::graph_option});
-  result.issues.push_back(
-      {.kind = wh::compose::restore_issue_kind::graph_changed,
-       .subject = "graph",
-       .message = "changed"});
+  result.diff.entries.push_back({.kind = wh::compose::restore_diff_kind::graph_option});
+  result.issues.push_back({.kind = wh::compose::restore_issue_kind::graph_changed,
+                           .subject = "graph",
+                           .message = "changed"});
 
   REQUIRE_FALSE(result.restorable);
   REQUIRE(result.diff.contains(wh::compose::restore_diff_kind::graph_option));

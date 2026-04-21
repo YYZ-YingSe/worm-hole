@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <exec/trampoline_scheduler.hpp>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -13,6 +12,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <exec/trampoline_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/core/compiler.hpp"
@@ -20,8 +20,7 @@
 #include "wh/core/error_domain.hpp"
 namespace wh::core::detail {
 
-template <typename owner_t, stdexec::scheduler scheduler_t>
-class scheduled_resume_turn {
+template <typename owner_t, stdexec::scheduler scheduler_t> class scheduled_resume_turn {
   using scheduler_type = std::remove_cvref_t<scheduler_t>;
 
   struct receiver {
@@ -43,8 +42,7 @@ class scheduled_resume_turn {
       auto *turn_ptr = turn;
       auto *owner_ptr = owner;
       turn_ptr->begin();
-      owner_ptr->resume_turn_schedule_error(
-          map_error(std::forward<error_t>(error)));
+      owner_ptr->resume_turn_schedule_error(map_error(std::forward<error_t>(error)));
       turn_ptr->run_loop(owner_ptr);
       turn_ptr->finish(owner_ptr);
       owner_ptr->resume_turn_arrive();
@@ -63,10 +61,8 @@ class scheduled_resume_turn {
     [[nodiscard]] auto get_env() const noexcept -> stdexec::env<> { return {}; }
   };
 
-  using sender_t =
-      decltype(stdexec::starts_on(exec::trampoline_scheduler{},
-                                  stdexec::schedule(
-                                      std::declval<const scheduler_type &>())));
+  using sender_t = decltype(stdexec::starts_on(
+      exec::trampoline_scheduler{}, stdexec::schedule(std::declval<const scheduler_type &>())));
   using op_t = stdexec::connect_result_t<sender_t, receiver>;
 
 public:
@@ -135,8 +131,7 @@ private:
   }
 
   template <typename error_t>
-  [[nodiscard]] static auto map_error(error_t &&error) noexcept
-      -> wh::core::error_code {
+  [[nodiscard]] static auto map_error(error_t &&error) noexcept -> wh::core::error_code {
     using error_type = std::remove_cvref_t<error_t>;
 
     if constexpr (std::same_as<error_type, wh::core::error_code>) {
@@ -200,10 +195,9 @@ private:
     if (op_engaged_) {
       return;
     }
-    ::new (static_cast<void *>(op()))
-        op_t(stdexec::connect(stdexec::starts_on(exec::trampoline_scheduler{},
-                                                stdexec::schedule(scheduler_)),
-                              receiver{this, owner}));
+    ::new (static_cast<void *>(op())) op_t(stdexec::connect(
+        stdexec::starts_on(exec::trampoline_scheduler{}, stdexec::schedule(scheduler_)),
+        receiver{this, owner}));
     op_engaged_ = true;
     start_returned_ = false;
     turn_completed_ = false;
@@ -248,9 +242,8 @@ private:
     turn_completed_ = false;
   }
 
-  [[nodiscard]] auto advance_locked(
-      owner_t *owner, bool &run_inline,
-      std::optional<wh::core::error_code> &start_error) -> bool {
+  [[nodiscard]] auto advance_locked(owner_t *owner, bool &run_inline,
+                                    std::optional<wh::core::error_code> &start_error) -> bool {
     if (op_engaged_ && turn_completed_ && start_returned_ && !running_) {
       reset_completed_locked();
     }

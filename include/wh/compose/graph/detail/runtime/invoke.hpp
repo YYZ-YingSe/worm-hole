@@ -26,7 +26,13 @@ struct graph_node_state_handlers;
 
 namespace detail::invoke_runtime {
 class invoke_session;
-}
+
+template <typename receiver_t, typename derived_t, typename graph_scheduler_t>
+class invoke_join_base;
+
+template <typename state_t, typename receiver_t, typename derived_t, typename graph_scheduler_t>
+class invoke_stage_run;
+} // namespace detail::invoke_runtime
 
 namespace detail::runtime_state {
 
@@ -88,18 +94,13 @@ enum class stage : std::uint8_t {
 };
 
 struct attempt_id {
-  static constexpr std::uint32_t invalid =
-      std::numeric_limits<std::uint32_t>::max();
+  static constexpr std::uint32_t invalid = std::numeric_limits<std::uint32_t>::max();
 
   std::uint32_t slot{invalid};
 
-  [[nodiscard]] auto has_value() const noexcept -> bool {
-    return slot != invalid;
-  }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return slot != invalid; }
 
-  [[nodiscard]] explicit operator bool() const noexcept {
-    return has_value();
-  }
+  [[nodiscard]] explicit operator bool() const noexcept { return has_value(); }
 
   friend auto operator==(attempt_id, attempt_id) noexcept -> bool = default;
 };
@@ -149,16 +150,15 @@ struct ready_action {
     return ready_action{.kind = ready_action_kind::continue_scan};
   }
 
-  [[nodiscard]] static auto
-  terminal_error(const wh::core::error_code code) noexcept -> ready_action {
+  [[nodiscard]] static auto terminal_error(const wh::core::error_code code) noexcept
+      -> ready_action {
     return ready_action{
         .kind = ready_action_kind::terminal_error,
         .error = code,
     };
   }
 
-  [[nodiscard]] static auto launch(const attempt_id attempt_value)
-      -> ready_action {
+  [[nodiscard]] static auto launch(const attempt_id attempt_value) -> ready_action {
     return ready_action{
         .kind = ready_action_kind::launch,
         .attempt = attempt_value,
@@ -180,16 +180,14 @@ struct pregel_action {
   attempt_id attempt{};
   wh::core::error_code error{wh::core::errc::ok};
 
-  [[nodiscard]] static auto waiting(const std::uint32_t node_id_value) noexcept
-      -> pregel_action {
+  [[nodiscard]] static auto waiting(const std::uint32_t node_id_value) noexcept -> pregel_action {
     return pregel_action{
         .action = kind::waiting,
         .node_id = node_id_value,
     };
   }
 
-  [[nodiscard]] static auto skip(const std::uint32_t node_id_value,
-                                 graph_state_cause cause_value)
+  [[nodiscard]] static auto skip(const std::uint32_t node_id_value, graph_state_cause cause_value)
       -> pregel_action {
     return pregel_action{
         .action = kind::skip,
@@ -198,10 +196,8 @@ struct pregel_action {
     };
   }
 
-  [[nodiscard]] static auto launch(const std::uint32_t node_id_value,
-                                   graph_state_cause cause_value,
-                                   const attempt_id attempt_value)
-      -> pregel_action {
+  [[nodiscard]] static auto launch(const std::uint32_t node_id_value, graph_state_cause cause_value,
+                                   const attempt_id attempt_value) -> pregel_action {
     return pregel_action{
         .action = kind::launch,
         .node_id = node_id_value,
@@ -210,10 +206,10 @@ struct pregel_action {
     };
   }
 
-  [[nodiscard]] static auto
-  terminal_error(const std::uint32_t node_id_value,
-                 graph_state_cause cause_value,
-                 const wh::core::error_code code) noexcept -> pregel_action {
+  [[nodiscard]] static auto terminal_error(const std::uint32_t node_id_value,
+                                           graph_state_cause cause_value,
+                                           const wh::core::error_code code) noexcept
+      -> pregel_action {
     return pregel_action{
         .action = kind::terminal_error,
         .node_id = node_id_value,

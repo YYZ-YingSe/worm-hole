@@ -2,8 +2,9 @@
 
 #include "wh/compose/graph/restore_shape.hpp"
 
-TEST_CASE("restore shape conversion sorts nodes edges branches and subgraphs",
-          "[UT][wh/compose/graph/restore_shape.hpp][to_restore_shape][condition][branch][boundary]") {
+TEST_CASE(
+    "restore shape conversion sorts nodes edges branches and subgraphs",
+    "[UT][wh/compose/graph/restore_shape.hpp][to_restore_shape][condition][branch][boundary]") {
   wh::compose::graph_snapshot snapshot{};
   snapshot.compile_options.mode = wh::compose::graph_runtime_mode::pregel;
   snapshot.nodes = {
@@ -27,8 +28,9 @@ TEST_CASE("restore shape conversion sorts nodes edges branches and subgraphs",
   REQUIRE(shape.subgraphs.contains("child"));
 }
 
-TEST_CASE("restore shape defaults preserve dag options and empty collections",
-          "[UT][wh/compose/graph/restore_shape.hpp][graph_restore_shape][condition][branch][boundary]") {
+TEST_CASE(
+    "restore shape defaults preserve dag options and empty collections",
+    "[UT][wh/compose/graph/restore_shape.hpp][graph_restore_shape][condition][branch][boundary]") {
   wh::compose::graph_restore_shape shape{};
 
   REQUIRE(shape.options.mode == wh::compose::graph_runtime_mode::dag);

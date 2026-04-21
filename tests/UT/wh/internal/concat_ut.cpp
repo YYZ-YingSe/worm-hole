@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <span>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/internal/concat.hpp"
 
@@ -31,8 +31,8 @@ TEST_CASE("stream concat registry uses adl customizations and registered bridges
   REQUIRE(adl.has_value());
   REQUIRE(adl.value().value == 3);
 
-  auto registered = registry.register_concat<int>(
-      [](const std::span<const int> values) -> wh::core::result<int> {
+  auto registered =
+      registry.register_concat<int>([](const std::span<const int> values) -> wh::core::result<int> {
         int sum = 0;
         for (const auto value : values) {
           sum += value;
@@ -42,8 +42,7 @@ TEST_CASE("stream concat registry uses adl customizations and registered bridges
   REQUIRE(registered.has_value());
 
   const std::array dynamic_values = {wh::core::any{1}, wh::core::any{4}};
-  auto dynamic =
-      registry.concat(wh::core::any_type_key_v<int>, dynamic_values);
+  auto dynamic = registry.concat(wh::core::any_type_key_v<int>, dynamic_values);
   REQUIRE(dynamic.has_value());
   REQUIRE(*wh::core::any_cast<int>(&dynamic.value()) == 5);
 }
@@ -57,22 +56,21 @@ TEST_CASE("stream concat registry reports invalid empty inputs and type mismatch
   REQUIRE(empty.error() == wh::core::errc::invalid_argument);
 
   const std::array mismatch_values = {wh::core::any{std::string{"x"}}};
-  auto mismatch =
-      registry.concat(wh::core::any_type_key_v<int>, mismatch_values);
+  auto mismatch = registry.concat(wh::core::any_type_key_v<int>, mismatch_values);
   REQUIRE(mismatch.has_error());
   REQUIRE(mismatch.error() == wh::core::errc::type_mismatch);
 }
 
 TEST_CASE(
     "stream concat registry honors reserve freeze pointer reducers and fallback branches",
-    "[UT][wh/internal/concat.hpp][stream_concat_registry::register_concat_from_ptrs][condition][branch][boundary]") {
+    "[UT][wh/internal/"
+    "concat.hpp][stream_concat_registry::register_concat_from_ptrs][condition][branch][boundary]") {
   wh::internal::stream_concat_registry registry{};
   registry.reserve(4U);
   REQUIRE_FALSE(registry.is_frozen());
 
   auto pointer_registered = registry.register_concat_from_ptrs<std::string>(
-      [](const std::span<const std::string *> values)
-          -> wh::core::result<std::string> {
+      [](const std::span<const std::string *> values) -> wh::core::result<std::string> {
         std::string joined{};
         for (const auto *value : values) {
           joined += *value;
@@ -94,8 +92,7 @@ TEST_CASE(
   REQUIRE(*wh::core::any_cast<int>(&single_value.value()) == 7);
 
   const std::array unsupported_values = {wh::core::any{1}, wh::core::any{2}};
-  auto unsupported =
-      registry.concat(wh::core::any_type_key_v<int>, unsupported_values);
+  auto unsupported = registry.concat(wh::core::any_type_key_v<int>, unsupported_values);
   REQUIRE(unsupported.has_error());
   REQUIRE(unsupported.error() == wh::core::errc::not_supported);
 

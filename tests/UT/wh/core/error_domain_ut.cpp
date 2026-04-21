@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <new>
 #include <stdexcept>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/error_domain.hpp"
 
@@ -17,11 +17,9 @@ using wh::core::map_exception;
 TEST_CASE("map_exception classifies standard exception families",
           "[UT][wh/core/error_domain.hpp][map_exception][branch][boundary]") {
   REQUIRE(map_exception(std::bad_alloc{}) == errc::resource_exhausted);
-  REQUIRE(map_exception(std::invalid_argument{"bad"}) ==
-          errc::invalid_argument);
+  REQUIRE(map_exception(std::invalid_argument{"bad"}) == errc::invalid_argument);
   REQUIRE(map_exception(std::out_of_range{"bad"}) == errc::invalid_argument);
-  REQUIRE(map_exception(std::logic_error{"bad"}) ==
-          errc::contract_violation);
+  REQUIRE(map_exception(std::logic_error{"bad"}) == errc::contract_violation);
   REQUIRE(map_exception(std::runtime_error{"boom"}) == errc::internal_error);
   REQUIRE(map_exception(std::exception{}) == errc::internal_error);
 }
@@ -53,13 +51,11 @@ TEST_CASE("exception_boundary returns success for non-throwing callables",
 
 TEST_CASE("exception_boundary maps thrown exceptions into result errors",
           "[UT][wh/core/error_domain.hpp][exception_boundary][boundary]") {
-  const auto invalid = exception_boundary<int>(
-      []() -> int { throw std::invalid_argument{"bad"}; });
+  const auto invalid = exception_boundary<int>([]() -> int { throw std::invalid_argument{"bad"}; });
   REQUIRE(invalid.has_error());
   REQUIRE(invalid.error() == errc::invalid_argument);
 
-  const auto oom = exception_boundary<void>(
-      [] { throw std::bad_alloc{}; });
+  const auto oom = exception_boundary<void>([] { throw std::bad_alloc{}; });
   REQUIRE(oom.has_error());
   REQUIRE(oom.error() == errc::resource_exhausted);
 

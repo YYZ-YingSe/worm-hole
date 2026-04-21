@@ -13,7 +13,8 @@ struct cursor_waiter {
 } // namespace
 
 TEST_CASE("cursor waiter list pushes removes and pops intrusive waiters",
-          "[UT][wh/core/cursor_reader/detail/waiter_list.hpp][waiter_list::try_remove][condition][branch]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "waiter_list.hpp][waiter_list::try_remove][condition][branch]") {
   wh::core::cursor_reader_detail::waiter_list<cursor_waiter> list{};
   cursor_waiter first{.id = 1};
   cursor_waiter second{.id = 2};
@@ -44,7 +45,8 @@ TEST_CASE("cursor waiter list pushes removes and pops intrusive waiters",
 }
 
 TEST_CASE("cursor waiter list removal handles head and tail waiters",
-          "[UT][wh/core/cursor_reader/detail/waiter_list.hpp][waiter_list::push_back][branch][boundary]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "waiter_list.hpp][waiter_list::push_back][branch][boundary]") {
   wh::core::cursor_reader_detail::waiter_list<cursor_waiter> list{};
   cursor_waiter first{.id = 1};
   cursor_waiter second{.id = 2};

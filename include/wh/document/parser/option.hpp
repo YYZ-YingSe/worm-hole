@@ -13,8 +13,7 @@ namespace wh::document::parser {
 
 /// Shared key/value map type used by parser options.
 using parser_string_map =
-    std::unordered_map<std::string, std::string,
-                       wh::core::transparent_string_hash,
+    std::unordered_map<std::string, std::string, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>;
 
 /// Data contract for `parse_options`.
@@ -55,8 +54,7 @@ struct parse_options_view {
   }
 
   /// Iterates effective format-options entries with override-last semantics.
-  template <typename fn_t>
-  auto for_each_format_option(fn_t &&fn) const -> void {
+  template <typename fn_t> auto for_each_format_option(fn_t &&fn) const -> void {
     if (format_options_base != nullptr) {
       for (const auto &[key, value] : *format_options_base) {
         std::invoke(fn, key, value);

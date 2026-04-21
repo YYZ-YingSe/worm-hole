@@ -1,9 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/detail/state_phase.hpp"
@@ -11,8 +10,7 @@
 
 namespace {
 
-[[nodiscard]] auto await_value(wh::compose::graph &graph,
-                               wh::compose::graph_value input)
+[[nodiscard]] auto await_value(wh::compose::graph &graph, wh::compose::graph_value input)
     -> wh::core::result<wh::compose::graph_value> {
   wh::compose::graph_invoke_request request{};
   request.input = wh::compose::graph_input::value(std::move(input));
@@ -27,13 +25,13 @@ namespace {
 } // namespace
 
 TEST_CASE("state phase helpers apply value and stream handlers through public graph invoke paths",
-          "[UT][wh/compose/graph/detail/state_phase.hpp][graph::apply_state_phase_async][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "state_phase.hpp][graph::apply_state_phase_async][condition][branch][boundary]") {
   wh::compose::graph value_graph{};
   wh::compose::graph_add_node_options value_options{};
   value_options.state.bind_pre<wh::compose::graph_value>(
       [](const wh::compose::graph_state_cause &, wh::compose::graph_process_state &,
-         wh::compose::graph_value &value,
-         wh::core::run_context &) -> wh::core::result<void> {
+         wh::compose::graph_value &value, wh::core::run_context &) -> wh::core::result<void> {
         auto *typed = wh::core::any_cast<int>(&value);
         REQUIRE(typed != nullptr);
         *typed += 1;
@@ -41,8 +39,7 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
       });
   value_options.state.bind_post<wh::compose::graph_value>(
       [](const wh::compose::graph_state_cause &, wh::compose::graph_process_state &,
-         wh::compose::graph_value &value,
-         wh::core::run_context &) -> wh::core::result<void> {
+         wh::compose::graph_value &value, wh::core::run_context &) -> wh::core::result<void> {
         auto *typed = wh::core::any_cast<int>(&value);
         REQUIRE(typed != nullptr);
         *typed *= 2;
@@ -51,8 +48,7 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
   auto add_value_worker = value_graph.add_lambda(wh::compose::make_lambda_node(
       "worker",
       [](wh::compose::graph_value &current_value, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto *typed = wh::core::any_cast<int>(&current_value);
         REQUIRE(typed != nullptr);
         return wh::compose::graph_value{*typed + 3};
@@ -70,33 +66,31 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
   REQUIRE(output_value != nullptr);
   REQUIRE(*output_value == 16);
 
-  wh::compose::graph stream_graph{
-      wh::compose::graph_boundary{
-          .input = wh::compose::node_contract::value,
-          .output = wh::compose::node_contract::stream,
-      }};
+  wh::compose::graph stream_graph{wh::compose::graph_boundary{
+      .input = wh::compose::node_contract::value,
+      .output = wh::compose::node_contract::stream,
+  }};
   wh::compose::graph_add_node_options stream_options{};
   stream_options.state.bind_stream_post<wh::compose::graph_value>(
       [](const wh::compose::graph_state_cause &, wh::compose::graph_process_state &,
-         wh::compose::graph_value &chunk,
-         wh::core::run_context &) -> wh::core::result<void> {
+         wh::compose::graph_value &chunk, wh::core::run_context &) -> wh::core::result<void> {
         auto *typed = wh::core::any_cast<std::string>(&chunk);
         REQUIRE(typed != nullptr);
         typed->append("!");
         return {};
       });
-  auto add_streamer = stream_graph.add_lambda(wh::compose::make_lambda_node<
-      wh::compose::node_contract::value, wh::compose::node_contract::stream>(
-      "streamer",
-      [](wh::compose::graph_value &current_value, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_stream_reader> {
-        auto *typed = wh::core::any_cast<int>(&current_value);
-        REQUIRE(typed != nullptr);
-        return wh::compose::make_single_value_stream_reader(
-            std::to_string(*typed));
-      },
-      stream_options));
+  auto add_streamer =
+      stream_graph.add_lambda(wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                            wh::compose::node_contract::stream>(
+          "streamer",
+          [](wh::compose::graph_value &current_value, wh::core::run_context &,
+             const wh::compose::graph_call_scope &)
+              -> wh::core::result<wh::compose::graph_stream_reader> {
+            auto *typed = wh::core::any_cast<int>(&current_value);
+            REQUIRE(typed != nullptr);
+            return wh::compose::make_single_value_stream_reader(std::to_string(*typed));
+          },
+          stream_options));
   REQUIRE(add_streamer.has_value());
   REQUIRE(stream_graph.add_entry_edge("streamer").has_value());
   REQUIRE(stream_graph.add_exit_edge("streamer").has_value());
@@ -105,8 +99,7 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
   auto stream_status = await_value(stream_graph, wh::compose::graph_value{7});
   REQUIRE(stream_status.has_value());
   REQUIRE(stream_status->has_value());
-  auto *reader =
-      wh::core::any_cast<wh::compose::graph_stream_reader>(&stream_status.value());
+  auto *reader = wh::core::any_cast<wh::compose::graph_stream_reader>(&stream_status.value());
   REQUIRE(reader != nullptr);
   auto chunks = wh::compose::collect_graph_stream_reader(std::move(*reader));
   REQUIRE(chunks.has_value());
@@ -117,21 +110,20 @@ TEST_CASE("state phase helpers apply value and stream handlers through public gr
 }
 
 TEST_CASE("state phase helpers surface handler failures through invoke output status",
-          "[UT][wh/compose/graph/detail/state_phase.hpp][graph::apply_state_phase][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "state_phase.hpp][graph::apply_state_phase][condition][branch][boundary]") {
   wh::compose::graph graph{};
   wh::compose::graph_add_node_options options{};
   options.state.bind_pre<wh::compose::graph_value>(
       [](const wh::compose::graph_state_cause &, wh::compose::graph_process_state &,
-         wh::compose::graph_value &, wh::core::run_context &)
-          -> wh::core::result<void> {
+         wh::compose::graph_value &, wh::core::run_context &) -> wh::core::result<void> {
         return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       });
 
   auto add_failure_worker = graph.add_lambda(wh::compose::make_lambda_node(
       "worker",
       [](wh::compose::graph_value &current_value, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         return std::move(current_value);
       },
       options));

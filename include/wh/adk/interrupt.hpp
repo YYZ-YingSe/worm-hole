@@ -8,8 +8,8 @@
 
 #include "wh/compose/runtime/resume.hpp"
 #include "wh/core/any.hpp"
-#include "wh/core/resume_state.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/resume_state.hpp"
 #include "wh/core/run_context.hpp"
 
 namespace wh::adk {
@@ -82,8 +82,7 @@ struct interrupt_patch_item {
 
 namespace detail {
 
-[[nodiscard]] inline auto to_compose_decision(
-    const interrupt_resolution resolution) noexcept
+[[nodiscard]] inline auto to_compose_decision(const interrupt_resolution resolution) noexcept
     -> wh::compose::interrupt_decision_kind {
   switch (resolution) {
   case interrupt_resolution::approve:
@@ -108,8 +107,8 @@ namespace detail {
 } // namespace detail
 
 /// Projects one runtime address into the ADK-visible agent or tool path dialect.
-[[nodiscard]] inline auto project_interrupt_run_path(
-    const wh::core::address &location) -> wh::core::address {
+[[nodiscard]] inline auto project_interrupt_run_path(const wh::core::address &location)
+    -> wh::core::address {
   wh::core::address projected{};
   const auto segments = location.segments();
   for (std::size_t index = 0U; index < segments.size(); ++index) {
@@ -132,11 +131,10 @@ namespace detail {
 }
 
 /// Classifies current runtime address against one active resume state.
-[[nodiscard]] inline auto classify_interrupt_target(
-    const wh::core::resume_state &state,
-    const wh::core::address &location) noexcept -> interrupt_target_kind {
-  const auto classified =
-      wh::compose::classify_resume_target_match(state, location);
+[[nodiscard]] inline auto classify_interrupt_target(const wh::core::resume_state &state,
+                                                    const wh::core::address &location) noexcept
+    -> interrupt_target_kind {
+  const auto classified = wh::compose::classify_resume_target_match(state, location);
   switch (classified.match_kind) {
   case wh::compose::resume_target_match_kind::exact:
     return interrupt_target_kind::exact;
@@ -149,9 +147,8 @@ namespace detail {
 }
 
 /// Builds one ADK interrupt projection from the underlying core interrupt context.
-[[nodiscard]] inline auto make_interrupt_info(
-    const wh::core::interrupt_context &context,
-    const wh::core::resume_state *resume_state = nullptr)
+[[nodiscard]] inline auto make_interrupt_info(const wh::core::interrupt_context &context,
+                                              const wh::core::resume_state *resume_state = nullptr)
     -> wh::core::result<interrupt_info> {
   auto state = wh::core::into_owned(context.state);
   if (state.has_error()) {
@@ -166,34 +163,31 @@ namespace detail {
       .run_path = project_interrupt_run_path(context.location),
       .state = std::move(state).value(),
       .payload = std::move(payload).value(),
-      .target_kind =
-          resume_state == nullptr
-              ? interrupt_target_kind::none
-              : classify_interrupt_target(*resume_state, context.location),
+      .target_kind = resume_state == nullptr
+                         ? interrupt_target_kind::none
+                         : classify_interrupt_target(*resume_state, context.location),
       .used = context.used,
       .trigger_reason = context.trigger_reason,
   };
 }
 
 /// Builds one ADK interrupt projection from run-context state when available.
-[[nodiscard]] inline auto current_interrupt_info(
-    const wh::core::run_context &context)
+[[nodiscard]] inline auto current_interrupt_info(const wh::core::run_context &context)
     -> wh::core::result<interrupt_info> {
   if (!context.interrupt_info.has_value()) {
-    return wh::core::result<interrupt_info>::failure(
-        wh::core::errc::not_found);
+    return wh::core::result<interrupt_info>::failure(wh::core::errc::not_found);
   }
-  return make_interrupt_info(
-      *context.interrupt_info,
-      context.resume_info.has_value() ? std::addressof(*context.resume_info)
-                                      : nullptr);
+  return make_interrupt_info(*context.interrupt_info, context.resume_info.has_value()
+                                                          ? std::addressof(*context.resume_info)
+                                                          : nullptr);
 }
 
 /// Applies one ADK patch onto one interrupt context by lowering to compose resume
 /// decisions.
-[[nodiscard]] inline auto apply_interrupt_patch(
-    wh::core::resume_state &state, const wh::core::interrupt_context &context,
-    const interrupt_patch &patch) -> wh::core::result<void> {
+[[nodiscard]] inline auto apply_interrupt_patch(wh::core::resume_state &state,
+                                                const wh::core::interrupt_context &context,
+                                                const interrupt_patch &patch)
+    -> wh::core::result<void> {
   return wh::compose::apply_resume_decision(
       state, context,
       wh::compose::interrupt_resume_decision{
@@ -206,10 +200,8 @@ namespace detail {
 
 /// Applies one ordered ADK patch batch.
 [[nodiscard]] inline auto apply_interrupt_patch_batch(
-    wh::core::resume_state &state,
-    const std::span<const wh::core::interrupt_context> contexts,
-    const std::span<const interrupt_patch_item> items)
-    -> wh::core::result<void> {
+    wh::core::resume_state &state, const std::span<const wh::core::interrupt_context> contexts,
+    const std::span<const interrupt_patch_item> items) -> wh::core::result<void> {
   for (const auto &item : items) {
     bool matched = false;
     for (const auto &context : contexts) {

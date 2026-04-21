@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -7,6 +5,7 @@
 #include <stdexcept>
 #include <thread>
 
+#include <catch2/catch_test_macros.hpp>
 #include <exec/static_thread_pool.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
@@ -27,8 +26,7 @@ struct invoke_join_receiver {
 
   invoke_join_receiver_state *state{nullptr};
 
-  auto set_value(wh::core::result<wh::compose::graph_value> result_value) && noexcept
-      -> void {
+  auto set_value(wh::core::result<wh::compose::graph_value> result_value) && noexcept -> void {
     ++state->value_count;
     state->result.emplace(std::move(result_value));
   }
@@ -62,14 +60,12 @@ struct throwing_scheduler {
     throwing_scheduler_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
     auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
       ++state->connect_calls;
-      if (state->fail_on_connect.has_value() &&
-          state->connect_calls == *state->fail_on_connect) {
+      if (state->fail_on_connect.has_value() && state->connect_calls == *state->fail_on_connect) {
         throw std::runtime_error("schedule connect failed");
       }
       return schedule_op<receiver_t>{std::move(receiver)};
@@ -80,23 +76,19 @@ struct throwing_scheduler {
 
   throwing_scheduler_state *state{nullptr};
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return schedule_sender{state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return schedule_sender{state}; }
 
-  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept
-      -> bool = default;
+  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept -> bool = default;
 };
 
-class invoke_join_probe
-    : public wh::compose::detail::invoke_runtime::invoke_join_base<
-          invoke_join_receiver, invoke_join_probe, throwing_scheduler> {
-  using base_t = wh::compose::detail::invoke_runtime::invoke_join_base<
-      invoke_join_receiver, invoke_join_probe, throwing_scheduler>;
+class invoke_join_probe : public wh::compose::detail::invoke_runtime::invoke_join_base<
+                              invoke_join_receiver, invoke_join_probe, throwing_scheduler> {
+  using base_t =
+      wh::compose::detail::invoke_runtime::invoke_join_base<invoke_join_receiver, invoke_join_probe,
+                                                            throwing_scheduler>;
 
 public:
-  explicit invoke_join_probe(throwing_scheduler scheduler,
-                             invoke_join_receiver receiver)
+  explicit invoke_join_probe(throwing_scheduler scheduler, invoke_join_receiver receiver)
       : base_t(0U, std::move(scheduler), std::move(receiver)) {}
 
   auto prepare_finish_delivery() noexcept -> void {}
@@ -106,40 +98,35 @@ public:
       return;
     }
     ++resume_calls;
-    this->enter_terminal(wh::core::result<wh::compose::graph_value>{
-        wh::compose::graph_value{7}});
+    this->enter_terminal(wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{7}});
   }
 
   int resume_calls{0};
 };
 
-class invoke_join_edge_probe
-    : public wh::compose::detail::invoke_runtime::invoke_join_base<
-          invoke_join_receiver, invoke_join_edge_probe,
-          wh::testing::helper::manual_scheduler<void>> {
+class invoke_join_edge_probe : public wh::compose::detail::invoke_runtime::invoke_join_base<
+                                   invoke_join_receiver, invoke_join_edge_probe,
+                                   wh::testing::helper::manual_scheduler<void>> {
   using scheduler_t = wh::testing::helper::manual_scheduler<void>;
-  using base_t = wh::compose::detail::invoke_runtime::invoke_join_base<
-      invoke_join_receiver, invoke_join_edge_probe, scheduler_t>;
+  using base_t =
+      wh::compose::detail::invoke_runtime::invoke_join_base<invoke_join_receiver,
+                                                            invoke_join_edge_probe, scheduler_t>;
 
 public:
-  explicit invoke_join_edge_probe(scheduler_t scheduler,
-                                  invoke_join_receiver receiver)
+  explicit invoke_join_edge_probe(scheduler_t scheduler, invoke_join_receiver receiver)
       : base_t(2U, std::move(scheduler), std::move(receiver)) {}
 
-  auto start_ready_child(const std::uint32_t slot, const int value)
-      -> wh::core::result<void> {
+  auto start_ready_child(const std::uint32_t slot, const int value) -> wh::core::result<void> {
     return this->start_child(
         wh::compose::detail::bridge_graph_sender(stdexec::just(
-            wh::core::result<wh::compose::graph_value>{
-                wh::compose::graph_value{value}})),
+            wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{value}})),
         wh::compose::detail::invoke_runtime::attempt_id{slot});
   }
 
   auto prepare_finish_delivery() noexcept -> void {}
 
   auto shutdown_for_test() noexcept -> void {
-    this->enter_terminal(wh::core::result<wh::compose::graph_value>{
-        wh::compose::graph_value{0}});
+    this->enter_terminal(wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{0}});
     this->signal_resume_edge();
   }
 
@@ -148,8 +135,7 @@ public:
     this->drain_completions(
         [](const wh::compose::detail::invoke_runtime::attempt_id) noexcept {},
         [this](const wh::compose::detail::invoke_runtime::attempt_id attempt,
-               wh::core::result<wh::compose::graph_value> &&result)
-            -> wh::core::result<void> {
+               wh::core::result<wh::compose::graph_value> &&result) -> wh::core::result<void> {
           if (result.has_error()) {
             return wh::core::result<void>::failure(result.error());
           }
@@ -166,8 +152,10 @@ public:
 
 } // namespace
 
-TEST_CASE("invoke join serializes async branch launches under graph parallel limits",
-          "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::start_child][condition][branch][boundary][concurrency]") {
+TEST_CASE(
+    "invoke join serializes async branch launches under graph parallel limits",
+    "[UT][wh/compose/graph/detail/"
+    "invoke_join.hpp][invoke_join_base::start_child][condition][branch][boundary][concurrency]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.max_parallel_nodes = 1U;
@@ -183,8 +171,7 @@ TEST_CASE("invoke join serializes async branch launches under graph parallel lim
     auto observed = max_active.load(std::memory_order_acquire);
     const auto current = active.load(std::memory_order_acquire);
     while (observed < current &&
-           !max_active.compare_exchange_weak(observed, current,
-                                             std::memory_order_acq_rel,
+           !max_active.compare_exchange_weak(observed, current, std::memory_order_acq_rel,
                                              std::memory_order_acquire)) {
     }
   };
@@ -195,8 +182,7 @@ TEST_CASE("invoke join serializes async branch launches under graph parallel lim
       return stdexec::starts_on(
           pool.get_scheduler(),
           stdexec::just() |
-              stdexec::then([&, value]() -> wh::core::result<
-                                            wh::compose::graph_value> {
+              stdexec::then([&, value]() -> wh::core::result<wh::compose::graph_value> {
                 struct guard {
                   std::atomic<int> *counter{nullptr};
                   ~guard() {
@@ -216,16 +202,12 @@ TEST_CASE("invoke join serializes async branch launches under graph parallel lim
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_exec_mode::async>("left",
-                                                              make_branch(3))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>("left", make_branch(3))
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_exec_mode::async>("right",
-                                                              make_branch(4))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>("right", make_branch(4))
               .has_value());
   REQUIRE(graph
               .add_lambda(
@@ -234,23 +216,19 @@ TEST_CASE("invoke join serializes async branch launches under graph parallel lim
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     auto merged =
-                        wh::testing::helper::read_graph_value<
-                            wh::compose::graph_value_map>(input);
+                        wh::testing::helper::read_graph_value<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
-                    auto left = wh::testing::helper::read_graph_value<int>(
-                        merged.value().at("left"));
-                    auto right = wh::testing::helper::read_graph_value<int>(
-                        merged.value().at("right"));
+                    auto left =
+                        wh::testing::helper::read_graph_value<int>(merged.value().at("left"));
+                    auto right =
+                        wh::testing::helper::read_graph_value<int>(merged.value().at("right"));
                     if (left.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          left.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
                     }
                     if (right.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          right.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
                     }
                     return wh::compose::graph_value{left.value() + right.value()};
                   })
@@ -264,8 +242,7 @@ TEST_CASE("invoke join serializes async branch launches under graph parallel lim
 
   wh::core::run_context context{};
   auto invoked =
-      wh::testing::helper::invoke_value_sync(graph, wh::compose::graph_value{0},
-                                             context);
+      wh::testing::helper::invoke_value_sync(graph, wh::compose::graph_value{0}, context);
   REQUIRE(invoked.has_value());
   auto typed = wh::testing::helper::read_graph_value<int>(std::move(invoked).value());
   REQUIRE(typed.has_value());
@@ -274,7 +251,8 @@ TEST_CASE("invoke join serializes async branch launches under graph parallel lim
 }
 
 TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
-          "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::drain_completions][condition][branch][concurrency]") {
+          "[UT][wh/compose/graph/detail/"
+          "invoke_join.hpp][invoke_join_base::drain_completions][condition][branch][concurrency]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.max_parallel_nodes = 2U;
@@ -290,8 +268,7 @@ TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
     auto observed = max_active.load(std::memory_order_acquire);
     const auto current = active.load(std::memory_order_acquire);
     while (observed < current &&
-           !max_active.compare_exchange_weak(observed, current,
-                                             std::memory_order_acq_rel,
+           !max_active.compare_exchange_weak(observed, current, std::memory_order_acq_rel,
                                              std::memory_order_acquire)) {
     }
   };
@@ -302,8 +279,7 @@ TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
       return stdexec::starts_on(
           pool.get_scheduler(),
           stdexec::just() |
-              stdexec::then([&, value]() -> wh::core::result<
-                                            wh::compose::graph_value> {
+              stdexec::then([&, value]() -> wh::core::result<wh::compose::graph_value> {
                 struct guard {
                   std::atomic<int> *counter{nullptr};
                   ~guard() {
@@ -323,16 +299,12 @@ TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_exec_mode::async>("left",
-                                                              make_branch(3))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>("left", make_branch(3))
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_exec_mode::async>("right",
-                                                              make_branch(4))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>("right", make_branch(4))
               .has_value());
   REQUIRE(graph
               .add_lambda(
@@ -341,23 +313,19 @@ TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     auto merged =
-                        wh::testing::helper::read_graph_value<
-                            wh::compose::graph_value_map>(input);
+                        wh::testing::helper::read_graph_value<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
-                    auto left = wh::testing::helper::read_graph_value<int>(
-                        merged.value().at("left"));
-                    auto right = wh::testing::helper::read_graph_value<int>(
-                        merged.value().at("right"));
+                    auto left =
+                        wh::testing::helper::read_graph_value<int>(merged.value().at("left"));
+                    auto right =
+                        wh::testing::helper::read_graph_value<int>(merged.value().at("right"));
                     if (left.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          left.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
                     }
                     if (right.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          right.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
                     }
                     return wh::compose::graph_value{left.value() + right.value()};
                   })
@@ -371,8 +339,7 @@ TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
 
   wh::core::run_context context{};
   auto invoked =
-      wh::testing::helper::invoke_value_sync(graph, wh::compose::graph_value{0},
-                                             context);
+      wh::testing::helper::invoke_value_sync(graph, wh::compose::graph_value{0}, context);
   REQUIRE(invoked.has_value());
   auto typed = wh::testing::helper::read_graph_value<int>(std::move(invoked).value());
   REQUIRE(typed.has_value());
@@ -381,7 +348,8 @@ TEST_CASE("invoke join also allows parallel launches up to a wider graph limit",
 }
 
 TEST_CASE("invoke join maps resume scheduling setup failure into one terminal completion",
-          "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::request_resume][error][terminal]") {
+          "[UT][wh/compose/graph/detail/"
+          "invoke_join.hpp][invoke_join_base::request_resume][error][terminal]") {
   throwing_scheduler_state scheduler_state{};
   scheduler_state.fail_on_connect = 1U;
 
@@ -401,7 +369,8 @@ TEST_CASE("invoke join maps resume scheduling setup failure into one terminal co
 }
 
 TEST_CASE("invoke join coalesces multiple child completions behind one scheduled resume edge",
-          "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::signal_resume_edge][branch][concurrency]") {
+          "[UT][wh/compose/graph/detail/"
+          "invoke_join.hpp][invoke_join_base::signal_resume_edge][branch][concurrency]") {
   wh::testing::helper::manual_scheduler_state scheduler_state{};
   wh::testing::helper::manual_scheduler<void> scheduler{&scheduler_state};
 
@@ -420,20 +389,19 @@ TEST_CASE("invoke join coalesces multiple child completions behind one scheduled
   REQUIRE(operation.resume_calls == 1);
   REQUIRE(operation.settled_count == 2);
   REQUIRE(operation.settled_slots.size() == 2U);
-  REQUIRE(std::find(operation.settled_slots.begin(),
-                    operation.settled_slots.end(),
-                    0U) != operation.settled_slots.end());
-  REQUIRE(std::find(operation.settled_slots.begin(),
-                    operation.settled_slots.end(),
-                    1U) != operation.settled_slots.end());
+  REQUIRE(std::find(operation.settled_slots.begin(), operation.settled_slots.end(), 0U) !=
+          operation.settled_slots.end());
+  REQUIRE(std::find(operation.settled_slots.begin(), operation.settled_slots.end(), 1U) !=
+          operation.settled_slots.end());
   REQUIRE(scheduler_state.pending_count() == 0U);
 
   operation.shutdown_for_test();
   scheduler_state.run_all();
 }
 
-TEST_CASE("invoke join maps join setup failure over a prior terminal success",
-          "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::finish][error][terminal]") {
+TEST_CASE(
+    "invoke join maps join setup failure over a prior terminal success",
+    "[UT][wh/compose/graph/detail/invoke_join.hpp][invoke_join_base::finish][error][terminal]") {
   throwing_scheduler_state scheduler_state{};
   scheduler_state.fail_on_connect = 2U;
 

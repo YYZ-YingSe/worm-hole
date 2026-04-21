@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/message/types.hpp"
 
@@ -18,10 +18,10 @@ TEST_CASE("message types normalize adjacent parts merge chunks and reject incomp
   parts.emplace_back(text_part{"llo"});
   parts.emplace_back(audio_part{.base64 = "AA", .uri = ""});
   parts.emplace_back(audio_part{.base64 = "BB", .uri = ""});
-  parts.emplace_back(tool_call_part{.index = 1, .id = "id", .name = "tool",
-                                    .arguments = "{", .complete = false});
-  parts.emplace_back(tool_call_part{.index = 1, .id = "id", .name = "tool",
-                                    .arguments = "}", .complete = true});
+  parts.emplace_back(
+      tool_call_part{.index = 1, .id = "id", .name = "tool", .arguments = "{", .complete = false});
+  parts.emplace_back(
+      tool_call_part{.index = 1, .id = "id", .name = "tool", .arguments = "}", .complete = true});
 
   auto normalized = wh::schema::detail::normalize_message_parts(parts);
   REQUIRE(normalized.has_value());
@@ -40,7 +40,8 @@ TEST_CASE("message types normalize adjacent parts merge chunks and reject incomp
   REQUIRE(conflict.error() == wh::core::errc::contract_violation);
 }
 
-TEST_CASE("message types merge chunk and update pipelines cover append insert replace reject and index acceleration",
+TEST_CASE("message types merge chunk and update pipelines cover append insert replace reject and "
+          "index acceleration",
           "[UT][wh/schema/message/types.hpp][apply_message_update][condition][branch][boundary]") {
   using wh::schema::message;
   using wh::schema::message_part;
@@ -62,8 +63,7 @@ TEST_CASE("message types merge chunk and update pipelines cover append insert re
   second.meta.usage.prompt_tokens = 5;
   second.meta.finish_reason = "stop";
 
-  auto merged = wh::schema::merge_message_chunks(
-      std::vector<message>{first, second});
+  auto merged = wh::schema::merge_message_chunks(std::vector<message>{first, second});
   REQUIRE(merged.has_value());
   REQUIRE(std::get<text_part>(merged.value().parts.front()).text == "hello");
   REQUIRE(merged.value().meta.usage.prompt_tokens == 5);
@@ -76,8 +76,7 @@ TEST_CASE("message types merge chunk and update pipelines cover append insert re
   append.message_id = "a";
   append.role = message_role::assistant;
   append.parts.emplace_back(text_part{"v1"});
-  REQUIRE(wh::schema::apply_message_update(messages, append,
-                                           message_update_mode::append, &audit)
+  REQUIRE(wh::schema::apply_message_update(messages, append, message_update_mode::append, &audit)
               .has_value());
   REQUIRE(messages.size() == 1U);
   REQUIRE(audit.back().action == message_update_action::appended);
@@ -86,8 +85,8 @@ TEST_CASE("message types merge chunk and update pipelines cover append insert re
   inserted.message_id = "b";
   inserted.role = message_role::assistant;
   inserted.parts.emplace_back(text_part{"v2"});
-  REQUIRE(wh::schema::apply_message_update(messages, inserted,
-                                           message_update_mode::upsert_by_id, &audit)
+  REQUIRE(wh::schema::apply_message_update(messages, inserted, message_update_mode::upsert_by_id,
+                                           &audit)
               .has_value());
   REQUIRE(messages.size() == 2U);
   REQUIRE(audit.back().action == message_update_action::inserted);
@@ -105,18 +104,16 @@ TEST_CASE("message types merge chunk and update pipelines cover append insert re
   message missing_id{};
   missing_id.role = message_role::assistant;
   missing_id.parts.emplace_back(text_part{"x"});
-  auto missing_id_status =
-      wh::schema::apply_message_update(messages, missing_id, index,
-                                       message_update_mode::upsert_by_id, &audit);
+  auto missing_id_status = wh::schema::apply_message_update(
+      messages, missing_id, index, message_update_mode::upsert_by_id, &audit);
   REQUIRE(missing_id_status.has_error());
   REQUIRE(missing_id_status.error() == wh::core::errc::invalid_argument);
   REQUIRE(audit.back().action == message_update_action::rejected);
 
   message wrong_role = replaced;
   wrong_role.role = message_role::tool;
-  auto wrong_role_status =
-      wh::schema::apply_message_update(messages, wrong_role, index,
-                                       message_update_mode::upsert_by_id, &audit);
+  auto wrong_role_status = wh::schema::apply_message_update(
+      messages, wrong_role, index, message_update_mode::upsert_by_id, &audit);
   REQUIRE(wrong_role_status.has_error());
   REQUIRE(wrong_role_status.error() == wh::core::errc::contract_violation);
 }

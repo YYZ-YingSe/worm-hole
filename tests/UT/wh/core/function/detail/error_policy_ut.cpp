@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <functional>
 #include <stdexcept>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/function/detail/error_policy.hpp"
 

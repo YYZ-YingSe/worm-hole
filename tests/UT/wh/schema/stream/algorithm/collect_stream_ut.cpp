@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/stream/algorithm/collect_stream.hpp"
 #include "wh/schema/stream/core/types.hpp"
@@ -26,8 +26,7 @@ template <typename value_t> struct scripted_reader {
     return chunk_type::make_eof();
   }
 
-  [[nodiscard]] auto try_read()
-      -> wh::schema::stream::stream_try_result<chunk_type> {
+  [[nodiscard]] auto try_read() -> wh::schema::stream::stream_try_result<chunk_type> {
     return read();
   }
 
@@ -41,8 +40,10 @@ template <typename value_t> struct scripted_reader {
 
 } // namespace
 
-TEST_CASE("collect stream detail drains source eof skips and callback failures while public collectors propagate read and close errors",
-          "[UT][wh/schema/stream/algorithm/collect_stream.hpp][collect_stream_reader][condition][branch][boundary]") {
+TEST_CASE("collect stream detail drains source eof skips and callback failures while public "
+          "collectors propagate read and close errors",
+          "[UT][wh/schema/stream/algorithm/"
+          "collect_stream.hpp][collect_stream_reader][condition][branch][boundary]") {
   using chunk_t = wh::schema::stream::stream_chunk<int>;
 
   scripted_reader<int> detail_reader{};
@@ -74,8 +75,7 @@ TEST_CASE("collect stream detail drains source eof skips and callback failures w
       chunk_t::make_value(3),
       error_chunk,
   };
-  auto collected =
-      wh::schema::stream::collect_stream_reader(std::move(collect_reader));
+  auto collected = wh::schema::stream::collect_stream_reader(std::move(collect_reader));
   REQUIRE(collected.has_error());
   REQUIRE(collected.error() == wh::core::errc::timeout);
 
@@ -85,24 +85,22 @@ TEST_CASE("collect stream detail drains source eof skips and callback failures w
       wh::schema::stream::stream_chunk<std::string>::make_value("b"),
       wh::schema::stream::stream_chunk<std::string>::make_eof(),
   };
-  text_reader.close_status =
-      wh::core::result<void>::failure(wh::core::errc::internal_error);
-  auto text =
-      wh::schema::stream::collect_text_stream_reader(std::move(text_reader));
+  text_reader.close_status = wh::core::result<void>::failure(wh::core::errc::internal_error);
+  auto text = wh::schema::stream::collect_text_stream_reader(std::move(text_reader));
   REQUIRE(text.has_error());
   REQUIRE(text.error() == wh::core::errc::internal_error);
 }
 
 TEST_CASE("collect stream public helpers gather happy-path values and text",
-          "[UT][wh/schema/stream/algorithm/collect_stream.hpp][collect_text_stream_reader][condition][branch][boundary]") {
+          "[UT][wh/schema/stream/algorithm/"
+          "collect_stream.hpp][collect_text_stream_reader][condition][branch][boundary]") {
   scripted_reader<int> value_reader{};
   value_reader.reads = {
       wh::schema::stream::stream_chunk<int>::make_value(4),
       wh::schema::stream::stream_chunk<int>::make_value(5),
       wh::schema::stream::stream_chunk<int>::make_eof(),
   };
-  auto values =
-      wh::schema::stream::collect_stream_reader(std::move(value_reader));
+  auto values = wh::schema::stream::collect_stream_reader(std::move(value_reader));
   REQUIRE(values.has_value());
   REQUIRE(values.value() == std::vector<int>({4, 5}));
 
@@ -112,8 +110,7 @@ TEST_CASE("collect stream public helpers gather happy-path values and text",
       wh::schema::stream::stream_chunk<std::string>::make_value("cd"),
       wh::schema::stream::stream_chunk<std::string>::make_eof(),
   };
-  auto text =
-      wh::schema::stream::collect_text_stream_reader(std::move(text_reader));
+  auto text = wh::schema::stream::collect_text_stream_reader(std::move(text_reader));
   REQUIRE(text.has_value());
   REQUIRE(text.value() == "abcd");
 }

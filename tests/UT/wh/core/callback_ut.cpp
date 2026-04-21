@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/callback.hpp"
 
@@ -27,14 +27,13 @@ using wh::core::is_reverse_callback_stage;
 using wh::core::make_callback_event_payload;
 using wh::core::make_callback_event_view;
 
-static_assert(wh::core::TimingChecker<decltype(
-              [](callback_stage) noexcept { return true; })>);
-static_assert(wh::core::StageViewCallbackLike<decltype(
-              [](callback_stage, wh::core::callback_event_view,
-                 const callback_run_info &) {})>);
-static_assert(wh::core::StagePayloadCallbackLike<decltype(
-              [](callback_stage, wh::core::callback_event_payload,
-                 const callback_run_info &) {})>);
+static_assert(wh::core::TimingChecker<decltype([](callback_stage) noexcept { return true; })>);
+static_assert(
+    wh::core::StageViewCallbackLike<decltype([](callback_stage, wh::core::callback_event_view,
+                                                const callback_run_info &) {})>);
+static_assert(
+    wh::core::StagePayloadCallbackLike<decltype([](callback_stage, wh::core::callback_event_payload,
+                                                   const callback_run_info &) {})>);
 static_assert(wh::core::CallbackConfigLike<callback_config_probe>);
 
 } // namespace
@@ -108,8 +107,7 @@ TEST_CASE("callback run info overlays metadata and component options",
   REQUIRE(with_metadata.node_path == wh::core::address{"root", "child"});
 
   component_options options{};
-  options.set_base({.callbacks_enabled = true, .trace_id = "trace-c",
-                    .span_id = "span-c"});
+  options.set_base({.callbacks_enabled = true, .trace_id = "trace-c", .span_id = "span-c"});
 
   const auto resolved = wh::core::apply_component_run_info(run_info, options);
   REQUIRE(resolved.trace_id == "trace-c");
@@ -133,14 +131,13 @@ TEST_CASE("callback fatal error formatting includes mapped fields",
 
 TEST_CASE("callback facade reexports callback concepts and preserves base info on empty overlays",
           "[UT][wh/core/callback.hpp][CallbackConfigLike][condition]") {
-  STATIC_REQUIRE(wh::core::TimingChecker<decltype(
-                [](callback_stage) noexcept { return true; })>);
-  STATIC_REQUIRE(wh::core::StageViewCallbackLike<decltype(
-                [](callback_stage, wh::core::callback_event_view,
-                   const callback_run_info &) {})>);
-  STATIC_REQUIRE(wh::core::StagePayloadCallbackLike<decltype(
-                [](callback_stage, wh::core::callback_event_payload,
-                   const callback_run_info &) {})>);
+  STATIC_REQUIRE(wh::core::TimingChecker<decltype([](callback_stage) noexcept { return true; })>);
+  STATIC_REQUIRE(
+      wh::core::StageViewCallbackLike<decltype([](callback_stage, wh::core::callback_event_view,
+                                                  const callback_run_info &) {})>);
+  STATIC_REQUIRE(wh::core::StagePayloadCallbackLike<decltype([](callback_stage,
+                                                                wh::core::callback_event_payload,
+                                                                const callback_run_info &) {})>);
   STATIC_REQUIRE(wh::core::CallbackConfigLike<callback_config_probe>);
 
   callback_run_info run_info{

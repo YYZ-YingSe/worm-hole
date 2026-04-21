@@ -39,19 +39,19 @@ TEST_CASE("prompt options expose component specific extras",
           "[UT][wh/prompt/options.hpp][prompt_options::component_options]") {
   wh::prompt::prompt_options options{};
   options.component_options().set_impl_specific(prompt_options_probe{17});
-  const auto *probe =
-      options.component_options().impl_specific_if<prompt_options_probe>();
+  const auto *probe = options.component_options().impl_specific_if<prompt_options_probe>();
   REQUIRE(probe != nullptr);
   REQUIRE(probe->value == 17);
 }
 
-TEST_CASE("prompt options keep base view without override and support direct impl-specific access",
-          "[UT][wh/prompt/options.hpp][prompt_options::set_impl_specific][condition][branch][boundary]") {
+TEST_CASE(
+    "prompt options keep base view without override and support direct impl-specific access",
+    "[UT][wh/prompt/options.hpp][prompt_options::set_impl_specific][condition][branch][boundary]") {
   wh::prompt::prompt_options options{};
-  options.set_base(wh::prompt::prompt_common_options{
-      .syntax = wh::prompt::template_syntax::placeholder,
-      .strict_missing_variables = true,
-      .template_name = "base-only"});
+  options.set_base(
+      wh::prompt::prompt_common_options{.syntax = wh::prompt::template_syntax::placeholder,
+                                        .strict_missing_variables = true,
+                                        .template_name = "base-only"});
   options.set_impl_specific(prompt_options_probe{23});
 
   const auto view = options.resolve_view();

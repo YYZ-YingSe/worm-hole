@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <chrono>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/adk/call_options.hpp"
 #include "wh/agent/instruction.hpp"
@@ -36,44 +36,36 @@ TEST_CASE("adk call options overlay scope filtering and impl specific mapping ar
   adk.budget.max_concurrency = 4U;
 
   wh::adk::call_options call_override{};
-  REQUIRE(wh::adk::set_tool_option(call_override, "search", "timeout",
-                                   std::chrono::milliseconds{250})
-              .has_value());
+  REQUIRE(
+      wh::adk::set_tool_option(call_override, "search", "timeout", std::chrono::milliseconds{250})
+          .has_value());
   call_override.transfer_trim.trim_tool_transfer_pair = true;
   call_override.budget.max_iterations = 8U;
 
-  const auto merged =
-      wh::adk::resolve_call_options(&defaults, &flow, &adk, &call_override);
+  const auto merged = wh::adk::resolve_call_options(&defaults, &flow, &adk, &call_override);
 
   const auto planner = wh::adk::materialize_agent_scope(merged, "planner");
-  REQUIRE(wh::adk::option_value_copy<double>(planner.values, "temperature")
-              .value() == 0.2);
-  REQUIRE(wh::adk::option_value_copy<std::string>(planner.values, "mode")
-              .value() == "plan");
-  REQUIRE(wh::adk::option_value_copy<std::string>(planner.checkpoint_fields,
-                                                  "resume-id")
-              .value() == "resume-1");
+  REQUIRE(wh::adk::option_value_copy<double>(planner.values, "temperature").value() == 0.2);
+  REQUIRE(wh::adk::option_value_copy<std::string>(planner.values, "mode").value() == "plan");
+  REQUIRE(wh::adk::option_value_copy<std::string>(planner.checkpoint_fields, "resume-id").value() ==
+          "resume-1");
   REQUIRE(planner.transfer_trim.trim_assistant_transfer_message);
   REQUIRE(planner.transfer_trim.trim_tool_transfer_pair);
   REQUIRE(planner.budget.max_concurrency == 4U);
   REQUIRE(planner.budget.max_iterations == 8U);
   REQUIRE(planner.impl_specific.contains("openai"));
-  REQUIRE(wh::adk::option_value_copy<std::string>(planner.impl_specific.at("openai"),
-                                                  "model")
+  REQUIRE(wh::adk::option_value_copy<std::string>(planner.impl_specific.at("openai"), "model")
               .value() == "gpt-5");
 
   const auto worker = wh::adk::materialize_agent_scope(merged, "worker");
-  REQUIRE(
-      wh::adk::option_value_copy<std::string>(worker.values, "mode").has_error());
+  REQUIRE(wh::adk::option_value_copy<std::string>(worker.values, "mode").has_error());
   REQUIRE(wh::adk::option_value_copy<std::string>(worker.values, "mode").error() ==
           wh::core::errc::not_found);
 
   const auto search = wh::adk::materialize_tool_scope(merged, "search");
-  REQUIRE(wh::adk::option_value_copy<std::chrono::milliseconds>(search.values,
-                                                                "timeout")
-              .value() == std::chrono::milliseconds{250});
-  REQUIRE(wh::adk::option_value_copy<std::string>(search.values, "temperature")
-              .has_error());
-  REQUIRE(wh::adk::option_value_copy<std::string>(search.values, "temperature")
-              .error() == wh::core::errc::type_mismatch);
+  REQUIRE(wh::adk::option_value_copy<std::chrono::milliseconds>(search.values, "timeout").value() ==
+          std::chrono::milliseconds{250});
+  REQUIRE(wh::adk::option_value_copy<std::string>(search.values, "temperature").has_error());
+  REQUIRE(wh::adk::option_value_copy<std::string>(search.values, "temperature").error() ==
+          wh::core::errc::type_mismatch);
 }

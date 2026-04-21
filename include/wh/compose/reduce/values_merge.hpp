@@ -11,19 +11,17 @@
 namespace wh::compose {
 
 /// Runtime merge path for type-erased values.
-[[nodiscard]] inline auto
-values_merge(const wh::internal::values_merge_registry &registry,
-             const wh::core::any_type_key type,
-             const wh::internal::dynamic_merge_values values)
+[[nodiscard]] inline auto values_merge(const wh::internal::values_merge_registry &registry,
+                                       const wh::core::any_type_key type,
+                                       const wh::internal::dynamic_merge_values values)
     -> wh::core::result<wh::internal::dynamic_merge_value> {
   return registry.merge(type, values);
 }
 
 /// Typed merge path that skips dynamic casts on hot path.
 template <typename value_t>
-[[nodiscard]] inline auto
-values_merge(const wh::internal::values_merge_registry &registry,
-             const std::span<const value_t> values)
+[[nodiscard]] inline auto values_merge(const wh::internal::values_merge_registry &registry,
+                                       const std::span<const value_t> values)
     -> wh::core::result<value_t> {
   return registry.merge_as<value_t>(values);
 }

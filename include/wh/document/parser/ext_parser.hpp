@@ -30,8 +30,7 @@ public:
   explicit ext_parser(parser &&fallback) : fallback_(std::move(fallback)) {}
 
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
-    return wh::core::component_descriptor{"ExtParser",
-                                          wh::core::component_kind::document};
+    return wh::core::component_descriptor{"ExtParser", wh::core::component_kind::document};
   }
 
   auto register_parser(const std::string &extension, const parser &value)
@@ -42,8 +41,7 @@ public:
     return register_parser_impl(std::string{extension}, value);
   }
 
-  auto register_parser(std::string &&extension, parser &&value)
-      -> wh::core::result<void> {
+  auto register_parser(std::string &&extension, parser &&value) -> wh::core::result<void> {
     if (extension.empty() || !value.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
@@ -52,43 +50,33 @@ public:
 
   template <typename parser_t, typename extension_t, typename... args_t>
     requires parser_like<wh::core::remove_cvref_t<parser_t>> &&
-             std::constructible_from<wh::core::remove_cvref_t<parser_t>,
-                                     args_t...> &&
+             std::constructible_from<wh::core::remove_cvref_t<parser_t>, args_t...> &&
              std::constructible_from<std::string, extension_t &&>
-  auto register_parser(extension_t &&extension, args_t &&...args)
-      -> wh::core::result<void> {
-    return register_parser(std::forward<extension_t>(extension),
-                           parser{wh::core::remove_cvref_t<parser_t>{
-                               std::forward<args_t>(args)...}});
+  auto register_parser(extension_t &&extension, args_t &&...args) -> wh::core::result<void> {
+    return register_parser(
+        std::forward<extension_t>(extension),
+        parser{wh::core::remove_cvref_t<parser_t>{std::forward<args_t>(args)...}});
   }
 
   auto set_fallback(const parser &fallback) -> void { fallback_ = fallback; }
-  auto set_fallback(parser &&fallback) -> void {
-    fallback_ = std::move(fallback);
-  }
+  auto set_fallback(parser &&fallback) -> void { fallback_ = std::move(fallback); }
 
   template <typename parser_t, typename... args_t>
     requires parser_like<wh::core::remove_cvref_t<parser_t>> &&
-             std::constructible_from<wh::core::remove_cvref_t<parser_t>,
-                                     args_t...>
+             std::constructible_from<wh::core::remove_cvref_t<parser_t>, args_t...>
   auto set_fallback(args_t &&...args) -> void {
-    fallback_ = parser{
-        wh::core::remove_cvref_t<parser_t>{std::forward<args_t>(args)...}};
+    fallback_ = parser{wh::core::remove_cvref_t<parser_t>{std::forward<args_t>(args)...}};
   }
 
   auto clear_fallback() noexcept -> void { fallback_.reset(); }
 
-  [[nodiscard]] auto parser_registry_copy() const -> parser_registry_map {
-    return parsers_;
-  }
+  [[nodiscard]] auto parser_registry_copy() const -> parser_registry_map { return parsers_; }
 
-  [[nodiscard]] auto parse(const parse_request &request) const
-      -> wh::core::result<document_batch> {
+  [[nodiscard]] auto parse(const parse_request &request) const -> wh::core::result<document_batch> {
     return parse_by_extension(request, request.options.uri);
   }
 
-  [[nodiscard]] auto parse(parse_request &&request) const
-      -> wh::core::result<document_batch> {
+  [[nodiscard]] auto parse(parse_request &&request) const -> wh::core::result<document_batch> {
     const std::string source_uri = request.options.uri;
     return parse_by_extension(std::move(request), source_uri);
   }
@@ -110,27 +98,23 @@ private:
 
   template <typename extension_t>
     requires std::constructible_from<std::string, extension_t &&>
-  auto register_parser_impl(extension_t &&extension, parser &&value)
-      -> wh::core::result<void> {
+  auto register_parser_impl(extension_t &&extension, parser &&value) -> wh::core::result<void> {
     auto normalized = normalize_extension(std::forward<extension_t>(extension));
     parsers_.insert_or_assign(std::move(normalized), std::move(value));
     return {};
   }
 
   template <typename request_t>
-  [[nodiscard]] auto parse_with(const parser &selected,
-                                request_t &&request) const
+  [[nodiscard]] auto parse_with(const parser &selected, request_t &&request) const
       -> wh::core::result<document_batch> {
     if (!selected.has_value()) {
-      return wh::core::result<document_batch>::failure(
-          wh::core::errc::not_supported);
+      return wh::core::result<document_batch>::failure(wh::core::errc::not_supported);
     }
     return selected.parse(std::forward<request_t>(request));
   }
 
   template <typename request_t>
-  [[nodiscard]] auto parse_and_strip(const parser &selected,
-                                     request_t &&request) const
+  [[nodiscard]] auto parse_and_strip(const parser &selected, request_t &&request) const
       -> wh::core::result<document_batch> {
     auto parsed = parse_with(selected, std::forward<request_t>(request));
     if (parsed.has_error()) {
@@ -140,8 +124,7 @@ private:
   }
 
   template <typename request_t>
-  [[nodiscard]] auto parse_by_extension(request_t &&request,
-                                        const std::string_view uri) const
+  [[nodiscard]] auto parse_by_extension(request_t &&request, const std::string_view uri) const
       -> wh::core::result<document_batch> {
     const auto extension = extract_extension_view(uri);
     const auto iter = parsers_.find(extension);
@@ -158,8 +141,7 @@ private:
 
   template <typename extension_t>
     requires std::constructible_from<std::string, extension_t &&>
-  [[nodiscard]] static auto normalize_extension(extension_t &&extension)
-      -> std::string {
+  [[nodiscard]] static auto normalize_extension(extension_t &&extension) -> std::string {
     std::string normalized{std::forward<extension_t>(extension)};
     if (!normalized.empty() && normalized.front() == '.') {
       normalized.erase(normalized.begin());
@@ -167,11 +149,9 @@ private:
     return normalized;
   }
 
-  [[nodiscard]] static auto extract_extension_view(const std::string_view uri)
-      -> std::string_view {
+  [[nodiscard]] static auto extract_extension_view(const std::string_view uri) -> std::string_view {
     const auto slash = uri.find_last_of("/\\");
-    const auto file_name =
-        (slash == std::string_view::npos) ? uri : uri.substr(slash + 1U);
+    const auto file_name = (slash == std::string_view::npos) ? uri : uri.substr(slash + 1U);
     const auto dot = file_name.find_last_of('.');
     if (dot == std::string_view::npos || dot + 1U >= file_name.size()) {
       return {};
@@ -181,10 +161,8 @@ private:
 
   [[nodiscard]] static auto strip_empty_documents(document_batch docs)
       -> wh::core::result<document_batch> {
-    const auto remove_begin =
-        std::ranges::remove_if(docs, [](const wh::schema::document &doc) {
-          return doc.content().empty();
-        });
+    const auto remove_begin = std::ranges::remove_if(
+        docs, [](const wh::schema::document &doc) { return doc.content().empty(); });
     docs.erase(remove_begin.begin(), remove_begin.end());
     return docs;
   }

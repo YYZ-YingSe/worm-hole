@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <exception>
 #include <memory>
 #include <stdexcept>
 #include <utility>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/test_thread_wait.hpp"
@@ -22,18 +21,15 @@ struct tracked_request {
   request_trace *trace{nullptr};
 
   tracked_request() = default;
-  tracked_request(int input, request_trace *trace_ptr)
-      : value(input), trace(trace_ptr) {}
+  tracked_request(int input, request_trace *trace_ptr) : value(input), trace(trace_ptr) {}
 
-  tracked_request(const tracked_request &other)
-      : value(other.value), trace(other.trace) {
+  tracked_request(const tracked_request &other) : value(other.value), trace(other.trace) {
     if (trace != nullptr) {
       ++trace->copies;
     }
   }
 
-  tracked_request(tracked_request &&other) noexcept
-      : value(other.value), trace(other.trace) {
+  tracked_request(tracked_request &&other) noexcept : value(other.value), trace(other.trace) {
     if (trace != nullptr) {
       ++trace->moves;
     }
@@ -75,8 +71,9 @@ struct rvalue_blocking_call {
 
 } // namespace
 
-TEST_CASE("request result sender preserves lvalue requests and uses copy fallback when needed",
-          "[UT][wh/core/stdexec/request_result_sender.hpp][request_result_sender][condition][branch]") {
+TEST_CASE(
+    "request result sender preserves lvalue requests and uses copy fallback when needed",
+    "[UT][wh/core/stdexec/request_result_sender.hpp][request_result_sender][condition][branch]") {
   request_trace direct_trace{};
   tracked_request direct_request{7, &direct_trace};
   const tracked_request *seen_address = nullptr;
@@ -105,8 +102,9 @@ TEST_CASE("request result sender preserves lvalue requests and uses copy fallbac
   REQUIRE(copy_trace.copies >= 1);
 }
 
-TEST_CASE("request result sender covers rvalue direct path fallback path and error normalization",
-          "[UT][wh/core/stdexec/request_result_sender.hpp][request_result_sender][branch][boundary]") {
+TEST_CASE(
+    "request result sender covers rvalue direct path fallback path and error normalization",
+    "[UT][wh/core/stdexec/request_result_sender.hpp][request_result_sender][branch][boundary]") {
   request_trace move_trace{};
   tracked_request moved_request{9, &move_trace};
   bool rvalue_overload_called = false;
@@ -115,8 +113,7 @@ TEST_CASE("request result sender covers rvalue direct path fallback path and err
         rvalue_overload_called = true;
         return stdexec::just(wh::core::result<int>{request.value});
       });
-  const auto moved_status =
-      wh::testing::helper::wait_value_on_test_thread(std::move(moved_sender));
+  const auto moved_status = wh::testing::helper::wait_value_on_test_thread(std::move(moved_sender));
   REQUIRE(moved_status.has_value());
   REQUIRE(moved_status.value() == 9);
   REQUIRE(rvalue_overload_called);
@@ -130,11 +127,9 @@ TEST_CASE("request result sender covers rvalue direct path fallback path and err
 
   auto error_sender = wh::core::detail::request_result_sender<wh::core::result<int>>(
       tracked_request{12, nullptr}, [](const tracked_request &) {
-        return stdexec::just_error(
-            std::make_exception_ptr(std::runtime_error{"boom"}));
+        return stdexec::just_error(std::make_exception_ptr(std::runtime_error{"boom"}));
       });
-  const auto error_status =
-      wh::testing::helper::wait_value_on_test_thread(std::move(error_sender));
+  const auto error_status = wh::testing::helper::wait_value_on_test_thread(std::move(error_sender));
   REQUIRE(error_status.has_error());
   REQUIRE(error_status.error() == wh::core::errc::internal_error);
 }
@@ -149,8 +144,7 @@ TEST_CASE("defer request result sender is lazy and forwards stored request",
       });
 
   REQUIRE_FALSE(invoked);
-  const auto status =
-      wh::testing::helper::wait_value_on_test_thread(std::move(sender));
+  const auto status = wh::testing::helper::wait_value_on_test_thread(std::move(sender));
   REQUIRE(status.has_value());
   REQUIRE(status.value() == 21);
   REQUIRE(invoked);

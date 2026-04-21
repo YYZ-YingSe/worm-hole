@@ -8,8 +8,7 @@ namespace wh::compose::detail {
 
 /// Internal-only binder for `node_runtime` storage.
 struct node_runtime_access {
-  static auto reset(node_runtime &runtime,
-                    const std::size_t parallel_gate = 0U) noexcept -> void {
+  static auto reset(node_runtime &runtime, const std::size_t parallel_gate = 0U) noexcept -> void {
     runtime.parallel_gate_ = parallel_gate;
     runtime.call_options_ = nullptr;
     runtime.path_ = nullptr;
@@ -22,8 +21,7 @@ struct node_runtime_access {
     runtime.nested_entry_ = nested_graph_entry{};
   }
 
-  static auto bind_scope(node_runtime &runtime,
-                         const graph_call_scope *call_options,
+  static auto bind_scope(node_runtime &runtime, const graph_call_scope *call_options,
                          const node_path *path) noexcept -> void {
     runtime.call_options_ = call_options;
     runtime.path_ = path;

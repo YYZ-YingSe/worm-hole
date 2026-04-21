@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/json/api.hpp"
 

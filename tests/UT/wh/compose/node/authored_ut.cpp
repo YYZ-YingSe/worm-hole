@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <type_traits>
 #include <variant>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph/graph.hpp"
 #include "wh/compose/node/authored.hpp"
@@ -37,18 +37,18 @@ TEST_CASE("node_descriptor keeps stable default authored metadata",
   REQUIRE(descriptor.output_gate_info == wh::compose::output_gate::dynamic());
 }
 
-TEST_CASE("decorate_node_options fills only missing type and label fields",
-          "[UT][wh/compose/node/authored.hpp][decorate_node_options][condition][branch][boundary]") {
+TEST_CASE(
+    "decorate_node_options fills only missing type and label fields",
+    "[UT][wh/compose/node/authored.hpp][decorate_node_options][condition][branch][boundary]") {
   wh::compose::graph_add_node_options empty{};
-  auto decorated =
-      wh::compose::detail::decorate_node_options(empty, "component", "Component");
+  auto decorated = wh::compose::detail::decorate_node_options(empty, "component", "Component");
   REQUIRE(decorated.type == "component");
   REQUIRE(decorated.label == "Component");
   REQUIRE(decorated.name.empty());
 
   wh::compose::graph_add_node_options named{};
-  auto decorated_named = wh::compose::detail::decorate_named_node_options(
-      "worker", named, "lambda", "Lambda");
+  auto decorated_named =
+      wh::compose::detail::decorate_named_node_options("worker", named, "lambda", "Lambda");
   REQUIRE(decorated_named.name == "worker");
   REQUIRE(decorated_named.type == "lambda");
   REQUIRE(decorated_named.label == "Lambda");
@@ -74,17 +74,19 @@ TEST_CASE("authored_node_like accepts the five authored node handles",
   STATIC_REQUIRE_FALSE(wh::compose::authored_node_like<int>);
 }
 
-TEST_CASE("authored concrete nodes expose descriptors gates exec metadata and options",
-          "[UT][wh/compose/node/authored.hpp][component_node::descriptor][condition][branch][boundary]") {
-  auto component = wh::compose::make_component_node<
-      wh::compose::component_kind::custom, wh::compose::node_contract::value,
-      wh::compose::node_contract::value, int, int>("component",
-                                                   authored_component_stub{});
+TEST_CASE(
+    "authored concrete nodes expose descriptors gates exec metadata and options",
+    "[UT][wh/compose/node/authored.hpp][component_node::descriptor][condition][branch][boundary]") {
+  auto component = wh::compose::make_component_node<wh::compose::component_kind::custom,
+                                                    wh::compose::node_contract::value,
+                                                    wh::compose::node_contract::value, int, int>(
+      "component", authored_component_stub{});
   auto lambda = wh::compose::make_lambda_node(
       "lambda",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> { return input; });
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+        return input;
+      });
   wh::compose::graph child{};
   auto subgraph = wh::compose::make_subgraph_node("subgraph", child);
   auto tools = wh::compose::make_tools_node("tools", wh::compose::tool_registry{});
@@ -93,10 +95,8 @@ TEST_CASE("authored concrete nodes expose descriptors gates exec metadata and op
   REQUIRE(component.key() == "component");
   REQUIRE(component.input_contract() == wh::compose::node_contract::value);
   REQUIRE(component.output_contract() == wh::compose::node_contract::value);
-  REQUIRE(component.input_gate().kind ==
-          wh::compose::input_gate_kind::value_exact);
-  REQUIRE(component.output_gate().kind ==
-          wh::compose::output_gate_kind::value_exact);
+  REQUIRE(component.input_gate().kind == wh::compose::input_gate_kind::value_exact);
+  REQUIRE(component.output_gate().kind == wh::compose::output_gate_kind::value_exact);
   REQUIRE(component.exec_mode() == wh::compose::node_exec_mode::sync);
   REQUIRE(component.exec_origin() == wh::compose::node_exec_origin::authored);
 
@@ -113,22 +113,18 @@ TEST_CASE("authored concrete nodes expose descriptors gates exec metadata and op
 
 TEST_CASE("authored variant helpers visit key kind contracts gates and mutable options",
           "[UT][wh/compose/node/authored.hpp][authored_key][condition][branch][boundary]") {
-  auto component = wh::compose::make_component_node<
-      wh::compose::component_kind::custom, wh::compose::node_contract::value,
-      wh::compose::node_contract::value, int, int>("component",
-                                                   authored_component_stub{});
+  auto component = wh::compose::make_component_node<wh::compose::component_kind::custom,
+                                                    wh::compose::node_contract::value,
+                                                    wh::compose::node_contract::value, int, int>(
+      "component", authored_component_stub{});
   auto passthrough = wh::compose::make_passthrough_node("passthrough");
 
   wh::compose::authored_node variant = passthrough;
   REQUIRE(wh::compose::authored_key(variant) == "passthrough");
-  REQUIRE(wh::compose::authored_kind(variant) ==
-          wh::compose::node_kind::passthrough);
-  REQUIRE(wh::compose::authored_input_contract(variant) ==
-          wh::compose::node_contract::value);
-  REQUIRE(wh::compose::authored_output_contract(variant) ==
-          wh::compose::node_contract::value);
-  REQUIRE(wh::compose::detail::authored_input_gate(variant) ==
-          wh::compose::input_gate::open());
+  REQUIRE(wh::compose::authored_kind(variant) == wh::compose::node_kind::passthrough);
+  REQUIRE(wh::compose::authored_input_contract(variant) == wh::compose::node_contract::value);
+  REQUIRE(wh::compose::authored_output_contract(variant) == wh::compose::node_contract::value);
+  REQUIRE(wh::compose::detail::authored_input_gate(variant) == wh::compose::input_gate::open());
   REQUIRE(wh::compose::detail::authored_output_gate(variant) ==
           wh::compose::output_gate::passthrough());
 
@@ -139,10 +135,7 @@ TEST_CASE("authored variant helpers visit key kind contracts gates and mutable o
 
   variant = component;
   REQUIRE(wh::compose::authored_key(variant) == "component");
-  REQUIRE(wh::compose::authored_kind(variant) ==
-          wh::compose::node_kind::component);
-  REQUIRE(wh::compose::authored_input_contract(variant) ==
-          wh::compose::node_contract::value);
-  REQUIRE(wh::compose::authored_output_contract(variant) ==
-          wh::compose::node_contract::value);
+  REQUIRE(wh::compose::authored_kind(variant) == wh::compose::node_kind::component);
+  REQUIRE(wh::compose::authored_input_contract(variant) == wh::compose::node_contract::value);
+  REQUIRE(wh::compose::authored_output_contract(variant) == wh::compose::node_contract::value);
 }

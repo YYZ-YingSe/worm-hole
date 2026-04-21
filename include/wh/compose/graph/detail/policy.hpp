@@ -5,41 +5,33 @@
 #include "wh/compose/graph/graph.hpp"
 
 namespace wh::compose {
-inline auto graph::resolve_node_retry_budget(const std::uint32_t node_id) const
-    -> std::size_t {
-  const auto *node =
-      core().compiled_execution_index_.index.nodes_by_id[node_id];
+inline auto graph::resolve_node_retry_budget(const std::uint32_t node_id) const -> std::size_t {
+  const auto *node = core().compiled_execution_index_.index.nodes_by_id[node_id];
   if (node != nullptr && node->meta.options.retry_budget_override.has_value()) {
     return *node->meta.options.retry_budget_override;
   }
   return core().options_.retry_budget;
 }
 
-inline auto
-graph::resolve_node_timeout_budget(const std::uint32_t node_id) const
+inline auto graph::resolve_node_timeout_budget(const std::uint32_t node_id) const
     -> std::optional<std::chrono::milliseconds> {
-  const auto *node =
-      core().compiled_execution_index_.index.nodes_by_id[node_id];
+  const auto *node = core().compiled_execution_index_.index.nodes_by_id[node_id];
   if (node != nullptr && node->meta.options.timeout_override.has_value()) {
     return node->meta.options.timeout_override;
   }
   return core().options_.node_timeout;
 }
 
-inline auto graph::resolve_node_parallel_gate(const std::uint32_t node_id) const
-    -> std::size_t {
-  const auto *node =
-      core().compiled_execution_index_.index.nodes_by_id[node_id];
+inline auto graph::resolve_node_parallel_gate(const std::uint32_t node_id) const -> std::size_t {
+  const auto *node = core().compiled_execution_index_.index.nodes_by_id[node_id];
   if (node != nullptr && node->meta.options.max_parallel_override.has_value()) {
     return *node->meta.options.max_parallel_override;
   }
   return core().options_.max_parallel_per_node;
 }
 
-inline auto graph::resolve_node_sync_dispatch(const std::uint32_t node_id) const
-    -> sync_dispatch {
-  const auto *node =
-      core().compiled_execution_index_.index.nodes_by_id[node_id];
+inline auto graph::resolve_node_sync_dispatch(const std::uint32_t node_id) const -> sync_dispatch {
+  const auto *node = core().compiled_execution_index_.index.nodes_by_id[node_id];
   if (node == nullptr || node->meta.exec_mode != node_exec_mode::sync ||
       node->meta.exec_origin != node_exec_origin::authored) {
     return sync_dispatch::inline_control;
@@ -47,21 +39,18 @@ inline auto graph::resolve_node_sync_dispatch(const std::uint32_t node_id) const
   return node->meta.options.dispatch;
 }
 
-inline auto graph::resolve_branch_merge(
-    const detail::runtime_state::invoke_config &config) noexcept
+inline auto graph::resolve_branch_merge(const detail::runtime_state::invoke_config &config) noexcept
     -> graph_branch_merge {
   return config.branch_merge;
 }
 
-inline auto graph::merge_branch_selected_nodes(
-    const std::vector<std::uint32_t> &existing_sorted,
-    std::vector<std::uint32_t> incoming_sorted,
-    const graph_branch_merge strategy)
+inline auto graph::merge_branch_selected_nodes(const std::vector<std::uint32_t> &existing_sorted,
+                                               std::vector<std::uint32_t> incoming_sorted,
+                                               const graph_branch_merge strategy)
     -> wh::core::result<std::vector<std::uint32_t>> {
   std::sort(incoming_sorted.begin(), incoming_sorted.end());
-  incoming_sorted.erase(
-      std::unique(incoming_sorted.begin(), incoming_sorted.end()),
-      incoming_sorted.end());
+  incoming_sorted.erase(std::unique(incoming_sorted.begin(), incoming_sorted.end()),
+                        incoming_sorted.end());
   switch (strategy) {
   case graph_branch_merge::overwrite:
     return incoming_sorted;
@@ -79,17 +68,15 @@ inline auto graph::merge_branch_selected_nodes(
 
   std::vector<std::uint32_t> merged{};
   merged.reserve(existing_sorted.size() + incoming_sorted.size());
-  std::set_union(existing_sorted.begin(), existing_sorted.end(),
-                 incoming_sorted.begin(), incoming_sorted.end(),
-                 std::back_inserter(merged));
+  std::set_union(existing_sorted.begin(), existing_sorted.end(), incoming_sorted.begin(),
+                 incoming_sorted.end(), std::back_inserter(merged));
   return merged;
 }
 
-inline auto graph::commit_branch_selection(
-    const std::uint32_t node_id,
-    std::optional<std::vector<std::uint32_t>> selection,
-    dag_schedule &schedule,
-    const detail::runtime_state::invoke_config &config) const
+inline auto graph::commit_branch_selection(const std::uint32_t node_id,
+                                           std::optional<std::vector<std::uint32_t>> selection,
+                                           dag_schedule &schedule,
+                                           const detail::runtime_state::invoke_config &config) const
     -> wh::core::result<void> {
   if (!selection.has_value()) {
     return {};
@@ -101,8 +88,8 @@ inline auto graph::commit_branch_selection(
     schedule.mark_branch_decided(node_id, std::move(selection).value());
     return {};
   }
-  auto merged = merge_branch_selected_nodes(
-      state.selected_end_nodes_sorted, std::move(selection).value(), strategy);
+  auto merged = merge_branch_selected_nodes(state.selected_end_nodes_sorted,
+                                            std::move(selection).value(), strategy);
   if (merged.has_error()) {
     return wh::core::result<void>::failure(merged.error());
   }
@@ -114,13 +101,13 @@ inline auto graph::commit_branch_selection(
   return {};
 }
 
-inline auto graph::evaluate_value_branch_indexed(
-    const std::uint32_t source_node_id, const graph_value &source_output,
-    wh::core::run_context &context, const graph_call_scope &call_options) const
+inline auto graph::evaluate_value_branch_indexed(const std::uint32_t source_node_id,
+                                                 const graph_value &source_output,
+                                                 wh::core::run_context &context,
+                                                 const graph_call_scope &call_options) const
     -> wh::core::result<std::optional<std::vector<std::uint32_t>>> {
   const auto *branch =
-      core().compiled_execution_index_.index.value_branch_for_source(
-          source_node_id);
+      core().compiled_execution_index_.index.value_branch_for_source(source_node_id);
   if (branch == nullptr) {
     return std::optional<std::vector<std::uint32_t>>{};
   }
@@ -133,14 +120,13 @@ inline auto graph::evaluate_value_branch_indexed(
 
   auto routed_ids = branch->selector_ids(source_output, context, call_options);
   if (routed_ids.has_error()) {
-    return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
-        routed_ids.error());
+    return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(routed_ids.error());
   }
   selected = std::move(routed_ids).value();
   for (const auto node_id : selected) {
     if (!branch->contains(node_id)) {
-      return wh::core::result<std::optional<std::vector<std::uint32_t>>>::
-          failure(wh::core::errc::contract_violation);
+      return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
+          wh::core::errc::contract_violation);
     }
   }
   std::sort(selected.begin(), selected.end());
@@ -148,13 +134,13 @@ inline auto graph::evaluate_value_branch_indexed(
   return std::optional<std::vector<std::uint32_t>>{std::move(selected)};
 }
 
-inline auto graph::evaluate_stream_branch_indexed(
-    const std::uint32_t source_node_id, graph_stream_reader &source_output,
-    wh::core::run_context &context, const graph_call_scope &call_options) const
+inline auto graph::evaluate_stream_branch_indexed(const std::uint32_t source_node_id,
+                                                  graph_stream_reader &source_output,
+                                                  wh::core::run_context &context,
+                                                  const graph_call_scope &call_options) const
     -> wh::core::result<std::optional<std::vector<std::uint32_t>>> {
   const auto *branch =
-      core().compiled_execution_index_.index.stream_branch_for_source(
-          source_node_id);
+      core().compiled_execution_index_.index.stream_branch_for_source(source_node_id);
   if (branch == nullptr) {
     return std::optional<std::vector<std::uint32_t>>{};
   }
@@ -171,18 +157,16 @@ inline auto graph::evaluate_stream_branch_indexed(
         routed_input.error());
   }
 
-  auto routed_ids =
-      branch->selector_ids(std::move(routed_input).value(), context, call_options);
+  auto routed_ids = branch->selector_ids(std::move(routed_input).value(), context, call_options);
   if (routed_ids.has_error()) {
-    return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
-        routed_ids.error());
+    return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(routed_ids.error());
   }
 
   selected = std::move(routed_ids).value();
   for (const auto node_id : selected) {
     if (!branch->contains(node_id)) {
-      return wh::core::result<std::optional<std::vector<std::uint32_t>>>::
-          failure(wh::core::errc::contract_violation);
+      return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
+          wh::core::errc::contract_violation);
     }
   }
   std::sort(selected.begin(), selected.end());
@@ -190,31 +174,26 @@ inline auto graph::evaluate_stream_branch_indexed(
   return std::optional<std::vector<std::uint32_t>>{std::move(selected)};
 }
 
-inline auto
-graph::resolve_step_budget(const detail::runtime_state::invoke_config &config,
-                           const graph_call_scope &call_options) const
+inline auto graph::resolve_step_budget(const detail::runtime_state::invoke_config &config,
+                                       const graph_call_scope &call_options) const
     -> wh::core::result<std::size_t> {
   if (core().options_.mode != graph_runtime_mode::pregel) {
     if (call_options.pregel_max_steps().has_value()) {
-      return wh::core::result<std::size_t>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<std::size_t>::failure(wh::core::errc::contract_violation);
     }
     return core().options_.max_steps;
   }
   if (call_options.pregel_max_steps().has_value()) {
     if (*call_options.pregel_max_steps() == 0U) {
-      return wh::core::result<std::size_t>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<std::size_t>::failure(wh::core::errc::invalid_argument);
     }
     return *call_options.pregel_max_steps();
   }
-  if (config.pregel_max_steps_override.has_value() &&
-      *config.pregel_max_steps_override > 0U) {
+  if (config.pregel_max_steps_override.has_value() && *config.pregel_max_steps_override > 0U) {
     return *config.pregel_max_steps_override;
   }
   if (core().options_.max_steps == 0U) {
-    return wh::core::result<std::size_t>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<std::size_t>::failure(wh::core::errc::invalid_argument);
   }
   return core().options_.max_steps;
 }

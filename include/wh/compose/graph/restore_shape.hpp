@@ -78,34 +78,29 @@ struct graph_restore_shape {
   /// Restore-stable branch set.
   std::vector<graph_restore_branch> branches{};
   /// Nested subgraph restore shapes keyed by parent node key.
-  std::unordered_map<std::string, graph_restore_shape,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, graph_restore_shape, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       subgraphs{};
 };
 
 namespace detail {
 
-[[nodiscard]] inline auto
-restore_node_less(const graph_restore_node &lhs,
-                  const graph_restore_node &rhs) noexcept -> bool {
+[[nodiscard]] inline auto restore_node_less(const graph_restore_node &lhs,
+                                            const graph_restore_node &rhs) noexcept -> bool {
   return lhs.key < rhs.key;
 }
 
-[[nodiscard]] inline auto
-restore_edge_less(const graph_restore_edge &lhs,
-                  const graph_restore_edge &rhs) noexcept -> bool {
+[[nodiscard]] inline auto restore_edge_less(const graph_restore_edge &lhs,
+                                            const graph_restore_edge &rhs) noexcept -> bool {
   return std::tie(lhs.from, lhs.to) < std::tie(rhs.from, rhs.to);
 }
 
-[[nodiscard]] inline auto
-restore_branch_less(const graph_restore_branch &lhs,
-                    const graph_restore_branch &rhs) noexcept -> bool {
+[[nodiscard]] inline auto restore_branch_less(const graph_restore_branch &lhs,
+                                              const graph_restore_branch &rhs) noexcept -> bool {
   return lhs.from < rhs.from;
 }
 
-[[nodiscard]] inline auto to_restore_shape(const graph_snapshot &snapshot)
-    -> graph_restore_shape {
+[[nodiscard]] inline auto to_restore_shape(const graph_snapshot &snapshot) -> graph_restore_shape {
   graph_restore_shape shape{};
   shape.options = graph_restore_options{
       .boundary = snapshot.compile_options.boundary,

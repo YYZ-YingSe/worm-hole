@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/agent/instruction.hpp"
 
@@ -34,7 +34,8 @@ TEST_CASE("agent instruction render sorts append fragments by priority then sequ
   REQUIRE(instruction.render("|") == "low|mid|high");
 }
 
-TEST_CASE("agent instruction replace chooses highest-priority newest base and filters lower-priority appends",
+TEST_CASE("agent instruction replace chooses highest-priority newest base and filters "
+          "lower-priority appends",
           "[UT][wh/agent/instruction.hpp][instruction::replace][condition][branch][boundary]") {
   wh::agent::instruction instruction{};
   instruction.append("system", 0);

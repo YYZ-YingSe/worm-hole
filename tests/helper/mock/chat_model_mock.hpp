@@ -19,13 +19,9 @@ public:
     scripted_.enqueue_success(std::forward<completion_t>(completion));
   }
 
-  auto enqueue_error(const wh::core::errc code) -> void {
-    scripted_.enqueue_error(code);
-  }
+  auto enqueue_error(const wh::core::errc code) -> void { scripted_.enqueue_error(code); }
 
-  auto enqueue_interrupt() -> void {
-    scripted_.enqueue_error(wh::core::errc::canceled);
-  }
+  auto enqueue_interrupt() -> void { scripted_.enqueue_error(wh::core::errc::canceled); }
 
   [[nodiscard]] auto complete([[maybe_unused]] const std::string &prompt)
       -> wh::core::result<std::string> {
@@ -33,9 +29,7 @@ public:
     return scripted_.next();
   }
 
-  [[nodiscard]] auto complete_count() const noexcept -> std::size_t {
-    return complete_count_;
-  }
+  [[nodiscard]] auto complete_count() const noexcept -> std::size_t { return complete_count_; }
 
 private:
   detail::scripted_result_queue<std::string> scripted_{};

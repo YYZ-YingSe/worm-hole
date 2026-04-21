@@ -1,12 +1,11 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
 #include <utility>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/model/callback_event.hpp"
 
-static_assert(
-    std::is_default_constructible_v<wh::model::chat_model_callback_event>);
+static_assert(std::is_default_constructible_v<wh::model::chat_model_callback_event>);
 static_assert(std::is_move_constructible_v<wh::model::chat_model_callback_event>);
 
 TEST_CASE("chat model callback event defaults to non-stream zero-usage metadata",
@@ -20,13 +19,13 @@ TEST_CASE("chat model callback event defaults to non-stream zero-usage metadata"
   REQUIRE(event.usage.total_tokens == 0);
 }
 
-TEST_CASE("chat model callback event aggregate initialization preserves usage and stream flags",
-          "[UT][wh/model/callback_event.hpp][chat_model_callback_event][condition][branch][boundary]") {
+TEST_CASE(
+    "chat model callback event aggregate initialization preserves usage and stream flags",
+    "[UT][wh/model/callback_event.hpp][chat_model_callback_event][condition][branch][boundary]") {
   const wh::model::chat_model_callback_event source{
       .model_id = "gpt-x",
-      .usage = wh::schema::token_usage{.prompt_tokens = 12,
-                                       .completion_tokens = 8,
-                                       .total_tokens = 20},
+      .usage =
+          wh::schema::token_usage{.prompt_tokens = 12, .completion_tokens = 8, .total_tokens = 20},
       .emitted_chunks = 4U,
       .stream_path = true};
   const auto copied = source;

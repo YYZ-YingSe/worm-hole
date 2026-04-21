@@ -144,7 +144,7 @@ inline constexpr bool has_custom_any_owned_v =
     has_any_owned_copy<value_t> || has_any_owned_move<value_t>;
 
 template <typename value_t>
-  [[nodiscard]] inline auto copy_into_owned_value(const value_t &value) -> wh::core::result<value_t> {
+[[nodiscard]] inline auto copy_into_owned_value(const value_t &value) -> wh::core::result<value_t> {
   if constexpr (has_any_owned_copy<value_t>) {
     return any_owned_traits<value_t>::into_owned(value);
   } else if constexpr (std::copy_constructible<value_t>) {
@@ -155,7 +155,7 @@ template <typename value_t>
 }
 
 template <typename value_t>
-  [[nodiscard]] inline auto into_owned_value(value_t &value) -> wh::core::result<value_t> {
+[[nodiscard]] inline auto into_owned_value(value_t &value) -> wh::core::result<value_t> {
   if constexpr (has_any_owned_move<value_t>) {
     return any_owned_traits<value_t>::into_owned(std::move(value));
   } else if constexpr (std::move_constructible<value_t>) {

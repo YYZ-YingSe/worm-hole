@@ -14,15 +14,13 @@ namespace detail {
 
 [[nodiscard]] inline auto
 format_trace_token(const std::string_view prefix, const std::uint64_t run_id,
-                   const std::optional<std::uint64_t> sequence = std::nullopt)
-    -> std::string {
+                   const std::optional<std::uint64_t> sequence = std::nullopt) -> std::string {
   std::array<char, 64U> buffer{};
   char *cursor = buffer.data();
   for (const char value : prefix) {
     *cursor++ = value;
   }
-  auto [run_end, run_error] =
-      std::to_chars(cursor, buffer.data() + buffer.size(), run_id);
+  auto [run_end, run_error] = std::to_chars(cursor, buffer.data() + buffer.size(), run_id);
   if (run_error != std::errc{}) {
     std::string fallback{prefix};
     fallback.append(std::to_string(run_id));
@@ -38,21 +36,18 @@ format_trace_token(const std::string_view prefix, const std::uint64_t run_id,
     auto [sequence_end, sequence_error] =
         std::to_chars(cursor, buffer.data() + buffer.size(), *sequence);
     if (sequence_error != std::errc{}) {
-      std::string fallback{buffer.data(),
-                           static_cast<std::size_t>(cursor - buffer.data())};
+      std::string fallback{buffer.data(), static_cast<std::size_t>(cursor - buffer.data())};
       fallback.append(std::to_string(*sequence));
       return fallback;
     }
     cursor = sequence_end;
   }
-  return std::string{buffer.data(),
-                     static_cast<std::size_t>(cursor - buffer.data())};
+  return std::string{buffer.data(), static_cast<std::size_t>(cursor - buffer.data())};
 }
 
 } // namespace detail
 
-inline auto detail::invoke_runtime::invoke_session::initialize_runtime_node_caches()
-    -> void {
+inline auto detail::invoke_runtime::invoke_session::initialize_runtime_node_caches() -> void {
   auto &cache = cache_state();
   const auto node_count = compiled_graph_index().nodes_by_id.size();
   cache.runtime_node_paths.clear();
@@ -67,8 +62,7 @@ inline auto detail::invoke_runtime::invoke_session::initialize_runtime_node_cach
   cache.runtime_node_execution_addresses.resize(node_count);
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::initialize_resolved_component_options()
+inline auto detail::invoke_runtime::invoke_session::initialize_resolved_component_options()
     -> void {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
@@ -79,17 +73,13 @@ detail::invoke_runtime::invoke_session::initialize_resolved_component_options()
     return;
   }
 
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
-    cache.resolved_component_options[node_id] =
-        resolve_graph_component_option_map(
-            invoke.bound_call_scope,
-            owner_->make_node_designation_path(node_id));
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
+    cache.resolved_component_options[node_id] = resolve_graph_component_option_map(
+        invoke.bound_call_scope, owner_->make_node_designation_path(node_id));
   }
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::initialize_resolved_node_observations()
+inline auto detail::invoke_runtime::invoke_session::initialize_resolved_node_observations()
     -> void {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
@@ -97,8 +87,7 @@ detail::invoke_runtime::invoke_session::initialize_resolved_node_observations()
   cache.resolved_node_observations.clear();
   cache.resolved_node_observations.resize(node_count);
 
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
     const auto *node = compiled_graph_index().nodes_by_id[node_id];
     if (node == nullptr) {
       continue;
@@ -113,8 +102,7 @@ detail::invoke_runtime::invoke_session::initialize_resolved_node_observations()
     }
 
     const auto path = owner_->make_node_designation_path(node_id);
-    for (const auto &rule :
-         invoke.bound_call_scope.options().node_observations) {
+    for (const auto &rule : invoke.bound_call_scope.options().node_observations) {
       if (!matches_node_observation(invoke.bound_call_scope, path, rule)) {
         continue;
       }
@@ -124,15 +112,13 @@ detail::invoke_runtime::invoke_session::initialize_resolved_node_observations()
       if (!rule.local_callbacks.has_value()) {
         continue;
       }
-      resolved.local_callbacks.insert(resolved.local_callbacks.end(),
-                                      rule.local_callbacks->begin(),
+      resolved.local_callbacks.insert(resolved.local_callbacks.end(), rule.local_callbacks->begin(),
                                       rule.local_callbacks->end());
     }
   }
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::initialize_resolved_state_handlers()
+inline auto detail::invoke_runtime::invoke_session::initialize_resolved_state_handlers()
     -> wh::core::result<void> {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
@@ -140,8 +126,7 @@ detail::invoke_runtime::invoke_session::initialize_resolved_state_handlers()
   cache.resolved_state_handlers.clear();
   cache.resolved_state_handlers.resize(node_count, nullptr);
 
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
     const auto *node = compiled_graph_index().nodes_by_id[node_id];
     if (node == nullptr) {
       continue;
@@ -157,40 +142,35 @@ detail::invoke_runtime::invoke_session::initialize_resolved_state_handlers()
   return {};
 }
 
-inline auto detail::invoke_runtime::invoke_session::initialize_trace_state()
-    -> void {
+inline auto detail::invoke_runtime::invoke_session::initialize_trace_state() -> void {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
   cache.trace = detail::runtime_state::graph_trace_state{};
   if (invoke.bound_call_scope.trace().has_value()) {
     cache.trace.trace_id = invoke.bound_call_scope.trace()->trace_id;
-    cache.trace.parent_span_id =
-        invoke.bound_call_scope.trace()->parent_span_id;
+    cache.trace.parent_span_id = invoke.bound_call_scope.trace()->parent_span_id;
   }
   if (cache.trace.trace_id.empty()) {
     cache.trace.trace_id = detail::format_trace_token("g", invoke.run_id);
   }
-  cache.trace.graph_span_id =
-      detail::format_trace_token("gs", invoke.run_id, 0U);
+  cache.trace.graph_span_id = detail::format_trace_token("gs", invoke.run_id, 0U);
   cache.trace.next_span_sequence = 1U;
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::next_node_trace(const std::uint32_t node_id)
+inline auto detail::invoke_runtime::invoke_session::next_node_trace(const std::uint32_t node_id)
     -> graph_node_trace {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
   graph_node_trace trace{};
   trace.trace_id = cache.trace.trace_id;
-  trace.span_id = detail::format_trace_token("ns", invoke.run_id,
-                                             cache.trace.next_span_sequence++);
+  trace.span_id = detail::format_trace_token("ns", invoke.run_id, cache.trace.next_span_sequence++);
   trace.parent_span_id = cache.trace.graph_span_id;
   trace.path = std::addressof(runtime_node_execution_address(node_id));
   return trace;
 }
 
-inline auto detail::invoke_runtime::invoke_session::runtime_node_path(
-    const std::uint32_t node_id) -> const node_path & {
+inline auto detail::invoke_runtime::invoke_session::runtime_node_path(const std::uint32_t node_id)
+    -> const node_path & {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
   wh_precondition(node_id < cache.runtime_node_paths.size());
@@ -201,8 +181,9 @@ inline auto detail::invoke_runtime::invoke_session::runtime_node_path(
   return path;
 }
 
-inline auto detail::invoke_runtime::invoke_session::runtime_stream_scope(
-    const std::uint32_t node_id) -> const graph_event_scope & {
+inline auto
+detail::invoke_runtime::invoke_session::runtime_stream_scope(const std::uint32_t node_id)
+    -> const graph_event_scope & {
   auto &cache = cache_state();
   const auto stream_node_count = node_count();
   if (cache.runtime_stream_scopes.size() != stream_node_count) {
@@ -211,14 +192,15 @@ inline auto detail::invoke_runtime::invoke_session::runtime_stream_scope(
   wh_precondition(node_id < cache.runtime_stream_scopes.size());
   auto &scope = cache.runtime_stream_scopes[node_id];
   if (scope.node.empty()) {
-    scope = make_graph_event_scope(graph_options().name, node_key(node_id),
-                                   runtime_node_path(node_id));
+    scope =
+        make_graph_event_scope(graph_options().name, node_key(node_id), runtime_node_path(node_id));
   }
   return scope;
 }
 
-inline auto detail::invoke_runtime::invoke_session::runtime_node_execution_address(
-    const std::uint32_t node_id) -> const wh::core::address & {
+inline auto
+detail::invoke_runtime::invoke_session::runtime_node_execution_address(const std::uint32_t node_id)
+    -> const wh::core::address & {
   auto &cache = cache_state();
   wh_precondition(node_id < cache.runtime_node_execution_addresses.size());
   auto &location = cache.runtime_node_execution_addresses[node_id];
@@ -233,104 +215,84 @@ inline auto detail::invoke_runtime::invoke_session::transition_log() noexcept
   return invoke_state().outputs.transition_log;
 }
 
-inline auto detail::invoke_runtime::invoke_session::initialize(
-    graph_value &&input, graph_call_scope call_scope) -> void {
+inline auto detail::invoke_runtime::invoke_session::initialize(graph_value &&input,
+                                                               graph_call_scope call_scope)
+    -> void {
   auto &invoke = invoke_state();
   auto &cache = cache_state();
   auto &interrupt = interrupt_state();
   const auto &index = compiled_graph_index();
   if (index.nodes_by_id.empty()) {
-    owner_->publish_graph_run_error(
-        invoke.outputs, std::nullopt, {}, compose_error_phase::execute,
-        wh::core::errc::contract_violation, "compiled runtime index is empty");
+    owner_->publish_graph_run_error(invoke.outputs, std::nullopt, {}, compose_error_phase::execute,
+                                    wh::core::errc::contract_violation,
+                                    "compiled runtime index is empty");
     init_error_ = wh::core::errc::contract_violation;
     return;
   }
   if (invoke.parent_state != nullptr) {
     invoke.services = invoke.parent_state->invoke_state().services;
     invoke.config = invoke.parent_state->invoke_state().config;
-    invoke.forwarded_checkpoints =
-        invoke.parent_state->invoke_state().forwarded_checkpoints;
+    invoke.forwarded_checkpoints = invoke.parent_state->invoke_state().forwarded_checkpoints;
   } else {
     invoke.config.state_handlers =
         invoke.services != nullptr ? invoke.services->state_handlers : nullptr;
-    invoke.config.checkpoint_store_ptr = invoke.services != nullptr
-                                             ? invoke.services->checkpoint.store
-                                             : nullptr;
-    invoke.config.checkpoint_backend_ptr = invoke.services != nullptr
-                                               ? invoke.services->checkpoint.backend
-                                               : nullptr;
+    invoke.config.checkpoint_store_ptr =
+        invoke.services != nullptr ? invoke.services->checkpoint.store : nullptr;
+    invoke.config.checkpoint_backend_ptr =
+        invoke.services != nullptr ? invoke.services->checkpoint.backend : nullptr;
     invoke.config.checkpoint_stream_codecs_ptr =
-        invoke.services != nullptr ? invoke.services->checkpoint.stream_codecs
-                                   : nullptr;
+        invoke.services != nullptr ? invoke.services->checkpoint.stream_codecs : nullptr;
     invoke.config.checkpoint_serializer_ptr =
-        invoke.services != nullptr ? invoke.services->checkpoint.serializer
-                                   : nullptr;
+        invoke.services != nullptr ? invoke.services->checkpoint.serializer : nullptr;
     invoke.config.checkpoint_load = invoke.controls.checkpoint.load;
     invoke.config.checkpoint_save = invoke.controls.checkpoint.save;
-    invoke.config.checkpoint_before_load =
-        invoke.controls.checkpoint.before_load;
-    invoke.config.checkpoint_before_load_nodes =
-        invoke.controls.checkpoint.before_load_nodes;
+    invoke.config.checkpoint_before_load = invoke.controls.checkpoint.before_load;
+    invoke.config.checkpoint_before_load_nodes = invoke.controls.checkpoint.before_load_nodes;
     invoke.config.checkpoint_after_load = invoke.controls.checkpoint.after_load;
-    invoke.config.checkpoint_after_load_nodes =
-        invoke.controls.checkpoint.after_load_nodes;
-    invoke.config.checkpoint_before_save =
-        invoke.controls.checkpoint.before_save;
-    invoke.config.checkpoint_before_save_nodes =
-        invoke.controls.checkpoint.before_save_nodes;
+    invoke.config.checkpoint_after_load_nodes = invoke.controls.checkpoint.after_load_nodes;
+    invoke.config.checkpoint_before_save = invoke.controls.checkpoint.before_save;
+    invoke.config.checkpoint_before_save_nodes = invoke.controls.checkpoint.before_save_nodes;
     invoke.config.checkpoint_after_save = invoke.controls.checkpoint.after_save;
-    invoke.config.checkpoint_after_save_nodes =
-        invoke.controls.checkpoint.after_save_nodes;
+    invoke.config.checkpoint_after_save_nodes = invoke.controls.checkpoint.after_save_nodes;
     invoke.config.interrupt_pre_hook = invoke.controls.interrupt.pre_hook;
     invoke.config.interrupt_post_hook = invoke.controls.interrupt.post_hook;
     invoke.config.resume_contexts = invoke.controls.resume.contexts;
-    invoke.config.subgraph_interrupt_signals =
-        invoke.controls.interrupt.subgraph_signals;
+    invoke.config.subgraph_interrupt_signals = invoke.controls.interrupt.subgraph_signals;
     invoke.config.resume_decision = invoke.controls.resume.decision;
     invoke.config.batch_resume_items = invoke.controls.resume.batch_items;
-    invoke.config.reinterrupt_unmatched =
-        invoke.controls.resume.reinterrupt_unmatched;
-    invoke.config.pregel_max_steps_override =
-        invoke.controls.schedule.pregel_max_steps;
+    invoke.config.reinterrupt_unmatched = invoke.controls.resume.reinterrupt_unmatched;
+    invoke.config.pregel_max_steps_override = invoke.controls.schedule.pregel_max_steps;
     if (invoke.controls.schedule.branch_merge.has_value()) {
       invoke.config.branch_merge = *invoke.controls.schedule.branch_merge;
     }
-    invoke.owned_forwarded_checkpoints =
-        std::move(invoke.controls.checkpoint.forwarded_once);
-    invoke.forwarded_checkpoints =
-        std::addressof(invoke.owned_forwarded_checkpoints);
+    invoke.owned_forwarded_checkpoints = std::move(invoke.controls.checkpoint.forwarded_once);
+    invoke.forwarded_checkpoints = std::addressof(invoke.owned_forwarded_checkpoints);
   }
 
   auto checkpoint_config =
-      detail::checkpoint_runtime::validate_runtime_configuration(
-          invoke.config, invoke.outputs);
+      detail::checkpoint_runtime::validate_runtime_configuration(invoke.config, invoke.outputs);
   if (checkpoint_config.has_error()) {
-    owner_->publish_graph_run_error(
-        invoke.outputs, std::nullopt, {}, compose_error_phase::checkpoint,
-        checkpoint_config.error(), "checkpoint runtime configuration invalid");
+    owner_->publish_graph_run_error(invoke.outputs, std::nullopt, {},
+                                    compose_error_phase::checkpoint, checkpoint_config.error(),
+                                    "checkpoint runtime configuration invalid");
     init_error_ = checkpoint_config.error();
     return;
   }
-  auto call_options_validated =
-      owner_->validate_call_scope_for_runtime(call_scope);
+  auto call_options_validated = owner_->validate_call_scope_for_runtime(call_scope);
   if (call_options_validated.has_error()) {
-    owner_->publish_graph_run_error(
-        invoke.outputs, std::nullopt, {}, compose_error_phase::schedule,
-        call_options_validated.error(), "call options validation failed");
+    owner_->publish_graph_run_error(invoke.outputs, std::nullopt, {}, compose_error_phase::schedule,
+                                    call_options_validated.error(),
+                                    "call options validation failed");
     init_error_ = call_options_validated.error();
     return;
   }
-  const bool has_checkpoint_backend =
-      invoke.config.checkpoint_store_ptr != nullptr ||
-      invoke.config.checkpoint_backend_ptr != nullptr;
+  const bool has_checkpoint_backend = invoke.config.checkpoint_store_ptr != nullptr ||
+                                      invoke.config.checkpoint_backend_ptr != nullptr;
   invoke.retain_inputs =
       has_checkpoint_backend || context_.resume_info.has_value() ||
       invoke.config.interrupt_pre_hook || invoke.config.interrupt_post_hook ||
-      invoke.config.resume_decision.has_value() ||
-      !invoke.config.batch_resume_items.empty() ||
-      !invoke.config.resume_contexts.empty() ||
-      !invoke.config.subgraph_interrupt_signals.empty();
+      invoke.config.resume_decision.has_value() || !invoke.config.batch_resume_items.empty() ||
+      !invoke.config.resume_contexts.empty() || !invoke.config.subgraph_interrupt_signals.empty();
 
   const auto total_nodes = index.nodes_by_id.size();
   state_table_.reset(index.id_to_key);
@@ -338,8 +300,7 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
   attempt_slots_.clear();
   attempt_slots_.resize(total_nodes + 1U);
 
-  detail::process_runtime::bind_parent_process_state(
-      process_state_, invoke.parent_process_state);
+  detail::process_runtime::bind_parent_process_state(process_state_, invoke.parent_process_state);
   transition_log().clear();
   entry_input_.reset();
   restore_plan_.reset();
@@ -348,27 +309,24 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
   invoke.step_count = 0U;
 
   invoke.run_id = owner_->next_invoke_run_id();
-  const auto restore_scope =
-      invoke.parent_process_state == nullptr
-          ? detail::checkpoint_runtime::restore_scope::full
-          : detail::checkpoint_runtime::restore_scope::forwarded_only;
-  auto prepared_restore = owner_->prepare_restore_checkpoint(
-      context_, invoke.config, restore_scope, invoke.path_prefix,
-      invoke.outputs, *invoke.forwarded_checkpoints);
+  const auto restore_scope = invoke.parent_process_state == nullptr
+                                 ? detail::checkpoint_runtime::restore_scope::full
+                                 : detail::checkpoint_runtime::restore_scope::forwarded_only;
+  auto prepared_restore =
+      owner_->prepare_restore_checkpoint(context_, invoke.config, restore_scope, invoke.path_prefix,
+                                         invoke.outputs, *invoke.forwarded_checkpoints);
   if (prepared_restore.has_error()) {
     init_error_ = prepared_restore.error();
     return;
   }
   restore_plan_ = std::move(prepared_restore).value();
-  auto runtime_resume =
-      owner_->apply_runtime_resume_controls(context_, invoke.config);
+  auto runtime_resume = owner_->apply_runtime_resume_controls(context_, invoke.config);
   if (runtime_resume.has_error()) {
     init_error_ = runtime_resume.error();
     return;
   }
   auto resume_state_overrides =
-      detail::interrupt_runtime::apply_resume_data_state_overrides(
-          context_, state_table_);
+      detail::interrupt_runtime::apply_resume_data_state_overrides(context_, state_table_);
   if (resume_state_overrides.has_error()) {
     init_error_ = resume_state_overrides.error();
     return;
@@ -376,9 +334,8 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
 
   auto step_budget = owner_->resolve_step_budget(invoke.config, call_scope);
   if (step_budget.has_error()) {
-    owner_->publish_graph_run_error(
-        invoke.outputs, std::nullopt, {}, compose_error_phase::schedule,
-        step_budget.error(), "step budget resolution failed");
+    owner_->publish_graph_run_error(invoke.outputs, std::nullopt, {}, compose_error_phase::schedule,
+                                    step_budget.error(), "step budget resolution failed");
     init_error_ = step_budget.error();
     return;
   }
@@ -392,31 +349,29 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
   initialize_resolved_node_observations();
   auto resolved_state_handlers = initialize_resolved_state_handlers();
   if (resolved_state_handlers.has_error()) {
-    owner_->publish_graph_run_error(
-        invoke.outputs, std::nullopt, {}, compose_error_phase::execute,
-        resolved_state_handlers.error(), "state handler resolution failed");
+    owner_->publish_graph_run_error(invoke.outputs, std::nullopt, {}, compose_error_phase::execute,
+                                    resolved_state_handlers.error(),
+                                    "state handler resolution failed");
     init_error_ = resolved_state_handlers.error();
     return;
   }
   initialize_trace_state();
-  cache.emit_debug_events =
-      should_emit_graph_debug_event(invoke.bound_call_scope);
-  cache.collect_transition_log =
-      invoke.bound_call_scope.record_transition_log();
+  cache.emit_debug_events = should_emit_graph_debug_event(invoke.bound_call_scope);
+  cache.collect_transition_log = invoke.bound_call_scope.record_transition_log();
   invoke.outputs.publish_transition_log = cache.collect_transition_log;
   cache.emit_state_snapshot_events = has_graph_stream_subscription(
       invoke.bound_call_scope, graph_stream_channel_kind::state_snapshot);
   cache.emit_state_delta_events = has_graph_stream_subscription(
       invoke.bound_call_scope, graph_stream_channel_kind::state_delta);
-  cache.emit_runtime_message_events = has_graph_stream_subscription(
-      invoke.bound_call_scope, graph_stream_channel_kind::message);
-  cache.emit_custom_events = std::ranges::any_of(
-      invoke.bound_call_scope.options().stream_subscriptions,
-      [](const graph_stream_subscription &subscription) {
-        return subscription.enabled &&
-               subscription.kind == graph_stream_channel_kind::custom &&
-               !subscription.custom_channel.empty();
-      });
+  cache.emit_runtime_message_events =
+      has_graph_stream_subscription(invoke.bound_call_scope, graph_stream_channel_kind::message);
+  cache.emit_custom_events =
+      std::ranges::any_of(invoke.bound_call_scope.options().stream_subscriptions,
+                          [](const graph_stream_subscription &subscription) {
+                            return subscription.enabled &&
+                                   subscription.kind == graph_stream_channel_kind::custom &&
+                                   !subscription.custom_channel.empty();
+                          });
   io_storage_.reset(index.nodes_by_id.size(), index.indexed_edges.size());
   node_local_process_states_.clear();
   node_local_process_states_.resize(index.nodes_by_id.size());
@@ -430,29 +385,27 @@ inline auto detail::invoke_runtime::invoke_session::initialize(
   entry_input_ = std::move(input);
 }
 
-inline auto detail::invoke_runtime::invoke_session::control_attempt_id() const
-    noexcept -> attempt_id {
+inline auto detail::invoke_runtime::invoke_session::control_attempt_id() const noexcept
+    -> attempt_id {
   return attempt_id{static_cast<std::uint32_t>(node_count())};
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::slot(const attempt_id attempt) noexcept
+inline auto detail::invoke_runtime::invoke_session::slot(const attempt_id attempt) noexcept
     -> attempt_slot & {
   wh_precondition(attempt.has_value());
   wh_precondition(attempt.slot < attempt_slots_.size());
   return attempt_slots_[attempt.slot];
 }
 
-inline auto detail::invoke_runtime::invoke_session::slot(
-    const attempt_id attempt) const noexcept -> const attempt_slot & {
+inline auto detail::invoke_runtime::invoke_session::slot(const attempt_id attempt) const noexcept
+    -> const attempt_slot & {
   wh_precondition(attempt.has_value());
   wh_precondition(attempt.slot < attempt_slots_.size());
   return attempt_slots_[attempt.slot];
 }
 
 inline auto
-detail::invoke_runtime::invoke_session::release_attempt(const attempt_id attempt)
-    noexcept -> void {
+detail::invoke_runtime::invoke_session::release_attempt(const attempt_id attempt) noexcept -> void {
   if (!attempt.has_value() || attempt.slot >= attempt_slots_.size()) {
     return;
   }
@@ -461,53 +414,47 @@ detail::invoke_runtime::invoke_session::release_attempt(const attempt_id attempt
   slot_state = detail::invoke_runtime::attempt_slot{};
 }
 
-inline auto detail::invoke_runtime::invoke_session::release_attempts() noexcept
-    -> void {
+inline auto detail::invoke_runtime::invoke_session::release_attempts() noexcept -> void {
   for (auto &slot_state : attempt_slots_) {
     slot_state.node_local_scope.release(node_local_process_states_);
     slot_state = detail::invoke_runtime::attempt_slot{};
   }
 }
 
-inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(
-    graph_value input) -> wh::core::result<void> {
+inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(graph_value input)
+    -> wh::core::result<void> {
   auto &invoke = invoke_state();
   const auto &index = compiled_graph_index();
   const auto start_node_id = index.start_id;
-  const auto *start_node = start_node_id < index.nodes_by_id.size()
-                               ? index.nodes_by_id[start_node_id]
-                               : nullptr;
+  const auto *start_node =
+      start_node_id < index.nodes_by_id.size() ? index.nodes_by_id[start_node_id] : nullptr;
   if (start_node == nullptr) {
     return wh::core::result<void>::failure(wh::core::errc::not_found);
   }
 
   const auto fail_start =
-      [this, &invoke, start_node_id](const wh::core::error_code code)
-      -> wh::core::result<void> {
-    state_table_.update(start_node_id, graph_node_lifecycle_state::failed, 1U,
-                        code);
-    append_transition(start_node_id,
-                      graph_state_transition_event{
-                          .kind = graph_state_transition_kind::node_fail,
-                          .cause =
-                              graph_state_cause{
-                                  .run_id = invoke.run_id,
-                                  .step = 0U,
-                                  .node_key = std::string{graph_start_node_key},
-                              },
-                          .lifecycle = graph_node_lifecycle_state::failed,
-                      });
+      [this, &invoke, start_node_id](const wh::core::error_code code) -> wh::core::result<void> {
+    state_table_.update(start_node_id, graph_node_lifecycle_state::failed, 1U, code);
+    append_transition(start_node_id, graph_state_transition_event{
+                                         .kind = graph_state_transition_kind::node_fail,
+                                         .cause =
+                                             graph_state_cause{
+                                                 .run_id = invoke.run_id,
+                                                 .step = 0U,
+                                                 .node_key = std::string{graph_start_node_key},
+                                             },
+                                         .lifecycle = graph_node_lifecycle_state::failed,
+                                     });
     return wh::core::result<void>::failure(code);
   };
 
   const auto start_contract = start_node->meta.output_contract;
-  auto start_branch = wh::core::result<
-      std::optional<std::vector<std::uint32_t>>>::failure(
+  auto start_branch = wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
       wh::core::errc::internal_error);
 
   if (start_contract == node_contract::value) {
-    start_branch = owner_->evaluate_value_branch_indexed(
-        start_node_id, input, context_, invoke.bound_call_scope);
+    start_branch = owner_->evaluate_value_branch_indexed(start_node_id, input, context_,
+                                                         invoke.bound_call_scope);
     if (start_branch.has_error()) {
       return fail_start(start_branch.error());
     }
@@ -523,9 +470,8 @@ inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(
       pending_inputs_.store_input(start_node_id, std::move(start_pending_input).value());
     }
 
-    auto committed_start = owner_->commit_value_output(
-        start_node_id, io_storage_, std::move(input), start_branch.value(),
-        context_);
+    auto committed_start = owner_->commit_value_output(start_node_id, io_storage_, std::move(input),
+                                                       start_branch.value(), context_);
     if (committed_start.has_error()) {
       return fail_start(committed_start.error());
     }
@@ -537,8 +483,7 @@ inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(
       if (start_output.has_error()) {
         return fail_start(start_output.error());
       }
-      auto *reader =
-          wh::core::any_cast<graph_stream_reader>(&start_output.value());
+      auto *reader = wh::core::any_cast<graph_stream_reader>(&start_output.value());
       if (reader == nullptr) {
         return fail_start(wh::core::errc::type_mismatch);
       }
@@ -552,39 +497,35 @@ inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(
       start_output_reader = std::move(*reader);
     }
 
-    start_branch = owner_->evaluate_stream_branch_indexed(
-        start_node_id, start_output_reader, context_, invoke.bound_call_scope);
+    start_branch = owner_->evaluate_stream_branch_indexed(start_node_id, start_output_reader,
+                                                          context_, invoke.bound_call_scope);
     if (start_branch.has_error()) {
       return fail_start(start_branch.error());
     }
 
     auto committed_start = owner_->commit_stream_output(
-        start_node_id, io_storage_, std::move(start_output_reader),
-        start_branch.value());
+        start_node_id, io_storage_, std::move(start_output_reader), start_branch.value());
     if (committed_start.has_error()) {
       return fail_start(committed_start.error());
     }
   }
 
-  state_table_.update(start_node_id, graph_node_lifecycle_state::completed, 0U,
-                      std::nullopt);
-  append_transition(start_node_id,
-                    graph_state_transition_event{
-                        .kind = graph_state_transition_kind::route_commit,
-                        .cause =
-                            graph_state_cause{
-                                .run_id = invoke.run_id,
-                                .step = 0U,
-                                .node_key = std::string{graph_start_node_key},
-                            },
-                        .lifecycle = graph_node_lifecycle_state::completed,
-                    });
+  state_table_.update(start_node_id, graph_node_lifecycle_state::completed, 0U, std::nullopt);
+  append_transition(start_node_id, graph_state_transition_event{
+                                       .kind = graph_state_transition_kind::route_commit,
+                                       .cause =
+                                           graph_state_cause{
+                                               .run_id = invoke.run_id,
+                                               .step = 0U,
+                                               .node_key = std::string{graph_start_node_key},
+                                           },
+                                       .lifecycle = graph_node_lifecycle_state::completed,
+                                   });
   invoke.start_entry_selection = std::move(start_branch).value();
   return {};
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::capture_common_checkpoint_state()
+inline auto detail::invoke_runtime::invoke_session::capture_common_checkpoint_state()
     -> wh::core::result<checkpoint_state> {
   checkpoint_state checkpoint{};
   checkpoint.checkpoint_id = graph_options().name;
@@ -597,46 +538,39 @@ detail::invoke_runtime::invoke_session::capture_common_checkpoint_state()
           ? wh::core::into_owned(*context_.resume_info)
           : wh::core::result<wh::core::resume_state>{wh::core::resume_state{}};
   if (owned_resume_snapshot.has_error()) {
-    return wh::core::result<checkpoint_state>::failure(
-        owned_resume_snapshot.error());
+    return wh::core::result<checkpoint_state>::failure(owned_resume_snapshot.error());
   }
   checkpoint.resume_snapshot = std::move(owned_resume_snapshot).value();
 
   if (context_.interrupt_info.has_value()) {
-    auto reinterrupt_signal =
-        wh::compose::to_reinterrupt_signal(*context_.interrupt_info);
+    auto reinterrupt_signal = wh::compose::to_reinterrupt_signal(*context_.interrupt_info);
     if (reinterrupt_signal.has_error()) {
-      return wh::core::result<checkpoint_state>::failure(
-          reinterrupt_signal.error());
+      return wh::core::result<checkpoint_state>::failure(reinterrupt_signal.error());
     }
-    auto interrupt_snapshot =
-        wh::core::flatten_interrupt_signals(std::vector<wh::core::interrupt_signal>{
-            std::move(reinterrupt_signal).value()});
+    auto interrupt_snapshot = wh::core::flatten_interrupt_signals(
+        std::vector<wh::core::interrupt_signal>{std::move(reinterrupt_signal).value()});
     if (interrupt_snapshot.has_error()) {
-      return wh::core::result<checkpoint_state>::failure(
-          interrupt_snapshot.error());
+      return wh::core::result<checkpoint_state>::failure(interrupt_snapshot.error());
     }
     checkpoint.interrupt_snapshot = std::move(interrupt_snapshot).value();
   }
   return checkpoint;
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::immediate_success(graph_value value)
+inline auto detail::invoke_runtime::invoke_session::immediate_success(graph_value value)
     -> graph_sender {
   publish_runtime_outputs();
-  return detail::ready_graph_sender(
-      wh::core::result<graph_value>{std::move(value)});
+  return detail::ready_graph_sender(wh::core::result<graph_value>{std::move(value)});
 }
 
-inline auto detail::invoke_runtime::invoke_session::immediate_failure(
-    const wh::core::error_code code) -> graph_sender {
+inline auto
+detail::invoke_runtime::invoke_session::immediate_failure(const wh::core::error_code code)
+    -> graph_sender {
   publish_runtime_outputs();
   return detail::failure_graph_sender(code);
 }
 
-inline auto detail::invoke_runtime::invoke_session::publish_runtime_outputs()
-    -> void {
+inline auto detail::invoke_runtime::invoke_session::publish_runtime_outputs() -> void {
   auto &invoke = invoke_state();
   if (invoke.forwarded_checkpoints != nullptr &&
       invoke.outputs.remaining_forwarded_checkpoint_keys.empty()) {
@@ -649,8 +583,7 @@ inline auto detail::invoke_runtime::invoke_session::publish_runtime_outputs()
               invoke.outputs.remaining_forwarded_checkpoint_keys.end());
   }
   if (invoke.nested_outputs != nullptr) {
-    detail::runtime_state::merge_nested_outputs(*invoke.nested_outputs,
-                                                std::move(invoke.outputs));
+    detail::runtime_state::merge_nested_outputs(*invoke.nested_outputs, std::move(invoke.outputs));
     return;
   }
   if (invoke.published_outputs != nullptr) {
@@ -662,20 +595,20 @@ inline auto detail::invoke_runtime::invoke_session::publish_runtime_outputs()
 }
 
 inline auto detail::invoke_runtime::invoke_session::emit_debug(
-    const graph_debug_stream_event::decision_kind decision,
-    const std::uint32_t node_id, const std::size_t step) -> void {
+    const graph_debug_stream_event::decision_kind decision, const std::uint32_t node_id,
+    const std::size_t step) -> void {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
   if (!cache.emit_debug_events) {
     return;
   }
-  owner_->emit_debug_stream_event(context_, invoke.outputs,
-                                  invoke.bound_call_scope, decision, node_id,
-                                  runtime_node_path(node_id), step);
+  owner_->emit_debug_stream_event(context_, invoke.outputs, invoke.bound_call_scope, decision,
+                                  node_id, runtime_node_path(node_id), step);
 }
 
-inline auto detail::invoke_runtime::invoke_session::append_transition(
-    const graph_state_transition_event &event) -> void {
+inline auto
+detail::invoke_runtime::invoke_session::append_transition(const graph_state_transition_event &event)
+    -> void {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
   const auto &index = compiled_graph_index();
@@ -688,10 +621,9 @@ inline auto detail::invoke_runtime::invoke_session::append_transition(
   if (node_id_iter == index.key_to_id.end()) {
     detail::stream_runtime::append_state_transition(
         transition_log(), invoke.outputs, invoke.bound_call_scope, event,
-        owner_->make_stream_scope(event.cause.node_key),
-        cache.collect_transition_log, cache.emit_state_snapshot_events,
-        cache.emit_state_delta_events, cache.emit_runtime_message_events,
-        cache.emit_custom_events);
+        owner_->make_stream_scope(event.cause.node_key), cache.collect_transition_log,
+        cache.emit_state_snapshot_events, cache.emit_state_delta_events,
+        cache.emit_runtime_message_events, cache.emit_custom_events);
     return;
   }
   detail::stream_runtime::append_state_transition(
@@ -701,8 +633,9 @@ inline auto detail::invoke_runtime::invoke_session::append_transition(
       cache.emit_runtime_message_events, cache.emit_custom_events);
 }
 
-inline auto detail::invoke_runtime::invoke_session::append_transition(
-    graph_state_transition_event &&event) -> void {
+inline auto
+detail::invoke_runtime::invoke_session::append_transition(graph_state_transition_event &&event)
+    -> void {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
   const auto &index = compiled_graph_index();
@@ -715,23 +648,20 @@ inline auto detail::invoke_runtime::invoke_session::append_transition(
   if (node_id_iter == index.key_to_id.end()) {
     const auto scope = owner_->make_stream_scope(event.cause.node_key);
     detail::stream_runtime::append_state_transition(
-        transition_log(), invoke.outputs, invoke.bound_call_scope,
-        std::move(event), scope, cache.collect_transition_log,
-        cache.emit_state_snapshot_events, cache.emit_state_delta_events,
-        cache.emit_runtime_message_events, cache.emit_custom_events);
+        transition_log(), invoke.outputs, invoke.bound_call_scope, std::move(event), scope,
+        cache.collect_transition_log, cache.emit_state_snapshot_events,
+        cache.emit_state_delta_events, cache.emit_runtime_message_events, cache.emit_custom_events);
     return;
   }
   detail::stream_runtime::append_state_transition(
-      transition_log(), invoke.outputs, invoke.bound_call_scope,
-      std::move(event), runtime_stream_scope(node_id_iter->second),
-      cache.collect_transition_log, cache.emit_state_snapshot_events,
-      cache.emit_state_delta_events, cache.emit_runtime_message_events,
-      cache.emit_custom_events);
+      transition_log(), invoke.outputs, invoke.bound_call_scope, std::move(event),
+      runtime_stream_scope(node_id_iter->second), cache.collect_transition_log,
+      cache.emit_state_snapshot_events, cache.emit_state_delta_events,
+      cache.emit_runtime_message_events, cache.emit_custom_events);
 }
 
 inline auto detail::invoke_runtime::invoke_session::append_transition(
-    const std::uint32_t node_id, const graph_state_transition_event &event)
-    -> void {
+    const std::uint32_t node_id, const graph_state_transition_event &event) -> void {
   auto &cache = cache_state();
   auto &invoke = invoke_state();
   if (!cache.collect_transition_log && !cache.emit_state_snapshot_events &&
@@ -741,9 +671,8 @@ inline auto detail::invoke_runtime::invoke_session::append_transition(
   }
   detail::stream_runtime::append_state_transition(
       transition_log(), invoke.outputs, invoke.bound_call_scope, event,
-      runtime_stream_scope(node_id), cache.collect_transition_log,
-      cache.emit_state_snapshot_events, cache.emit_state_delta_events,
-      cache.emit_runtime_message_events, cache.emit_custom_events);
+      runtime_stream_scope(node_id), cache.collect_transition_log, cache.emit_state_snapshot_events,
+      cache.emit_state_delta_events, cache.emit_runtime_message_events, cache.emit_custom_events);
 }
 
 inline auto detail::invoke_runtime::invoke_session::append_transition(
@@ -756,44 +685,39 @@ inline auto detail::invoke_runtime::invoke_session::append_transition(
     return;
   }
   detail::stream_runtime::append_state_transition(
-      transition_log(), invoke.outputs, invoke.bound_call_scope,
-      std::move(event), runtime_stream_scope(node_id),
-      cache.collect_transition_log, cache.emit_state_snapshot_events,
-      cache.emit_state_delta_events, cache.emit_runtime_message_events,
-      cache.emit_custom_events);
+      transition_log(), invoke.outputs, invoke.bound_call_scope, std::move(event),
+      runtime_stream_scope(node_id), cache.collect_transition_log, cache.emit_state_snapshot_events,
+      cache.emit_state_delta_events, cache.emit_runtime_message_events, cache.emit_custom_events);
 }
 
-inline auto detail::invoke_runtime::invoke_session::evaluate_resume_match(
-    const std::uint32_t node_id)
+inline auto
+detail::invoke_runtime::invoke_session::evaluate_resume_match(const std::uint32_t node_id)
     -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
   if (!context_.resume_info.has_value()) {
     return std::optional<wh::core::interrupt_signal>{};
   }
   const auto &location = runtime_node_execution_address(node_id);
-  const auto match =
-      classify_resume_target_match(*context_.resume_info, location);
+  const auto match = classify_resume_target_match(*context_.resume_info, location);
   if (!match.in_resume_flow) {
     return std::optional<wh::core::interrupt_signal>{};
   }
   if (!match.should_reinterrupt) {
     if (match.match_kind == resume_target_match_kind::exact) {
-      emit_debug(graph_debug_stream_event::decision_kind::interrupt_hit,
-                 node_id, 0U);
+      emit_debug(graph_debug_stream_event::decision_kind::interrupt_hit, node_id, 0U);
     }
     return std::optional<wh::core::interrupt_signal>{};
   }
 
-  auto signal =
-      make_interrupt_signal(make_interrupt_id(), location, std::monostate{});
-  if (context_.interrupt_info.has_value() &&
-      !context_.interrupt_info->interrupt_id.empty()) {
+  auto signal = make_interrupt_signal(make_interrupt_id(), location, std::monostate{});
+  if (context_.interrupt_info.has_value() && !context_.interrupt_info->interrupt_id.empty()) {
     signal.interrupt_id = context_.interrupt_info->interrupt_id;
   }
   return std::optional<wh::core::interrupt_signal>{std::move(signal)};
 }
 
-inline auto detail::invoke_runtime::invoke_session::request_freeze(
-    const bool external_interrupt) noexcept -> void {
+inline auto
+detail::invoke_runtime::invoke_session::request_freeze(const bool external_interrupt) noexcept
+    -> void {
   auto &interrupt = interrupt_state();
   auto &invoke = invoke_state();
   interrupt.freeze_requested = true;
@@ -801,33 +725,30 @@ inline auto detail::invoke_runtime::invoke_session::request_freeze(
   if (external_interrupt) {
     invoke.outputs.external_interrupt_resolution =
         detail::interrupt_runtime::resolve_external_resolution_kind(
-            *detail::interrupt_runtime::freeze_external_policy_from_latch(
-                 interrupt.policy_latch, interrupt.policy)
+            *detail::interrupt_runtime::freeze_external_policy_from_latch(interrupt.policy_latch,
+                                                                          interrupt.policy)
                  .value());
   }
 }
 
-inline auto detail::invoke_runtime::invoke_session::freeze_requested() const noexcept
-    -> bool {
+inline auto detail::invoke_runtime::invoke_session::freeze_requested() const noexcept -> bool {
   return interrupt_state().freeze_requested;
 }
 
-inline auto detail::invoke_runtime::invoke_session::freeze_external() const noexcept
-    -> bool {
+inline auto detail::invoke_runtime::invoke_session::freeze_external() const noexcept -> bool {
   return interrupt_state().freeze_external;
 }
 
 template <typename persist_fn_t>
-inline auto detail::invoke_runtime::invoke_session::make_freeze_sender(
-    graph_sender capture_sender, const bool external_interrupt,
-    persist_fn_t &&persist)
-    -> graph_sender {
+inline auto
+detail::invoke_runtime::invoke_session::make_freeze_sender(graph_sender capture_sender,
+                                                           const bool external_interrupt,
+                                                           persist_fn_t &&persist) -> graph_sender {
   auto &interrupt = interrupt_state();
   auto &invoke = invoke_state();
-  const auto *policy =
-      detail::interrupt_runtime::freeze_external_policy_from_latch(
-          interrupt.policy_latch, interrupt.policy)
-          .value();
+  const auto *policy = detail::interrupt_runtime::freeze_external_policy_from_latch(
+                           interrupt.policy_latch, interrupt.policy)
+                           .value();
   if (external_interrupt) {
     invoke.outputs.external_interrupt_resolution =
         detail::interrupt_runtime::resolve_external_resolution_kind(*policy);
@@ -838,19 +759,20 @@ inline auto detail::invoke_runtime::invoke_session::make_freeze_sender(
   }
   return detail::bridge_graph_sender(
       std::move(capture_sender) |
-      stdexec::then([persist = std::forward<persist_fn_t>(persist)](
-                        wh::core::result<graph_value> captured) mutable
-                        -> wh::core::result<graph_value> {
-        if (captured.has_error()) {
-          return wh::core::result<graph_value>::failure(captured.error());
-        }
-        persist();
-        return detail::make_graph_unit_value();
-      }));
+      stdexec::then(
+          [persist = std::forward<persist_fn_t>(persist)](
+              wh::core::result<graph_value> captured) mutable -> wh::core::result<graph_value> {
+            if (captured.has_error()) {
+              return wh::core::result<graph_value>::failure(captured.error());
+            }
+            persist();
+            return detail::make_graph_unit_value();
+          }));
 }
 
-inline auto detail::invoke_runtime::dag_runtime::enqueue_dependents(
-    const std::uint32_t source_node_id) -> void {
+inline auto
+detail::invoke_runtime::dag_runtime::enqueue_dependents(const std::uint32_t source_node_id)
+    -> void {
   const auto &index = session_.compiled_graph_index();
   for (const auto edge_id : index.outgoing_control(source_node_id)) {
     const auto target = index.indexed_edges[edge_id].to;
@@ -859,8 +781,8 @@ inline auto detail::invoke_runtime::dag_runtime::enqueue_dependents(
             ? frontier().enqueue_current(target)
             : frontier().enqueue_next(target);
     if (enqueued) {
-      session_.emit_debug(graph_debug_stream_event::decision_kind::enqueue,
-                          target, session_.invoke_state().step_count);
+      session_.emit_debug(graph_debug_stream_event::decision_kind::enqueue, target,
+                          session_.invoke_state().step_count);
     }
   }
 }
@@ -869,19 +791,17 @@ inline auto detail::invoke_runtime::dag_runtime::promote_next_wave() -> bool {
   return frontier().promote_next_wave();
 }
 
-inline auto
-detail::invoke_runtime::invoke_session::check_external_interrupt_boundary()
+inline auto detail::invoke_runtime::invoke_session::check_external_interrupt_boundary()
     -> wh::core::result<bool> {
   auto &interrupt = interrupt_state();
   auto &invoke = invoke_state();
-  auto boundary_state =
-      detail::interrupt_runtime::external_interrupt_boundary_state{
-          .wait_mode_active = interrupt.wait_mode_active,
-          .deadline = interrupt.deadline,
-      };
+  auto boundary_state = detail::interrupt_runtime::external_interrupt_boundary_state{
+      .wait_mode_active = interrupt.wait_mode_active,
+      .deadline = interrupt.deadline,
+  };
   auto handled = detail::interrupt_runtime::handle_external_boundary(
-      context_, invoke.outputs, interrupt.policy_latch, interrupt.policy,
-      boundary_state, [this](const bool external_interrupt) {
+      context_, invoke.outputs, interrupt.policy_latch, interrupt.policy, boundary_state,
+      [this](const bool external_interrupt) {
         request_freeze(external_interrupt);
         return wh::core::result<void>{};
       });

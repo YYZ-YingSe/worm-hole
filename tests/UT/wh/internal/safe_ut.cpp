@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <new>
 #include <stdexcept>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/internal/safe.hpp"
 
@@ -21,18 +21,16 @@ TEST_CASE("safe_call maps bad_alloc and generic exceptions to configured errors"
   REQUIRE(oom.has_error());
   REQUIRE(oom.error() == wh::core::errc::resource_exhausted);
 
-  auto failed = wh::internal::safe_call<int>(
-      []() -> int { throw std::runtime_error{"boom"}; },
-      wh::core::errc::canceled);
+  auto failed = wh::internal::safe_call<int>([]() -> int { throw std::runtime_error{"boom"}; },
+                                             wh::core::errc::canceled);
   REQUIRE(failed.has_error());
   REQUIRE(failed.error() == wh::core::errc::canceled);
 }
 
 TEST_CASE("safe_call maps void exceptions to explicit fallback errors",
           "[UT][wh/internal/safe.hpp][safe_call][condition][branch][boundary]") {
-  auto failed = wh::internal::safe_call<void>(
-      [] { throw std::runtime_error{"void-boom"}; },
-      wh::core::errc::timeout);
+  auto failed = wh::internal::safe_call<void>([] { throw std::runtime_error{"void-boom"}; },
+                                              wh::core::errc::timeout);
   REQUIRE(failed.has_error());
   REQUIRE(failed.error() == wh::core::errc::timeout);
 }

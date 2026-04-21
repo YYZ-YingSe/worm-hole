@@ -31,8 +31,7 @@ TEST_CASE("payload map helpers reject non-map payloads and missing keys",
   REQUIRE(mismatch.has_error());
   REQUIRE(mismatch.error() == wh::core::errc::type_mismatch);
 
-  auto cref_mismatch =
-      wh::compose::payload_to_value_map_cref(wh::compose::graph_value{9});
+  auto cref_mismatch = wh::compose::payload_to_value_map_cref(wh::compose::graph_value{9});
   REQUIRE(cref_mismatch.has_error());
   REQUIRE(cref_mismatch.error() == wh::core::errc::type_mismatch);
 
@@ -41,8 +40,7 @@ TEST_CASE("payload map helpers reject non-map payloads and missing keys",
   REQUIRE(missing.has_error());
   REQUIRE(missing.error() == wh::core::errc::not_found);
 
-  auto moved_missing =
-      wh::compose::extract_keyed_input(std::move(map), "missing");
+  auto moved_missing = wh::compose::extract_keyed_input(std::move(map), "missing");
   REQUIRE(moved_missing.has_error());
   REQUIRE(moved_missing.error() == wh::core::errc::not_found);
 }

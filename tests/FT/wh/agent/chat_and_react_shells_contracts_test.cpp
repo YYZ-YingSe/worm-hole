@@ -1,10 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <span>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/bind.hpp"
@@ -23,9 +23,8 @@ struct scripted_react_model_state {
 
 class scripted_react_model {
 public:
-  explicit scripted_react_model(
-      std::shared_ptr<scripted_react_model_state> state =
-          std::make_shared<scripted_react_model_state>())
+  explicit scripted_react_model(std::shared_ptr<scripted_react_model_state> state =
+                                    std::make_shared<scripted_react_model_state>())
       : state_(std::move(state)) {}
 
   [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
@@ -33,17 +32,14 @@ public:
   }
 
   [[nodiscard]] auto invoke(const wh::model::chat_request &request,
-                            wh::core::run_context &context) const
-      -> wh::model::chat_invoke_result {
+                            wh::core::run_context &context) const -> wh::model::chat_invoke_result {
     static_cast<void>(request);
     static_cast<void>(context);
     return wh::model::chat_response{
-        .message = make_text_message(wh::schema::message_role::assistant,
-                                     "tool loop done")};
+        .message = make_text_message(wh::schema::message_role::assistant, "tool loop done")};
   }
 
-  [[nodiscard]] auto stream(const wh::model::chat_request &,
-                            wh::core::run_context &) const
+  [[nodiscard]] auto stream(const wh::model::chat_request &, wh::core::run_context &) const
       -> wh::model::chat_message_stream_result {
     state_->stream_calls += 1U;
 
@@ -63,21 +59,18 @@ public:
       message.parts.emplace_back(wh::schema::text_part{"tool loop done"});
     }
 
-    return wh::model::chat_message_stream_reader{
-        wh::schema::stream::make_values_stream_reader(
-            std::vector<wh::schema::message>{std::move(message)})};
+    return wh::model::chat_message_stream_reader{wh::schema::stream::make_values_stream_reader(
+        std::vector<wh::schema::message>{std::move(message)})};
   }
 
-  [[nodiscard]] auto bind_tools(
-      std::span<const wh::schema::tool_schema_definition> tools) const
+  [[nodiscard]] auto bind_tools(std::span<const wh::schema::tool_schema_definition> tools) const
       -> scripted_react_model {
     state_->bind_calls += 1U;
     state_->bound_tool_count = tools.size();
     return scripted_react_model{state_};
   }
 
-  [[nodiscard]] auto options() const noexcept
-      -> const wh::model::chat_model_options & {
+  [[nodiscard]] auto options() const noexcept -> const wh::model::chat_model_options & {
     return options_;
   }
 
@@ -106,10 +99,8 @@ TEST_CASE("chat shell public binding lowers and executes final output",
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {wh::testing::helper::make_text_message(wh::schema::message_role::user,
-                                              "hello")});
+  auto output = invoke_agent_graph(graph.value(), {wh::testing::helper::make_text_message(
+                                                      wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
   REQUIRE(output->history_messages.size() == 1U);
@@ -122,11 +113,9 @@ TEST_CASE("chat shell public binding lowers and executes final output",
 
 TEST_CASE("react shell public binding lowers and executes tool-capable final output",
           "[core][agent][react][functional]") {
-  auto authored =
-      wh::testing::helper::make_configured_react("react", "assistant");
+  auto authored = wh::testing::helper::make_configured_react("react", "assistant");
   REQUIRE(authored.set_output_key("final").has_value());
-  REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream)
-              .has_value());
+  REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
   REQUIRE(authored.freeze().has_value());
 
   auto lowered = std::move(authored).into_agent();
@@ -139,10 +128,8 @@ TEST_CASE("react shell public binding lowers and executes tool-capable final out
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {wh::testing::helper::make_text_message(wh::schema::message_role::user,
-                                              "hello")});
+  auto output = invoke_agent_graph(graph.value(), {wh::testing::helper::make_text_message(
+                                                      wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
   REQUIRE(output->history_messages.size() == 2U);
@@ -159,12 +146,9 @@ TEST_CASE("react shell public binding executes real tool-call loop before final 
 
   wh::agent::react authored{"react-loop", "assistant"};
   REQUIRE(authored.set_model(scripted_react_model{state}).has_value());
-  REQUIRE(authored
-              .set_tools_node_options(wh::agent::tools_node_authoring_options{})
-              .has_value());
+  REQUIRE(authored.set_tools_node_options(wh::agent::tools_node_authoring_options{}).has_value());
   REQUIRE(authored.set_output_key("final").has_value());
-  REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream)
-              .has_value());
+  REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
 
   wh::schema::tool_schema_definition schema{
       .name = "lookup",
@@ -172,8 +156,7 @@ TEST_CASE("react shell public binding executes real tool-call loop before final 
   };
   wh::compose::tool_entry entry{};
   entry.invoke = [](const wh::compose::tool_call &call,
-                    const wh::tool::call_scope &)
-      -> wh::core::result<wh::compose::graph_value> {
+                    const wh::tool::call_scope &) -> wh::core::result<wh::compose::graph_value> {
     return wh::compose::graph_value{std::string{"tool:"} + call.arguments};
   };
   REQUIRE(authored.add_tool_entry(std::move(schema), std::move(entry)).has_value());
@@ -189,9 +172,8 @@ TEST_CASE("react shell public binding executes real tool-call loop before final 
     REQUIRE(graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(
-      graph.value(),
-      {make_text_message(wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(graph.value(),
+                                   {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);

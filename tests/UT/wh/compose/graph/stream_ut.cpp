@@ -12,11 +12,9 @@
 namespace {
 
 using graph_static_merge_t = wh::schema::stream::merge_stream_reader<
-    wh::compose::graph_stream_reader,
-    wh::schema::stream::merge_topology_mode::static_attached>;
+    wh::compose::graph_stream_reader, wh::schema::stream::merge_topology_mode::static_attached>;
 using graph_dynamic_merge_t = wh::schema::stream::merge_stream_reader<
-    wh::compose::graph_stream_reader,
-    wh::schema::stream::merge_topology_mode::dynamic_injection>;
+    wh::compose::graph_stream_reader, wh::schema::stream::merge_topology_mode::dynamic_injection>;
 
 [[nodiscard]] auto extract_int(const wh::compose::graph_value &value) -> int {
   const auto *typed = wh::core::any_cast<int>(&value);
@@ -111,8 +109,7 @@ TEST_CASE("fork_graph_reader preserves the source reader and returns a sibling r
   REQUIRE(merged.template target_if<graph_static_merge_t>() != nullptr);
   REQUIRE(merged_sibling.value().template target_if<graph_static_merge_t>() != nullptr);
 
-  auto merged_values =
-      wh::compose::collect_graph_stream_reader(std::move(merged_sibling).value());
+  auto merged_values = wh::compose::collect_graph_stream_reader(std::move(merged_sibling).value());
   REQUIRE(merged_values.has_value());
   REQUIRE(merged_values.value().size() == 2U);
 }
@@ -245,15 +242,13 @@ TEST_CASE(
   move_only_values.push_back(std::make_unique<int>(21));
   auto move_only_reader =
       wh::schema::stream::make_values_stream_reader(std::move(move_only_values));
-  auto canonical_move_only =
-      wh::compose::to_graph_stream_reader(std::move(move_only_reader));
+  auto canonical_move_only = wh::compose::to_graph_stream_reader(std::move(move_only_reader));
   REQUIRE(canonical_move_only.has_value());
   auto move_only_collected =
       wh::compose::collect_graph_stream_reader(std::move(canonical_move_only).value());
   REQUIRE(move_only_collected.has_value());
   REQUIRE(move_only_collected.value().size() == 1U);
-  auto *move_only =
-      wh::core::any_cast<std::unique_ptr<int>>(&move_only_collected.value().front());
+  auto *move_only = wh::core::any_cast<std::unique_ptr<int>>(&move_only_collected.value().front());
   REQUIRE(move_only != nullptr);
   REQUIRE(*move_only != nullptr);
   REQUIRE(**move_only == 21);

@@ -16,8 +16,7 @@ template <typename value_t>
 inline constexpr auto any_type_key_v = any::template type_key<value_t>();
 
 template <typename value_t>
-inline constexpr const any_type_info &any_info_v =
-    any::template info_of<value_t>();
+inline constexpr const any_type_info &any_info_v = any::template info_of<value_t>();
 
 template <typename value_t, typename... arg_ts>
 [[nodiscard]] inline auto make_any(arg_ts &&...args) -> any {
@@ -30,10 +29,8 @@ template <typename value_t>
 }
 
 template <typename map_t>
-concept any_mapped_map =
-    requires {
-      typename std::remove_cvref_t<map_t>::mapped_type;
-    } && std::same_as<typename std::remove_cvref_t<map_t>::mapped_type, any>;
+concept any_mapped_map = requires { typename std::remove_cvref_t<map_t>::mapped_type; } &&
+                         std::same_as<typename std::remove_cvref_t<map_t>::mapped_type, any>;
 
 template <any_mapped_map map_t>
 [[nodiscard]] inline auto into_owned_any_map(const map_t &values)
@@ -69,8 +66,7 @@ template <any_mapped_map map_t>
   return owned;
 }
 
-template <typename value_t>
-[[nodiscard]] inline auto any_cast(any *value) noexcept -> value_t * {
+template <typename value_t> [[nodiscard]] inline auto any_cast(any *value) noexcept -> value_t * {
   if (value == nullptr) {
     return nullptr;
   }
@@ -82,16 +78,14 @@ template <typename value_t>
 }
 
 template <typename value_t>
-[[nodiscard]] inline auto any_cast(const any *value) noexcept
-    -> const value_t * {
+[[nodiscard]] inline auto any_cast(const any *value) noexcept -> const value_t * {
   if (value == nullptr) {
     return nullptr;
   }
   return value->template get_if<value_t>();
 }
 
-template <typename value_t>
-[[nodiscard]] inline auto any_cast(any &value) noexcept -> value_t {
+template <typename value_t> [[nodiscard]] inline auto any_cast(any &value) noexcept -> value_t {
   using stored_t = std::remove_reference_t<const value_t>;
   auto *typed = any_cast<stored_t>(&value);
   assert(typed != nullptr);
@@ -114,8 +108,7 @@ template <typename value_t>
   }
 }
 
-template <typename value_t>
-[[nodiscard]] inline auto any_cast(any &&value) noexcept -> value_t {
+template <typename value_t> [[nodiscard]] inline auto any_cast(any &&value) noexcept -> value_t {
   using stored_t = std::remove_reference_t<value_t>;
   if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<value_t>>) {
     if (auto *typed = any_cast<stored_t>(&value); typed != nullptr) {

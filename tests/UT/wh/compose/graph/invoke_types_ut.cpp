@@ -2,8 +2,9 @@
 
 #include "wh/compose/graph/invoke_types.hpp"
 
-TEST_CASE("graph invoke types expose nested control and report structures",
-          "[UT][wh/compose/graph/invoke_types.hpp][graph_invoke_request][condition][branch][boundary]") {
+TEST_CASE(
+    "graph invoke types expose nested control and report structures",
+    "[UT][wh/compose/graph/invoke_types.hpp][graph_invoke_request][condition][branch][boundary]") {
   wh::compose::graph_runtime_services services{};
   wh::compose::graph_invoke_request request{};
   request.input = wh::compose::graph_input::value(7);
@@ -24,8 +25,9 @@ TEST_CASE("graph invoke types expose nested control and report structures",
   REQUIRE(result.report.completed_node_keys.size() == 2U);
 }
 
-TEST_CASE("graph invoke type defaults keep optional service and control hooks empty",
-          "[UT][wh/compose/graph/invoke_types.hpp][graph_invoke_controls][condition][branch][boundary]") {
+TEST_CASE(
+    "graph invoke type defaults keep optional service and control hooks empty",
+    "[UT][wh/compose/graph/invoke_types.hpp][graph_invoke_controls][condition][branch][boundary]") {
   wh::compose::graph_runtime_services services{};
   wh::compose::graph_invoke_controls controls{};
   wh::compose::graph_run_report report{};

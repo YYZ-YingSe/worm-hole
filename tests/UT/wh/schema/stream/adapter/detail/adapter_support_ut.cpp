@@ -13,8 +13,7 @@ struct configurable_reader {
   int close_calls{0};
   wh::core::error_code close_error{};
 
-  auto set_automatic_close(const wh::schema::stream::auto_close_options &options)
-      -> void {
+  auto set_automatic_close(const wh::schema::stream::auto_close_options &options) -> void {
     automatic_close = options.enabled;
     ++set_calls;
   }
@@ -49,15 +48,14 @@ struct plain_reader {
 
 static_assert(wh::schema::stream::detail::auto_close_settable<configurable_reader>);
 static_assert(!wh::schema::stream::detail::auto_close_settable<plain_reader>);
-static_assert(
-    wh::schema::stream::detail::source_closed_queryable<configurable_reader>);
-static_assert(
-    !wh::schema::stream::detail::source_closed_queryable<plain_reader>);
+static_assert(wh::schema::stream::detail::source_closed_queryable<configurable_reader>);
+static_assert(!wh::schema::stream::detail::source_closed_queryable<plain_reader>);
 
 } // namespace
 
 TEST_CASE("adapter support applies optional auto-close hooks and close-state queries",
-          "[UT][wh/schema/stream/adapter/detail/adapter_support.hpp][set_automatic_close_if_supported][condition][branch]") {
+          "[UT][wh/schema/stream/adapter/detail/"
+          "adapter_support.hpp][set_automatic_close_if_supported][condition][branch]") {
   configurable_reader configurable{};
   plain_reader plain{};
 
@@ -68,22 +66,21 @@ TEST_CASE("adapter support applies optional auto-close hooks and close-state que
 
   REQUIRE(configurable.set_calls == 1);
   REQUIRE_FALSE(configurable.automatic_close);
-  REQUIRE_FALSE(
-      wh::schema::stream::detail::is_source_closed_if_supported(configurable));
-  REQUIRE_FALSE(
-      wh::schema::stream::detail::is_source_closed_if_supported(plain));
+  REQUIRE_FALSE(wh::schema::stream::detail::is_source_closed_if_supported(configurable));
+  REQUIRE_FALSE(wh::schema::stream::detail::is_source_closed_if_supported(plain));
 
   plain.closed = true;
   REQUIRE(wh::schema::stream::detail::is_source_closed_if_supported(plain));
 
   auto error_chunk =
-      wh::schema::stream::detail::make_error_chunk<
-          wh::schema::stream::stream_chunk<int>>(wh::core::errc::timeout);
+      wh::schema::stream::detail::make_error_chunk<wh::schema::stream::stream_chunk<int>>(
+          wh::core::errc::timeout);
   REQUIRE(error_chunk.error == wh::core::errc::timeout);
 }
 
 TEST_CASE("adapter support stream_adapter_state closes source once and tolerates channel_closed",
-          "[UT][wh/schema/stream/adapter/detail/adapter_support.hpp][stream_adapter_state::close_source][branch][boundary]") {
+          "[UT][wh/schema/stream/adapter/detail/"
+          "adapter_support.hpp][stream_adapter_state::close_source][branch][boundary]") {
   wh::schema::stream::detail::stream_adapter_state state{};
   configurable_reader configurable{};
 

@@ -1291,8 +1291,7 @@ template <component_kind Kind, node_contract From, node_contract To,
       component_payload{
           .kind = Kind,
           .lower = [component = stored_component_t{std::forward<component_t>(component)}](
-                       std::string lowered_key,
-                       graph_add_node_options lowered_options) mutable
+                       std::string lowered_key, graph_add_node_options lowered_options) mutable
               -> wh::core::result<compiled_node> {
             if constexpr (Exec == node_exec_mode::sync) {
               return make_compiled_sync_node(
@@ -1350,8 +1349,7 @@ template <component_kind Kind, node_contract From, node_contract To, typename re
       component_payload{
           .kind = Kind,
           .lower = [component = stored_component_t{std::forward<component_t>(component)}](
-                       std::string lowered_key,
-                       graph_add_node_options lowered_options) mutable
+                       std::string lowered_key, graph_add_node_options lowered_options) mutable
               -> wh::core::result<compiled_node> {
             if constexpr (Exec == node_exec_mode::sync) {
               return make_compiled_sync_node(

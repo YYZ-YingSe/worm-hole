@@ -4,12 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <exec/trampoline_scheduler.hpp>
 #include <memory>
 #include <new>
 #include <optional>
 #include <type_traits>
 #include <utility>
+
+#include <exec/trampoline_scheduler.hpp>
 
 #include "wh/compose/graph/graph.hpp"
 #include "wh/core/compiler.hpp"
@@ -21,8 +22,7 @@ namespace wh::compose {
 template <typename receiver_t, typename derived_t, typename graph_scheduler_t>
 class detail::invoke_runtime::invoke_join_base {
 protected:
-  friend class wh::core::detail::scheduled_resume_turn<invoke_join_base,
-                                                       graph_scheduler_t>;
+  friend class wh::core::detail::scheduled_resume_turn<invoke_join_base, graph_scheduler_t>;
 
   // Protocol invariants:
   // 1. enter_terminal()/override_terminal() are the only ways to enter terminal
@@ -35,27 +35,23 @@ protected:
     const graph_scheduler_t *graph_scheduler{nullptr};
     stdexec::inplace_stop_source *stop_source{nullptr};
 
-    [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept
-        -> const graph_scheduler_t & {
+    [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> const graph_scheduler_t & {
       return *graph_scheduler;
     }
 
     template <typename cpo_t>
-    [[nodiscard]] auto
-    query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
+    [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
         -> const graph_scheduler_t & {
       return *graph_scheduler;
     }
 
     [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept
         -> stdexec::inplace_stop_token {
-      return stop_source == nullptr ? stdexec::inplace_stop_token{}
-                                    : stop_source->get_token();
+      return stop_source == nullptr ? stdexec::inplace_stop_token{} : stop_source->get_token();
     }
 
     template <typename cpo_t>
-    [[nodiscard]] auto
-    query(exec::get_completion_behavior_t<cpo_t>) const noexcept {
+    [[nodiscard]] auto query(exec::get_completion_behavior_t<cpo_t>) const noexcept {
       return exec::completion_behavior::asynchronous_affine;
     }
   };
@@ -75,8 +71,8 @@ protected:
   };
 
   using receiver_type = std::remove_cvref_t<receiver_t>;
-  using receiver_env_t = std::remove_cvref_t<decltype(stdexec::get_env(
-      std::declval<const receiver_type &>()))>;
+  using receiver_env_t =
+      std::remove_cvref_t<decltype(stdexec::get_env(std::declval<const receiver_type &>()))>;
   using outer_env_t = stdexec::env_of_t<receiver_t>;
   using stored_outer_env_t = std::remove_cvref_t<outer_env_t>;
   using outer_stop_token_t = stdexec::stop_token_of_t<stored_outer_env_t>;
@@ -99,8 +95,7 @@ protected:
     }
 
     auto set_stopped() noexcept -> void {
-      complete(
-          wh::core::result<graph_value>::failure(wh::core::errc::canceled));
+      complete(wh::core::result<graph_value>::failure(wh::core::errc::canceled));
     }
 
     [[nodiscard]] auto get_env() const noexcept -> graph_runtime_env {
@@ -161,12 +156,10 @@ protected:
   using scope_t = wh::core::detail::simple_counting_scope;
   using scope_token_t = decltype(std::declval<scope_t &>().get_token());
   using join_sender_t = decltype(std::declval<scope_t &>().join());
-  using associated_sender_t = decltype(stdexec::associate(
-      std::declval<graph_sender>(), std::declval<scope_token_t>()));
-  using child_op_t =
-      stdexec::connect_result_t<associated_sender_t, child_receiver>;
-  using join_op_t =
-      stdexec::connect_result_t<join_sender_t, child_join_receiver>;
+  using associated_sender_t =
+      decltype(stdexec::associate(std::declval<graph_sender>(), std::declval<scope_token_t>()));
+  using child_op_t = stdexec::connect_result_t<associated_sender_t, child_receiver>;
+  using join_op_t = stdexec::connect_result_t<join_sender_t, child_join_receiver>;
 
   struct child_state {
     ~child_state() { reset(); }
@@ -200,24 +193,18 @@ protected:
     bool engaged_{false};
   };
 
-  [[nodiscard]] auto graph_scheduler() const noexcept
-      -> const graph_scheduler_t & {
+  [[nodiscard]] auto graph_scheduler() const noexcept -> const graph_scheduler_t & {
     return graph_scheduler_;
   }
 
   template <typename receiver_u, typename graph_scheduler_u>
     requires std::constructible_from<graph_scheduler_t, graph_scheduler_u &&> &&
-             std::constructible_from<receiver_type, receiver_u &&>
-  explicit invoke_join_base(const std::size_t node_count,
-                            graph_scheduler_u &&graph_scheduler,
+                 std::constructible_from<receiver_type, receiver_u &&>
+  explicit invoke_join_base(const std::size_t node_count, graph_scheduler_u &&graph_scheduler,
                             receiver_u &&receiver)
-      : receiver_(std::forward<receiver_u>(receiver)),
-        receiver_env_(stdexec::get_env(receiver_)),
-        child_states_(node_count == 0U ? nullptr
-                                       : std::make_unique<child_state[]>(
-                                             node_count)),
-        child_state_count_(node_count),
-        ready_children_(node_count),
+      : receiver_(std::forward<receiver_u>(receiver)), receiver_env_(stdexec::get_env(receiver_)),
+        child_states_(node_count == 0U ? nullptr : std::make_unique<child_state[]>(node_count)),
+        child_state_count_(node_count), ready_children_(node_count),
         graph_scheduler_(std::forward<graph_scheduler_u>(graph_scheduler)),
         resume_turn_(graph_scheduler_) {}
 
@@ -237,9 +224,7 @@ public:
   }
 
 protected:
-  [[nodiscard]] auto derived() noexcept -> derived_t & {
-    return static_cast<derived_t &>(*this);
-  }
+  [[nodiscard]] auto derived() noexcept -> derived_t & { return static_cast<derived_t &>(*this); }
 
   [[nodiscard]] auto derived() const noexcept -> const derived_t & {
     return static_cast<const derived_t &>(*this);
@@ -255,8 +240,8 @@ protected:
       try {
         outer_stop_callback_.emplace(stop_token, outer_stop_callback{this});
       } catch (...) {
-        override_terminal(wh::core::result<graph_value>::failure(
-            wh::core::map_current_exception()));
+        override_terminal(
+            wh::core::result<graph_value>::failure(wh::core::map_current_exception()));
         return;
       }
       if (stop_token.stop_requested()) {
@@ -265,9 +250,7 @@ protected:
     }
   }
 
-  auto schedule_resume_turn() noexcept -> void {
-    resume_turn_.request(this);
-  }
+  auto schedule_resume_turn() noexcept -> void { resume_turn_.request(this); }
 
   auto signal_resume_edge() noexcept -> void {
     if (!resume_edge_.exchange(true, std::memory_order_acq_rel)) {
@@ -279,9 +262,7 @@ protected:
     return completed_.load(std::memory_order_acquire);
   }
 
-  [[nodiscard]] auto resume_turn_completed() const noexcept -> bool {
-    return completed();
-  }
+  [[nodiscard]] auto resume_turn_completed() const noexcept -> bool { return completed(); }
 
   auto arrive() noexcept -> void {
     if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
@@ -302,8 +283,8 @@ protected:
   }
 
   [[nodiscard]] auto should_complete() const noexcept -> bool {
-    return terminal_pending() && active_child_count() == 0U &&
-           !completion_ready() && !resume_turn_.running();
+    return terminal_pending() && active_child_count() == 0U && !completion_ready() &&
+           !resume_turn_.running();
   }
 
   [[nodiscard]] auto finished() const noexcept -> bool { return completed(); }
@@ -329,12 +310,9 @@ protected:
     maybe_complete();
   }
 
-  auto resume_turn_add_ref() noexcept -> void {
-    count_.fetch_add(1U, std::memory_order_relaxed);
-  }
+  auto resume_turn_add_ref() noexcept -> void { count_.fetch_add(1U, std::memory_order_relaxed); }
 
-  auto resume_turn_schedule_error(const wh::core::error_code error) noexcept
-      -> void {
+  auto resume_turn_schedule_error(const wh::core::error_code error) noexcept -> void {
     override_terminal(wh::core::result<graph_value>::failure(error));
   }
 
@@ -347,8 +325,7 @@ protected:
 
   auto resume_turn_idle() noexcept -> void { maybe_complete(); }
 
-  auto start_child(graph_sender sender, const attempt_id attempt)
-      -> wh::core::result<void> {
+  auto start_child(graph_sender sender, const attempt_id attempt) -> wh::core::result<void> {
     wh_precondition(attempt.has_value());
     wh_precondition(attempt.slot < child_state_count_);
 
@@ -367,14 +344,12 @@ protected:
       return {};
     } catch (...) {
       child.reset();
-      return wh::core::result<void>::failure(
-          wh::core::map_current_exception());
+      return wh::core::result<void>::failure(wh::core::map_current_exception());
     }
   }
 
   template <typename release_fn_t, typename settle_fn_t>
-  auto drain_completions(release_fn_t release_fn,
-                         settle_fn_t settle_fn) noexcept -> void {
+  auto drain_completions(release_fn_t release_fn, settle_fn_t settle_fn) noexcept -> void {
     ready_children_.drain([&](const std::uint32_t slot_id) {
       wh_precondition(slot_id < child_state_count_);
       auto &child = child_states_[slot_id];
@@ -401,13 +376,10 @@ protected:
 
 private:
   template <typename error_t>
-  [[nodiscard]] static auto map_async_error(error_t &&error) noexcept
-      -> wh::core::error_code {
-    if constexpr (std::same_as<std::remove_cvref_t<error_t>,
-                               wh::core::error_code>) {
+  [[nodiscard]] static auto map_async_error(error_t &&error) noexcept -> wh::core::error_code {
+    if constexpr (std::same_as<std::remove_cvref_t<error_t>, wh::core::error_code>) {
       return std::forward<error_t>(error);
-    } else if constexpr (std::same_as<std::remove_cvref_t<error_t>,
-                                      std::exception_ptr>) {
+    } else if constexpr (std::same_as<std::remove_cvref_t<error_t>, std::exception_ptr>) {
       try {
         std::rethrow_exception(std::forward<error_t>(error));
       } catch (...) {
@@ -418,9 +390,7 @@ private:
     }
   }
 
-  auto close_children() noexcept -> void {
-    scope_.close();
-  }
+  auto close_children() noexcept -> void { scope_.close(); }
 
   auto set_terminal(wh::core::result<graph_value> status) noexcept -> void {
     if (terminal_pending()) {
@@ -433,8 +403,7 @@ private:
     }
     auto joined = start_join();
     if (joined.has_error()) {
-      terminal_status_ =
-          wh::core::result<graph_value>::failure(joined.error());
+      terminal_status_ = wh::core::result<graph_value>::failure(joined.error());
     }
     maybe_complete();
   }
@@ -461,8 +430,7 @@ private:
       stdexec::start(*join_op());
       return {};
     } catch (...) {
-      return wh::core::result<void>::failure(
-          wh::core::map_current_exception());
+      return wh::core::result<void>::failure(wh::core::map_current_exception());
     }
   }
 
@@ -479,15 +447,13 @@ private:
     if (completed()) {
       return;
     }
-    const bool first_stop =
-        !stop_requested_.exchange(true, std::memory_order_acq_rel);
+    const bool first_stop = !stop_requested_.exchange(true, std::memory_order_acq_rel);
     if (first_stop) {
       signal_resume_edge();
     }
   }
 
-  auto publish_terminal_override(wh::core::result<graph_value> status) noexcept
-      -> void {
+  auto publish_terminal_override(wh::core::result<graph_value> status) noexcept -> void {
     if (completed()) {
       return;
     }
@@ -556,8 +522,7 @@ private:
     stdexec::set_value(std::move(receiver_), std::move(status));
   }
 
-  auto publish_completion(const attempt_id attempt,
-                          wh::core::result<graph_value> &&result) noexcept
+  auto publish_completion(const attempt_id attempt, wh::core::result<graph_value> &&result) noexcept
       -> void {
     wh_precondition(attempt.has_value());
     wh_precondition(attempt.slot < child_state_count_);
@@ -585,8 +550,7 @@ protected:
   bool join_op_engaged_{false};
   graph_scheduler_t graph_scheduler_;
   stdexec::inplace_stop_source child_stop_source_{};
-  wh::core::detail::scheduled_resume_turn<invoke_join_base, graph_scheduler_t>
-      resume_turn_;
+  wh::core::detail::scheduled_resume_turn<invoke_join_base, graph_scheduler_t> resume_turn_;
   std::atomic<std::size_t> count_{1U};
   std::atomic<bool> completed_{false};
   std::atomic<bool> stop_requested_{false};

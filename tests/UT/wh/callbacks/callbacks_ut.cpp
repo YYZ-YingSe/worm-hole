@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/callbacks/callbacks.hpp"
 #include "wh/core/component.hpp"
@@ -21,8 +21,7 @@ struct callback_state_t {
 struct options_provider {
   wh::core::component_options options{};
 
-  [[nodiscard]] auto component_options() const noexcept
-      -> const wh::core::component_options & {
+  [[nodiscard]] auto component_options() const noexcept -> const wh::core::component_options & {
     return options;
   }
 };
@@ -38,13 +37,11 @@ auto make_sink_context(observed_dispatch &observed) -> wh::core::run_context {
   wh::core::run_context context{};
   context.callbacks.emplace();
   context.callbacks->manager.register_local_callbacks(
-      wh::callbacks::make_callback_config(
-          [](const wh::callbacks::stage stage) noexcept {
-            return stage == wh::callbacks::stage::start;
-          }),
+      wh::callbacks::make_callback_config([](const wh::callbacks::stage stage) noexcept {
+        return stage == wh::callbacks::stage::start;
+      }),
       wh::callbacks::make_typed_stage_callbacks<callback_event_t>(
-          [&observed](const callback_event_t &event,
-                      const wh::callbacks::run_info &info) {
+          [&observed](const callback_event_t &event, const wh::callbacks::run_info &info) {
             observed.values.push_back(event.value);
             observed.trace_ids.push_back(info.trace_id);
             observed.span_ids.push_back(info.span_id);
@@ -66,8 +63,9 @@ auto make_run_info() -> wh::callbacks::run_info {
 
 } // namespace
 
-TEST_CASE("callbacks sink exposes empty borrowed and owned manager states",
-          "[UT][wh/callbacks/callbacks.hpp][callback_sink::manager_ptr][condition][branch][boundary]") {
+TEST_CASE(
+    "callbacks sink exposes empty borrowed and owned manager states",
+    "[UT][wh/callbacks/callbacks.hpp][callback_sink::manager_ptr][condition][branch][boundary]") {
   const auto empty = wh::callbacks::make_callback_sink();
   REQUIRE_FALSE(empty.has_value());
   REQUIRE(empty.manager_ptr() == nullptr);
@@ -98,33 +96,25 @@ TEST_CASE("callbacks sink emission overlays metadata and supports bundle-state f
   const auto sink = wh::callbacks::make_callback_sink(context);
   const auto info = make_run_info();
 
-  wh::callbacks::emit(sink, wh::callbacks::stage::start, callback_event_t{1},
-                      info);
-  wh::callbacks::emit(sink, wh::callbacks::stage::end, callback_event_t{2},
-                      info);
-  wh::callbacks::emit(
-      sink, wh::callbacks::stage::start,
-      callback_state_t{.event = callback_event_t{3}, .run_info = info});
+  wh::callbacks::emit(sink, wh::callbacks::stage::start, callback_event_t{1}, info);
+  wh::callbacks::emit(sink, wh::callbacks::stage::end, callback_event_t{2}, info);
+  wh::callbacks::emit(sink, wh::callbacks::stage::start,
+                      callback_state_t{.event = callback_event_t{3}, .run_info = info});
 
   REQUIRE(observed.values == std::vector<int>{1, 3});
-  REQUIRE(observed.trace_ids ==
-          std::vector<std::string>{"trace-override", "trace-override"});
-  REQUIRE(observed.span_ids ==
-          std::vector<std::string>{"span-override", "span-override"});
-  REQUIRE(observed.node_paths ==
-          std::vector<wh::core::address>{
-              wh::core::address{"graph", "override"},
-              wh::core::address{"graph", "override"},
-          });
+  REQUIRE(observed.trace_ids == std::vector<std::string>{"trace-override", "trace-override"});
+  REQUIRE(observed.span_ids == std::vector<std::string>{"span-override", "span-override"});
+  REQUIRE(observed.node_paths == std::vector<wh::core::address>{
+                                     wh::core::address{"graph", "override"},
+                                     wh::core::address{"graph", "override"},
+                                 });
 }
 
 TEST_CASE("callbacks helpers apply component run info and filter disabled sinks",
           "[UT][wh/callbacks/callbacks.hpp][filter_callback_sink][condition][branch][boundary]") {
   options_provider enabled{};
-  enabled.options.set_base(
-      wh::core::component_common_options{.callbacks_enabled = true,
-                                         .trace_id = "trace-base",
-                                         .span_id = "span-base"});
+  enabled.options.set_base(wh::core::component_common_options{
+      .callbacks_enabled = true, .trace_id = "trace-base", .span_id = "span-base"});
   enabled.options.set_call_override(
       wh::core::component_override_options{.callbacks_enabled = true,
                                            .trace_id = std::string{"trace-override"},
@@ -141,11 +131,9 @@ TEST_CASE("callbacks helpers apply component run info and filter disabled sinks"
   REQUIRE(wh::callbacks::filter_callback_sink(sink, enabled).has_value());
 
   options_provider disabled{};
-  disabled.options.set_base(
-      wh::core::component_common_options{.callbacks_enabled = true});
+  disabled.options.set_base(wh::core::component_common_options{.callbacks_enabled = true});
   disabled.options.set_call_override(
       wh::core::component_override_options{.callbacks_enabled = false});
   REQUIRE_FALSE(wh::callbacks::callbacks_enabled(disabled));
-  REQUIRE_FALSE(
-      wh::callbacks::filter_callback_sink(std::move(sink), disabled).has_value());
+  REQUIRE_FALSE(wh::callbacks::filter_callback_sink(std::move(sink), disabled).has_value());
 }

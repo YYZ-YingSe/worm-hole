@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/cursor_reader/detail/retained_ring_storage.hpp"
 
@@ -14,16 +14,16 @@ struct retained_probe {
   retained_probe() { ++live_count; }
   explicit retained_probe(int input) : value(input) { ++live_count; }
   retained_probe(const retained_probe &other) : value(other.value) { ++live_count; }
-  retained_probe(retained_probe &&other) noexcept : value(other.value) {
-    ++live_count;
-  }
+  retained_probe(retained_probe &&other) noexcept : value(other.value) { ++live_count; }
   ~retained_probe() { --live_count; }
 };
 
 } // namespace
 
-TEST_CASE("retained ring storage constructs indexes reserves and moves retained slots",
-          "[UT][wh/core/cursor_reader/detail/retained_ring_storage.hpp][retained_ring_storage::reserve][condition][branch][boundary]") {
+TEST_CASE(
+    "retained ring storage constructs indexes reserves and moves retained slots",
+    "[UT][wh/core/cursor_reader/detail/"
+    "retained_ring_storage.hpp][retained_ring_storage::reserve][condition][branch][boundary]") {
   retained_probe::live_count = 0;
 
   wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> storage{2U};
@@ -67,8 +67,10 @@ TEST_CASE("retained ring storage constructs indexes reserves and moves retained 
   REQUIRE(retained_probe::live_count == 0);
 }
 
-TEST_CASE("retained ring storage ignores no-op reserve requests and supports move assignment",
-          "[UT][wh/core/cursor_reader/detail/retained_ring_storage.hpp][retained_ring_storage::operator=][condition][branch][boundary]") {
+TEST_CASE(
+    "retained ring storage ignores no-op reserve requests and supports move assignment",
+    "[UT][wh/core/cursor_reader/detail/"
+    "retained_ring_storage.hpp][retained_ring_storage::operator=][condition][branch][boundary]") {
   retained_probe::live_count = 0;
 
   wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> storage{1U};
@@ -88,7 +90,8 @@ TEST_CASE("retained ring storage ignores no-op reserve requests and supports mov
 }
 
 TEST_CASE("retained ring storage reserve preserves live sequences after prefix reclaim",
-          "[UT][wh/core/cursor_reader/detail/retained_ring_storage.hpp][retained_ring_storage::reserve][lifetime][regression]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "retained_ring_storage.hpp][retained_ring_storage::reserve][lifetime][regression]") {
   retained_probe::live_count = 0;
 
   wh::core::cursor_reader_detail::retained_ring_storage<retained_probe> storage{4U};
@@ -126,7 +129,9 @@ TEST_CASE("retained ring storage reserve preserves live sequences after prefix r
 }
 
 TEST_CASE("retained ring storage destroys remaining live slots on scope exit",
-          "[UT][wh/core/cursor_reader/detail/retained_ring_storage.hpp][retained_ring_storage::~retained_ring_storage][lifetime][regression]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "retained_ring_storage.hpp][retained_ring_storage::~retained_ring_storage][lifetime]["
+          "regression]") {
   retained_probe::live_count = 0;
 
   {

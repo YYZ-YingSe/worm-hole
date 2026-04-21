@@ -2,15 +2,16 @@
 
 #include "wh/compose/graph/add_node_options.hpp"
 
-TEST_CASE("graph add node state options require and bind phases while exposing metadata",
-          "[UT][wh/compose/graph/add_node_options.hpp][graph_node_state_options::metadata][condition][branch][boundary]") {
+TEST_CASE(
+    "graph add node state options require and bind phases while exposing metadata",
+    "[UT][wh/compose/graph/"
+    "add_node_options.hpp][graph_node_state_options::metadata][condition][branch][boundary]") {
   wh::compose::graph_node_state_options state{};
   REQUIRE_FALSE(state.any());
   REQUIRE(state.authored_handlers() == nullptr);
 
-  state.bind_pre<int>([](const wh::compose::graph_state_cause &,
-                         wh::compose::graph_process_state &, int &value,
-                         wh::core::run_context &) -> wh::core::result<void> {
+  state.bind_pre<int>([](const wh::compose::graph_state_cause &, wh::compose::graph_process_state &,
+                         int &value, wh::core::run_context &) -> wh::core::result<void> {
     ++value;
     return {};
   });
@@ -34,8 +35,10 @@ TEST_CASE("graph add node state options require and bind phases while exposing m
   REQUIRE(options.state.metadata().pre);
 }
 
-TEST_CASE("graph add node state options typed handlers accept matching payloads and reject mismatches",
-          "[UT][wh/compose/graph/add_node_options.hpp][graph_node_state_options::bind_pre][condition][branch]") {
+TEST_CASE(
+    "graph add node state options typed handlers accept matching payloads and reject mismatches",
+    "[UT][wh/compose/graph/"
+    "add_node_options.hpp][graph_node_state_options::bind_pre][condition][branch]") {
   wh::compose::graph_node_state_options state{};
   state.bind_pre<int>([](const wh::compose::graph_state_cause &cause,
                          wh::compose::graph_process_state &, int &value,

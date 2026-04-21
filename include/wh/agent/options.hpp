@@ -36,8 +36,8 @@ struct tool_binding_pair {
 };
 
 /// Explicit history rewrite hook applied before one model turn is lowered.
-using history_rewriter = wh::core::callback_function<
-    wh::core::result<std::vector<wh::schema::message>>(
+using history_rewriter =
+    wh::core::callback_function<wh::core::result<std::vector<wh::schema::message>>(
         std::span<const wh::schema::message>) const>;
 
 /// Shared authored option shell layered on top of compose and ADK controls.
@@ -58,20 +58,18 @@ struct agent_options {
 
 /// Maps agent-level structured-output preference to model-layer negotiation
 /// policy. There is no automatic fallback mode on the public surface.
-[[nodiscard]] inline auto resolve_structured_output_policy(
-    const structured_output_strategy strategy) noexcept
+[[nodiscard]] inline auto
+resolve_structured_output_policy(const structured_output_strategy strategy) noexcept
     -> wh::model::structured_output_policy {
   switch (strategy) {
   case structured_output_strategy::provider:
     return wh::model::structured_output_policy{
-        .preference = wh::model::structured_output_preference::
-            provider_native_first,
+        .preference = wh::model::structured_output_preference::provider_native_first,
         .allow_tool_fallback = false,
     };
   case structured_output_strategy::tool:
     return wh::model::structured_output_policy{
-        .preference =
-            wh::model::structured_output_preference::tool_call_first,
+        .preference = wh::model::structured_output_preference::tool_call_first,
         .allow_tool_fallback = true,
     };
   }
@@ -80,43 +78,39 @@ struct agent_options {
 
 /// Projects agent-level options into the per-request chat-model override
 /// channel.
-inline auto apply_agent_options(wh::model::chat_request &request,
-                                const agent_options &options) -> void {
+inline auto apply_agent_options(wh::model::chat_request &request, const agent_options &options)
+    -> void {
   if (!options.structured_output.has_value()) {
     return;
   }
-  auto override = request.options.call_override().value_or(
-      wh::model::chat_model_common_options{});
-  override.structured_output =
-      resolve_structured_output_policy(*options.structured_output);
+  auto override = request.options.call_override().value_or(wh::model::chat_model_common_options{});
+  override.structured_output = resolve_structured_output_policy(*options.structured_output);
   request.options.set_call_override(std::move(override));
 }
 
 /// Resolves layered call options in the fixed order:
 /// defaults -> agent -> adk -> call override.
-[[nodiscard]] inline auto resolve_agent_call_options(
-    const wh::adk::call_options *defaults, const agent_options &options)
+[[nodiscard]] inline auto resolve_agent_call_options(const wh::adk::call_options *defaults,
+                                                     const agent_options &options)
     -> wh::adk::call_options {
-  return wh::adk::resolve_call_options(defaults, &options.agent_controls,
-                                       &options.adk_controls,
+  return wh::adk::resolve_call_options(defaults, &options.agent_controls, &options.adk_controls,
                                        &options.call_override);
 }
 
 template <wh::agent::detail::registered_tool_component tool_t>
-[[nodiscard]] inline auto make_tool_binding_pair(
-    const tool_t &tool, const wh::agent::tool_registration registration = {})
+[[nodiscard]] inline auto
+make_tool_binding_pair(const tool_t &tool, const wh::agent::tool_registration registration = {})
     -> tool_binding_pair {
   return tool_binding_pair{
       .schema = tool.schema(),
-      .entry = wh::agent::detail::make_tool_entry(tool,
-                                                  registration.return_direct),
+      .entry = wh::agent::detail::make_tool_entry(tool, registration.return_direct),
   };
 }
 
 template <wh::model::chat_model_like model_t>
-[[nodiscard]] inline auto bind_model_tools(
-    const model_t &model,
-    const std::span<const wh::schema::tool_schema_definition> tools)
+[[nodiscard]] inline auto
+bind_model_tools(const model_t &model,
+                 const std::span<const wh::schema::tool_schema_definition> tools)
     -> wh::core::result<model_t> {
   if (tools.empty()) {
     return model;

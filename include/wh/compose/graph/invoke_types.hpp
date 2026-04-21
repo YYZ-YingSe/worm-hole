@@ -113,17 +113,14 @@ struct graph_invoke_schedulers {
   std::optional<wh::core::detail::any_resume_scheduler_t> work_scheduler{};
 
   template <typename scheduler_t>
-  auto set_control_scheduler(scheduler_t scheduler)
-      -> graph_invoke_schedulers & {
-    control_scheduler =
-        wh::core::detail::erase_resume_scheduler(std::move(scheduler));
+  auto set_control_scheduler(scheduler_t scheduler) -> graph_invoke_schedulers & {
+    control_scheduler = wh::core::detail::erase_resume_scheduler(std::move(scheduler));
     return *this;
   }
 
   template <typename scheduler_t>
   auto set_work_scheduler(scheduler_t scheduler) -> graph_invoke_schedulers & {
-    work_scheduler =
-        wh::core::detail::erase_resume_scheduler(std::move(scheduler));
+    work_scheduler = wh::core::detail::erase_resume_scheduler(std::move(scheduler));
     return *this;
   }
 };
@@ -157,8 +154,7 @@ struct graph_run_report {
   /// Optional stream-read error detail captured during this invoke.
   std::optional<graph_new_stream_read_error_detail> stream_read_error{};
   /// Optional external interrupt resolution captured during this invoke.
-  std::optional<graph_external_interrupt_resolution_kind>
-      interrupt_resolution{};
+  std::optional<graph_external_interrupt_resolution_kind> interrupt_resolution{};
   /// Optional checkpoint error detail captured during this invoke.
   std::optional<checkpoint_error_detail> checkpoint_error{};
 };
@@ -179,30 +175,25 @@ public:
     requires(!std::same_as<std::remove_cvref_t<value_t>, graph_input> &&
              std::constructible_from<graph_value, value_t &&>)
   [[nodiscard]] static auto value(value_t &&value) -> graph_input {
-    return graph_input{graph_input_kind::value,
-                       graph_value{std::forward<value_t>(value)}};
+    return graph_input{graph_input_kind::value, graph_value{std::forward<value_t>(value)}};
   }
 
   [[nodiscard]] static auto stream(graph_stream_reader reader) -> graph_input {
-    return graph_input{graph_input_kind::stream,
-                       graph_value{std::move(reader)}};
+    return graph_input{graph_input_kind::stream, graph_value{std::move(reader)}};
   }
 
   [[nodiscard]] static auto restore_checkpoint() -> graph_input {
     return graph_input{graph_input_kind::restore_checkpoint, {}};
   }
 
-  [[nodiscard]] auto kind() const noexcept -> graph_input_kind {
-    return kind_;
-  }
+  [[nodiscard]] auto kind() const noexcept -> graph_input_kind { return kind_; }
 
   [[nodiscard]] auto value_payload() noexcept -> graph_value * {
     return kind_ == graph_input_kind::value ? std::addressof(payload_) : nullptr;
   }
 
   [[nodiscard]] auto value_payload() const noexcept -> const graph_value * {
-    return kind_ == graph_input_kind::value ? std::addressof(payload_)
-                                            : nullptr;
+    return kind_ == graph_input_kind::value ? std::addressof(payload_) : nullptr;
   }
 
   [[nodiscard]] auto stream_payload() noexcept -> graph_stream_reader * {
@@ -212,17 +203,14 @@ public:
     return wh::core::any_cast<graph_stream_reader>(&payload_);
   }
 
-  [[nodiscard]] auto stream_payload() const noexcept
-      -> const graph_stream_reader * {
+  [[nodiscard]] auto stream_payload() const noexcept -> const graph_stream_reader * {
     if (kind_ != graph_input_kind::stream) {
       return nullptr;
     }
     return wh::core::any_cast<graph_stream_reader>(&payload_);
   }
 
-  [[nodiscard]] auto into_payload() && -> graph_value {
-    return std::move(payload_);
-  }
+  [[nodiscard]] auto into_payload() && -> graph_value { return std::move(payload_); }
 
 private:
   graph_input(graph_input_kind kind, graph_value payload)
@@ -288,8 +276,7 @@ into_owned_forwarded_checkpoint_map(wh::compose::forwarded_checkpoint_map &&valu
   return owned;
 }
 
-[[nodiscard]] inline auto
-into_owned_graph_input(const wh::compose::graph_input &value)
+[[nodiscard]] inline auto into_owned_graph_input(const wh::compose::graph_input &value)
     -> wh::core::result<wh::compose::graph_input> {
   if (value.kind() == wh::compose::graph_input_kind::restore_checkpoint) {
     return wh::compose::graph_input::restore_checkpoint();
@@ -308,8 +295,7 @@ into_owned_graph_input(const wh::compose::graph_input &value)
   return wh::compose::graph_input::stream(std::move(stream).value());
 }
 
-[[nodiscard]] inline auto
-into_owned_graph_input(wh::compose::graph_input &&value)
+[[nodiscard]] inline auto into_owned_graph_input(wh::compose::graph_input &&value)
     -> wh::core::result<wh::compose::graph_input> {
   if (value.kind() == wh::compose::graph_input_kind::restore_checkpoint) {
     return wh::compose::graph_input::restore_checkpoint();
@@ -317,8 +303,7 @@ into_owned_graph_input(wh::compose::graph_input &&value)
   if (value.kind() == wh::compose::graph_input_kind::value) {
     auto input = wh::core::into_owned(std::move(*value.value_payload()));
     if (input.has_error()) {
-      return wh::core::result<wh::compose::graph_input>::failure(
-          input.error());
+      return wh::core::result<wh::compose::graph_input>::failure(input.error());
     }
     return wh::compose::graph_input::value(std::move(input).value());
   }
@@ -338,16 +323,14 @@ into_owned_graph_invoke_controls(const wh::compose::graph_invoke_controls &value
   }
   auto forwarded_once = into_owned_forwarded_checkpoint_map(value.checkpoint.forwarded_once);
   if (forwarded_once.has_error()) {
-    return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-        forwarded_once.error());
+    return wh::core::result<wh::compose::graph_invoke_controls>::failure(forwarded_once.error());
   }
 
   std::optional<wh::compose::interrupt_resume_decision> decision{};
   if (value.resume.decision.has_value()) {
     auto owned_decision = wh::core::into_owned(*value.resume.decision);
     if (owned_decision.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_decision.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_decision.error());
     }
     decision = std::move(owned_decision).value();
   }
@@ -357,8 +340,7 @@ into_owned_graph_invoke_controls(const wh::compose::graph_invoke_controls &value
   for (const auto &item : value.resume.batch_items) {
     auto owned_item = wh::core::into_owned(item);
     if (owned_item.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_item.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_item.error());
     }
     batch_items.push_back(std::move(owned_item).value());
   }
@@ -368,8 +350,7 @@ into_owned_graph_invoke_controls(const wh::compose::graph_invoke_controls &value
   for (const auto &context : value.resume.contexts) {
     auto owned_context = wh::core::into_owned(context);
     if (owned_context.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_context.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_context.error());
     }
     contexts.push_back(std::move(owned_context).value());
   }
@@ -379,8 +360,7 @@ into_owned_graph_invoke_controls(const wh::compose::graph_invoke_controls &value
   for (const auto &signal : value.interrupt.subgraph_signals) {
     auto owned_signal = wh::core::into_owned(signal);
     if (owned_signal.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_signal.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_signal.error());
     }
     subgraph_signals.push_back(std::move(owned_signal).value());
   }
@@ -428,16 +408,14 @@ into_owned_graph_invoke_controls(wh::compose::graph_invoke_controls &&value)
   auto forwarded_once =
       into_owned_forwarded_checkpoint_map(std::move(value.checkpoint.forwarded_once));
   if (forwarded_once.has_error()) {
-    return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-        forwarded_once.error());
+    return wh::core::result<wh::compose::graph_invoke_controls>::failure(forwarded_once.error());
   }
 
   std::optional<wh::compose::interrupt_resume_decision> decision{};
   if (value.resume.decision.has_value()) {
     auto owned_decision = wh::core::into_owned(std::move(*value.resume.decision));
     if (owned_decision.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_decision.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_decision.error());
     }
     decision = std::move(owned_decision).value();
   }
@@ -447,8 +425,7 @@ into_owned_graph_invoke_controls(wh::compose::graph_invoke_controls &&value)
   for (auto &item : value.resume.batch_items) {
     auto owned_item = wh::core::into_owned(std::move(item));
     if (owned_item.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_item.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_item.error());
     }
     batch_items.push_back(std::move(owned_item).value());
   }
@@ -458,8 +435,7 @@ into_owned_graph_invoke_controls(wh::compose::graph_invoke_controls &&value)
   for (auto &context : value.resume.contexts) {
     auto owned_context = wh::core::into_owned(std::move(context));
     if (owned_context.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_context.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_context.error());
     }
     contexts.push_back(std::move(owned_context).value());
   }
@@ -469,8 +445,7 @@ into_owned_graph_invoke_controls(wh::compose::graph_invoke_controls &&value)
   for (auto &signal : value.interrupt.subgraph_signals) {
     auto owned_signal = wh::core::into_owned(std::move(signal));
     if (owned_signal.has_error()) {
-      return wh::core::result<wh::compose::graph_invoke_controls>::failure(
-          owned_signal.error());
+      return wh::core::result<wh::compose::graph_invoke_controls>::failure(owned_signal.error());
     }
     subgraph_signals.push_back(std::move(owned_signal).value());
   }
@@ -526,8 +501,7 @@ into_owned_graph_invoke_request(const wh::compose::graph_invoke_request &value)
   };
 }
 
-[[nodiscard]] inline auto
-into_owned_graph_invoke_request(wh::compose::graph_invoke_request &&value)
+[[nodiscard]] inline auto into_owned_graph_invoke_request(wh::compose::graph_invoke_request &&value)
     -> wh::core::result<wh::compose::graph_invoke_request> {
   auto input = wh::core::into_owned(std::move(value.input));
   if (input.has_error()) {
@@ -544,14 +518,13 @@ into_owned_graph_invoke_request(wh::compose::graph_invoke_request &&value)
   };
 }
 
-[[nodiscard]] inline auto normalize_graph_input(
-    const wh::compose::node_contract expected,
-    const bool has_restore_source,
-    wh::compose::graph_input input) -> wh::core::result<wh::compose::graph_value> {
+[[nodiscard]] inline auto normalize_graph_input(const wh::compose::node_contract expected,
+                                                const bool has_restore_source,
+                                                wh::compose::graph_input input)
+    -> wh::core::result<wh::compose::graph_value> {
   if (input.kind() == wh::compose::graph_input_kind::restore_checkpoint) {
     if (!has_restore_source) {
-      return wh::core::result<wh::compose::graph_value>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::invalid_argument);
     }
     return wh::core::any(std::monostate{});
   }
@@ -562,8 +535,7 @@ into_owned_graph_invoke_request(wh::compose::graph_invoke_request &&value)
           wh::core::errc::contract_violation);
     }
     auto payload = std::move(input).into_payload();
-    if (has_restore_source &&
-        wh::core::any_cast<std::monostate>(&payload) != nullptr) {
+    if (has_restore_source && wh::core::any_cast<std::monostate>(&payload) != nullptr) {
       return wh::core::result<wh::compose::graph_value>::failure(
           wh::core::errc::contract_violation);
     }
@@ -575,14 +547,11 @@ into_owned_graph_invoke_request(wh::compose::graph_invoke_request &&value)
   }
 
   if (expected != wh::compose::node_contract::stream) {
-    return wh::core::result<wh::compose::graph_value>::failure(
-        wh::core::errc::contract_violation);
+    return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::contract_violation);
   }
   auto payload = std::move(input).into_payload();
-  if (wh::core::any_cast<wh::compose::graph_stream_reader>(&payload) ==
-      nullptr) {
-    return wh::core::result<wh::compose::graph_value>::failure(
-        wh::core::errc::type_mismatch);
+  if (wh::core::any_cast<wh::compose::graph_stream_reader>(&payload) == nullptr) {
+    return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::type_mismatch);
   }
   return payload;
 }

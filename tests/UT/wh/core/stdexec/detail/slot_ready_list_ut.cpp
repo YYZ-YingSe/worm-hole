@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -7,10 +5,13 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/core/stdexec/detail/slot_ready_list.hpp"
 
 TEST_CASE("slot ready list publishes drains and resets slot ownership",
-          "[UT][wh/core/stdexec/detail/slot_ready_list.hpp][slot_ready_list::publish][condition][branch][boundary]") {
+          "[UT][wh/core/stdexec/detail/"
+          "slot_ready_list.hpp][slot_ready_list::publish][condition][branch][boundary]") {
   wh::core::detail::slot_ready_list ready{3U};
 
   REQUIRE_FALSE(ready.has_ready());
@@ -34,7 +35,8 @@ TEST_CASE("slot ready list publishes drains and resets slot ownership",
 }
 
 TEST_CASE("slot ready list drains concurrent slot publications without loss",
-          "[UT][wh/core/stdexec/detail/slot_ready_list.hpp][slot_ready_list::drain][concurrency][branch]") {
+          "[UT][wh/core/stdexec/detail/"
+          "slot_ready_list.hpp][slot_ready_list::drain][concurrency][branch]") {
   constexpr std::uint32_t slot_count = 8U;
   constexpr int rounds = 64;
 
@@ -81,4 +83,3 @@ TEST_CASE("slot ready list drains concurrent slot publications without loss",
     REQUIRE_FALSE(ready.has_ready());
   }
 }
-

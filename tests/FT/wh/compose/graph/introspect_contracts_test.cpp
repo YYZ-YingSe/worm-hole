@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <chrono>
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph/error.hpp"
 #include "wh/compose/graph/introspect.hpp"
@@ -31,21 +31,19 @@ TEST_CASE("compose introspect and error helpers preserve phase path and root-cau
   REQUIRE(event_diagnostic.code == wh::core::errc::contract_violation);
   REQUIRE(event_diagnostic.message.find("phase=execute") != std::string::npos);
   REQUIRE(event_diagnostic.message.find("node=root/child") != std::string::npos);
-  REQUIRE(event_diagnostic.message.find("root_cause=downstream parse_error") !=
-          std::string::npos);
+  REQUIRE(event_diagnostic.message.find("root_cause=downstream parse_error") != std::string::npos);
 
-  auto step_error = wh::compose::to_compose_error(
-      wh::compose::graph_step_limit_error_detail{
-          .step = 10U,
-          .budget = 8U,
-          .node = "worker",
-      });
+  auto step_error = wh::compose::to_compose_error(wh::compose::graph_step_limit_error_detail{
+      .step = 10U,
+      .budget = 8U,
+      .node = "worker",
+  });
   REQUIRE(step_error.code == wh::core::errc::timeout);
   REQUIRE(step_error.phase == wh::compose::compose_error_phase::schedule);
   REQUIRE(step_error.message.find("step-limit-exceeded") != std::string::npos);
 
-  auto node_timeout_error = wh::compose::to_compose_error(
-      wh::compose::graph_node_timeout_error_detail{
+  auto node_timeout_error =
+      wh::compose::to_compose_error(wh::compose::graph_node_timeout_error_detail{
           .node = "worker",
           .attempt = 1U,
           .timeout = std::chrono::milliseconds{5},

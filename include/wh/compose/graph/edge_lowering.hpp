@@ -19,8 +19,7 @@ enum class edge_lowering_kind : std::uint8_t {
 };
 
 /// Returns a stable string label for one compile-resolved edge lowering.
-[[nodiscard]] constexpr auto to_string(const edge_lowering_kind kind) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto to_string(const edge_lowering_kind kind) noexcept -> std::string_view {
   switch (kind) {
   case edge_lowering_kind::none:
     return "none";

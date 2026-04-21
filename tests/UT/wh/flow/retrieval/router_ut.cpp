@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <tuple>
 #include <type_traits>
 #include <unordered_set>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/flow/retrieval/router.hpp"
@@ -12,8 +11,7 @@
 namespace {
 
 template <typename text_t>
-[[nodiscard]] auto make_document(text_t &&text, double score = 0.0)
-    -> wh::schema::document {
+[[nodiscard]] auto make_document(text_t &&text, double score = 0.0) -> wh::schema::document {
   wh::schema::document document{std::forward<text_t>(text)};
   document.with_score(score);
   return document;
@@ -42,10 +40,8 @@ TEST_CASE("retrieval router exposes helper keys and fuses ranked results",
 
   wh::flow::retrieval::detail::router::reciprocal_rank_fusion fusion{};
   auto fused = fusion({
-      {.retriever_name = "a",
-       .documents = {make_document("dup", 0.1), make_document("x", 0.2)}},
-      {.retriever_name = "b",
-       .documents = {make_document("dup", 0.9), make_document("y", 0.3)}},
+      {.retriever_name = "a", .documents = {make_document("dup", 0.1), make_document("x", 0.2)}},
+      {.retriever_name = "b", .documents = {make_document("dup", 0.9), make_document("y", 0.3)}},
   });
   REQUIRE(fused.has_value());
   REQUIRE(fused.value().size() == 3U);
@@ -59,12 +55,9 @@ TEST_CASE("retrieval router validates registration and executes selected routes"
   wh::flow::retrieval::router<retriever_t> router{};
   STATIC_REQUIRE(std::is_copy_constructible_v<decltype(router)>);
   REQUIRE(router.add_retriever("", retriever_t{routed_retriever_impl{"bad"}}).has_error());
-  REQUIRE(router.add_retriever("left", retriever_t{routed_retriever_impl{"left"}})
-              .has_value());
-  REQUIRE(router.add_retriever("right", retriever_t{routed_retriever_impl{"right"}})
-              .has_value());
-  REQUIRE(router.add_retriever("left", retriever_t{routed_retriever_impl{"dup"}})
-              .has_error());
+  REQUIRE(router.add_retriever("left", retriever_t{routed_retriever_impl{"left"}}).has_value());
+  REQUIRE(router.add_retriever("right", retriever_t{routed_retriever_impl{"right"}}).has_value());
+  REQUIRE(router.add_retriever("left", retriever_t{routed_retriever_impl{"dup"}}).has_error());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";
@@ -86,27 +79,18 @@ TEST_CASE("retrieval router validates registration and executes selected routes"
   REQUIRE(contents.contains("left:hello"));
   REQUIRE(contents.contains("right:hello"));
   REQUIRE(router.frozen());
-  REQUIRE(router.add_retriever("late", retriever_t{routed_retriever_impl{"late"}})
-              .has_error());
+  REQUIRE(router.add_retriever("late", retriever_t{routed_retriever_impl{"late"}}).has_error());
 }
 
 TEST_CASE("retrieval router succeeds when route policy selects one registered subset",
           "[UT][wh/flow/retrieval/router.hpp][router::retrieve][happy][subset]") {
   using retriever_t = wh::retriever::retriever<routed_retriever_impl>;
 
-  auto select_left = [](const wh::retriever::retriever_request &,
-                        const std::vector<std::string> &)
-      -> wh::core::result<std::vector<std::string>> {
-    return std::vector<std::string>{"left"};
-  };
-  wh::flow::retrieval::router<retriever_t, decltype(select_left)> router{
-      select_left};
-  REQUIRE(router.add_retriever("left",
-                               retriever_t{routed_retriever_impl{"left"}})
-              .has_value());
-  REQUIRE(router.add_retriever("right",
-                               retriever_t{routed_retriever_impl{"right"}})
-              .has_value());
+  auto select_left = [](const wh::retriever::retriever_request &, const std::vector<std::string> &)
+      -> wh::core::result<std::vector<std::string>> { return std::vector<std::string>{"left"}; };
+  wh::flow::retrieval::router<retriever_t, decltype(select_left)> router{select_left};
+  REQUIRE(router.add_retriever("left", retriever_t{routed_retriever_impl{"left"}}).has_value());
+  REQUIRE(router.add_retriever("right", retriever_t{routed_retriever_impl{"right"}}).has_value());
 
   wh::retriever::retriever_request request{};
   request.query = "hello";
@@ -123,16 +107,14 @@ TEST_CASE("retrieval router propagates route and fusion failures",
           "[UT][wh/flow/retrieval/router.hpp][router::retrieve][branch]") {
   using retriever_t = wh::retriever::retriever<routed_retriever_impl>;
 
-  auto missing_route = [](const wh::retriever::retriever_request &,
-                          const std::vector<std::string> &)
-      -> wh::core::result<std::vector<std::string>> {
+  auto missing_route =
+      [](const wh::retriever::retriever_request &,
+         const std::vector<std::string> &) -> wh::core::result<std::vector<std::string>> {
     return std::vector<std::string>{"missing"};
   };
-  wh::flow::retrieval::router<retriever_t, decltype(missing_route)> missing_router{
-      missing_route};
-  REQUIRE(missing_router.add_retriever("left",
-                                       retriever_t{routed_retriever_impl{"left"}})
-              .has_value());
+  wh::flow::retrieval::router<retriever_t, decltype(missing_route)> missing_router{missing_route};
+  REQUIRE(
+      missing_router.add_retriever("left", retriever_t{routed_retriever_impl{"left"}}).has_value());
   REQUIRE(missing_router.freeze().has_value());
 
   wh::retriever::retriever_request request{};
@@ -151,9 +133,8 @@ TEST_CASE("retrieval router propagates route and fusion failures",
   };
   wh::flow::retrieval::router<retriever_t, decltype(route_all), decltype(failing_fusion)>
       failing_router{route_all, failing_fusion};
-  REQUIRE(failing_router.add_retriever(
-              "left", retriever_t{routed_retriever_impl{"left"}})
-              .has_value());
+  REQUIRE(
+      failing_router.add_retriever("left", retriever_t{routed_retriever_impl{"left"}}).has_value());
   REQUIRE(failing_router.freeze().has_value());
   auto failing_waited = stdexec::sync_wait(failing_router.retrieve(request, context));
   REQUIRE(failing_waited.has_value());
@@ -165,8 +146,7 @@ TEST_CASE("retrieval router default route policy selects every registered retrie
           "[UT][wh/flow/retrieval/router.hpp][route_all_retrievers][condition][boundary]") {
   const std::vector<std::string> names{"left", "right", "left"};
   wh::retriever::retriever_request request{};
-  const auto routed =
-      wh::flow::retrieval::detail::router::route_all_retrievers{}(request, names);
+  const auto routed = wh::flow::retrieval::detail::router::route_all_retrievers{}(request, names);
 
   REQUIRE(routed.has_value());
   REQUIRE(routed.value() == names);

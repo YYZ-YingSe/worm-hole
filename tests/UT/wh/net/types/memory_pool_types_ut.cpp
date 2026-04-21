@@ -1,12 +1,14 @@
 #include <array>
-#include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <span>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/net/types/memory_pool_types.hpp"
 
 TEST_CASE("memory pool types expose default alignment and byte spans",
-          "[UT][wh/net/types/memory_pool_types.hpp][memory_acquire_request][condition][branch][boundary]") {
+          "[UT][wh/net/types/"
+          "memory_pool_types.hpp][memory_acquire_request][condition][branch][boundary]") {
   wh::net::memory_acquire_request request{};
   REQUIRE(request.size_bytes == 0U);
   REQUIRE(request.alignment == alignof(std::max_align_t));

@@ -4,33 +4,30 @@
 #include "wh/compose/graph/detail/build.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
-TEST_CASE("build helpers resolve required tools endpoints and graph adders expose convenience overloads",
-          "[UT][wh/compose/graph/detail/build.hpp][validate_tools_node_entrypoints][condition][branch][boundary]") {
+TEST_CASE(
+    "build helpers resolve required tools endpoints and graph adders expose convenience overloads",
+    "[UT][wh/compose/graph/detail/"
+    "build.hpp][validate_tools_node_entrypoints][condition][branch][boundary]") {
   REQUIRE(wh::compose::detail::tools_node_required_endpoint(
-              wh::compose::node_exec_mode::sync,
-              wh::compose::node_contract::value) == "invoke");
+              wh::compose::node_exec_mode::sync, wh::compose::node_contract::value) == "invoke");
+  REQUIRE(wh::compose::detail::tools_node_required_endpoint(wh::compose::node_exec_mode::async,
+                                                            wh::compose::node_contract::value) ==
+          "async_invoke");
   REQUIRE(wh::compose::detail::tools_node_required_endpoint(
-              wh::compose::node_exec_mode::async,
-              wh::compose::node_contract::value) == "async_invoke");
-  REQUIRE(wh::compose::detail::tools_node_required_endpoint(
-              wh::compose::node_exec_mode::sync,
-              wh::compose::node_contract::stream) == "stream");
-  REQUIRE(wh::compose::detail::tools_node_required_endpoint(
-              wh::compose::node_exec_mode::async,
-              wh::compose::node_contract::stream) == "async_stream");
+              wh::compose::node_exec_mode::sync, wh::compose::node_contract::stream) == "stream");
+  REQUIRE(wh::compose::detail::tools_node_required_endpoint(wh::compose::node_exec_mode::async,
+                                                            wh::compose::node_contract::stream) ==
+          "async_stream");
 
   wh::compose::tool_entry invoke_entry{};
   invoke_entry.invoke = [](const wh::compose::tool_call &call,
-                           wh::tool::call_scope)
-      -> wh::core::result<wh::compose::graph_value> {
+                           wh::tool::call_scope) -> wh::core::result<wh::compose::graph_value> {
     return wh::compose::graph_value{call.arguments};
   };
   REQUIRE(wh::compose::detail::tools_entry_matches_endpoint(
-      invoke_entry, wh::compose::node_exec_mode::sync,
-      wh::compose::node_contract::value));
+      invoke_entry, wh::compose::node_exec_mode::sync, wh::compose::node_contract::value));
   REQUIRE_FALSE(wh::compose::detail::tools_entry_matches_endpoint(
-      invoke_entry, wh::compose::node_exec_mode::async,
-      wh::compose::node_contract::value));
+      invoke_entry, wh::compose::node_exec_mode::async, wh::compose::node_contract::value));
 
   wh::compose::node_descriptor descriptor{
       .key = "tools",
@@ -41,24 +38,23 @@ TEST_CASE("build helpers resolve required tools endpoints and graph adders expos
   wh::compose::tools_payload payload{};
   payload.registry.emplace("invoke", invoke_entry);
   payload.runtime_options.sequential = false;
-  auto non_sequential = wh::compose::detail::validate_tools_node_entrypoints(
-      "tools", descriptor, payload);
+  auto non_sequential =
+      wh::compose::detail::validate_tools_node_entrypoints("tools", descriptor, payload);
   REQUIRE(non_sequential.has_value());
-  REQUIRE(non_sequential->find("non-sequential sync execution") !=
-          std::string::npos);
+  REQUIRE(non_sequential->find("non-sequential sync execution") != std::string::npos);
 
   descriptor.exec_mode = wh::compose::node_exec_mode::async;
   descriptor.output_contract = wh::compose::node_contract::stream;
   payload.runtime_options.sequential = true;
-  auto missing_async = wh::compose::detail::validate_tools_node_entrypoints(
-      "tools", descriptor, payload);
+  auto missing_async =
+      wh::compose::detail::validate_tools_node_entrypoints("tools", descriptor, payload);
   REQUIRE(missing_async.has_value());
   REQUIRE(missing_async->find("async_stream") != std::string::npos);
 
   payload.registry.clear();
   payload.runtime_options.missing = invoke_entry;
-  auto invalid_missing = wh::compose::detail::validate_tools_node_entrypoints(
-      "tools", descriptor, payload);
+  auto invalid_missing =
+      wh::compose::detail::validate_tools_node_entrypoints("tools", descriptor, payload);
   REQUIRE(invalid_missing.has_value());
   REQUIRE(invalid_missing->find("missing-tool entry") != std::string::npos);
 
@@ -68,9 +64,7 @@ TEST_CASE("build helpers resolve required tools endpoints and graph adders expos
                   "worker",
                   [](wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    return std::move(input);
-                  })
+                      -> wh::core::result<wh::compose::graph_value> { return std::move(input); })
               .has_value());
   REQUIRE(lambda_graph.node_id("worker").has_value());
 
@@ -80,10 +74,8 @@ TEST_CASE("build helpers resolve required tools endpoints and graph adders expos
 
   wh::compose::graph component_graph{};
   REQUIRE(component_graph
-              .add_component<wh::compose::component_kind::model,
-                             wh::compose::node_contract::value,
-                             wh::compose::node_contract::stream,
-                             wh::compose::node_exec_mode::sync>(
+              .add_component<wh::compose::component_kind::model, wh::compose::node_contract::value,
+                             wh::compose::node_contract::stream, wh::compose::node_exec_mode::sync>(
                   "model", wh::testing::helper::sync_probe_model{})
               .has_value());
   REQUIRE(component_graph.node_id("model").has_value());
@@ -98,11 +90,9 @@ TEST_CASE("build helpers resolve required tools endpoints and graph adders expos
   registry.emplace("echo", invoke_entry);
   wh::compose::graph tools_graph{};
   REQUIRE(tools_graph
-              .add_tools<wh::compose::node_contract::value,
-                         wh::compose::node_contract::value,
-                         wh::compose::node_exec_mode::sync>("tools", registry,
-                                                             {},
-                                                             wh::compose::tools_options{})
+              .add_tools<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                         wh::compose::node_exec_mode::sync>("tools", registry, {},
+                                                            wh::compose::tools_options{})
               .has_value());
   REQUIRE(tools_graph.node_id("tools").has_value());
 }

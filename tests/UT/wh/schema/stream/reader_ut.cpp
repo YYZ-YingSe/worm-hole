@@ -1,14 +1,13 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/schema/stream/reader.hpp"
 
 TEST_CASE("stream reader facade exports value readers through public header",
           "[UT][wh/schema/stream/reader.hpp][make_values_stream_reader][branch]") {
-  auto reader =
-      wh::schema::stream::make_values_stream_reader(std::vector<int>{1, 2});
+  auto reader = wh::schema::stream::make_values_stream_reader(std::vector<int>{1, 2});
 
   auto first = reader.read();
   REQUIRE(first.has_value());

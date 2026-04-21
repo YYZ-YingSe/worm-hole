@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/adk/deterministic_transfer.hpp"
@@ -8,16 +8,14 @@
 
 namespace {
 
-[[nodiscard]] auto make_user_message(const std::string &text)
-    -> wh::schema::message {
+[[nodiscard]] auto make_user_message(const std::string &text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
   message.parts.emplace_back(wh::schema::text_part{text});
   return message;
 }
 
-[[nodiscard]] auto make_assistant_message(const std::string &name,
-                                          const std::string &text)
+[[nodiscard]] auto make_assistant_message(const std::string &name, const std::string &text)
     -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::assistant;
@@ -35,8 +33,7 @@ using wh::testing::helper::message_text;
 TEST_CASE("supervisor host graph executes root transfer into child subgraph",
           "[core][agent][host_graph]") {
   wh::agent::agent_output supervisor_output{};
-  supervisor_output.final_message =
-      wh::adk::make_transfer_tool_message("planner", "call-1");
+  supervisor_output.final_message = wh::adk::make_transfer_tool_message("planner", "call-1");
   supervisor_output.history_messages.push_back(
       wh::adk::make_transfer_assistant_message("planner", "call-1"));
   supervisor_output.history_messages.push_back(
@@ -50,11 +47,9 @@ TEST_CASE("supervisor host graph executes root transfer into child subgraph",
   worker_output.final_message = make_assistant_message("planner", "done");
   worker_output.history_messages.push_back(worker_output.final_message);
 
-  auto supervisor_agent =
-      make_fixed_output_agent("supervisor", std::move(supervisor_output));
+  auto supervisor_agent = make_fixed_output_agent("supervisor", std::move(supervisor_output));
   REQUIRE(supervisor_agent.has_value());
-  auto planner_agent =
-      make_fixed_output_agent("planner", std::move(worker_output));
+  auto planner_agent = make_fixed_output_agent("planner", std::move(worker_output));
   REQUIRE(planner_agent.has_value());
 
   wh::agent::supervisor authored{"supervisor"};

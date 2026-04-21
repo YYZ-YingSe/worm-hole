@@ -26,9 +26,7 @@ struct callback_sink {
   /// Optional metadata applied to emitted callback run-info.
   std::optional<run_metadata> metadata{};
 
-  [[nodiscard]] auto has_value() const noexcept -> bool {
-    return manager_ptr() != nullptr;
-  }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return manager_ptr() != nullptr; }
 
   [[nodiscard]] auto manager_ptr() const noexcept -> const manager * {
     if (owned.has_value()) {
@@ -42,8 +40,8 @@ struct callback_sink {
 [[nodiscard]] inline auto make_callback_sink() -> callback_sink { return {}; }
 
 /// Borrows callback-manager state from the provided run context for sync paths.
-[[nodiscard]] inline auto
-borrow_callback_sink(const wh::core::run_context &context) -> callback_sink {
+[[nodiscard]] inline auto borrow_callback_sink(const wh::core::run_context &context)
+    -> callback_sink {
   callback_sink sink{};
   if (context.callbacks.has_value()) {
     sink.borrowed = std::addressof(context.callbacks->manager);
@@ -55,8 +53,8 @@ borrow_callback_sink(const wh::core::run_context &context) -> callback_sink {
 }
 
 /// Copies callback-manager state out of the provided run context.
-[[nodiscard]] inline auto
-make_callback_sink(const wh::core::run_context &context) -> callback_sink {
+[[nodiscard]] inline auto make_callback_sink(const wh::core::run_context &context)
+    -> callback_sink {
   callback_sink sink{};
   if (context.callbacks.has_value()) {
     sink.owned = context.callbacks->manager;
@@ -68,8 +66,7 @@ make_callback_sink(const wh::core::run_context &context) -> callback_sink {
 }
 
 /// Moves callback-manager state out of the provided run context.
-[[nodiscard]] inline auto make_callback_sink(wh::core::run_context &&context)
-    -> callback_sink {
+[[nodiscard]] inline auto make_callback_sink(wh::core::run_context &&context) -> callback_sink {
   callback_sink sink{};
   if (context.callbacks.has_value()) {
     sink.owned = std::move(context.callbacks->manager);
@@ -82,8 +79,8 @@ make_callback_sink(const wh::core::run_context &context) -> callback_sink {
 
 template <typename payload_t>
 /// Emits one callback event through a detached callback sink.
-inline auto emit(const callback_sink &sink, const stage current_stage,
-                 const payload_t &payload, const run_info &info) -> void {
+inline auto emit(const callback_sink &sink, const stage current_stage, const payload_t &payload,
+                 const run_info &info) -> void {
   const auto *sink_manager = sink.manager_ptr();
   if (sink_manager == nullptr) {
     return;
@@ -98,17 +95,13 @@ inline auto emit(const callback_sink &sink, const stage current_stage,
 
 template <typename options_t>
 concept component_options_provider = requires(const options_t &options) {
-  {
-    options.component_options()
-  } -> std::same_as<const wh::core::component_options &>;
+  { options.component_options() } -> std::same_as<const wh::core::component_options &>;
 };
 
 template <component_options_provider options_t>
-[[nodiscard]] inline auto apply_component_run_info(run_info info,
-                                                   const options_t &options)
+[[nodiscard]] inline auto apply_component_run_info(run_info info, const options_t &options)
     -> run_info {
-  return wh::core::apply_component_run_info(std::move(info),
-                                            options.component_options());
+  return wh::core::apply_component_run_info(std::move(info), options.component_options());
 }
 
 template <component_options_provider options_t>
@@ -117,8 +110,7 @@ template <component_options_provider options_t>
 }
 
 template <component_options_provider options_t>
-[[nodiscard]] inline auto filter_callback_sink(callback_sink sink,
-                                               const options_t &options)
+[[nodiscard]] inline auto filter_callback_sink(callback_sink sink, const options_t &options)
     -> callback_sink {
   if (callbacks_enabled(options)) {
     return sink;
@@ -132,8 +124,8 @@ template <typename state_t>
     state.run_info;
   }
 /// Emits one callback event from a `{event, run_info}` state bundle.
-inline auto emit(const callback_sink &sink, const stage current_stage,
-                 const state_t &state) -> void {
+inline auto emit(const callback_sink &sink, const stage current_stage, const state_t &state)
+    -> void {
   emit(sink, current_stage, state.event, state.run_info);
 }
 

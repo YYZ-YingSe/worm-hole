@@ -21,12 +21,10 @@ namespace wh::adk {
 using run_path = wh::core::address;
 
 /// Type-erased single-consumer reader used by ADK message-stream events.
-using agent_message_stream_reader =
-    wh::schema::stream::any_stream_reader<wh::schema::message>;
+using agent_message_stream_reader = wh::schema::stream::any_stream_reader<wh::schema::message>;
 
 /// Single-message or message-stream payload carried by one ADK message event.
-using message_content =
-    std::variant<wh::schema::message, agent_message_stream_reader>;
+using message_content = std::variant<wh::schema::message, agent_message_stream_reader>;
 
 /// Message-bearing event payload.
 struct message_event {
@@ -85,15 +83,13 @@ struct event_metadata {
   /// Tool name associated with the event, if any.
   std::string tool_name{};
   /// Arbitrary metadata fields attached by bridges or governance wrappers.
-  std::unordered_map<std::string, wh::core::any,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, wh::core::any, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       attributes{};
 };
 
 /// Canonical ADK event payload variant.
-using agent_event_payload =
-    std::variant<message_event, control_action, custom_event, error_event>;
+using agent_event_payload = std::variant<message_event, control_action, custom_event, error_event>;
 
 /// Canonical ADK event shell.
 struct agent_event {
@@ -105,8 +101,7 @@ struct agent_event {
 
 /// Builds a message event from one owned message value.
 [[nodiscard]] inline auto make_message_event(wh::schema::message message,
-                                             event_metadata metadata = {})
-    -> agent_event {
+                                             event_metadata metadata = {}) -> agent_event {
   return agent_event{
       .payload = message_event{.content = std::move(message)},
       .metadata = std::move(metadata),
@@ -115,8 +110,7 @@ struct agent_event {
 
 /// Builds a message event from one message-stream reader.
 [[nodiscard]] inline auto make_message_event(agent_message_stream_reader stream,
-                                             event_metadata metadata = {})
-    -> agent_event {
+                                             event_metadata metadata = {}) -> agent_event {
   return agent_event{
       .payload = message_event{.content = std::move(stream)},
       .metadata = std::move(metadata),
@@ -124,8 +118,7 @@ struct agent_event {
 }
 
 /// Builds a control event from one control action.
-[[nodiscard]] inline auto make_control_event(control_action action,
-                                             event_metadata metadata = {})
+[[nodiscard]] inline auto make_control_event(control_action action, event_metadata metadata = {})
     -> agent_event {
   return agent_event{
       .payload = std::move(action),
@@ -134,10 +127,8 @@ struct agent_event {
 }
 
 /// Builds a custom event from one type-erased payload.
-[[nodiscard]] inline auto make_custom_event(std::string name,
-                                            wh::core::any payload,
-                                            event_metadata metadata = {})
-    -> agent_event {
+[[nodiscard]] inline auto make_custom_event(std::string name, wh::core::any payload,
+                                            event_metadata metadata = {}) -> agent_event {
   return agent_event{
       .payload =
           custom_event{
@@ -149,9 +140,8 @@ struct agent_event {
 }
 
 /// Builds an error event with optional typed detail payload.
-[[nodiscard]] inline auto
-make_error_event(wh::core::error_code code, std::string message,
-                 wh::core::any detail = {}, event_metadata metadata = {})
+[[nodiscard]] inline auto make_error_event(wh::core::error_code code, std::string message,
+                                           wh::core::any detail = {}, event_metadata metadata = {})
     -> agent_event {
   return agent_event{
       .payload =
@@ -185,25 +175,22 @@ validate_registered_payload(const wh::core::any &payload,
 
 /// Validates whether one event is safe to cross a checkpoint serialization
 /// boundary without inventing a second serialization protocol.
-[[nodiscard]] inline auto validate_agent_event_checkpoint_serializable(
-    const agent_event &event,
-    const wh::schema::serialization_registry &registry)
+[[nodiscard]] inline auto
+validate_agent_event_checkpoint_serializable(const agent_event &event,
+                                             const wh::schema::serialization_registry &registry)
     -> wh::core::result<void> {
-  if (const auto *message = std::get_if<message_event>(&event.payload);
-      message != nullptr) {
+  if (const auto *message = std::get_if<message_event>(&event.payload); message != nullptr) {
     if (std::holds_alternative<agent_message_stream_reader>(message->content)) {
       return wh::core::result<void>::failure(wh::core::errc::serialize_error);
     }
     return {};
   }
 
-  if (const auto *custom = std::get_if<custom_event>(&event.payload);
-      custom != nullptr) {
+  if (const auto *custom = std::get_if<custom_event>(&event.payload); custom != nullptr) {
     return detail::validate_registered_payload(custom->payload, registry);
   }
 
-  if (const auto *error = std::get_if<error_event>(&event.payload);
-      error != nullptr) {
+  if (const auto *error = std::get_if<error_event>(&event.payload); error != nullptr) {
     return detail::validate_registered_payload(error->detail, registry);
   }
 

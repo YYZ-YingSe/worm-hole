@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/adk/detail/host_graph.hpp"
@@ -11,8 +11,7 @@ namespace {
 
 [[nodiscard]] auto run_pre(wh::compose::graph_add_node_options &options,
                            wh::compose::graph_process_state &process_state,
-                           wh::compose::graph_value &payload)
-    -> wh::core::result<void> {
+                           wh::compose::graph_value &payload) -> wh::core::result<void> {
   REQUIRE(static_cast<bool>(options.state.pre().handler));
   wh::compose::graph_state_cause cause{};
   wh::core::run_context context{};
@@ -21,16 +20,14 @@ namespace {
 
 [[nodiscard]] auto run_post(wh::compose::graph_add_node_options &options,
                             wh::compose::graph_process_state &process_state,
-                            wh::compose::graph_value &payload)
-    -> wh::core::result<void> {
+                            wh::compose::graph_value &payload) -> wh::core::result<void> {
   REQUIRE(static_cast<bool>(options.state.post().handler));
   wh::compose::graph_state_cause cause{};
   wh::core::run_context context{};
   return options.state.post().handler(cause, process_state, payload, context);
 }
 
-[[nodiscard]] auto make_definition()
-    -> wh::adk::detail::host_graph_detail::host_graph_definition {
+[[nodiscard]] auto make_definition() -> wh::adk::detail::host_graph_detail::host_graph_definition {
   auto root_graph = wh::testing::helper::make_passthrough_graph("root_node");
   auto child_graph = wh::testing::helper::make_passthrough_graph("child_node");
   REQUIRE(root_graph.has_value());
@@ -45,21 +42,22 @@ namespace {
               .allowed_children = {"worker"},
               .graph = std::move(root_graph).value(),
           },
-      .children =
-          {wh::adk::detail::host_graph_detail::host_member_definition{
-              .name = "worker",
-              .description = "worker desc",
-              .parent_name = "root",
-              .allow_transfer_to_parent = true,
-              .graph = std::move(child_graph).value(),
-          }},
+      .children = {wh::adk::detail::host_graph_detail::host_member_definition{
+          .name = "worker",
+          .description = "worker desc",
+          .parent_name = "root",
+          .allow_transfer_to_parent = true,
+          .graph = std::move(child_graph).value(),
+      }},
   };
 }
 
 } // namespace
 
-TEST_CASE("host graph detail helpers compare messages normalize history and resolve transfer targets",
-          "[UT][wh/adk/detail/host_graph.hpp][host_graph_detail::normalize_history_delta][condition][branch][boundary]") {
+TEST_CASE(
+    "host graph detail helpers compare messages normalize history and resolve transfer targets",
+    "[UT][wh/adk/detail/"
+    "host_graph.hpp][host_graph_detail::normalize_history_delta][condition][branch][boundary]") {
   using namespace wh::adk::detail::host_graph_detail;
 
   wh::schema::message text_message{};
@@ -89,22 +87,21 @@ TEST_CASE("host graph detail helpers compare messages normalize history and reso
   REQUIRE_FALSE(matches_history_prefix({same_text}, {same_text, different}));
 
   wh::agent::agent_output output{};
-  output.final_message = wh::testing::helper::make_text_message(
-      wh::schema::message_role::assistant, "done");
+  output.final_message =
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "done");
   output.history_messages = {same_text, output.final_message};
   auto delta = normalize_history_delta(output, {same_text}, "worker");
   REQUIRE(delta.size() == 1U);
   REQUIRE(delta.front().name == "worker");
 
   wh::agent::agent_output fallback_output{};
-  fallback_output.final_message = wh::testing::helper::make_text_message(
-      wh::schema::message_role::assistant, "fallback");
+  fallback_output.final_message =
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "fallback");
   auto fallback_delta = normalize_history_delta(fallback_output, {}, "worker");
   REQUIRE(fallback_delta.size() == 1U);
   REQUIRE(fallback_delta.front().name == "worker");
 
-  auto transfer_assistant =
-      wh::adk::make_transfer_assistant_message("worker", "call-1");
+  auto transfer_assistant = wh::adk::make_transfer_assistant_message("worker", "call-1");
   auto transfer_tool = wh::adk::make_transfer_tool_message("worker", "call-1");
   auto filtered = filter_transfer_messages(
       {transfer_assistant, transfer_tool, fallback_output.final_message}, "call-1");
@@ -121,42 +118,40 @@ TEST_CASE("host graph detail helpers compare messages normalize history and reso
   REQUIRE(child.has_value());
   REQUIRE_FALSE(has_member(definition, "ghost"));
 
-  auto current_target =
-      resolve_transfer_target(definition, root->get(), "root");
+  auto current_target = resolve_transfer_target(definition, root->get(), "root");
   REQUIRE(current_target.has_value());
   REQUIRE(current_target->kind == wh::adk::transfer_target_kind::current);
 
-  auto child_target =
-      resolve_transfer_target(definition, root->get(), "worker");
+  auto child_target = resolve_transfer_target(definition, root->get(), "worker");
   REQUIRE(child_target.has_value());
   REQUIRE(child_target->kind == wh::adk::transfer_target_kind::child);
 
-  auto parent_target =
-      resolve_transfer_target(definition, child->get(), "root");
+  auto parent_target = resolve_transfer_target(definition, child->get(), "root");
   REQUIRE(parent_target.has_value());
   REQUIRE(parent_target->kind == wh::adk::transfer_target_kind::parent);
 
-  auto forbidden =
-      resolve_transfer_target(definition, root->get(), "ghost");
+  auto forbidden = resolve_transfer_target(definition, root->get(), "ghost");
   REQUIRE(forbidden.has_error());
   REQUIRE(forbidden.error() == wh::core::errc::not_found);
 }
 
-TEST_CASE("host graph topology helpers validate member graphs export placeholders and capture final output",
-          "[UT][wh/adk/detail/host_graph.hpp][host_graph_detail::build_definition][condition][branch][boundary]") {
+TEST_CASE("host graph topology helpers validate member graphs export placeholders and capture "
+          "final output",
+          "[UT][wh/adk/detail/"
+          "host_graph.hpp][host_graph_detail::build_definition][condition][branch][boundary]") {
   using namespace wh::adk::detail::host_graph_detail;
 
   auto valid_definition = make_definition();
   runtime_state host_state{};
-  auto built_output = build_final_output(
-      host_state,
-      wh::agent::agent_output{
-          .final_message = wh::testing::helper::make_text_message(
-              wh::schema::message_role::assistant, "done"),
-          .history_messages = {wh::testing::helper::make_text_message(
-              wh::schema::message_role::assistant, "done")},
-      },
-      "worker");
+  auto built_output =
+      build_final_output(host_state,
+                         wh::agent::agent_output{
+                             .final_message = wh::testing::helper::make_text_message(
+                                 wh::schema::message_role::assistant, "done"),
+                             .history_messages = {wh::testing::helper::make_text_message(
+                                 wh::schema::message_role::assistant, "done")},
+                         },
+                         "worker");
   REQUIRE(built_output.final_message.name == "worker");
   REQUIRE_FALSE(built_output.transfer.has_value());
 
@@ -184,8 +179,7 @@ TEST_CASE("host graph topology helpers validate member graphs export placeholder
   auto built = build_definition(root.value(), children);
   REQUIRE(built.has_value());
   REQUIRE(built->get()->children.size() == 1U);
-  REQUIRE(built->get()->root.allowed_children ==
-          std::vector<std::string>{"worker"});
+  REQUIRE(built->get()->root.allowed_children == std::vector<std::string>{"worker"});
 
   auto exported = populate_exported_topology(*built->get());
   REQUIRE(exported.has_value());
@@ -195,15 +189,16 @@ TEST_CASE("host graph topology helpers validate member graphs export placeholder
   REQUIRE(exported_child->get().allows_transfer_to_parent());
 }
 
-TEST_CASE("host graph state callbacks lowerers and binders cover request routing transfer and final branches",
-          "[UT][wh/adk/detail/host_graph.hpp][bind_supervisor_agent][condition][branch][boundary]") {
+TEST_CASE(
+    "host graph state callbacks lowerers and binders cover request routing transfer and final "
+    "branches",
+    "[UT][wh/adk/detail/host_graph.hpp][bind_supervisor_agent][condition][branch][boundary]") {
   using namespace wh::adk::detail::host_graph_detail;
 
   auto definition = make_definition();
   wh::compose::graph_process_state process_state{};
   wh::compose::graph_value payload = std::vector<wh::schema::message>{
-      wh::testing::helper::make_text_message(wh::schema::message_role::user,
-                                             "seed"),
+      wh::testing::helper::make_text_message(wh::schema::message_role::user, "seed"),
   };
   auto bootstrap = make_bootstrap_options(definition);
   REQUIRE(run_pre(bootstrap, process_state, payload).has_value());
@@ -214,8 +209,8 @@ TEST_CASE("host graph state callbacks lowerers and binders cover request routing
 
   auto prepare = make_prepare_request_options();
   REQUIRE(run_pre(prepare, process_state, payload).has_value());
-  auto *host_request = wh::core::any_cast<wh::adk::detail::host_graph_detail::host_request>(
-      &payload);
+  auto *host_request =
+      wh::core::any_cast<wh::adk::detail::host_graph_detail::host_request>(&payload);
   REQUIRE(host_request != nullptr);
   REQUIRE(host_request->agent_name == "root");
 
@@ -233,12 +228,10 @@ TEST_CASE("host graph state callbacks lowerers and binders cover request routing
 
   state->get().active_agent_name = "root";
   state->get().active_request_messages = {
-      wh::testing::helper::make_text_message(wh::schema::message_role::user,
-                                             "seed"),
+      wh::testing::helper::make_text_message(wh::schema::message_role::user, "seed"),
   };
   wh::agent::agent_output transfer_output{};
-  transfer_output.final_message =
-      wh::adk::make_transfer_tool_message("worker", "call-1");
+  transfer_output.final_message = wh::adk::make_transfer_tool_message("worker", "call-1");
   transfer_output.history_messages = {
       wh::adk::make_transfer_assistant_message("worker", "call-1"),
       wh::adk::make_transfer_tool_message("worker", "call-1"),
@@ -256,12 +249,11 @@ TEST_CASE("host graph state callbacks lowerers and binders cover request routing
   REQUIRE(state->get().active_agent_name == "worker");
 
   state->get().active_request_messages = {
-      wh::testing::helper::make_text_message(wh::schema::message_role::user,
-                                             "worker request"),
+      wh::testing::helper::make_text_message(wh::schema::message_role::user, "worker request"),
   };
   wh::agent::agent_output final_output{};
-  final_output.final_message = wh::testing::helper::make_text_message(
-      wh::schema::message_role::assistant, "done");
+  final_output.final_message =
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "done");
   final_output.history_messages.push_back(final_output.final_message);
   payload = final_output;
   REQUIRE(run_post(capture, process_state, payload).has_value());
@@ -278,28 +270,24 @@ TEST_CASE("host graph state callbacks lowerers and binders cover request routing
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->compiled());
 
-  auto supervisor =
-      wh::testing::helper::make_configured_supervisor("supervisor");
+  auto supervisor = wh::testing::helper::make_configured_supervisor("supervisor");
   REQUIRE(supervisor.has_value());
   REQUIRE(supervisor->freeze().has_value());
-  auto bound_supervisor =
-      wh::adk::detail::bind_supervisor_agent(std::move(supervisor).value());
+  auto bound_supervisor = wh::adk::detail::bind_supervisor_agent(std::move(supervisor).value());
   REQUIRE(bound_supervisor.has_value());
   REQUIRE(bound_supervisor->lower().has_value());
 
   auto swarm = wh::testing::helper::make_configured_swarm("swarm");
   REQUIRE(swarm.has_value());
   REQUIRE(swarm->freeze().has_value());
-  auto bound_swarm =
-      wh::adk::detail::bind_swarm_agent(std::move(swarm).value());
+  auto bound_swarm = wh::adk::detail::bind_swarm_agent(std::move(swarm).value());
   REQUIRE(bound_swarm.has_value());
   REQUIRE(bound_swarm->lower().has_value());
 
   auto research = wh::testing::helper::make_configured_research("research");
   REQUIRE(research.has_value());
   REQUIRE(research->freeze().has_value());
-  auto bound_research =
-      wh::adk::detail::bind_research_agent(std::move(research).value());
+  auto bound_research = wh::adk::detail::bind_research_agent(std::move(research).value());
   REQUIRE(bound_research.has_value());
   REQUIRE(bound_research->lower().has_value());
 }

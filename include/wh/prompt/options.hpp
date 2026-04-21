@@ -50,8 +50,7 @@ public:
   }
 
   /// Sets per-call option overrides merged on top of the baseline options.
-  auto set_call_override(const prompt_common_options &options)
-      -> prompt_options & {
+  auto set_call_override(const prompt_common_options &options) -> prompt_options & {
     override_ = options;
     return *this;
   }
@@ -63,8 +62,7 @@ public:
   }
 
   /// Resolves effective options into a borrowed view without deep copies.
-  [[nodiscard]] auto resolve_view() const noexcept
-      -> resolved_prompt_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept -> resolved_prompt_options_view {
     resolved_prompt_options_view view{};
     view.syntax = base_.syntax;
     view.strict_missing_variables = base_.strict_missing_variables;
@@ -111,14 +109,12 @@ public:
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept
-      -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
     return component_options_;
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() const noexcept
-      -> const wh::core::component_options & {
+  [[nodiscard]] auto component_options() const noexcept -> const wh::core::component_options & {
     return component_options_;
   }
 

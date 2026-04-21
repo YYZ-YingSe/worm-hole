@@ -22,20 +22,17 @@ struct transparent_string_hash {
   using is_transparent = void;
 
   /// Hashes `std::string_view`.
-  [[nodiscard]] auto operator()(const std::string_view value) const noexcept
-      -> std::size_t {
+  [[nodiscard]] auto operator()(const std::string_view value) const noexcept -> std::size_t {
     return std::hash<std::string_view>{}(value);
   }
 
   /// Hashes `std::string`.
-  [[nodiscard]] auto operator()(const std::string &value) const noexcept
-      -> std::size_t {
+  [[nodiscard]] auto operator()(const std::string &value) const noexcept -> std::size_t {
     return (*this)(std::string_view{value});
   }
 
   /// Hashes C-string.
-  [[nodiscard]] auto operator()(const char *value) const noexcept
-      -> std::size_t {
+  [[nodiscard]] auto operator()(const char *value) const noexcept -> std::size_t {
     return (*this)(std::string_view{value});
   }
 };
@@ -46,8 +43,7 @@ struct transparent_string_equal {
 
   /// Compares two key views.
   [[nodiscard]] auto operator()(const std::string_view left,
-                                const std::string_view right) const noexcept
-      -> bool {
+                                const std::string_view right) const noexcept -> bool {
     return left == right;
   }
 };
@@ -73,11 +69,9 @@ concept pair_like = requires(remove_cvref_t<t> value) {
 template <typename t> struct is_optional : std::false_type {};
 
 /// `true` for `std::optional<T>`.
-template <typename value_t>
-struct is_optional<std::optional<value_t>> : std::true_type {};
+template <typename value_t> struct is_optional<std::optional<value_t>> : std::true_type {};
 
-template <typename t>
-inline constexpr bool is_optional_v = is_optional<remove_cvref_t<t>>::value;
+template <typename t> inline constexpr bool is_optional_v = is_optional<remove_cvref_t<t>>::value;
 
 template <typename t> struct is_unique_ptr : std::false_type {};
 
@@ -91,14 +85,12 @@ inline constexpr bool is_unique_ptr_v = is_unique_ptr<remove_cvref_t<t>>::value;
 template <typename t> struct is_shared_ptr : std::false_type {};
 
 /// `true` for `std::shared_ptr<T>`.
-template <typename value_t>
-struct is_shared_ptr<std::shared_ptr<value_t>> : std::true_type {};
+template <typename value_t> struct is_shared_ptr<std::shared_ptr<value_t>> : std::true_type {};
 
 template <typename t>
 inline constexpr bool is_shared_ptr_v = is_shared_ptr<remove_cvref_t<t>>::value;
 
-template <typename t>
-inline constexpr bool is_raw_pointer_v = std::is_pointer_v<remove_cvref_t<t>>;
+template <typename t> inline constexpr bool is_raw_pointer_v = std::is_pointer_v<remove_cvref_t<t>>;
 
 template <typename t>
 inline constexpr bool is_pointer_like_v =
@@ -118,8 +110,7 @@ template <typename t> struct is_result : std::false_type {};
 template <typename value_t, typename error_t>
 struct is_result<result<value_t, error_t>> : std::true_type {};
 
-template <typename t>
-inline constexpr bool is_result_v = is_result<remove_cvref_t<t>>::value;
+template <typename t> inline constexpr bool is_result_v = is_result<remove_cvref_t<t>>::value;
 
 template <typename t>
 /// `true` for `wh::core::result<T, E>` values.

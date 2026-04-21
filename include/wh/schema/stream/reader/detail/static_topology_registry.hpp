@@ -48,8 +48,7 @@ public:
 
   explicit static_topology_registry(std::vector<lane_type> &&readers)
       : lanes_(build_lanes(std::move(readers))),
-        mode_(lanes_.size() <= 5U ? topology_poll_mode::fixed
-                                  : topology_poll_mode::dynamic),
+        mode_(lanes_.size() <= 5U ? topology_poll_mode::fixed : topology_poll_mode::dynamic),
         attached_lanes_(count_attached_lanes(lanes_)) {
     seed_attached_lanes();
   }
@@ -87,8 +86,7 @@ public:
     }
     if (read_in_flight_) {
       return round_plan{
-          .immediate_status =
-              status_type::failure(wh::core::errc::unavailable),
+          .immediate_status = status_type::failure(wh::core::errc::unavailable),
       };
     }
     if (lanes_.empty() || attached_lanes_ == 0U) {
@@ -100,8 +98,7 @@ public:
     auto lanes = take_round_lanes();
     if (lanes.empty()) {
       return round_plan{
-          .immediate_status =
-              status_type::failure(wh::core::errc::internal_error),
+          .immediate_status = status_type::failure(wh::core::errc::internal_error),
       };
     }
 
@@ -116,8 +113,7 @@ public:
   }
 
   [[nodiscard]] auto complete_round_winner(const lane_list &round_lanes,
-                                           const std::size_t winner_position,
-                                           status_type status)
+                                           const std::size_t winner_position, status_type status)
       -> round_resolution {
     read_in_flight_ = false;
     complete_round_lanes(round_lanes, winner_position);
@@ -167,8 +163,7 @@ public:
     complete_round_lanes(round_lanes, std::nullopt);
   }
 
-  auto close_lane_if_needed(const std::optional<std::size_t> lane_index)
-      -> void {
+  auto close_lane_if_needed(const std::optional<std::size_t> lane_index) -> void {
     if (!lane_index.has_value()) {
       return;
     }
@@ -187,8 +182,7 @@ public:
     for (auto &lane : lanes_) {
       if (lane.status == lane_phase::attached && lane.reader.has_value()) {
         auto closed = lane.reader->close();
-        if (closed.has_error() &&
-            closed.error() != wh::core::errc::channel_closed &&
+        if (closed.has_error() && closed.error() != wh::core::errc::channel_closed &&
             !close_status.has_error()) {
           close_status = closed;
         }
@@ -226,8 +220,7 @@ public:
       if (!lane.reader.has_value()) {
         continue;
       }
-      if constexpr (requires(reader_t &value,
-                             const auto_close_options &value_options) {
+      if constexpr (requires(reader_t &value, const auto_close_options &value_options) {
                       value.set_automatic_close(value_options);
                     }) {
         lane.reader->set_automatic_close(options);
@@ -235,31 +228,23 @@ public:
     }
   }
 
-  [[nodiscard]] auto register_sync_topology_waiter(
-      sync_waiter_type *, const std::uint64_t) -> bool {
+  [[nodiscard]] auto register_sync_topology_waiter(sync_waiter_type *, const std::uint64_t)
+      -> bool {
     return false;
   }
 
-  [[nodiscard]] auto register_async_topology_waiter(
-      async_waiter_type *, const std::uint64_t) -> bool {
+  [[nodiscard]] auto register_async_topology_waiter(async_waiter_type *, const std::uint64_t)
+      -> bool {
     return false;
   }
 
-  [[nodiscard]] auto remove_async_topology_waiter(async_waiter_type *) -> bool {
-    return false;
-  }
+  [[nodiscard]] auto remove_async_topology_waiter(async_waiter_type *) -> bool { return false; }
 
-  [[nodiscard]] auto topology_epoch() const noexcept -> std::uint64_t {
-    return 0U;
-  }
+  [[nodiscard]] auto topology_epoch() const noexcept -> std::uint64_t { return 0U; }
 
-  [[nodiscard]] auto has_pending_lanes() const noexcept -> bool {
-    return false;
-  }
+  [[nodiscard]] auto has_pending_lanes() const noexcept -> bool { return false; }
 
-  [[nodiscard]] auto lane_count() const noexcept -> std::size_t {
-    return lanes_.size();
-  }
+  [[nodiscard]] auto lane_count() const noexcept -> std::size_t { return lanes_.size(); }
 
 private:
   enum class lane_phase : std::uint8_t {
@@ -281,26 +266,22 @@ private:
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
     static_cast<void>(validate_indexed_capacity<>(
-        readers.size(),
-        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
+        readers.size(), "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(readers.size());
     for (auto &reader : readers) {
       lanes.push_back(lane_state{
           .source = std::move(reader.source),
           .reader = std::move(reader.reader),
-          .status = reader.finished ? lane_phase::finished
-                                    : lane_phase::attached,
+          .status = reader.finished ? lane_phase::finished : lane_phase::attached,
       });
     }
     return lanes;
   }
 
-  [[nodiscard]] static auto
-  count_attached_lanes(const std::vector<lane_state> &lanes) -> std::size_t {
+  [[nodiscard]] static auto count_attached_lanes(const std::vector<lane_state> &lanes)
+      -> std::size_t {
     return static_cast<std::size_t>(std::ranges::count_if(
-        lanes, [](const lane_state &lane) -> bool {
-          return lane.status == lane_phase::attached;
-        }));
+        lanes, [](const lane_state &lane) -> bool { return lane.status == lane_phase::attached; }));
   }
 
   auto seed_attached_lanes() -> void {
@@ -323,15 +304,13 @@ private:
     if (head < 64U && head * 2U < queue.size()) {
       return;
     }
-    queue.erase(queue.begin(),
-                queue.begin() + static_cast<std::ptrdiff_t>(head));
+    queue.erase(queue.begin(), queue.begin() + static_cast<std::ptrdiff_t>(head));
     head = 0U;
   }
 
   auto enqueue_ready(const std::size_t index) -> void {
     auto &lane = lanes_[index];
-    if (lane.status != lane_phase::attached || lane.in_round ||
-        lane.ready_queued) {
+    if (lane.status != lane_phase::attached || lane.in_round || lane.ready_queued) {
       return;
     }
     lane.ready_queued = true;
@@ -341,8 +320,8 @@ private:
 
   auto enqueue_probe(const std::size_t index) -> void {
     auto &lane = lanes_[index];
-    if (lane.status != lane_phase::attached || lane.in_round ||
-        lane.ready_queued || lane.probe_queued) {
+    if (lane.status != lane_phase::attached || lane.in_round || lane.ready_queued ||
+        lane.probe_queued) {
       return;
     }
     lane.probe_queued = true;
@@ -353,8 +332,7 @@ private:
     while (ready_head_ < ready_queue_.size()) {
       const auto index = ready_queue_[ready_head_++];
       auto &lane = lanes_[index];
-      if (!lane.ready_queued || lane.status != lane_phase::attached ||
-          lane.in_round) {
+      if (!lane.ready_queued || lane.status != lane_phase::attached || lane.in_round) {
         continue;
       }
       lane.ready_queued = false;
@@ -370,8 +348,8 @@ private:
     while (probe_head_ < probe_queue_.size()) {
       const auto index = probe_queue_[probe_head_++];
       auto &lane = lanes_[index];
-      if (!lane.probe_queued || lane.status != lane_phase::attached ||
-          lane.in_round || lane.ready_queued) {
+      if (!lane.probe_queued || lane.status != lane_phase::attached || lane.in_round ||
+          lane.ready_queued) {
         continue;
       }
       lane.probe_queued = false;
@@ -387,8 +365,7 @@ private:
     while (ready_head_ < ready_queue_.size()) {
       const auto index = ready_queue_[ready_head_++];
       auto &lane = lanes_[index];
-      if (!lane.ready_queued || lane.status != lane_phase::attached ||
-          lane.in_round) {
+      if (!lane.ready_queued || lane.status != lane_phase::attached || lane.in_round) {
         continue;
       }
       lane.ready_queued = false;
@@ -426,8 +403,7 @@ private:
   }
 
   auto complete_round_lanes(const lane_list &round_lanes,
-                            const std::optional<std::size_t> winner_position)
-      -> void {
+                            const std::optional<std::size_t> winner_position) -> void {
     for (std::size_t position = 0U; position < round_lanes.size(); ++position) {
       const auto lane_index = round_lanes[position];
       auto &lane = lanes_[lane_index];

@@ -42,12 +42,10 @@ struct http_stream_event {
 };
 
 /// Reader used by streaming HTTP responses.
-using http_stream_reader =
-    wh::schema::stream::any_stream_reader<http_stream_event>;
+using http_stream_reader = wh::schema::stream::any_stream_reader<http_stream_event>;
 
 /// Final result for streaming invoke paths.
-using http_stream_result =
-    wh::core::result<http_stream_reader, transport_error>;
+using http_stream_result = wh::core::result<http_stream_reader, transport_error>;
 
 /// Borrowed parser input view for one incremental SSE parse step.
 struct sse_parse_request_view {
@@ -77,12 +75,10 @@ struct sse_parse_output {
 using sse_parse_result = wh::core::result<sse_parse_output, transport_error>;
 
 /// Projects one owned parse request into its borrowed view form.
-[[nodiscard]] inline auto
-make_sse_parse_request_view(const sse_parse_request &request)
+[[nodiscard]] inline auto make_sse_parse_request_view(const sse_parse_request &request)
     -> sse_parse_request_view {
   return sse_parse_request_view{
-      .bytes = std::span<const std::byte>{request.bytes.data(),
-                                          request.bytes.size()},
+      .bytes = std::span<const std::byte>{request.bytes.data(), request.bytes.size()},
       .end_of_stream = request.end_of_stream,
   };
 }

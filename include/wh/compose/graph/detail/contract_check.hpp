@@ -37,14 +37,12 @@ struct node_gate_state {
   return text;
 }
 
-[[nodiscard]] inline auto same_value_gate(const value_gate &lhs,
-                                          const value_gate &rhs) noexcept
+[[nodiscard]] inline auto same_value_gate(const value_gate &lhs, const value_gate &rhs) noexcept
     -> bool {
   return lhs.key() == rhs.key();
 }
 
-[[nodiscard]] inline auto lifted_value_gate(const auto &edge,
-                                            const output_gate &source) noexcept
+[[nodiscard]] inline auto lifted_value_gate(const auto &edge, const output_gate &source) noexcept
     -> output_gate {
   switch (edge.lowering_kind) {
   case edge_lowering_kind::none:
@@ -65,9 +63,8 @@ struct node_gate_state {
   return output_gate::dynamic();
 }
 
-[[nodiscard]] inline auto
-compatible_value_edge(const auto &edge, const output_gate &source,
-                      const input_gate &target) noexcept -> bool {
+[[nodiscard]] inline auto compatible_value_edge(const auto &edge, const output_gate &source,
+                                                const input_gate &target) noexcept -> bool {
   if (target.kind == input_gate_kind::value_open) {
     return true;
   }
@@ -79,8 +76,7 @@ compatible_value_edge(const auto &edge, const output_gate &source,
 
   if (source.kind == output_gate_kind::reader) {
     if (edge.lowering_kind == edge_lowering_kind::stream_to_value) {
-      return target.value.key() ==
-             wh::core::any_type_key_v<std::vector<graph_value>>;
+      return target.value.key() == wh::core::any_type_key_v<std::vector<graph_value>>;
     }
     return edge.lowering_kind == edge_lowering_kind::custom;
   }
@@ -96,11 +92,10 @@ compatible_value_edge(const auto &edge, const output_gate &source,
   return true;
 }
 
-[[nodiscard]] inline auto
-incompatible_edge_message(const std::string_view source_key,
-                          const std::string_view target_key, const auto &edge,
-                          const output_gate &source, const input_gate &target)
-    -> std::string {
+[[nodiscard]] inline auto incompatible_edge_message(const std::string_view source_key,
+                                                    const std::string_view target_key,
+                                                    const auto &edge, const output_gate &source,
+                                                    const input_gate &target) -> std::string {
   std::string message{"edge contract impossible: "};
   message += std::string{source_key};
   message += " -> ";
@@ -114,9 +109,10 @@ incompatible_edge_message(const std::string_view source_key,
   return message;
 }
 
-[[nodiscard]] inline auto compiled_value_fan_in_gate(
-    const auto &index, const std::vector<node_gate_state> &gates,
-    const std::uint32_t node_id) noexcept -> std::optional<output_gate> {
+[[nodiscard]] inline auto compiled_value_fan_in_gate(const auto &index,
+                                                     const std::vector<node_gate_state> &gates,
+                                                     const std::uint32_t node_id) noexcept
+    -> std::optional<output_gate> {
   const auto incoming = index.incoming_data(node_id);
   if (incoming.empty()) {
     return std::nullopt;
@@ -130,9 +126,10 @@ incompatible_edge_message(const std::string_view source_key,
   return lifted_value_gate(edge, gates[edge.from].resolved_output);
 }
 
-[[nodiscard]] inline auto incompatible_value_fan_in_message(
-    const std::string_view node_key, const output_gate &actual,
-    const input_gate &target, const std::size_t incoming_count) -> std::string {
+[[nodiscard]] inline auto
+incompatible_value_fan_in_message(const std::string_view node_key, const output_gate &actual,
+                                  const input_gate &target, const std::size_t incoming_count)
+    -> std::string {
   std::string message{"value fan-in impossible: node="};
   message += std::string{node_key};
   message += " incoming=";
@@ -144,9 +141,8 @@ incompatible_edge_message(const std::string_view source_key,
   return message;
 }
 
-[[nodiscard]] inline auto
-accepts_fan_in_value_map(const auto &index, const input_gate &target,
-                         const std::uint32_t node_id) noexcept -> bool {
+[[nodiscard]] inline auto accepts_fan_in_value_map(const auto &index, const input_gate &target,
+                                                   const std::uint32_t node_id) noexcept -> bool {
   if (target.kind != input_gate_kind::value_exact ||
       target.value.key() != wh::core::any_type_key_v<graph_value_map>) {
     return false;
@@ -166,13 +162,11 @@ inline auto graph::validate_contracts() -> wh::core::result<void> {
   boundary_input_gate = core().options_.boundary.input == node_contract::stream
                             ? input_gate::reader()
                             : input_gate::open();
-  boundary_output_gate =
-      core().options_.boundary.output == node_contract::stream
-          ? output_gate::reader()
-          : output_gate::dynamic();
+  boundary_output_gate = core().options_.boundary.output == node_contract::stream
+                             ? output_gate::reader()
+                             : output_gate::dynamic();
 
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
     const auto &node = core().nodes_.at(index.id_to_key[node_id]);
     gates[node_id].input = detail::authored_input_gate(node);
     gates[node_id].declared_output = detail::authored_output_gate(node);
@@ -185,8 +179,7 @@ inline auto graph::validate_contracts() -> wh::core::result<void> {
         gates[node_id].declared_output = *meta.compiled_output_gate;
       }
     }
-    if (gates[node_id].declared_output.kind ==
-        output_gate_kind::value_passthrough) {
+    if (gates[node_id].declared_output.kind == output_gate_kind::value_passthrough) {
       gates[node_id].resolved_output = output_gate::dynamic();
     } else {
       gates[node_id].resolved_output = gates[node_id].declared_output;
@@ -199,13 +192,11 @@ inline auto graph::validate_contracts() -> wh::core::result<void> {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
     const auto node_id = node_id_iter->second;
-    if (gates[node_id].declared_output.kind !=
-        output_gate_kind::value_passthrough) {
+    if (gates[node_id].declared_output.kind != output_gate_kind::value_passthrough) {
       continue;
     }
 
-    const auto &value_edges =
-        core().compiled_execution_index_.plan.inputs[node_id].value_edges;
+    const auto &value_edges = core().compiled_execution_index_.plan.inputs[node_id].value_edges;
     if (value_edges.size() != 1U) {
       gates[node_id].resolved_output = output_gate::dynamic();
       continue;
@@ -230,20 +221,18 @@ inline auto graph::validate_contracts() -> wh::core::result<void> {
       continue;
     }
     return fail_fast(wh::core::errc::contract_violation,
-                     detail::incompatible_edge_message(
-                         index.id_to_key[edge.from], index.id_to_key[edge.to],
-                         edge, source_gate, target_gate));
+                     detail::incompatible_edge_message(index.id_to_key[edge.from],
+                                                       index.id_to_key[edge.to], edge, source_gate,
+                                                       target_gate));
   }
 
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
     const auto &target_gate = gates[node_id].input;
     if (target_gate.kind != input_gate_kind::value_exact) {
       continue;
     }
 
-    auto actual_gate =
-        detail::compiled_value_fan_in_gate(index, gates, node_id);
+    auto actual_gate = detail::compiled_value_fan_in_gate(index, gates, node_id);
     if (!actual_gate.has_value()) {
       continue;
     }
@@ -271,8 +260,7 @@ inline auto graph::validate_contracts() -> wh::core::result<void> {
   }
 
   if (core().options_.boundary.output == node_contract::value) {
-    auto end_gate =
-        detail::compiled_value_fan_in_gate(index, gates, index.end_id);
+    auto end_gate = detail::compiled_value_fan_in_gate(index, gates, index.end_id);
     if (end_gate.has_value()) {
       boundary_output_gate = *end_gate;
     }

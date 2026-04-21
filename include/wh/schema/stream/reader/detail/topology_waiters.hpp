@@ -40,8 +40,7 @@ public:
     if (waiter == nullptr) {
       return false;
     }
-    if (waiter->prev == nullptr && waiter->next == nullptr &&
-        head_ != waiter) {
+    if (waiter->prev == nullptr && waiter->next == nullptr && head_ != waiter) {
       return false;
     }
 

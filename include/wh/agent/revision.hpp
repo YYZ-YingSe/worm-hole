@@ -46,8 +46,8 @@ struct review_decision {
 };
 
 /// Builds the next role request from the current revision context.
-using revision_request_builder = wh::core::callback_function<
-    wh::core::result<std::vector<wh::schema::message>>(
+using revision_request_builder =
+    wh::core::callback_function<wh::core::result<std::vector<wh::schema::message>>(
         const revision_context &, wh::core::run_context &) const>;
 
 /// Normalizes one review-role output into a branch decision.

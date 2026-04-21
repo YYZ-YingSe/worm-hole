@@ -54,12 +54,9 @@ struct loaded_skill {
 /// Runtime backend used by the mounted skill tool.
 struct skill_backend {
   /// Lists the current visible skill set.
-  wh::core::callback_function<wh::core::result<std::vector<skill_info>>() const>
-      list{nullptr};
+  wh::core::callback_function<wh::core::result<std::vector<skill_info>>() const> list{nullptr};
   /// Loads one skill document by its public skill name.
-  wh::core::callback_function<wh::core::result<loaded_skill>(std::string_view)
-                                  const>
-      load{nullptr};
+  wh::core::callback_function<wh::core::result<loaded_skill>(std::string_view) const> load{nullptr};
 };
 
 /// Public configuration for the generated skill tool.
@@ -83,15 +80,12 @@ struct skill_tool_binding {
 /// Request mutator used by callers to refresh skill visibility before the
 /// model turn begins.
 using skill_request_middleware =
-    wh::core::callback_function<wh::core::result<void>(
-        wh::model::chat_request &) const>;
+    wh::core::callback_function<wh::core::result<void>(wh::model::chat_request &) const>;
 
 namespace detail {
 
 [[nodiscard]] inline auto trim_copy(std::string value) -> std::string {
-  const auto not_space = [](const unsigned char ch) noexcept -> bool {
-    return !std::isspace(ch);
-  };
+  const auto not_space = [](const unsigned char ch) noexcept -> bool { return !std::isspace(ch); };
   auto begin = std::find_if(value.begin(), value.end(), not_space);
   auto end = std::find_if(value.rbegin(), value.rend(), not_space).base();
   if (begin >= end) {
@@ -109,9 +103,8 @@ namespace detail {
   return value;
 }
 
-[[nodiscard]] inline auto
-parse_skill_document(const std::filesystem::path &directory,
-                     const std::filesystem::path &skill_file)
+[[nodiscard]] inline auto parse_skill_document(const std::filesystem::path &directory,
+                                               const std::filesystem::path &skill_file)
     -> wh::core::result<loaded_skill> {
   std::ifstream input{skill_file};
   if (!input.is_open()) {
@@ -144,8 +137,7 @@ parse_skill_document(const std::filesystem::path &directory,
   while (std::getline(header_stream, line)) {
     auto colon = line.find(':');
     if (colon == std::string::npos) {
-      return wh::core::result<loaded_skill>::failure(
-          wh::core::errc::parse_error);
+      return wh::core::result<loaded_skill>::failure(wh::core::errc::parse_error);
     }
     auto key = trim_copy(line.substr(0U, colon));
     auto value = strip_quotes(trim_copy(line.substr(colon + 1U)));
@@ -166,13 +158,11 @@ parse_skill_document(const std::filesystem::path &directory,
   return parsed;
 }
 
-[[nodiscard]] inline auto
-render_skill_list(const std::vector<skill_info> &skills,
-                  const skill_language language) -> std::string {
-  std::string rendered =
-      language == skill_language::english
-          ? "Load one local skill guide by name. Available skills:\n"
-          : "按名称读取一个本地技能指南。可用技能：\n";
+[[nodiscard]] inline auto render_skill_list(const std::vector<skill_info> &skills,
+                                            const skill_language language) -> std::string {
+  std::string rendered = language == skill_language::english
+                             ? "Load one local skill guide by name. Available skills:\n"
+                             : "按名称读取一个本地技能指南。可用技能：\n";
   if (skills.empty()) {
     rendered.append(language == skill_language::english ? "(none)" : "（无）");
     return rendered;
@@ -188,8 +178,7 @@ render_skill_list(const std::vector<skill_info> &skills,
   return rendered;
 }
 
-[[nodiscard]] inline auto default_instruction(const skill_language language)
-    -> std::string {
+[[nodiscard]] inline auto default_instruction(const skill_language language) -> std::string {
   if (language == skill_language::chinese) {
     return "当你需要仓库内的专用工作流或约束时，可以使用 skill "
            "工具读取本地技能说明。";
@@ -205,24 +194,21 @@ render_skill_list(const std::vector<skill_info> &skills,
     return wh::core::result<std::string>::failure(parsed.error());
   }
   if (!parsed.value().IsObject()) {
-    return wh::core::result<std::string>::failure(
-        wh::core::errc::type_mismatch);
+    return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
   }
   auto name = wh::core::json_find_member(parsed.value(), "name");
   if (name.has_error()) {
     return wh::core::result<std::string>::failure(name.error());
   }
   if (!name.value()->IsString()) {
-    return wh::core::result<std::string>::failure(
-        wh::core::errc::type_mismatch);
+    return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
   }
   return std::string{name.value()->GetString(),
                      static_cast<std::size_t>(name.value()->GetStringLength())};
 }
 
 [[nodiscard]] inline auto render_loaded_skill(const loaded_skill &skill,
-                                              const skill_language language)
-    -> std::string {
+                                              const skill_language language) -> std::string {
   std::string rendered{};
   if (language == skill_language::english) {
     rendered.append("Skill: ");
@@ -265,26 +251,22 @@ public:
       : base_directory_(std::move(base_directory)) {}
 
   /// Returns the absolute base directory used for scanning.
-  [[nodiscard]] auto base_directory() const noexcept
-      -> const std::filesystem::path & {
+  [[nodiscard]] auto base_directory() const noexcept -> const std::filesystem::path & {
     return base_directory_;
   }
 
   /// Lists all visible local skills in stable directory order.
   [[nodiscard]] auto list() const -> wh::core::result<std::vector<skill_info>> {
     if (base_directory_.empty() || !base_directory_.is_absolute()) {
-      return wh::core::result<std::vector<skill_info>>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<std::vector<skill_info>>::failure(wh::core::errc::invalid_argument);
     }
     if (!std::filesystem::exists(base_directory_) ||
         !std::filesystem::is_directory(base_directory_)) {
-      return wh::core::result<std::vector<skill_info>>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<std::vector<skill_info>>::failure(wh::core::errc::not_found);
     }
 
     std::vector<std::filesystem::path> directories{};
-    for (const auto &entry :
-         std::filesystem::directory_iterator(base_directory_)) {
+    for (const auto &entry : std::filesystem::directory_iterator(base_directory_)) {
       if (entry.is_directory()) {
         directories.push_back(entry.path());
       }
@@ -299,8 +281,7 @@ public:
       }
       auto parsed = detail::parse_skill_document(directory, skill_file);
       if (parsed.has_error()) {
-        return wh::core::result<std::vector<skill_info>>::failure(
-            parsed.error());
+        return wh::core::result<std::vector<skill_info>>::failure(parsed.error());
       }
       skills.push_back(std::move(parsed).value().info);
     }
@@ -318,8 +299,8 @@ public:
       if (skill.name != skill_name) {
         continue;
       }
-      return detail::parse_skill_document(
-          skill.directory, std::filesystem::path{skill.directory} / "SKILL.md");
+      return detail::parse_skill_document(skill.directory,
+                                          std::filesystem::path{skill.directory} / "SKILL.md");
     }
     return wh::core::result<loaded_skill>::failure(wh::core::errc::not_found);
   }
@@ -327,14 +308,11 @@ public:
   /// Projects the local backend into the generic skill-backend contract.
   [[nodiscard]] auto to_backend() const -> skill_backend {
     return skill_backend{
-        .list = [backend =
-                     *this]() -> wh::core::result<std::vector<skill_info>> {
+        .list = [backend = *this]() -> wh::core::result<std::vector<skill_info>> {
           return backend.list();
         },
         .load = [backend = *this](const std::string_view skill_name)
-            -> wh::core::result<loaded_skill> {
-          return backend.load(skill_name);
-        },
+            -> wh::core::result<loaded_skill> { return backend.load(skill_name); },
     };
   }
 
@@ -344,13 +322,11 @@ private:
 };
 
 /// Renders the current skill-tool description from the latest backend list.
-[[nodiscard]] inline auto
-render_skill_tool_description(const skill_backend &backend,
-                              const skill_tool_options &options = {})
+[[nodiscard]] inline auto render_skill_tool_description(const skill_backend &backend,
+                                                        const skill_tool_options &options = {})
     -> wh::core::result<std::string> {
   if (!static_cast<bool>(backend.list)) {
-    return wh::core::result<std::string>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<std::string>::failure(wh::core::errc::invalid_argument);
   }
   auto listed = backend.list();
   if (listed.has_error()) {
@@ -360,8 +336,7 @@ render_skill_tool_description(const skill_backend &backend,
 }
 
 /// Returns the instruction fragment that documents the mounted skill tool.
-[[nodiscard]] inline auto
-make_skill_instruction(const skill_tool_options &options) -> std::string {
+[[nodiscard]] inline auto make_skill_instruction(const skill_tool_options &options) -> std::string {
   if (!options.instruction.empty()) {
     return options.instruction;
   }
@@ -370,23 +345,19 @@ make_skill_instruction(const skill_tool_options &options) -> std::string {
 
 /// Creates a request mutator that refreshes the skill-tool description and
 /// prepends the configured instruction on every model turn.
-[[nodiscard]] inline auto
-make_skill_request_middleware(const skill_backend &backend,
-                              const skill_tool_options &options = {})
+[[nodiscard]] inline auto make_skill_request_middleware(const skill_backend &backend,
+                                                        const skill_tool_options &options = {})
     -> wh::core::result<skill_request_middleware> {
   if (!static_cast<bool>(backend.list)) {
-    return wh::core::result<skill_request_middleware>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<skill_request_middleware>::failure(wh::core::errc::invalid_argument);
   }
   const auto tool_name = options.tool_name;
   if (tool_name.empty()) {
-    return wh::core::result<skill_request_middleware>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<skill_request_middleware>::failure(wh::core::errc::invalid_argument);
   }
 
   return skill_request_middleware{
-      [backend, options,
-       tool_name](wh::model::chat_request &request) -> wh::core::result<void> {
+      [backend, options, tool_name](wh::model::chat_request &request) -> wh::core::result<void> {
         auto description = render_skill_tool_description(backend, options);
         if (description.has_error()) {
           return wh::core::result<void>::failure(description.error());
@@ -400,8 +371,7 @@ make_skill_request_middleware(const skill_backend &backend,
         if (!instruction.empty()) {
           wh::schema::message message{};
           message.role = wh::schema::message_role::system;
-          message.parts.emplace_back(
-              wh::schema::text_part{std::move(instruction)});
+          message.parts.emplace_back(wh::schema::text_part{std::move(instruction)});
           request.messages.insert(request.messages.begin(), std::move(message));
         }
         return {};
@@ -409,14 +379,12 @@ make_skill_request_middleware(const skill_backend &backend,
 }
 
 /// Creates one mounted skill tool binding.
-[[nodiscard]] inline auto
-make_skill_tool_binding(const skill_backend &backend,
-                        const skill_tool_options &options = {})
+[[nodiscard]] inline auto make_skill_tool_binding(const skill_backend &backend,
+                                                  const skill_tool_options &options = {})
     -> wh::core::result<skill_tool_binding> {
   if (!static_cast<bool>(backend.list) || !static_cast<bool>(backend.load) ||
       options.tool_name.empty()) {
-    return wh::core::result<skill_tool_binding>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<skill_tool_binding>::failure(wh::core::errc::invalid_argument);
   }
 
   auto description = render_skill_tool_description(backend, options);
@@ -430,9 +398,8 @@ make_skill_tool_binding(const skill_backend &backend,
   binding.schema.parameters.push_back(wh::schema::tool_parameter_schema{
       .name = "name",
       .type = wh::schema::tool_parameter_type::string,
-      .description = options.language == skill_language::english
-                         ? "Skill name to load."
-                         : "要加载的技能名称。",
+      .description = options.language == skill_language::english ? "Skill name to load."
+                                                                 : "要加载的技能名称。",
       .required = true,
   });
   binding.entry.invoke = wh::compose::tool_invoke{
@@ -441,32 +408,29 @@ make_skill_tool_binding(const skill_backend &backend,
           wh::tool::call_scope) -> wh::core::result<wh::compose::graph_value> {
         auto skill_name = detail::read_skill_name(call.arguments);
         if (skill_name.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              skill_name.error());
+          return wh::core::result<wh::compose::graph_value>::failure(skill_name.error());
         }
         auto loaded = backend.load(skill_name.value());
         if (loaded.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              loaded.error());
+          return wh::core::result<wh::compose::graph_value>::failure(loaded.error());
         }
-        return detail::graph_string_value(
-            detail::render_loaded_skill(loaded.value(), language));
+        return detail::graph_string_value(detail::render_loaded_skill(loaded.value(), language));
       }};
   return binding;
 }
 
 /// Mounts the skill tool into one authored toolset and returns the instruction
 /// fragment that should be appended to the agent.
-[[nodiscard]] inline auto
-mount_skill_tool(wh::agent::toolset &toolset, const skill_backend &backend,
-                 const skill_tool_options &options = {})
+[[nodiscard]] inline auto mount_skill_tool(wh::agent::toolset &toolset,
+                                           const skill_backend &backend,
+                                           const skill_tool_options &options = {})
     -> wh::core::result<std::string> {
   auto binding = make_skill_tool_binding(backend, options);
   if (binding.has_error()) {
     return wh::core::result<std::string>::failure(binding.error());
   }
-  auto added = toolset.add_entry(std::move(binding.value().schema),
-                                 std::move(binding.value().entry));
+  auto added =
+      toolset.add_entry(std::move(binding.value().schema), std::move(binding.value().entry));
   if (added.has_error()) {
     return wh::core::result<std::string>::failure(added.error());
   }

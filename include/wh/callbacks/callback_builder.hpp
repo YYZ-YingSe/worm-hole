@@ -14,11 +14,10 @@ namespace detail {
 
 template <typename callback_t>
 /// Concept for `(stage, event)` stage callbacks.
-concept StageCallbackLike =
-    requires(callback_t callback, const stage current_stage,
-             const event_view event, const run_info &info) {
-      { callback(current_stage, event, info) } -> std::same_as<void>;
-    };
+concept StageCallbackLike = requires(callback_t callback, const stage current_stage,
+                                     const event_view event, const run_info &info) {
+  { callback(current_stage, event, info) } -> std::same_as<void>;
+};
 
 } // namespace detail
 
@@ -54,16 +53,14 @@ public:
   template <detail::StageCallbackLike callback_t>
   /// Installs `stream_start` stage callback.
   auto on_stream_start(callback_t &&callback) -> stage_callback_builder & {
-    callbacks_.on_stream_start =
-        stage_callback{std::forward<callback_t>(callback)};
+    callbacks_.on_stream_start = stage_callback{std::forward<callback_t>(callback)};
     return *this;
   }
 
   template <detail::StageCallbackLike callback_t>
   /// Installs `stream_end` stage callback.
   auto on_stream_end(callback_t &&callback) -> stage_callback_builder & {
-    callbacks_.on_stream_end =
-        stage_callback{std::forward<callback_t>(callback)};
+    callbacks_.on_stream_end = stage_callback{std::forward<callback_t>(callback)};
     return *this;
   }
 
@@ -75,8 +72,7 @@ public:
 
   /// Returns true when no stage callback is installed.
   [[nodiscard]] auto empty() const noexcept -> bool {
-    return !static_cast<bool>(callbacks_.on_start) &&
-           !static_cast<bool>(callbacks_.on_end) &&
+    return !static_cast<bool>(callbacks_.on_start) && !static_cast<bool>(callbacks_.on_end) &&
            !static_cast<bool>(callbacks_.on_error) &&
            !static_cast<bool>(callbacks_.on_stream_start) &&
            !static_cast<bool>(callbacks_.on_stream_end);
@@ -85,8 +81,7 @@ public:
   /// Builds stage callback table from current builder state.
   [[nodiscard]] auto build_callbacks() -> wh::core::result<stage_callbacks> {
     if (empty()) {
-      return wh::core::result<stage_callbacks>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<stage_callbacks>::failure(wh::core::errc::not_found);
     }
     return std::move(callbacks_);
   }

@@ -40,18 +40,16 @@ struct small_vector_default_options {
   static constexpr bool shrink_to_inline = true;
 };
 
-template <
-    std::size_t growth_numerator_v = 3U, std::size_t growth_denominator_v = 2U,
-    std::size_t minimum_dynamic_capacity_v = 0U, bool heap_enabled_v = true,
-    bool shrink_to_inline_v = true, typename size_type_t = std::size_t>
+template <std::size_t growth_numerator_v = 3U, std::size_t growth_denominator_v = 2U,
+          std::size_t minimum_dynamic_capacity_v = 0U, bool heap_enabled_v = true,
+          bool shrink_to_inline_v = true, typename size_type_t = std::size_t>
 /// Customizable growth/storage policy for `small_vector`.
 struct small_vector_options {
   using size_type = size_type_t;
 
   static constexpr std::size_t growth_numerator = growth_numerator_v;
   static constexpr std::size_t growth_denominator = growth_denominator_v;
-  static constexpr std::size_t minimum_dynamic_capacity =
-      minimum_dynamic_capacity_v;
+  static constexpr std::size_t minimum_dynamic_capacity = minimum_dynamic_capacity_v;
   static constexpr bool heap_enabled = heap_enabled_v;
   static constexpr bool shrink_to_inline = shrink_to_inline_v;
 };
@@ -61,8 +59,7 @@ template <typename value_t, std::size_t inline_capacity = 8U,
           typename options_t = small_vector_default_options>
 /// Inline-first vector implementation with optional heap spillover.
 class small_vector_impl {
-  static_assert(inline_capacity > 0U,
-                "small_vector inline_capacity must be greater than zero");
+  static_assert(inline_capacity > 0U, "small_vector inline_capacity must be greater than zero");
   static_assert(options_t::growth_denominator > 0U,
                 "small_vector growth denominator must be greater than zero");
   static_assert(std::is_unsigned_v<typename options_t::size_type>,
@@ -88,8 +85,7 @@ public:
       : data_(inline_data()), size_(0U), capacity_(inline_capacity) {}
 
   explicit small_vector_impl(const allocator_type &allocator) noexcept
-      : data_(inline_data()), size_(0U), capacity_(inline_capacity),
-        allocator_(allocator) {}
+      : data_(inline_data()), size_(0U), capacity_(inline_capacity), allocator_(allocator) {}
 
   explicit small_vector_impl(const size_type count)
     requires std::default_initializable<value_t>
@@ -105,8 +101,7 @@ public:
     append_default_n(static_cast<std::size_t>(count));
   }
 
-  small_vector_impl(const size_type count, const value_t &value)
-      : small_vector_impl() {
+  small_vector_impl(const size_type count, const value_t &value) : small_vector_impl() {
     assign(count, value);
   }
 
@@ -115,22 +110,19 @@ public:
     assign(first, last);
   }
 
-  small_vector_impl(const size_type count, const value_t &value,
-                    const allocator_type &allocator)
+  small_vector_impl(const size_type count, const value_t &value, const allocator_type &allocator)
       : small_vector_impl(allocator) {
     assign(count, value);
   }
 
-  explicit small_vector_impl(const size_type count,
-                             const allocator_type &allocator)
+  explicit small_vector_impl(const size_type count, const allocator_type &allocator)
     requires std::default_initializable<value_t>
       : small_vector_impl(allocator) {
     reserve(count);
     append_value_initialized_n(static_cast<std::size_t>(count));
   }
 
-  small_vector_impl(const size_type count, default_init_t,
-                    const allocator_type &allocator)
+  small_vector_impl(const size_type count, default_init_t, const allocator_type &allocator)
     requires std::default_initializable<value_t>
       : small_vector_impl(allocator) {
     reserve(count);
@@ -138,38 +130,32 @@ public:
   }
 
   template <std::input_iterator input_it>
-  small_vector_impl(input_it first, input_it last,
-                    const allocator_type &allocator)
+  small_vector_impl(input_it first, input_it last, const allocator_type &allocator)
       : small_vector_impl(allocator) {
     assign(first, last);
   }
 
-  small_vector_impl(std::initializer_list<value_t> values,
-                    const allocator_type &allocator)
+  small_vector_impl(std::initializer_list<value_t> values, const allocator_type &allocator)
       : small_vector_impl(allocator) {
     reserve(static_cast<size_type>(values.size()));
     append_copy_range(values.begin(), values.end());
   }
 
-  small_vector_impl(std::initializer_list<value_t> values)
-      : small_vector_impl() {
+  small_vector_impl(std::initializer_list<value_t> values) : small_vector_impl() {
     reserve(static_cast<size_type>(values.size()));
     append_copy_range(values.begin(), values.end());
   }
 
   small_vector_impl(const small_vector_impl &other)
       : data_(inline_data()), size_(0U), capacity_(inline_capacity),
-        allocator_(
-            std::allocator_traits<allocator_type>::
-                select_on_container_copy_construction(other.allocator_)) {
+        allocator_(std::allocator_traits<allocator_type>::select_on_container_copy_construction(
+            other.allocator_)) {
     reserve(other.size());
     append_copy_range(other.begin(), other.end());
   }
 
-  small_vector_impl(const small_vector_impl &other,
-                    const allocator_type &allocator)
-      : data_(inline_data()), size_(0U), capacity_(inline_capacity),
-        allocator_(allocator) {
+  small_vector_impl(const small_vector_impl &other, const allocator_type &allocator)
+      : data_(inline_data()), size_(0U), capacity_(inline_capacity), allocator_(allocator) {
     reserve(other.size());
     append_copy_range(other.begin(), other.end());
   }
@@ -181,10 +167,8 @@ public:
   }
 
   small_vector_impl(small_vector_impl &&other, const allocator_type &allocator)
-      : data_(inline_data()), size_(0U), capacity_(inline_capacity),
-        allocator_(allocator) {
-    if constexpr (std::allocator_traits<
-                      allocator_type>::is_always_equal::value) {
+      : data_(inline_data()), size_(0U), capacity_(inline_capacity), allocator_(allocator) {
+    if constexpr (std::allocator_traits<allocator_type>::is_always_equal::value) {
       move_from(std::move(other));
       return;
     }
@@ -204,8 +188,8 @@ public:
       return *this;
     }
 
-    if constexpr (std::allocator_traits<allocator_type>::
-                      propagate_on_container_copy_assignment::value) {
+    if constexpr (std::allocator_traits<
+                      allocator_type>::propagate_on_container_copy_assignment::value) {
       if (!using_inline_storage()) {
         clear();
         release_heap_if_needed();
@@ -232,15 +216,14 @@ public:
     release_heap_if_needed();
     reset_to_inline();
 
-    if constexpr (std::allocator_traits<allocator_type>::
-                      propagate_on_container_move_assignment::value) {
+    if constexpr (std::allocator_traits<
+                      allocator_type>::propagate_on_container_move_assignment::value) {
       allocator_ = std::move(other.allocator_);
       move_from(std::move(other));
       return *this;
     }
 
-    if constexpr (std::allocator_traits<
-                      allocator_type>::is_always_equal::value) {
+    if constexpr (std::allocator_traits<allocator_type>::is_always_equal::value) {
       move_from(std::move(other));
       return *this;
     }
@@ -261,25 +244,19 @@ public:
     release_heap_if_needed();
   }
 
-  [[nodiscard]] auto get_allocator() const noexcept -> allocator_type {
-    return allocator_;
-  }
+  [[nodiscard]] auto get_allocator() const noexcept -> allocator_type { return allocator_; }
 
   [[nodiscard]] auto empty() const noexcept -> bool { return size_ == 0U; }
 
-  [[nodiscard]] auto size() const noexcept -> size_type {
-    return static_cast<size_type>(size_);
-  }
+  [[nodiscard]] auto size() const noexcept -> size_type { return static_cast<size_type>(size_); }
 
   [[nodiscard]] auto capacity() const noexcept -> size_type {
     return static_cast<size_type>(capacity_);
   }
 
   [[nodiscard]] auto max_size() const noexcept -> size_type {
-    const auto allocator_max =
-        std::allocator_traits<allocator_type>::max_size(allocator_);
-    const auto type_max =
-        static_cast<std::size_t>((std::numeric_limits<size_type>::max)());
+    const auto allocator_max = std::allocator_traits<allocator_type>::max_size(allocator_);
+    const auto type_max = static_cast<std::size_t>((std::numeric_limits<size_type>::max)());
     return static_cast<size_type>((std::min)(allocator_max, type_max));
   }
 
@@ -293,32 +270,24 @@ public:
   }
 
   /// Returns pointer to inline buffer start.
-  [[nodiscard]] auto internal_storage() noexcept -> pointer {
-    return inline_data();
-  }
+  [[nodiscard]] auto internal_storage() noexcept -> pointer { return inline_data(); }
 
   /// Returns const pointer to inline buffer start.
-  [[nodiscard]] auto internal_storage() const noexcept -> const_pointer {
-    return inline_data();
-  }
+  [[nodiscard]] auto internal_storage() const noexcept -> const_pointer { return inline_data(); }
 
   /// Returns true when pointer refers to non-propagable inline storage.
-  [[nodiscard]] auto
-  storage_is_unpropagable(const_pointer pointer_value) const noexcept -> bool {
+  [[nodiscard]] auto storage_is_unpropagable(const_pointer pointer_value) const noexcept -> bool {
     return pointer_value == internal_storage();
   }
 
   /// Alias indicating whether container currently uses inline mode.
-  [[nodiscard]] auto is_small() const noexcept -> bool {
-    return using_inline_storage();
-  }
+  [[nodiscard]] auto is_small() const noexcept -> bool { return using_inline_storage(); }
 
   [[nodiscard]] auto operator[](const size_type index) noexcept -> reference {
     return data_[index];
   }
 
-  [[nodiscard]] auto operator[](const size_type index) const noexcept
-      -> const_reference {
+  [[nodiscard]] auto operator[](const size_type index) const noexcept -> const_reference {
     return data_[index];
   }
 
@@ -340,15 +309,11 @@ public:
 
   [[nodiscard]] auto front() noexcept -> reference { return data_[0]; }
 
-  [[nodiscard]] auto front() const noexcept -> const_reference {
-    return data_[0];
-  }
+  [[nodiscard]] auto front() const noexcept -> const_reference { return data_[0]; }
 
   [[nodiscard]] auto back() noexcept -> reference { return data_[size_ - 1U]; }
 
-  [[nodiscard]] auto back() const noexcept -> const_reference {
-    return data_[size_ - 1U];
-  }
+  [[nodiscard]] auto back() const noexcept -> const_reference { return data_[size_ - 1U]; }
 
   [[nodiscard]] auto begin() noexcept -> iterator { return data_; }
 
@@ -358,17 +323,11 @@ public:
 
   [[nodiscard]] auto end() noexcept -> iterator { return data_ + size_; }
 
-  [[nodiscard]] auto end() const noexcept -> const_iterator {
-    return data_ + size_;
-  }
+  [[nodiscard]] auto end() const noexcept -> const_iterator { return data_ + size_; }
 
-  [[nodiscard]] auto cend() const noexcept -> const_iterator {
-    return data_ + size_;
-  }
+  [[nodiscard]] auto cend() const noexcept -> const_iterator { return data_ + size_; }
 
-  [[nodiscard]] auto rbegin() noexcept -> reverse_iterator {
-    return reverse_iterator(end());
-  }
+  [[nodiscard]] auto rbegin() noexcept -> reverse_iterator { return reverse_iterator(end()); }
 
   [[nodiscard]] auto rbegin() const noexcept -> const_reverse_iterator {
     return const_reverse_iterator(end());
@@ -378,9 +337,7 @@ public:
     return const_reverse_iterator(cend());
   }
 
-  [[nodiscard]] auto rend() noexcept -> reverse_iterator {
-    return reverse_iterator(begin());
-  }
+  [[nodiscard]] auto rend() noexcept -> reverse_iterator { return reverse_iterator(begin()); }
 
   [[nodiscard]] auto rend() const noexcept -> const_reverse_iterator {
     return const_reverse_iterator(begin());
@@ -390,13 +347,11 @@ public:
     return const_reverse_iterator(cbegin());
   }
 
-  [[nodiscard]] static constexpr auto inline_capacity_value() noexcept
-      -> size_type {
+  [[nodiscard]] static constexpr auto inline_capacity_value() noexcept -> size_type {
     return inline_capacity;
   }
 
-  [[nodiscard]] static constexpr auto internal_capacity() noexcept
-      -> size_type {
+  [[nodiscard]] static constexpr auto internal_capacity() noexcept -> size_type {
     return inline_capacity;
   }
 
@@ -422,8 +377,7 @@ public:
     append_fill_n(count_size_t, value);
   }
 
-  template <std::input_iterator input_it>
-  auto assign(input_it first, input_it last) -> void {
+  template <std::input_iterator input_it> auto assign(input_it first, input_it last) -> void {
     if constexpr (std::forward_iterator<input_it>) {
       const auto count = static_cast<std::size_t>(std::distance(first, last));
       if (count > max_size()) {
@@ -431,10 +385,9 @@ public:
       }
 
       bool overlaps_self = false;
-      if constexpr (std::same_as<input_it, iterator> ||
-                    std::same_as<input_it, const_iterator>) {
-        overlaps_self = (first >= cbegin() && first <= cend()) &&
-                        (last >= cbegin() && last <= cend());
+      if constexpr (std::same_as<input_it, iterator> || std::same_as<input_it, const_iterator>) {
+        overlaps_self =
+            (first >= cbegin() && first <= cend()) && (last >= cbegin() && last <= cend());
       }
 
       if (overlaps_self) {
@@ -527,17 +480,14 @@ public:
       return;
     }
 
-    if constexpr (!std::allocator_traits<
-                      allocator_type>::propagate_on_container_swap::value &&
-                  !std::allocator_traits<
-                      allocator_type>::is_always_equal::value) {
+    if constexpr (!std::allocator_traits<allocator_type>::propagate_on_container_swap::value &&
+                  !std::allocator_traits<allocator_type>::is_always_equal::value) {
       if (!allocator_equals(other.allocator_)) {
         throw std::logic_error("small_vector swap allocator mismatch");
       }
     }
 
-    if constexpr (std::allocator_traits<
-                      allocator_type>::propagate_on_container_swap::value) {
+    if constexpr (std::allocator_traits<allocator_type>::propagate_on_container_swap::value) {
       std::swap(allocator_, other.allocator_);
     }
 
@@ -633,8 +583,7 @@ public:
         pointer inline_target = inline_data();
         relocate_into(data_, size_, inline_target);
         std::destroy_n(data_, size_);
-        std::allocator_traits<allocator_type>::deallocate(allocator_, data_,
-                                                          capacity_);
+        std::allocator_traits<allocator_type>::deallocate(allocator_, data_, capacity_);
         data_ = inline_target;
         capacity_ = inline_capacity;
         return;
@@ -650,25 +599,22 @@ public:
 
   auto push_back(value_t &&value) -> void { append_one(std::move(value)); }
 
-  template <typename... args_t>
-  [[nodiscard]] auto emplace_back(args_t &&...args) -> reference {
+  template <typename... args_t> [[nodiscard]] auto emplace_back(args_t &&...args) -> reference {
     append_one(std::forward<args_t>(args)...);
 
     return data_[size_ - 1U];
   }
 
-  [[nodiscard]] auto insert(const_iterator position, const value_t &value)
-      -> iterator {
+  [[nodiscard]] auto insert(const_iterator position, const value_t &value) -> iterator {
     return emplace(position, value);
   }
 
-  [[nodiscard]] auto insert(const_iterator position, value_t &&value)
-      -> iterator {
+  [[nodiscard]] auto insert(const_iterator position, value_t &&value) -> iterator {
     return emplace(position, std::move(value));
   }
 
-  [[nodiscard]] auto insert(const_iterator position, const size_type count,
-                            const value_t &value) -> iterator {
+  [[nodiscard]] auto insert(const_iterator position, const size_type count, const value_t &value)
+      -> iterator {
     const std::size_t index = static_cast<std::size_t>(position - cbegin());
     if (index > size_) {
       throw std::invalid_argument("small_vector insert position out of range");
@@ -697,8 +643,7 @@ public:
   }
 
   template <std::input_iterator input_it>
-  [[nodiscard]] auto insert(const_iterator position, input_it first,
-                            input_it last) -> iterator {
+  [[nodiscard]] auto insert(const_iterator position, input_it first, input_it last) -> iterator {
     const std::size_t index = static_cast<std::size_t>(position - cbegin());
     if (index > size_) {
       throw std::invalid_argument("small_vector insert position out of range");
@@ -723,21 +668,20 @@ public:
 
     std::size_t inserted = 0U;
     for (; first != last; ++first, ++inserted) {
-      [[maybe_unused]] auto inserted_position = emplace(
-          cbegin() + static_cast<difference_type>(index + inserted), *first);
+      [[maybe_unused]] auto inserted_position =
+          emplace(cbegin() + static_cast<difference_type>(index + inserted), *first);
     }
 
     return data_ + index;
   }
 
-  [[nodiscard]] auto insert(const_iterator position,
-                            std::initializer_list<value_t> values) -> iterator {
+  [[nodiscard]] auto insert(const_iterator position, std::initializer_list<value_t> values)
+      -> iterator {
     return insert(position, values.begin(), values.end());
   }
 
   template <typename... args_t>
-  [[nodiscard]] auto emplace(const_iterator position, args_t &&...args)
-      -> iterator {
+  [[nodiscard]] auto emplace(const_iterator position, args_t &&...args) -> iterator {
     const std::size_t index = static_cast<std::size_t>(position - cbegin());
     if (index > size_) {
       throw std::invalid_argument("small_vector emplace position out of range");
@@ -806,8 +750,7 @@ public:
 
     if constexpr (std::is_trivially_copyable_v<value_t>) {
       if (move_count > 0U) {
-        std::memmove(data_ + first_index, data_ + last_index,
-                     sizeof(value_t) * move_count);
+        std::memmove(data_ + first_index, data_ + last_index, sizeof(value_t) * move_count);
       }
     } else {
       std::move(data_ + last_index, data_ + size_, data_ + first_index);
@@ -836,8 +779,7 @@ public:
     return std::vector<value_t>(data_, data_ + size_);
   }
 
-  [[nodiscard]] static auto
-  from_std_vector_impl(const std::vector<value_t> &values)
+  [[nodiscard]] static auto from_std_vector_impl(const std::vector<value_t> &values)
       -> small_vector_impl {
     small_vector_impl output;
     const std::size_t count = values.size();
@@ -861,20 +803,16 @@ public:
 
 private:
   static constexpr bool should_trivially_relocate =
-      std::is_trivially_copyable_v<value_t> &&
-      std::is_move_constructible_v<value_t>;
+      std::is_trivially_copyable_v<value_t> && std::is_move_constructible_v<value_t>;
 
-  alignas(value_t)
-      std::array<std::byte, sizeof(value_t) * inline_capacity> inline_buffer_{};
+  alignas(value_t) std::array<std::byte, sizeof(value_t) * inline_capacity> inline_buffer_{};
   pointer data_;
   std::size_t size_;
   std::size_t capacity_;
   wh_no_unique_address allocator_type allocator_{};
 
-  [[nodiscard]] auto allocator_equals(const allocator_type &other) const
-      -> bool {
-    if constexpr (requires(const allocator_type &lhs,
-                           const allocator_type &rhs) {
+  [[nodiscard]] auto allocator_equals(const allocator_type &other) const -> bool {
+    if constexpr (requires(const allocator_type &lhs, const allocator_type &rhs) {
                     { lhs == rhs } -> std::convertible_to<bool>;
                   }) {
       return allocator_ == other;
@@ -900,8 +838,7 @@ private:
   auto shift_right_one(const std::size_t index) -> void {
     if constexpr (std::is_trivially_copyable_v<value_t>) {
       const std::size_t tail_count = size_ - index;
-      std::memmove(data_ + index + 1U, data_ + index,
-                   sizeof(value_t) * tail_count);
+      std::memmove(data_ + index + 1U, data_ + index, sizeof(value_t) * tail_count);
       ++size_;
       return;
     }
@@ -912,11 +849,9 @@ private:
       std::move_backward(data_ + index, data_ + size_ - 1U, data_ + size_);
     } else {
       try {
-        std::construct_at(data_ + size_,
-                          std::move_if_noexcept(data_[size_ - 1U]));
+        std::construct_at(data_ + size_, std::move_if_noexcept(data_[size_ - 1U]));
       } catch (...) {
-        throw std::runtime_error(
-            "small_vector shift right construction failed");
+        throw std::runtime_error("small_vector shift right construction failed");
       }
 
       try {
@@ -934,8 +869,7 @@ private:
     if constexpr (std::is_trivially_copyable_v<value_t>) {
       const std::size_t move_count = size_ - index - 1U;
       if (move_count > 0U) {
-        std::memmove(data_ + index, data_ + index + 1U,
-                     sizeof(value_t) * move_count);
+        std::memmove(data_ + index, data_ + index + 1U, sizeof(value_t) * move_count);
       }
     } else {
       std::move(data_ + index + 1U, data_ + size_, data_ + index);
@@ -947,8 +881,8 @@ private:
     }
   }
 
-  auto insert_fill_n(const std::size_t index, const std::size_t count,
-                     const value_t &value) -> iterator {
+  auto insert_fill_n(const std::size_t index, const std::size_t count, const value_t &value)
+      -> iterator {
     if (size_ + count > capacity_) {
       const std::size_t new_capacity = next_capacity(size_ + count);
       if (new_capacity <= capacity_) {
@@ -956,8 +890,7 @@ private:
       }
       pointer new_data = nullptr;
       try {
-        new_data = std::allocator_traits<allocator_type>::allocate(
-            allocator_, new_capacity);
+        new_data = std::allocator_traits<allocator_type>::allocate(allocator_, new_capacity);
       } catch (...) {
         throw std::length_error("small_vector allocation failed");
       }
@@ -973,8 +906,7 @@ private:
 
         const std::size_t suffix_count = size_ - index;
         if (suffix_count > 0U) {
-          std::memcpy(new_data + index + count, data_ + index,
-                      sizeof(value_t) * suffix_count);
+          std::memcpy(new_data + index + count, data_ + index, sizeof(value_t) * suffix_count);
         }
       } else {
         pointer constructed_end = new_data;
@@ -982,24 +914,20 @@ private:
         try {
           if constexpr (std::is_nothrow_move_constructible_v<value_t> ||
                         !std::is_copy_constructible_v<value_t>) {
+            constructed_end = std::uninitialized_move_n(data_, index, constructed_end).second;
             constructed_end =
-                std::uninitialized_move_n(data_, index, constructed_end).second;
-            constructed_end =
-                std::uninitialized_move_n(
-                    data_ + index, size_ - index,
-                    std::uninitialized_fill_n(constructed_end, count, value))
+                std::uninitialized_move_n(data_ + index, size_ - index,
+                                          std::uninitialized_fill_n(constructed_end, count, value))
                     .second;
           } else {
+            constructed_end = std::uninitialized_copy_n(data_, index, constructed_end);
             constructed_end =
-                std::uninitialized_copy_n(data_, index, constructed_end);
-            constructed_end = std::uninitialized_copy_n(
-                data_ + index, size_ - index,
-                std::uninitialized_fill_n(constructed_end, count, value));
+                std::uninitialized_copy_n(data_ + index, size_ - index,
+                                          std::uninitialized_fill_n(constructed_end, count, value));
           }
         } catch (...) {
           std::destroy(new_data, constructed_end);
-          std::allocator_traits<allocator_type>::deallocate(
-              allocator_, new_data, new_capacity);
+          std::allocator_traits<allocator_type>::deallocate(allocator_, new_data, new_capacity);
           throw std::runtime_error("small_vector insert relocation failed");
         }
       }
@@ -1024,8 +952,7 @@ private:
     }
 
     if constexpr (std::is_trivially_copyable_v<value_t>) {
-      std::memmove(data_ + index + count, data_ + index,
-                   sizeof(value_t) * tail_count);
+      std::memmove(data_ + index + count, data_ + index, sizeof(value_t) * tail_count);
 
       const std::size_t overlap_count = (std::min)(count, tail_count);
       std::fill_n(data_ + index, overlap_count, value);
@@ -1041,19 +968,16 @@ private:
       try {
         if constexpr (std::is_nothrow_move_constructible_v<value_t> ||
                       !std::is_copy_constructible_v<value_t>) {
-          (void)std::uninitialized_move_n(data_ + old_size - count, count,
-                                          data_ + old_size);
+          (void)std::uninitialized_move_n(data_ + old_size - count, count, data_ + old_size);
         } else {
-          (void)std::uninitialized_copy_n(data_ + old_size - count, count,
-                                          data_ + old_size);
+          (void)std::uninitialized_copy_n(data_ + old_size - count, count, data_ + old_size);
         }
       } catch (...) {
         throw;
       }
 
       try {
-        std::move_backward(data_ + index, data_ + old_size - count,
-                           data_ + old_size);
+        std::move_backward(data_ + index, data_ + old_size - count, data_ + old_size);
         std::fill_n(data_ + index, count, value);
       } catch (...) {
         std::destroy_n(data_ + old_size, count);
@@ -1067,8 +991,7 @@ private:
     const std::size_t appended_inserted = count - tail_count;
 
     try {
-      (void)std::uninitialized_fill_n(data_ + old_size, appended_inserted,
-                                      value);
+      (void)std::uninitialized_fill_n(data_ + old_size, appended_inserted, value);
     } catch (...) {
       throw;
     }
@@ -1099,9 +1022,8 @@ private:
   }
 
   template <std::forward_iterator forward_it>
-  auto insert_forward_range(const std::size_t index, forward_it first,
-                            forward_it last, const std::size_t count)
-      -> iterator {
+  auto insert_forward_range(const std::size_t index, forward_it first, forward_it last,
+                            const std::size_t count) -> iterator {
     if (count == 0U) {
       return data_ + index;
     }
@@ -1113,28 +1035,22 @@ private:
       }
       pointer new_data = nullptr;
       try {
-        new_data = std::allocator_traits<allocator_type>::allocate(
-            allocator_, new_capacity);
+        new_data = std::allocator_traits<allocator_type>::allocate(allocator_, new_capacity);
       } catch (...) {
         throw std::length_error("small_vector allocation failed");
       }
 
-      if constexpr (std::contiguous_iterator<forward_it> &&
-                    std::is_trivially_copyable_v<value_t> &&
-                    std::same_as<
-                        std::remove_cv_t<std::iter_value_t<forward_it>>,
-                        value_t>) {
+      if constexpr (std::contiguous_iterator<forward_it> && std::is_trivially_copyable_v<value_t> &&
+                    std::same_as<std::remove_cv_t<std::iter_value_t<forward_it>>, value_t>) {
         if (index > 0U) {
           std::memcpy(new_data, data_, sizeof(value_t) * index);
         }
 
-        std::memcpy(new_data + index, std::to_address(first),
-                    sizeof(value_t) * count);
+        std::memcpy(new_data + index, std::to_address(first), sizeof(value_t) * count);
 
         const std::size_t suffix_count = size_ - index;
         if (suffix_count > 0U) {
-          std::memcpy(new_data + index + count, data_ + index,
-                      sizeof(value_t) * suffix_count);
+          std::memcpy(new_data + index + count, data_ + index, sizeof(value_t) * suffix_count);
         }
       } else {
         pointer constructed_end = new_data;
@@ -1142,25 +1058,19 @@ private:
         try {
           if constexpr (std::is_nothrow_move_constructible_v<value_t> ||
                         !std::is_copy_constructible_v<value_t>) {
+            constructed_end = std::uninitialized_move_n(data_, index, constructed_end).second;
+            constructed_end = std::uninitialized_copy(first, last, constructed_end);
             constructed_end =
-                std::uninitialized_move_n(data_, index, constructed_end).second;
-            constructed_end =
-                std::uninitialized_copy(first, last, constructed_end);
-            constructed_end = std::uninitialized_move_n(
-                                  data_ + index, size_ - index, constructed_end)
-                                  .second;
+                std::uninitialized_move_n(data_ + index, size_ - index, constructed_end).second;
           } else {
+            constructed_end = std::uninitialized_copy_n(data_, index, constructed_end);
+            constructed_end = std::uninitialized_copy(first, last, constructed_end);
             constructed_end =
-                std::uninitialized_copy_n(data_, index, constructed_end);
-            constructed_end =
-                std::uninitialized_copy(first, last, constructed_end);
-            constructed_end = std::uninitialized_copy_n(
-                data_ + index, size_ - index, constructed_end);
+                std::uninitialized_copy_n(data_ + index, size_ - index, constructed_end);
           }
         } catch (...) {
           std::destroy(new_data, constructed_end);
-          std::allocator_traits<allocator_type>::deallocate(
-              allocator_, new_data, new_capacity);
+          std::allocator_traits<allocator_type>::deallocate(allocator_, new_data, new_capacity);
           throw std::runtime_error("small_vector insert relocation failed");
         }
       }
@@ -1184,20 +1094,16 @@ private:
       return data_ + index;
     }
 
-    if constexpr (std::contiguous_iterator<forward_it> &&
-                  std::is_trivially_copyable_v<value_t> &&
-                  std::same_as<std::remove_cv_t<std::iter_value_t<forward_it>>,
-                               value_t>) {
+    if constexpr (std::contiguous_iterator<forward_it> && std::is_trivially_copyable_v<value_t> &&
+                  std::same_as<std::remove_cv_t<std::iter_value_t<forward_it>>, value_t>) {
       const value_t *const source_begin = std::to_address(first);
       const value_t *const source_end = source_begin + count;
       const value_t *const storage_begin = data_;
       const value_t *const storage_end = data_ + old_size;
-      const bool source_overlaps_storage =
-          source_begin < storage_end && source_end > storage_begin;
+      const bool source_overlaps_storage = source_begin < storage_end && source_end > storage_begin;
 
       if (!source_overlaps_storage) {
-        std::memmove(data_ + index + count, data_ + index,
-                     sizeof(value_t) * tail_count);
+        std::memmove(data_ + index + count, data_ + index, sizeof(value_t) * tail_count);
         std::memcpy(data_ + index, source_begin, sizeof(value_t) * count);
         size_ = old_size + count;
         return data_ + index;
@@ -1208,19 +1114,16 @@ private:
       try {
         if constexpr (std::is_nothrow_move_constructible_v<value_t> ||
                       !std::is_copy_constructible_v<value_t>) {
-          (void)std::uninitialized_move_n(data_ + old_size - count, count,
-                                          data_ + old_size);
+          (void)std::uninitialized_move_n(data_ + old_size - count, count, data_ + old_size);
         } else {
-          (void)std::uninitialized_copy_n(data_ + old_size - count, count,
-                                          data_ + old_size);
+          (void)std::uninitialized_copy_n(data_ + old_size - count, count, data_ + old_size);
         }
       } catch (...) {
         throw;
       }
 
       try {
-        std::move_backward(data_ + index, data_ + old_size - count,
-                           data_ + old_size);
+        std::move_backward(data_ + index, data_ + old_size - count, data_ + old_size);
         (void)std::copy_n(first, count, data_ + index);
       } catch (...) {
         std::destroy_n(data_ + old_size, count);
@@ -1245,13 +1148,12 @@ private:
     try {
       if constexpr (std::is_nothrow_move_constructible_v<value_t> ||
                     !std::is_copy_constructible_v<value_t>) {
-        constructed_end =
-            std::uninitialized_move_n(data_ + index, tail_count,
-                                      data_ + old_size + appended_inserted)
-                .second;
+        constructed_end = std::uninitialized_move_n(data_ + index, tail_count,
+                                                    data_ + old_size + appended_inserted)
+                              .second;
       } else {
-        constructed_end = std::uninitialized_copy_n(
-            data_ + index, tail_count, data_ + old_size + appended_inserted);
+        constructed_end = std::uninitialized_copy_n(data_ + index, tail_count,
+                                                    data_ + old_size + appended_inserted);
       }
     } catch (...) {
       std::destroy(data_ + old_size, data_ + old_size + appended_inserted);
@@ -1271,22 +1173,19 @@ private:
 
   void release_heap_if_needed() noexcept {
     if (!using_inline_storage()) {
-      std::allocator_traits<allocator_type>::deallocate(allocator_, data_,
-                                                        capacity_);
+      std::allocator_traits<allocator_type>::deallocate(allocator_, data_, capacity_);
     }
   }
 
-  [[nodiscard]] auto next_capacity(const std::size_t required) const
-      -> std::size_t {
+  [[nodiscard]] auto next_capacity(const std::size_t required) const -> std::size_t {
     if constexpr (!options_type::heap_enabled) {
       return required;
     }
 
     const std::size_t minimum_dynamic_capacity =
         (std::max)(inline_capacity, options_type::minimum_dynamic_capacity);
-    const std::size_t growth_floor = capacity_ < minimum_dynamic_capacity
-                                         ? minimum_dynamic_capacity
-                                         : capacity_;
+    const std::size_t growth_floor =
+        capacity_ < minimum_dynamic_capacity ? minimum_dynamic_capacity : capacity_;
     const std::size_t max_capacity = static_cast<std::size_t>(max_size());
 
     if (growth_floor >= max_capacity) {
@@ -1301,8 +1200,7 @@ private:
       return max_capacity;
     }
 
-    const std::size_t grown =
-        grow_capacity_with_ratio(growth_floor, max_capacity);
+    const std::size_t grown = grow_capacity_with_ratio(growth_floor, max_capacity);
 
     const std::size_t clamped_grown = (std::min)(max_capacity, grown);
     const std::size_t requested_floor = (std::max)(required, growth_floor);
@@ -1329,8 +1227,7 @@ private:
     reserve(static_cast<size_type>(target_capacity));
   }
 
-  static auto relocate_into(pointer source, const std::size_t count,
-                            pointer destination) -> void {
+  static auto relocate_into(pointer source, const std::size_t count, pointer destination) -> void {
     if constexpr (should_trivially_relocate) {
       std::memcpy(destination, source, sizeof(value_t) * count);
       return;
@@ -1339,8 +1236,7 @@ private:
     std::size_t constructed = 0U;
     try {
       for (; constructed < count; ++constructed) {
-        std::construct_at(destination + constructed,
-                          std::move_if_noexcept(source[constructed]));
+        std::construct_at(destination + constructed, std::move_if_noexcept(source[constructed]));
       }
     } catch (...) {
       std::destroy_n(destination, constructed);
@@ -1351,8 +1247,7 @@ private:
   auto reallocate(const std::size_t new_capacity) -> void {
     pointer new_data = nullptr;
     try {
-      new_data = std::allocator_traits<allocator_type>::allocate(allocator_,
-                                                                 new_capacity);
+      new_data = std::allocator_traits<allocator_type>::allocate(allocator_, new_capacity);
     } catch (...) {
       throw std::length_error("small_vector allocation failed");
     }
@@ -1360,8 +1255,7 @@ private:
     try {
       relocate_into(data_, size_, new_data);
     } catch (...) {
-      std::allocator_traits<allocator_type>::deallocate(allocator_, new_data,
-                                                        new_capacity);
+      std::allocator_traits<allocator_type>::deallocate(allocator_, new_data, new_capacity);
       throw;
     }
 
@@ -1410,8 +1304,7 @@ private:
     ++size_;
   }
 
-  template <typename... args_t>
-  auto append_one_slow_path(args_t &&...args) -> void {
+  template <typename... args_t> auto append_one_slow_path(args_t &&...args) -> void {
     ensure_capacity_for(1U);
 
     if constexpr (std::is_nothrow_constructible_v<value_t, decltype(args)...>) {
@@ -1427,38 +1320,31 @@ private:
     ++size_;
   }
 
-  [[nodiscard]] static auto
-  grow_capacity_with_ratio(const std::size_t current_capacity,
-                           const std::size_t max_capacity) noexcept
+  [[nodiscard]] static auto grow_capacity_with_ratio(const std::size_t current_capacity,
+                                                     const std::size_t max_capacity) noexcept
       -> std::size_t {
     if constexpr (options_type::growth_numerator == 0U) {
       return current_capacity + 1U;
     }
 
-    const std::size_t overflow_limit =
-        max_capacity / options_type::growth_numerator;
+    const std::size_t overflow_limit = max_capacity / options_type::growth_numerator;
 
     if (current_capacity <= overflow_limit) {
       const std::size_t multiplied =
-          (current_capacity * options_type::growth_numerator) /
-          options_type::growth_denominator;
-      return multiplied > current_capacity ? multiplied
-                                           : (current_capacity + 1U);
+          (current_capacity * options_type::growth_numerator) / options_type::growth_denominator;
+      return multiplied > current_capacity ? multiplied : (current_capacity + 1U);
     }
 
     if constexpr (options_type::growth_denominator == 1U) {
       return max_capacity;
     }
 
-    if ((current_capacity / options_type::growth_denominator) >
-        overflow_limit) {
+    if ((current_capacity / options_type::growth_denominator) > overflow_limit) {
       return max_capacity;
     }
 
-    const std::size_t scaled_capacity =
-        current_capacity / options_type::growth_denominator;
-    const std::size_t multiplied =
-        scaled_capacity * options_type::growth_numerator;
+    const std::size_t scaled_capacity = current_capacity / options_type::growth_denominator;
+    const std::size_t multiplied = scaled_capacity * options_type::growth_numerator;
     return multiplied > current_capacity ? multiplied : max_capacity;
   }
 
@@ -1534,14 +1420,11 @@ private:
 
   template <std::input_iterator input_it>
   auto append_copy_range(input_it first, input_it last) -> void {
-    if constexpr (std::contiguous_iterator<input_it> &&
-                  std::is_trivially_copyable_v<value_t> &&
-                  std::same_as<std::remove_cv_t<std::iter_value_t<input_it>>,
-                               value_t>) {
+    if constexpr (std::contiguous_iterator<input_it> && std::is_trivially_copyable_v<value_t> &&
+                  std::same_as<std::remove_cv_t<std::iter_value_t<input_it>>, value_t>) {
       const std::size_t count = static_cast<std::size_t>(last - first);
       if (count > 0U) {
-        std::memcpy(data_ + size_, std::to_address(first),
-                    sizeof(value_t) * count);
+        std::memcpy(data_ + size_, std::to_address(first), sizeof(value_t) * count);
       }
       size_ += count;
       return;
@@ -1549,8 +1432,7 @@ private:
 
     if constexpr (std::forward_iterator<input_it>) {
       if constexpr (std::is_nothrow_copy_constructible_v<value_t>) {
-        const pointer inserted_end =
-            std::uninitialized_copy(first, last, data_ + size_);
+        const pointer inserted_end = std::uninitialized_copy(first, last, data_ + size_);
         size_ += static_cast<std::size_t>(inserted_end - (data_ + size_));
         return;
       }
@@ -1591,14 +1473,11 @@ private:
 
   template <std::input_iterator input_it>
   auto append_move_range(input_it first, input_it last) -> void {
-    if constexpr (std::contiguous_iterator<input_it> &&
-                  std::is_trivially_copyable_v<value_t> &&
-                  std::same_as<std::remove_cv_t<std::iter_value_t<input_it>>,
-                               value_t>) {
+    if constexpr (std::contiguous_iterator<input_it> && std::is_trivially_copyable_v<value_t> &&
+                  std::same_as<std::remove_cv_t<std::iter_value_t<input_it>>, value_t>) {
       const std::size_t count = static_cast<std::size_t>(last - first);
       if (count > 0U) {
-        std::memmove(data_ + size_, std::to_address(first),
-                     sizeof(value_t) * count);
+        std::memmove(data_ + size_, std::to_address(first), sizeof(value_t) * count);
       }
       size_ += count;
       return;
@@ -1606,8 +1485,7 @@ private:
 
     if constexpr (std::forward_iterator<input_it>) {
       if constexpr (std::is_nothrow_move_constructible_v<value_t>) {
-        const pointer inserted_end =
-            std::uninitialized_move(first, last, data_ + size_);
+        const pointer inserted_end = std::uninitialized_move(first, last, data_ + size_);
         size_ += static_cast<std::size_t>(inserted_end - (data_ + size_));
         return;
       }
@@ -1660,8 +1538,7 @@ private:
 
     const std::size_t tail_count = bigger_size - common;
     for (std::size_t index = 0U; index < tail_count; ++index) {
-      std::construct_at(smaller.data_ + common + index,
-                        std::move(bigger.data_[common + index]));
+      std::construct_at(smaller.data_ + common + index, std::move(bigger.data_[common + index]));
     }
 
     std::destroy_n(bigger.data_ + common, tail_count);
@@ -1701,11 +1578,9 @@ public:
   /// Returns mutable pointer to inline storage buffer.
   [[nodiscard]] virtual auto internal_storage() noexcept -> pointer = 0;
   /// Returns immutable pointer to inline storage buffer.
-  [[nodiscard]] virtual auto internal_storage() const noexcept
-      -> const_pointer = 0;
+  [[nodiscard]] virtual auto internal_storage() const noexcept -> const_pointer = 0;
   /// Returns whether pointer points to non-propagable inline buffer.
-  [[nodiscard]] virtual auto
-  storage_is_unpropagable(const_pointer pointer_value) const noexcept
+  [[nodiscard]] virtual auto storage_is_unpropagable(const_pointer pointer_value) const noexcept
       -> bool = 0;
 };
 
@@ -1715,12 +1590,10 @@ template <typename value_t, std::size_t inline_capacity = 8U,
 /// Concrete `small_vector` type combining value semantics and runtime
 /// interface.
 class small_vector : public small_vector_base<value_t, allocator_t, options_t>,
-                     public small_vector_impl<value_t, inline_capacity,
-                                              allocator_t, options_t> {
+                     public small_vector_impl<value_t, inline_capacity, allocator_t, options_t> {
 public:
   using interface_type = small_vector_base<value_t, allocator_t, options_t>;
-  using impl_type =
-      small_vector_impl<value_t, inline_capacity, allocator_t, options_t>;
+  using impl_type = small_vector_impl<value_t, inline_capacity, allocator_t, options_t>;
   // Re-export the concrete container aliases so dependent code does not hit
   // ambiguity through both base classes under GCC.
   using value_type = typename impl_type::value_type;
@@ -1767,27 +1640,21 @@ public:
     return *this;
   }
 
-  [[nodiscard]] auto empty() const noexcept -> bool override {
-    return impl_type::empty();
-  }
+  [[nodiscard]] auto empty() const noexcept -> bool override { return impl_type::empty(); }
 
-  [[nodiscard]] auto size() const noexcept ->
-      typename interface_type::size_type override {
+  [[nodiscard]] auto size() const noexcept -> typename interface_type::size_type override {
     return impl_type::size();
   }
 
-  [[nodiscard]] auto capacity() const noexcept ->
-      typename interface_type::size_type override {
+  [[nodiscard]] auto capacity() const noexcept -> typename interface_type::size_type override {
     return impl_type::capacity();
   }
 
-  [[nodiscard]] auto data() noexcept ->
-      typename interface_type::pointer override {
+  [[nodiscard]] auto data() noexcept -> typename interface_type::pointer override {
     return impl_type::data();
   }
 
-  [[nodiscard]] auto data() const noexcept ->
-      typename interface_type::const_pointer override {
+  [[nodiscard]] auto data() const noexcept -> typename interface_type::const_pointer override {
     return impl_type::data();
   }
 
@@ -1795,12 +1662,9 @@ public:
     return impl_type::using_inline_storage();
   }
 
-  [[nodiscard]] auto is_small() const noexcept -> bool override {
-    return impl_type::is_small();
-  }
+  [[nodiscard]] auto is_small() const noexcept -> bool override { return impl_type::is_small(); }
 
-  [[nodiscard]] auto internal_storage() noexcept ->
-      typename interface_type::pointer override {
+  [[nodiscard]] auto internal_storage() noexcept -> typename interface_type::pointer override {
     return impl_type::internal_storage();
   }
 
@@ -1809,57 +1673,49 @@ public:
     return impl_type::internal_storage();
   }
 
-  [[nodiscard]] auto storage_is_unpropagable(
-      typename interface_type::const_pointer pointer_value) const noexcept
+  [[nodiscard]] auto
+  storage_is_unpropagable(typename interface_type::const_pointer pointer_value) const noexcept
       -> bool override {
     return impl_type::storage_is_unpropagable(pointer_value);
   }
 
   /// Converts `std::vector` into `small_vector`.
-  [[nodiscard]] static auto from_std_vector(const std::vector<value_t> &values)
-      -> small_vector {
+  [[nodiscard]] static auto from_std_vector(const std::vector<value_t> &values) -> small_vector {
     auto converted = impl_type::from_std_vector_impl(values);
     return small_vector(std::move(converted));
   }
 };
 
-template <typename value_t, std::size_t inline_capacity, typename allocator_t,
-          typename options_t, typename equal_t>
+template <typename value_t, std::size_t inline_capacity, typename allocator_t, typename options_t,
+          typename equal_t>
 /// Erases all elements equal to `value` and returns removed count.
-[[nodiscard]] auto
-erase(small_vector<value_t, inline_capacity, allocator_t, options_t> &container,
-      const equal_t &value) ->
-    typename small_vector<value_t, inline_capacity, allocator_t,
-                          options_t>::size_type {
+[[nodiscard]] auto erase(small_vector<value_t, inline_capacity, allocator_t, options_t> &container,
+                         const equal_t &value) ->
+    typename small_vector<value_t, inline_capacity, allocator_t, options_t>::size_type {
   const auto old_size = container.size();
-  container.erase(std::remove(container.begin(), container.end(), value),
-                  container.end());
-  return static_cast<typename small_vector<value_t, inline_capacity,
-                                           allocator_t, options_t>::size_type>(
+  container.erase(std::remove(container.begin(), container.end(), value), container.end());
+  return static_cast<
+      typename small_vector<value_t, inline_capacity, allocator_t, options_t>::size_type>(
       old_size - container.size());
 }
 
-template <typename value_t, std::size_t inline_capacity, typename allocator_t,
-          typename options_t, typename predicate_t>
+template <typename value_t, std::size_t inline_capacity, typename allocator_t, typename options_t,
+          typename predicate_t>
 /// Erases all elements matching predicate and returns removed count.
-[[nodiscard]] auto erase_if(
-    small_vector<value_t, inline_capacity, allocator_t, options_t> &container,
-    predicate_t predicate) ->
-    typename small_vector<value_t, inline_capacity, allocator_t,
-                          options_t>::size_type {
+[[nodiscard]] auto
+erase_if(small_vector<value_t, inline_capacity, allocator_t, options_t> &container,
+         predicate_t predicate) ->
+    typename small_vector<value_t, inline_capacity, allocator_t, options_t>::size_type {
   const auto old_size = container.size();
-  container.erase(std::remove_if(container.begin(), container.end(), predicate),
-                  container.end());
-  return static_cast<typename small_vector<value_t, inline_capacity,
-                                           allocator_t, options_t>::size_type>(
+  container.erase(std::remove_if(container.begin(), container.end(), predicate), container.end());
+  return static_cast<
+      typename small_vector<value_t, inline_capacity, allocator_t, options_t>::size_type>(
       old_size - container.size());
 }
 
-template <typename value_t, std::size_t inline_capacity, typename allocator_t,
-          typename options_t>
+template <typename value_t, std::size_t inline_capacity, typename allocator_t, typename options_t>
 auto swap(small_vector<value_t, inline_capacity, allocator_t, options_t> &lhs,
-          small_vector<value_t, inline_capacity, allocator_t, options_t> &rhs)
-    -> void {
+          small_vector<value_t, inline_capacity, allocator_t, options_t> &rhs) -> void {
   lhs.swap(rhs);
 }
 

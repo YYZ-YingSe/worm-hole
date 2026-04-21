@@ -247,8 +247,7 @@ merge_interrupt_sources(const std::span<const wh::core::interrupt_context> root_
     }
     auto context = wh::core::to_interrupt_context(signal);
     if (context.has_error()) {
-      return wh::core::result<std::vector<wh::core::interrupt_context>>::failure(
-          context.error());
+      return wh::core::result<std::vector<wh::core::interrupt_context>>::failure(context.error());
     }
     merged.push_back(std::move(context).value());
   }
@@ -287,8 +286,8 @@ fallback_to_single_interrupt_when_empty(const std::vector<wh::core::interrupt_co
     return wh::core::result<std::vector<wh::core::interrupt_context>>::failure(
         owned_contexts.error());
   }
-  return detail::fallback_to_single_interrupt_when_empty_impl(
-      std::move(owned_contexts).value(), location, std::move(state));
+  return detail::fallback_to_single_interrupt_when_empty_impl(std::move(owned_contexts).value(),
+                                                              location, std::move(state));
 }
 
 /// Falls back to single-point interrupt when child list is empty (move path).

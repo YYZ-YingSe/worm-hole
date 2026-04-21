@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <variant>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/schema/stream/core/concepts.hpp"
@@ -28,9 +27,7 @@ struct basic_reader {
 
 struct borrowed_reader : basic_reader {
   auto read_borrowed() -> chunk_view_result_t { return chunk_view_t::make_eof(); }
-  auto try_read_borrowed() -> chunk_view_try_result_t {
-    return chunk_view_t::make_eof();
-  }
+  auto try_read_borrowed() -> chunk_view_try_result_t { return chunk_view_t::make_eof(); }
 };
 
 struct async_reader : basic_reader {
@@ -50,8 +47,7 @@ static_assert(!wh::schema::stream::borrowed_stream_reader<basic_reader>);
 static_assert(wh::schema::stream::borrowed_stream_reader<borrowed_reader>);
 static_assert(wh::schema::stream::detail::async_stream_reader<async_reader>);
 static_assert(!wh::schema::stream::stream_reader<missing_close_reader>);
-static_assert(
-    !wh::schema::stream::detail::async_stream_reader<basic_reader>);
+static_assert(!wh::schema::stream::detail::async_stream_reader<basic_reader>);
 
 } // namespace
 
@@ -64,7 +60,6 @@ TEST_CASE("stream concepts reject boundary shapes that are not full readers",
           "[UT][wh/schema/stream/core/concepts.hpp][borrowed_stream_reader][boundary]") {
   STATIC_REQUIRE(!wh::schema::stream::stream_reader<int>);
   STATIC_REQUIRE(!wh::schema::stream::borrowed_stream_reader<missing_close_reader>);
-  STATIC_REQUIRE(
-      !wh::schema::stream::detail::async_stream_reader<borrowed_reader>);
+  STATIC_REQUIRE(!wh::schema::stream::detail::async_stream_reader<borrowed_reader>);
   SUCCEED();
 }

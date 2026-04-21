@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/function/detail/object_manager.hpp"
 
@@ -17,21 +17,19 @@ struct tracked_value {
 
   tracked_value() = default;
   explicit tracked_value(int next) : value(next) {}
-  tracked_value(const tracked_value &other) : value(other.value) {
-    copies.fetch_add(1);
-  }
+  tracked_value(const tracked_value &other) : value(other.value) { copies.fetch_add(1); }
   auto operator=(const tracked_value &) -> tracked_value & = default;
   ~tracked_value() { destructions.fetch_add(1); }
 
   int value{0};
 };
 
-using deep_manager = wh::core::fn_detail::object_manager<
-    tracked_value, wh::core::fn::deep_copy, wh::core::fn::skip_on_error,
-    sizeof(void *)>;
-using local_manager = wh::core::fn_detail::object_manager<
-    int, wh::core::fn::reference_counting, wh::core::fn::skip_on_error,
-    sizeof(void *)>;
+using deep_manager =
+    wh::core::fn_detail::object_manager<tracked_value, wh::core::fn::deep_copy,
+                                        wh::core::fn::skip_on_error, sizeof(void *)>;
+using local_manager =
+    wh::core::fn_detail::object_manager<int, wh::core::fn::reference_counting,
+                                        wh::core::fn::skip_on_error, sizeof(void *)>;
 
 } // namespace
 
@@ -50,8 +48,9 @@ TEST_CASE("object_manager copies moves and tracks invalid moved-from state",
   REQUIRE(first.is_invalid());
 }
 
-TEST_CASE("object_manager invalidate marks local storage unusable without crashing destroy path",
-          "[UT][wh/core/function/detail/object_manager.hpp][object_manager::invalidate][boundary]") {
+TEST_CASE(
+    "object_manager invalidate marks local storage unusable without crashing destroy path",
+    "[UT][wh/core/function/detail/object_manager.hpp][object_manager::invalidate][boundary]") {
   local_manager value{7};
   REQUIRE_FALSE(value.is_invalid());
   REQUIRE(value.access() == 7);
@@ -61,7 +60,8 @@ TEST_CASE("object_manager invalidate marks local storage unusable without crashi
 }
 
 TEST_CASE("object_manager releases tracked storage on scope exit",
-          "[UT][wh/core/function/detail/object_manager.hpp][object_manager::access][condition][boundary]") {
+          "[UT][wh/core/function/detail/"
+          "object_manager.hpp][object_manager::access][condition][boundary]") {
   tracked_value::reset();
 
   {

@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/document/options.hpp"
 
@@ -73,8 +73,7 @@ TEST_CASE("loader options keep base uri when override uri is empty and expose im
   REQUIRE(view.parser_uri() == "base://uri");
 
   options.component_options().set_impl_specific(document_options_probe{7});
-  const auto *probe =
-      options.component_options().impl_specific_if<document_options_probe>();
+  const auto *probe = options.component_options().impl_specific_if<document_options_probe>();
   REQUIRE(probe != nullptr);
   REQUIRE(probe->value == 7);
 }

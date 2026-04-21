@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <type_traits>
 #include <utility>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/function.hpp"
 
@@ -11,9 +11,7 @@ namespace {
 struct adder {
   int base{0};
 
-  [[nodiscard]] auto operator()(const int value) const -> int {
-    return base + value;
-  }
+  [[nodiscard]] auto operator()(const int value) const -> int { return base + value; }
 };
 
 using wh::core::callback_function;
@@ -23,18 +21,12 @@ using wh::core::standard_function;
 
 static_assert(wh::core::is_function_v<standard_function<int(int)>>);
 static_assert(wh::core::is_function<function_ref<int(int)>>::value);
-static_assert(std::same_as<wh::core::owning_storage<int(int),
-                                                    wh::core::reference_counting,
-                                                    wh::core::standard_accept,
-                                                    wh::core::assert_on_error,
-                                                    sizeof(void *),
-                                                    std::allocator>,
-                           wh::core::owning_storage<int(int),
-                                                    wh::core::reference_counting,
-                                                    wh::core::standard_accept,
-                                                    wh::core::assert_on_error,
-                                                    sizeof(void *),
-                                                    std::allocator>>);
+static_assert(
+    std::same_as<
+        wh::core::owning_storage<int(int), wh::core::reference_counting, wh::core::standard_accept,
+                                 wh::core::assert_on_error, sizeof(void *), std::allocator>,
+        wh::core::owning_storage<int(int), wh::core::reference_counting, wh::core::standard_accept,
+                                 wh::core::assert_on_error, sizeof(void *), std::allocator>>);
 
 } // namespace
 
@@ -70,8 +62,7 @@ TEST_CASE("function_ref borrows callable state without taking ownership",
 
 TEST_CASE("move_only_function and callback_function wrap callable categories",
           "[UT][wh/core/function.hpp][move_only_function][branch]") {
-  move_only_function<int()> move_only{
-      [payload = std::make_unique<int>(7)]() { return *payload; }};
+  move_only_function<int()> move_only{[payload = std::make_unique<int>(7)]() { return *payload; }};
   REQUIRE(move_only() == 7);
 
   callback_function<void(int)> callback{[&](int value) { REQUIRE(value == 9); }};

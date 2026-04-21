@@ -10,8 +10,8 @@
 namespace wh::compose {
 namespace detail {
 
-[[nodiscard]] inline auto
-build_value_output(tools_state &state, std::vector<call_completion> results)
+[[nodiscard]] inline auto build_value_output(tools_state &state,
+                                             std::vector<call_completion> results)
     -> wh::core::result<graph_value> {
   std::vector<tool_result> output{};
   if (state.has_return_direct) {
@@ -23,8 +23,7 @@ build_value_output(tools_state &state, std::vector<call_completion> results)
   auto &rerun = state.rerun();
   for (auto &result : results) {
     rerun.outputs.insert_or_assign(result.call.call_id, result.value);
-    rerun.extra.insert_or_assign(result.call.call_id,
-                                 std::move(result.rerun_extra));
+    rerun.extra.insert_or_assign(result.call.call_id, std::move(result.rerun_extra));
     tool_result entry{
         .call_id = result.call.call_id,
         .tool_name = result.call.tool_name,
@@ -39,13 +38,12 @@ build_value_output(tools_state &state, std::vector<call_completion> results)
   return wh::core::any(std::move(output));
 }
 
-[[nodiscard]] inline auto
-build_stream_output(tools_state &state, std::vector<stream_completion> results)
+[[nodiscard]] inline auto build_stream_output(tools_state &state,
+                                              std::vector<stream_completion> results)
     -> wh::core::result<graph_value> {
   auto &rerun = state.rerun();
   std::vector<tool_event_reader_detail::tool_event_binding> bindings{};
-  std::vector<wh::schema::stream::named_stream_reader<graph_stream_reader>>
-      lanes{};
+  std::vector<wh::schema::stream::named_stream_reader<graph_stream_reader>> lanes{};
   bindings.reserve(results.size());
   lanes.reserve(results.size());
   for (auto &result : results) {
@@ -59,8 +57,8 @@ build_stream_output(tools_state &state, std::vector<stream_completion> results)
   }
 
   auto merged = detail::make_graph_merge_reader(std::move(lanes));
-  return wh::core::any(make_tools_output_stream_reader(
-      std::move(merged), state.afters, std::move(bindings)));
+  return wh::core::any(
+      make_tools_output_stream_reader(std::move(merged), state.afters, std::move(bindings)));
 }
 
 } // namespace detail

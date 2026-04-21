@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
 #include <memory>
 #include <thread>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
@@ -25,26 +24,22 @@ TEST_CASE("component async wrappers enter sender-only path on caller scheduler",
     std::shared_ptr<std::thread::id> observed_thread{};
 
     [[nodiscard]] auto render_sender(wh::prompt::prompt_render_request) const {
-      return stdexec::just() |
-             stdexec::then([observed_thread = observed_thread]() {
+      return stdexec::just() | stdexec::then([observed_thread = observed_thread]() {
                *observed_thread = std::this_thread::get_id();
                std::vector<wh::schema::message> messages{};
                messages.push_back(make_user_message("scheduled"));
-               return wh::core::result<std::vector<wh::schema::message>>{
-                   std::move(messages)};
+               return wh::core::result<std::vector<wh::schema::message>>{std::move(messages)};
              });
     }
   };
 
   auto observed_thread = std::make_shared<std::thread::id>();
-  wh::prompt::chat_template component{
-      scheduler_observing_prompt_impl{observed_thread}};
+  wh::prompt::chat_template component{scheduler_observing_prompt_impl{observed_thread}};
   exec::static_thread_pool pool{1U};
 
   std::thread::id scheduler_thread{};
   auto scheduler_waited =
-      stdexec::sync_wait(stdexec::schedule(pool.get_scheduler()) |
-                         stdexec::then([&]() {
+      stdexec::sync_wait(stdexec::schedule(pool.get_scheduler()) | stdexec::then([&]() {
                            scheduler_thread = std::this_thread::get_id();
                            return 0;
                          }));
@@ -55,19 +50,17 @@ TEST_CASE("component async wrappers enter sender-only path on caller scheduler",
   std::thread::id completion_thread{};
   auto waited = stdexec::sync_wait(
       stdexec::starts_on(pool.get_scheduler(),
-                         component.async_render(std::move(request),
-                                                callback_context)) |
-      stdexec::then(
-          [&](wh::core::result<std::vector<wh::schema::message>> status) {
-            completion_thread = std::this_thread::get_id();
-            return status;
-          }));
+                         component.async_render(std::move(request), callback_context)) |
+      stdexec::then([&](wh::core::result<std::vector<wh::schema::message>> status) {
+        completion_thread = std::this_thread::get_id();
+        return status;
+      }));
   REQUIRE(waited.has_value());
   auto status = std::get<0>(std::move(waited).value());
   REQUIRE(status.has_value());
   REQUIRE(status.value().size() == 1U);
-  REQUIRE(std::get<wh::schema::text_part>(status.value().front().parts.front())
-              .text == "scheduled");
+  REQUIRE(std::get<wh::schema::text_part>(status.value().front().parts.front()).text ==
+          "scheduled");
   REQUIRE(*observed_thread == scheduler_thread);
   REQUIRE(completion_thread == scheduler_thread);
 }
@@ -89,18 +82,14 @@ TEST_CASE("component async impl can hop to worker scheduler and explicitly resum
                   *worker_thread = std::this_thread::get_id();
                   std::vector<wh::schema::message> messages{};
                   messages.push_back(make_user_message("resumed"));
-                  return wh::core::result<std::vector<wh::schema::message>>{
-                      std::move(messages)};
+                  return wh::core::result<std::vector<wh::schema::message>>{std::move(messages)};
                 }));
-            return wh::core::resume_on(std::move(worker),
-                                       std::move(resume_scheduler)) |
-                   stdexec::then([resumed_thread](
-                                     wh::core::result<
-                                         std::vector<wh::schema::message>>
-                                         status) {
-                     *resumed_thread = std::this_thread::get_id();
-                     return status;
-                   });
+            return wh::core::resume_on(std::move(worker), std::move(resume_scheduler)) |
+                   stdexec::then(
+                       [resumed_thread](wh::core::result<std::vector<wh::schema::message>> status) {
+                         *resumed_thread = std::this_thread::get_id();
+                         return status;
+                       });
           });
     }
   };
@@ -109,23 +98,23 @@ TEST_CASE("component async impl can hop to worker scheduler and explicitly resum
   exec::static_thread_pool worker_pool{1U};
   auto worker_thread = std::make_shared<std::thread::id>();
   auto resumed_thread = std::make_shared<std::thread::id>();
-  wh::prompt::chat_template component{explicit_resume_prompt_impl{
-      worker_pool.get_scheduler(), worker_thread, resumed_thread}};
+  wh::prompt::chat_template component{
+      explicit_resume_prompt_impl{worker_pool.get_scheduler(), worker_thread, resumed_thread}};
 
   std::thread::id caller_scheduler_thread{};
-  auto caller_ready = stdexec::sync_wait(
-      stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
-        caller_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto caller_ready =
+      stdexec::sync_wait(stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
+                           caller_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(caller_ready.has_value());
 
   std::thread::id worker_scheduler_thread{};
-  auto worker_ready = stdexec::sync_wait(
-      stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
-        worker_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto worker_ready =
+      stdexec::sync_wait(stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
+                           worker_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(worker_ready.has_value());
 
   wh::core::run_context context{};
@@ -134,17 +123,15 @@ TEST_CASE("component async impl can hop to worker scheduler and explicitly resum
   auto waited = stdexec::sync_wait(
       stdexec::starts_on(caller_pool.get_scheduler(),
                          component.async_render(std::move(request), context)) |
-      stdexec::then(
-          [&](wh::core::result<std::vector<wh::schema::message>> status) {
-            completion_thread = std::this_thread::get_id();
-            return status;
-          }));
+      stdexec::then([&](wh::core::result<std::vector<wh::schema::message>> status) {
+        completion_thread = std::this_thread::get_id();
+        return status;
+      }));
   REQUIRE(waited.has_value());
   auto status = std::get<0>(std::move(waited).value());
   REQUIRE(status.has_value());
   REQUIRE(status.value().size() == 1U);
-  REQUIRE(std::get<wh::schema::text_part>(status.value().front().parts.front())
-              .text == "resumed");
+  REQUIRE(std::get<wh::schema::text_part>(status.value().front().parts.front()).text == "resumed");
   REQUIRE(*worker_thread == worker_scheduler_thread);
   REQUIRE(*resumed_thread == caller_scheduler_thread);
   REQUIRE(completion_thread == caller_scheduler_thread);
@@ -157,14 +144,12 @@ TEST_CASE("component wrapper keeps worker completion when resume mode is unchang
     std::shared_ptr<std::thread::id> worker_thread{};
 
     [[nodiscard]] auto render_sender(wh::prompt::prompt_render_request) const {
-      return stdexec::starts_on(
-          worker_scheduler, stdexec::just() |
-                                stdexec::then([worker_thread = worker_thread]() {
+      return stdexec::starts_on(worker_scheduler,
+                                stdexec::just() | stdexec::then([worker_thread = worker_thread]() {
                                   *worker_thread = std::this_thread::get_id();
                                   std::vector<wh::schema::message> messages{};
                                   messages.push_back(make_user_message("worker"));
-                                  return wh::core::result<
-                                      std::vector<wh::schema::message>>{
+                                  return wh::core::result<std::vector<wh::schema::message>>{
                                       std::move(messages)};
                                 }));
     }
@@ -175,24 +160,23 @@ TEST_CASE("component wrapper keeps worker completion when resume mode is unchang
   exec::static_thread_pool worker_pool{1U};
   exec::static_thread_pool caller_pool{1U};
   auto worker_thread = std::make_shared<std::thread::id>();
-  wh::prompt::chat_template<worker_prompt_impl,
-                            wh::core::resume_mode::unchanged>
-      component{worker_prompt_impl{worker_pool.get_scheduler(), worker_thread}};
+  wh::prompt::chat_template<worker_prompt_impl, wh::core::resume_mode::unchanged> component{
+      worker_prompt_impl{worker_pool.get_scheduler(), worker_thread}};
 
   std::thread::id caller_scheduler_thread{};
-  auto caller_ready = stdexec::sync_wait(
-      stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
-        caller_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto caller_ready =
+      stdexec::sync_wait(stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
+                           caller_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(caller_ready.has_value());
 
   std::thread::id worker_scheduler_thread{};
-  auto worker_ready = stdexec::sync_wait(
-      stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
-        worker_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto worker_ready =
+      stdexec::sync_wait(stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
+                           worker_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(worker_ready.has_value());
 
   wh::core::run_context context{};
@@ -201,11 +185,10 @@ TEST_CASE("component wrapper keeps worker completion when resume mode is unchang
   auto waited = stdexec::sync_wait(
       stdexec::starts_on(caller_pool.get_scheduler(),
                          component.async_render(std::move(request), context)) |
-      stdexec::then(
-          [&](wh::core::result<std::vector<wh::schema::message>> status) {
-            completion_thread = std::this_thread::get_id();
-            return status;
-          }));
+      stdexec::then([&](wh::core::result<std::vector<wh::schema::message>> status) {
+        completion_thread = std::this_thread::get_id();
+        return status;
+      }));
   REQUIRE(waited.has_value());
   auto status = std::get<0>(std::move(waited).value());
   REQUIRE(status.has_value());
@@ -221,15 +204,12 @@ TEST_CASE("component wrapper can restore caller completion when configured",
     std::shared_ptr<std::thread::id> worker_thread{};
 
     [[nodiscard]] auto render_sender(wh::prompt::prompt_render_request) const {
-      return stdexec::starts_on(
-          worker_scheduler, stdexec::just() |
-                                stdexec::then([worker_thread = worker_thread]() {
+      return stdexec::starts_on(worker_scheduler,
+                                stdexec::just() | stdexec::then([worker_thread = worker_thread]() {
                                   *worker_thread = std::this_thread::get_id();
                                   std::vector<wh::schema::message> messages{};
-                                  messages.push_back(
-                                      make_user_message("restore"));
-                                  return wh::core::result<
-                                      std::vector<wh::schema::message>>{
+                                  messages.push_back(make_user_message("restore"));
+                                  return wh::core::result<std::vector<wh::schema::message>>{
                                       std::move(messages)};
                                 }));
     }
@@ -238,23 +218,23 @@ TEST_CASE("component wrapper can restore caller completion when configured",
   exec::static_thread_pool caller_pool{1U};
   exec::static_thread_pool worker_pool{1U};
   auto worker_thread = std::make_shared<std::thread::id>();
-  wh::prompt::chat_template<worker_prompt_impl, wh::core::resume_mode::restore>
-      component{worker_prompt_impl{worker_pool.get_scheduler(), worker_thread}};
+  wh::prompt::chat_template<worker_prompt_impl, wh::core::resume_mode::restore> component{
+      worker_prompt_impl{worker_pool.get_scheduler(), worker_thread}};
 
   std::thread::id caller_scheduler_thread{};
-  auto caller_ready = stdexec::sync_wait(
-      stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
-        caller_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto caller_ready =
+      stdexec::sync_wait(stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
+                           caller_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(caller_ready.has_value());
 
   std::thread::id worker_scheduler_thread{};
-  auto worker_ready = stdexec::sync_wait(
-      stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
-        worker_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto worker_ready =
+      stdexec::sync_wait(stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
+                           worker_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(worker_ready.has_value());
 
   wh::core::run_context context{};
@@ -263,11 +243,10 @@ TEST_CASE("component wrapper can restore caller completion when configured",
   auto waited = stdexec::sync_wait(
       stdexec::starts_on(caller_pool.get_scheduler(),
                          component.async_render(std::move(request), context)) |
-      stdexec::then(
-          [&](wh::core::result<std::vector<wh::schema::message>> status) {
-            completion_thread = std::this_thread::get_id();
-            return status;
-          }));
+      stdexec::then([&](wh::core::result<std::vector<wh::schema::message>> status) {
+        completion_thread = std::this_thread::get_id();
+        return status;
+      }));
   REQUIRE(waited.has_value());
   auto status = std::get<0>(std::move(waited).value());
   REQUIRE(status.has_value());
@@ -276,9 +255,8 @@ TEST_CASE("component wrapper can restore caller completion when configured",
   REQUIRE(completion_thread == caller_scheduler_thread);
 }
 
-TEST_CASE(
-    "simple chat template renders in order and enforces strict missing variables",
-    "[core][prompt][functional]") {
+TEST_CASE("simple chat template renders in order and enforces strict missing variables",
+          "[core][prompt][functional]") {
   wh::prompt::simple_chat_template tpl({
       {wh::schema::message_role::system, "You are {{role}}", "sys"},
       {wh::schema::message_role::user, "Hi {{name}}", "usr"},
@@ -292,10 +270,9 @@ TEST_CASE(
   auto rendered = tpl.render({context, {}}, callback_context);
   REQUIRE(rendered.has_value());
   REQUIRE(rendered.value().size() == 2U);
-  REQUIRE(std::get<wh::schema::text_part>(rendered.value()[0].parts.front())
-              .text == "You are assistant");
-  REQUIRE(std::get<wh::schema::text_part>(rendered.value()[1].parts.front())
-              .text == "Hi alice");
+  REQUIRE(std::get<wh::schema::text_part>(rendered.value()[0].parts.front()).text ==
+          "You are assistant");
+  REQUIRE(std::get<wh::schema::text_part>(rendered.value()[1].parts.front()).text == "Hi alice");
 
   wh::prompt::template_context missing_context{};
   missing_context.emplace("role", wh::prompt::template_value{"assistant"});
@@ -304,8 +281,7 @@ TEST_CASE(
   REQUIRE(missing.error() == wh::core::errc::not_found);
 }
 
-TEST_CASE("prompt callbacks run start end and error lifecycle",
-          "[core][prompt][functional]") {
+TEST_CASE("prompt callbacks run start end and error lifecycle", "[core][prompt][functional]") {
   wh::prompt::simple_chat_template tpl({
       {wh::schema::message_role::user, "Hello {{name}}", "usr"},
   });
@@ -322,10 +298,8 @@ TEST_CASE("prompt callbacks run start end and error lifecycle",
   wh::core::run_context callback_context{};
   callback_context.callbacks.emplace();
   auto registered = register_test_callbacks(
-      std::move(callback_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(callback_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *extra = event.get_if<wh::prompt::prompt_callback_event>();
         REQUIRE(extra != nullptr);
@@ -368,8 +342,7 @@ TEST_CASE("prompt callbacks run start end and error lifecycle",
   REQUIRE(failed.load(std::memory_order_acquire));
 }
 
-TEST_CASE("prompt descriptor exposes stable prompt type name",
-          "[core][prompt][functional]") {
+TEST_CASE("prompt descriptor exposes stable prompt type name", "[core][prompt][functional]") {
   wh::prompt::simple_chat_template tpl{};
   REQUIRE(tpl.descriptor().type_name == "Prompt");
 }

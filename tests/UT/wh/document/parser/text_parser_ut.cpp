@@ -14,8 +14,7 @@ TEST_CASE("text parser builds one document from owned request and preserves meta
   REQUIRE(parsed.has_value());
   REQUIRE(parsed.value().size() == 1U);
   REQUIRE(parsed.value().front().content() == "hello");
-  REQUIRE(parsed.value().front().metadata_or<std::string>("_source") ==
-          "doc://owned");
+  REQUIRE(parsed.value().front().metadata_or<std::string>("_source") == "doc://owned");
   REQUIRE(parsed.value().front().metadata_or<std::string>("lang") == "zh");
 }
 
@@ -40,14 +39,13 @@ TEST_CASE("text parser view path applies override-last metadata semantics",
   REQUIRE(parsed.has_value());
   REQUIRE(parsed.value().size() == 1U);
   REQUIRE(parsed.value().front().content() == "hello-view");
-  REQUIRE(parsed.value().front().metadata_or<std::string>("_source") ==
-          "doc://view");
-  REQUIRE(parsed.value().front().metadata_or<std::string>("tenant") ==
-          "override");
+  REQUIRE(parsed.value().front().metadata_or<std::string>("_source") == "doc://view");
+  REQUIRE(parsed.value().front().metadata_or<std::string>("tenant") == "override");
 }
 
-TEST_CASE("text parser erased factory preserves owned-request metadata on move path",
-          "[UT][wh/document/parser/text_parser.hpp][make_text_parser][condition][branch][boundary]") {
+TEST_CASE(
+    "text parser erased factory preserves owned-request metadata on move path",
+    "[UT][wh/document/parser/text_parser.hpp][make_text_parser][condition][branch][boundary]") {
   auto parser = wh::document::parser::make_text_parser();
   REQUIRE(parser.has_value());
   REQUIRE(parser.descriptor().type_name == "TextParser");
@@ -61,8 +59,6 @@ TEST_CASE("text parser erased factory preserves owned-request metadata on move p
   REQUIRE(parsed.has_value());
   REQUIRE(parsed.value().size() == 1U);
   REQUIRE(parsed.value().front().content() == "owned-body");
-  REQUIRE(parsed.value().front().metadata_or<std::string>("_source") ==
-          "doc://owned");
-  REQUIRE(parsed.value().front().metadata_or<std::string>("tenant") ==
-          "alpha");
+  REQUIRE(parsed.value().front().metadata_or<std::string>("_source") == "doc://owned");
+  REQUIRE(parsed.value().front().metadata_or<std::string>("tenant") == "alpha");
 }

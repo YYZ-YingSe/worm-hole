@@ -23,16 +23,13 @@ namespace wh::schema::stream {
 
 template <stream_reader reader_t, typename transform_t>
 class transform_stream_reader final
-    : public stream_base<
-          transform_stream_reader<reader_t, transform_t>,
-          typename decltype(
-              detail::select_adapter_result<transform_t,
-                                            typename reader_t::value_type>(
-                  0))::value_type> {
+    : public stream_base<transform_stream_reader<reader_t, transform_t>,
+                         typename decltype(detail::select_adapter_result<
+                                           transform_t, typename reader_t::value_type>(
+                             0))::value_type> {
 private:
   using input_value_t = typename reader_t::value_type;
-  using transform_result_t = decltype(
-      detail::select_adapter_result<transform_t, input_value_t>(0));
+  using transform_result_t = decltype(detail::select_adapter_result<transform_t, input_value_t>(0));
 
 public:
   static_assert(detail::adapter_callback<transform_t, input_value_t>,
@@ -47,18 +44,15 @@ public:
   using chunk_type = stream_chunk<value_type>;
 
   transform_stream_reader(const transform_stream_reader &) = delete;
-  auto operator=(const transform_stream_reader &)
-      -> transform_stream_reader & = delete;
+  auto operator=(const transform_stream_reader &) -> transform_stream_reader & = delete;
   transform_stream_reader(transform_stream_reader &&) noexcept = default;
-  auto operator=(transform_stream_reader &&) noexcept
-      -> transform_stream_reader & = default;
+  auto operator=(transform_stream_reader &&) noexcept -> transform_stream_reader & = default;
   ~transform_stream_reader() = default;
 
   template <typename source_reader_t, typename source_transform_t>
     requires std::constructible_from<reader_t, source_reader_t &&> &&
              std::constructible_from<transform_t, source_transform_t &&>
-  transform_stream_reader(source_reader_t &&reader,
-                          source_transform_t &&transform)
+  transform_stream_reader(source_reader_t &&reader, source_transform_t &&transform)
       : state_(wh::core::detail::make_intrusive<state>(
             reader_t{std::forward<source_reader_t>(reader)},
             transform_t{std::forward<source_transform_t>(transform)})) {}
@@ -69,8 +63,8 @@ public:
     } catch (...) {
       state_->adapter_state.terminal = true;
       state_->adapter_state.close_source_if_enabled(state_->reader);
-      return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
-          wh::core::map_current_exception())};
+      return stream_result<chunk_type>{
+          detail::make_error_chunk<chunk_type>(wh::core::map_current_exception())};
     }
   }
 
@@ -80,8 +74,8 @@ public:
     } catch (...) {
       state_->adapter_state.terminal = true;
       state_->adapter_state.close_source_if_enabled(state_->reader);
-      return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
-          wh::core::map_current_exception())};
+      return stream_result<chunk_type>{
+          detail::make_error_chunk<chunk_type>(wh::core::map_current_exception())};
     }
   }
 
@@ -91,9 +85,7 @@ public:
     using input_result_t = stream_result<input_chunk_type>;
     auto shared_state = state_;
     return shared_state->reader.read_async() |
-           stdexec::then([](auto status) {
-             return input_result_t{std::move(status)};
-           }) |
+           stdexec::then([](auto status) { return input_result_t{std::move(status)}; }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);
            }) |
@@ -123,13 +115,11 @@ private:
     detail::stream_adapter_state adapter_state{};
 
     state(reader_t reader_value, transform_t transform_value)
-        : reader(std::move(reader_value)),
-          transform(std::move(transform_value)) {}
+        : reader(std::move(reader_value)), transform(std::move(transform_value)) {}
   };
 
-  [[nodiscard]] static auto
-  map_read_owned(const wh::core::detail::intrusive_ptr<state> &state,
-                 stream_result<input_chunk_type> next)
+  [[nodiscard]] static auto map_read_owned(const wh::core::detail::intrusive_ptr<state> &state,
+                                           stream_result<input_chunk_type> next)
       -> stream_result<chunk_type> {
     if (next.has_error()) {
       state->adapter_state.terminal = true;
@@ -161,31 +151,27 @@ private:
     return map_value(state, input_chunk.source, std::move(*input_chunk.value));
   }
 
-  [[nodiscard]] static auto
-  map_try_owned(const wh::core::detail::intrusive_ptr<state> &state,
-                stream_try_result<input_chunk_type> next)
+  [[nodiscard]] static auto map_try_owned(const wh::core::detail::intrusive_ptr<state> &state,
+                                          stream_try_result<input_chunk_type> next)
       -> stream_try_result<chunk_type> {
     if (std::holds_alternative<stream_signal>(next)) {
       return stream_pending;
     }
-    return map_read_owned(
-        state, std::move(std::get<stream_result<input_chunk_type>>(next)));
+    return map_read_owned(state, std::move(std::get<stream_result<input_chunk_type>>(next)));
   }
 
   template <typename value_u>
-  [[nodiscard]] static auto
-  map_value(const wh::core::detail::intrusive_ptr<state> &state,
-            std::string_view source, value_u &&value)
+  [[nodiscard]] static auto map_value(const wh::core::detail::intrusive_ptr<state> &state,
+                                      std::string_view source, value_u &&value)
       -> stream_result<chunk_type> {
     transform_result_t converted{};
     try {
-      converted = detail::invoke_adapter_callback(state->transform,
-                                                  std::forward<value_u>(value));
+      converted = detail::invoke_adapter_callback(state->transform, std::forward<value_u>(value));
     } catch (...) {
       state->adapter_state.terminal = true;
       state->adapter_state.close_source_if_enabled(state->reader);
-      return stream_result<chunk_type>{detail::make_error_chunk<chunk_type>(
-          wh::core::map_current_exception())};
+      return stream_result<chunk_type>{
+          detail::make_error_chunk<chunk_type>(wh::core::map_current_exception())};
     }
 
     if (converted.has_error()) {
@@ -207,10 +193,8 @@ private:
 
 template <typename reader_t, typename transform_t>
   requires stream_reader<std::remove_cvref_t<reader_t>>
-[[nodiscard]] inline auto make_transform_stream_reader(reader_t &&reader,
-                                                       transform_t &&transform)
-    -> transform_stream_reader<std::remove_cvref_t<reader_t>,
-                               std::remove_cvref_t<transform_t>> {
+[[nodiscard]] inline auto make_transform_stream_reader(reader_t &&reader, transform_t &&transform)
+    -> transform_stream_reader<std::remove_cvref_t<reader_t>, std::remove_cvref_t<transform_t>> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;
   using stored_transform_t = std::remove_cvref_t<transform_t>;
   return transform_stream_reader<stored_reader_t, stored_transform_t>{

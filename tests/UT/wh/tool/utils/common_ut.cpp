@@ -7,8 +7,7 @@ TEST_CASE("to_camel_case normalizes separators and capitalization",
   REQUIRE(wh::tool::utils::to_camel_case("") == "");
   REQUIRE(wh::tool::utils::to_camel_case("search") == "Search");
   REQUIRE(wh::tool::utils::to_camel_case("tool_name") == "ToolName");
-  REQUIRE(wh::tool::utils::to_camel_case("tool-name test") ==
-          "ToolNameTest");
+  REQUIRE(wh::tool::utils::to_camel_case("tool-name test") == "ToolNameTest");
 }
 
 TEST_CASE("to_camel_case skips repeated separators and preserves existing capitals",

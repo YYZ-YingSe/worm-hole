@@ -19,8 +19,7 @@ namespace wh::compose {
 /// Graph-level compile callback receiving immutable compile graph info
 /// snapshot.
 using graph_compile_callback =
-    wh::core::callback_function<wh::core::result<void>(
-        const graph_compile_info &) const>;
+    wh::core::callback_function<wh::core::result<void>(const graph_compile_info &) const>;
 
 /// Immutable compile options snapshot bound to one compiled graph definition.
 struct graph_compile_options {
@@ -55,8 +54,7 @@ struct graph_compile_options {
 };
 
 /// Serializes compile-options snapshot into one stable diagnostic string.
-[[nodiscard]] inline auto
-serialize_graph_compile_options(const graph_compile_options &options)
+[[nodiscard]] inline auto serialize_graph_compile_options(const graph_compile_options &options)
     -> std::string {
   std::string text{};
   text.reserve(192U + options.name.size());
@@ -69,17 +67,14 @@ serialize_graph_compile_options(const graph_compile_options &options)
   text += ";mode=";
   text += options.mode == graph_runtime_mode::pregel ? "pregel" : "dag";
   text += ";dispatch_policy=";
-  text += options.dispatch_policy == graph_dispatch_policy::next_wave
-              ? "next_wave"
-              : "same_wave";
+  text += options.dispatch_policy == graph_dispatch_policy::next_wave ? "next_wave" : "same_wave";
   text += ";max_steps=";
   text += std::to_string(options.max_steps);
   text += ";retain_cold_data=";
   text += options.retain_cold_data ? "true" : "false";
   text += ";trigger_mode=";
-  text += options.trigger_mode == graph_trigger_mode::all_predecessors
-              ? "all_predecessors"
-              : "any_predecessor";
+  text += options.trigger_mode == graph_trigger_mode::all_predecessors ? "all_predecessors"
+                                                                       : "any_predecessor";
   text += ";fan_in_policy=";
   if (options.fan_in_policy == graph_fan_in_policy::require_all_sources) {
     text += "require_all_sources";

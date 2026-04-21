@@ -1,8 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <cstddef>
 #include <utility>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/document/parser/interface.hpp"
 
@@ -20,15 +20,12 @@ struct echo_parser_impl {
 
   [[nodiscard]] auto parse(wh::document::parser::parse_request &&request) const
       -> wh::core::result<wh::document::document_batch> {
-    return wh::document::document_batch{
-        wh::schema::document{std::move(request.content)}};
+    return wh::document::document_batch{wh::schema::document{std::move(request.content)}};
   }
 
-  [[nodiscard]] auto parse(
-      const wh::document::parser::parse_request_view request) const
+  [[nodiscard]] auto parse(const wh::document::parser::parse_request_view request) const
       -> wh::core::result<wh::document::document_batch> {
-    return wh::document::document_batch{
-        wh::schema::document{std::string{request.content}}};
+    return wh::document::document_batch{wh::schema::document{std::string{request.content}}};
   }
 };
 
@@ -42,8 +39,7 @@ struct heap_parser_impl {
 
   [[nodiscard]] auto parse(const wh::document::parser::parse_request &request) const
       -> wh::core::result<wh::document::document_batch> {
-    return wh::document::document_batch{
-        wh::schema::document{prefix + ":" + request.content}};
+    return wh::document::document_batch{wh::schema::document{prefix + ":" + request.content}};
   }
 
   [[nodiscard]] auto parse(wh::document::parser::parse_request &&request) const
@@ -52,8 +48,7 @@ struct heap_parser_impl {
         wh::schema::document{prefix + ":" + std::move(request.content)}};
   }
 
-  [[nodiscard]] auto parse(
-      const wh::document::parser::parse_request_view request) const
+  [[nodiscard]] auto parse(const wh::document::parser::parse_request_view request) const
       -> wh::core::result<wh::document::document_batch> {
     return wh::document::document_batch{
         wh::schema::document{prefix + ":" + std::string{request.content}}};
@@ -94,8 +89,7 @@ TEST_CASE("parser handle stores copyable parser impl and survives copy and move"
   REQUIRE(copied_result.value().front().content() == "copy");
 
   wh::document::parser::parser moved{std::move(parser)};
-  auto moved_result = moved.parse(
-      wh::document::parser::parse_request_view{.content = "view"});
+  auto moved_result = moved.parse(wh::document::parser::parse_request_view{.content = "view"});
   REQUIRE(moved_result.has_value());
   REQUIRE(moved_result.value().front().content() == "view");
 }
@@ -116,15 +110,13 @@ TEST_CASE(
   REQUIRE_FALSE(parser.has_value());
   REQUIRE(moved.has_value());
 
-  auto view_result = moved.parse(
-      wh::document::parser::parse_request_view{.content = "view"});
+  auto view_result = moved.parse(wh::document::parser::parse_request_view{.content = "view"});
   REQUIRE(view_result.has_value());
   REQUIRE(view_result.value().front().content() == "heap:view");
 
   moved = wh::document::parser::parser{};
   REQUIRE_FALSE(moved.has_value());
-  auto empty_result = moved.parse(
-      wh::document::parser::parse_request_view{.content = "ignored"});
+  auto empty_result = moved.parse(wh::document::parser::parse_request_view{.content = "ignored"});
   REQUIRE(empty_result.has_error());
   REQUIRE(empty_result.error() == wh::core::errc::not_supported);
 }

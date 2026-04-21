@@ -1121,7 +1121,9 @@ def collect_coverage_binaries(tag: str, binaries_dir: Path) -> list[Path]:
 
 
 def coverage_profile_pattern(entry: TestEntry, profile_dir: Path) -> str:
-    return str(profile_dir / f"{entry.target}-%p.profraw")
+    # Keep LLVM's module signature in the filename so one test process can emit
+    # separate raw profiles for each instrumented coverage mapping it loads.
+    return str(profile_dir / f"{entry.target}-%m-%p.profraw")
 
 
 def collect_entry_coverage_profiles(tag: str, profile_dir: Path, entry: TestEntry) -> list[Path]:

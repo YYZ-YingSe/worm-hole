@@ -1,22 +1,21 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/compose/graph/detail/inline_impl.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
-TEST_CASE("graph class declaration remains usable through detail header for construction compile copy and invoke",
-          "[UT][wh/compose/graph/detail/graph_class.hpp][graph::graph][condition][branch][boundary]") {
-  wh::compose::graph boundary_graph{
-      wh::compose::graph_boundary{
-          .input = wh::compose::node_contract::value,
-          .output = wh::compose::node_contract::stream,
-      }};
-  REQUIRE(boundary_graph.boundary().output ==
-          wh::compose::node_contract::stream);
+TEST_CASE(
+    "graph class declaration remains usable through detail header for construction compile copy "
+    "and invoke",
+    "[UT][wh/compose/graph/detail/graph_class.hpp][graph::graph][condition][branch][boundary]") {
+  wh::compose::graph boundary_graph{wh::compose::graph_boundary{
+      .input = wh::compose::node_contract::value,
+      .output = wh::compose::node_contract::stream,
+  }};
+  REQUIRE(boundary_graph.boundary().output == wh::compose::node_contract::stream);
 
   wh::compose::graph_compile_options options{};
   options.name = "detail_graph";
@@ -26,8 +25,7 @@ TEST_CASE("graph class declaration remains usable through detail header for cons
   REQUIRE(graph.options().max_parallel_nodes == 3U);
   REQUIRE_FALSE(graph.compiled());
 
-  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
   REQUIRE(graph.compile().has_value());
@@ -57,12 +55,12 @@ TEST_CASE("graph class declaration remains usable through detail header for cons
   REQUIRE(waited.has_value());
   REQUIRE(std::get<0>(*waited).has_value());
   REQUIRE(std::get<0>(*waited).value().output_status.has_value());
-  REQUIRE(*wh::core::any_cast<int>(
-              &std::get<0>(*waited).value().output_status.value()) == 42);
+  REQUIRE(*wh::core::any_cast<int>(&std::get<0>(*waited).value().output_status.value()) == 42);
 }
 
 TEST_CASE("graph class reports missing nodes and rejects compiled-node lookup before compile",
-          "[UT][wh/compose/graph/detail/graph_class.hpp][graph::compiled_node_by_key][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "graph_class.hpp][graph::compiled_node_by_key][condition][branch][boundary]") {
   wh::compose::graph graph{};
   REQUIRE(graph.add_passthrough("worker").has_value());
 

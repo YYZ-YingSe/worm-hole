@@ -1,14 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-
-#include <exec/static_thread_pool.hpp>
-
-#include <array>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <concepts>
 #include <functional>
 #include <initializer_list>
 #include <memory>
@@ -23,8 +19,15 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+#include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
+#include "helper/async_coordination.hpp"
+#include "helper/compose_graph_runtime_support.hpp"
+#include "helper/compose_graph_test_utils.hpp"
+#include "helper/sender_capture.hpp"
+#include "helper/static_thread_scheduler.hpp"
 #include "wh/compose/graph.hpp"
 #include "wh/compose/graph/compile_options.hpp"
 #include "wh/compose/graph/detail/child_pump.hpp"
@@ -41,8 +44,8 @@
 #include "wh/core/run_context.hpp"
 #include "wh/core/stdexec.hpp"
 #include "wh/document/document.hpp"
-#include "wh/document/processor.hpp"
 #include "wh/document/parser/text_parser.hpp"
+#include "wh/document/processor.hpp"
 #include "wh/embedding/embedding.hpp"
 #include "wh/indexer/indexer.hpp"
 #include "wh/model/echo_chat_model.hpp"
@@ -52,30 +55,21 @@
 #include "wh/schema/stream.hpp"
 #include "wh/tool/tool.hpp"
 
-#include "helper/async_coordination.hpp"
-#include "helper/compose_graph_runtime_support.hpp"
-#include "helper/compose_graph_test_utils.hpp"
-#include "helper/sender_capture.hpp"
-#include "helper/static_thread_scheduler.hpp"
-
 namespace {
 
 using graph_stream_result_sender = wh::compose::tools_stream_sender;
-using synchronized_scheduler_helper =
-    wh::testing::helper::static_thread_scheduler_helper;
+using synchronized_scheduler_helper = wh::testing::helper::static_thread_scheduler_helper;
 using wh::testing::helper::capture_exact_checkpoint;
 
 [[nodiscard]] auto make_int_graph_stream(std::initializer_list<int> values)
     -> wh::core::result<wh::compose::graph_stream_reader>;
 
-[[nodiscard]] auto sum_collected_graph_chunks(
-    const wh::compose::graph_value &input) -> wh::core::result<int>;
+[[nodiscard]] auto sum_collected_graph_chunks(const wh::compose::graph_value &input)
+    -> wh::core::result<int>;
 
 template <typename value_t>
-[[nodiscard]] auto read_any(const wh::core::any &value)
-    -> wh::core::result<value_t> {
-  if (const auto *typed = wh::core::any_cast<value_t>(&value);
-      typed != nullptr) {
+[[nodiscard]] auto read_any(const wh::core::any &value) -> wh::core::result<value_t> {
+  if (const auto *typed = wh::core::any_cast<value_t>(&value); typed != nullptr) {
     if constexpr (std::copy_constructible<value_t>) {
       return *typed;
     } else {
@@ -86,8 +80,7 @@ template <typename value_t>
 }
 
 template <typename value_t>
-[[nodiscard]] auto read_any(wh::core::any &&value)
-    -> wh::core::result<value_t> {
+[[nodiscard]] auto read_any(wh::core::any &&value) -> wh::core::result<value_t> {
   if (auto *typed = wh::core::any_cast<value_t>(&value); typed != nullptr) {
     return std::move(*typed);
   }
@@ -95,8 +88,8 @@ template <typename value_t>
 }
 
 struct collected_sum_consumer {
-  auto invoke(std::vector<wh::compose::graph_value> input,
-              wh::core::run_context &) const -> wh::core::result<int> {
+  auto invoke(std::vector<wh::compose::graph_value> input, wh::core::run_context &) const
+      -> wh::core::result<int> {
     int sum = 0;
     for (auto &entry : input) {
       auto typed = read_any<int>(std::move(entry));
@@ -116,8 +109,7 @@ template <typename result_t, stdexec::sender sender_t>
   auto env = wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{});
   auto operation = stdexec::connect(
       std::move(sender),
-      wh::testing::helper::sender_capture_receiver<result_t, decltype(env)>{
-          &capture, env});
+      wh::testing::helper::sender_capture_receiver<result_t, decltype(env)>{&capture, env});
   stdexec::start(operation);
   if (!capture.ready.try_acquire_for(timeout)) {
     return result_t::failure(wh::core::errc::timeout);
@@ -130,11 +122,9 @@ template <typename result_t, stdexec::sender sender_t>
 }
 
 template <typename input_t>
-[[nodiscard]] auto make_graph_request(input_t &&input)
-    -> wh::compose::graph_invoke_request {
+[[nodiscard]] auto make_graph_request(input_t &&input) -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request request{};
-  request.input =
-      wh::compose::graph_input::value(std::forward<input_t>(input));
+  request.input = wh::compose::graph_input::value(std::forward<input_t>(input));
   return request;
 }
 
@@ -145,8 +135,7 @@ template <typename input_t>
   return request;
 }
 
-[[nodiscard]] auto
-make_graph_request(wh::compose::graph_value input)
+[[nodiscard]] auto make_graph_request(wh::compose::graph_value input)
     -> wh::compose::graph_invoke_request {
   wh::compose::graph_invoke_request request{};
   if (auto *reader = wh::core::any_cast<wh::compose::graph_stream_reader>(&input);
@@ -168,9 +157,8 @@ template <typename input_t>
 }
 
 template <typename input_t>
-[[nodiscard]] auto make_graph_request(
-    input_t &&input, wh::compose::graph_invoke_controls controls,
-    const wh::compose::graph_runtime_services *services = nullptr)
+[[nodiscard]] auto make_graph_request(input_t &&input, wh::compose::graph_invoke_controls controls,
+                                      const wh::compose::graph_runtime_services *services = nullptr)
     -> wh::compose::graph_invoke_request {
   auto request = make_graph_request(std::forward<input_t>(input));
   request.controls = std::move(controls);
@@ -179,20 +167,18 @@ template <typename input_t>
 }
 
 template <typename input_t>
-[[nodiscard]] auto make_graph_request(
-    input_t &&input, const wh::compose::graph_call_options &options,
-    wh::compose::graph_invoke_controls controls,
-    const wh::compose::graph_runtime_services *services = nullptr)
+[[nodiscard]] auto make_graph_request(input_t &&input,
+                                      const wh::compose::graph_call_options &options,
+                                      wh::compose::graph_invoke_controls controls,
+                                      const wh::compose::graph_runtime_services *services = nullptr)
     -> wh::compose::graph_invoke_request {
-  auto request =
-      make_graph_request(std::forward<input_t>(input), std::move(controls),
-                         services);
+  auto request = make_graph_request(std::forward<input_t>(input), std::move(controls), services);
   request.controls.call = options;
   return request;
 }
 
-[[nodiscard]] auto unwrap_graph_invoke_status(
-    wh::core::result<wh::compose::graph_invoke_result> status)
+[[nodiscard]] auto
+unwrap_graph_invoke_status(wh::core::result<wh::compose::graph_invoke_result> status)
     -> wh::core::result<wh::compose::graph_value> {
   if (status.has_error()) {
     return wh::core::result<wh::compose::graph_value>::failure(status.error());
@@ -201,95 +187,80 @@ template <typename input_t>
 }
 
 template <typename invokable_t, typename input_t>
-concept sender_request_invokable = requires(const invokable_t &invokable,
-                                            wh::core::run_context &context,
-                                            input_t &&input) {
-  invokable.invoke(context, make_graph_request(std::forward<input_t>(input)));
-};
+concept sender_request_invokable =
+    requires(const invokable_t &invokable, wh::core::run_context &context, input_t &&input) {
+      invokable.invoke(context, make_graph_request(std::forward<input_t>(input)));
+    };
 
 template <typename invokable_t, typename input_t>
 concept sync_value_invokable =
-    requires(const invokable_t &invokable, wh::core::run_context &context,
-             input_t &&input) {
+    requires(const invokable_t &invokable, wh::core::run_context &context, input_t &&input) {
       invokable.invoke(std::forward<input_t>(input), context);
     };
 
 template <typename invokable_t, typename input_t>
-concept sender_request_invokable_with_const_options = requires(
-    const invokable_t &invokable, wh::core::run_context &context,
-    input_t &&input, const wh::compose::graph_call_options &call_options) {
-  invokable.invoke(context, make_graph_request(std::forward<input_t>(input),
-                                               call_options));
-};
+concept sender_request_invokable_with_const_options =
+    requires(const invokable_t &invokable, wh::core::run_context &context, input_t &&input,
+             const wh::compose::graph_call_options &call_options) {
+      invokable.invoke(context, make_graph_request(std::forward<input_t>(input), call_options));
+    };
 
 template <typename invokable_t, typename input_t>
-concept sender_request_invokable_with_movable_options = requires(
-    const invokable_t &invokable, wh::core::run_context &context,
-    input_t &&input, wh::compose::graph_call_options &&call_options) {
-  invokable.invoke(context, make_graph_request(std::forward<input_t>(input),
-                                               call_options));
-};
+concept sender_request_invokable_with_movable_options =
+    requires(const invokable_t &invokable, wh::core::run_context &context, input_t &&input,
+             wh::compose::graph_call_options &&call_options) {
+      invokable.invoke(context, make_graph_request(std::forward<input_t>(input), call_options));
+    };
 
 template <typename invokable_t, typename input_t>
   requires sender_request_invokable<invokable_t, input_t>
-[[nodiscard]] auto invoke_graph_sync(
-    const invokable_t &invokable, input_t &&input,
-    wh::core::run_context &context)
+[[nodiscard]] auto invoke_graph_sync(const invokable_t &invokable, input_t &&input,
+                                     wh::core::run_context &context)
+    -> wh::core::result<wh::compose::graph_invoke_result> {
+  auto sender = invokable.invoke(context, make_graph_request(std::forward<input_t>(input)));
+  return wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(std::move(sender));
+}
+
+template <typename invokable_t, typename input_t>
+  requires sender_request_invokable<invokable_t, input_t>
+[[nodiscard]] auto invoke_graph_sync(const invokable_t &invokable, input_t &&input,
+                                     wh::core::run_context &context,
+                                     wh::compose::graph_invoke_controls controls,
+                                     const wh::compose::graph_runtime_services *services = nullptr)
+    -> wh::core::result<wh::compose::graph_invoke_result> {
+  auto sender = invokable.invoke(
+      context, make_graph_request(std::forward<input_t>(input), std::move(controls), services));
+  return wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(std::move(sender));
+}
+
+template <typename invokable_t, typename input_t>
+  requires sender_request_invokable<invokable_t, input_t>
+[[nodiscard]] auto invoke_graph_sync(const invokable_t &invokable, input_t &&input,
+                                     wh::core::run_context &context,
+                                     const wh::compose::graph_call_options &call_options,
+                                     wh::compose::graph_invoke_controls controls,
+                                     const wh::compose::graph_runtime_services *services = nullptr)
     -> wh::core::result<wh::compose::graph_invoke_result> {
   auto sender =
-      invokable.invoke(context, make_graph_request(std::forward<input_t>(input)));
-  return wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(
-      std::move(sender));
+      invokable.invoke(context, make_graph_request(std::forward<input_t>(input), call_options,
+                                                   std::move(controls), services));
+  return wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(std::move(sender));
 }
 
 template <typename invokable_t, typename input_t>
   requires sender_request_invokable<invokable_t, input_t>
-[[nodiscard]] auto invoke_graph_sync(
-    const invokable_t &invokable, input_t &&input,
-    wh::core::run_context &context, wh::compose::graph_invoke_controls controls,
-    const wh::compose::graph_runtime_services *services = nullptr)
-    -> wh::core::result<wh::compose::graph_invoke_result> {
-  auto sender = invokable.invoke(
-      context, make_graph_request(std::forward<input_t>(input), std::move(controls),
-                                  services));
-  return wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(
-      std::move(sender));
-}
-
-template <typename invokable_t, typename input_t>
-  requires sender_request_invokable<invokable_t, input_t>
-[[nodiscard]] auto invoke_graph_sync(
-    const invokable_t &invokable, input_t &&input,
-    wh::core::run_context &context,
-    const wh::compose::graph_call_options &call_options,
-    wh::compose::graph_invoke_controls controls,
-    const wh::compose::graph_runtime_services *services = nullptr)
-    -> wh::core::result<wh::compose::graph_invoke_result> {
-  auto sender = invokable.invoke(
-      context, make_graph_request(std::forward<input_t>(input), call_options,
-                                  std::move(controls), services));
-  return wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(
-      std::move(sender));
-}
-
-template <typename invokable_t, typename input_t>
-  requires sender_request_invokable<invokable_t, input_t>
-[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable,
-                                     input_t &&input,
+[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable, input_t &&input,
                                      wh::core::run_context &context)
     -> wh::core::result<wh::compose::graph_value> {
-  auto sender =
-      invokable.invoke(context, make_graph_request(std::forward<input_t>(input)));
+  auto sender = invokable.invoke(context, make_graph_request(std::forward<input_t>(input)));
   return unwrap_graph_invoke_status(
-      wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(
-          std::move(sender)));
+      wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(std::move(sender)));
 }
 
 template <typename invokable_t, typename input_t>
   requires(!sender_request_invokable<invokable_t, input_t> &&
            sync_value_invokable<invokable_t, input_t>)
-[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable,
-                                     input_t &&input,
+[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable, input_t &&input,
                                      wh::core::run_context &context)
     -> wh::core::result<wh::compose::graph_value> {
   return invokable.invoke(std::forward<input_t>(input), context);
@@ -297,74 +268,62 @@ template <typename invokable_t, typename input_t>
 
 template <typename invokable_t, typename input_t>
   requires sender_request_invokable_with_const_options<invokable_t, input_t>
-[[nodiscard]] auto invoke_value_sync(
-    const invokable_t &invokable, input_t &&input,
-    wh::core::run_context &context,
-    const wh::compose::graph_call_options &call_options)
+[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable, input_t &&input,
+                                     wh::core::run_context &context,
+                                     const wh::compose::graph_call_options &call_options)
     -> wh::core::result<wh::compose::graph_value> {
-  auto sender = invokable.invoke(
-      context, make_graph_request(std::forward<input_t>(input), call_options));
+  auto sender =
+      invokable.invoke(context, make_graph_request(std::forward<input_t>(input), call_options));
   return unwrap_graph_invoke_status(
-      wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(
-          std::move(sender)));
+      wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(std::move(sender)));
 }
 
 template <typename invokable_t, typename input_t>
   requires(!sender_request_invokable_with_const_options<invokable_t, input_t>)
-[[nodiscard]] auto invoke_value_sync(
-    const invokable_t &invokable, input_t &&input,
-    wh::core::run_context &context,
-    const wh::compose::graph_call_options &)
+[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable, input_t &&input,
+                                     wh::core::run_context &context,
+                                     const wh::compose::graph_call_options &)
     -> wh::core::result<wh::compose::graph_value> {
   return invoke_value_sync(invokable, std::forward<input_t>(input), context);
 }
 
 template <typename invokable_t, typename input_t>
   requires sender_request_invokable_with_movable_options<invokable_t, input_t>
-[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable,
-                                     input_t &&input,
+[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable, input_t &&input,
                                      wh::core::run_context &context,
                                      wh::compose::graph_call_options &&call_options)
     -> wh::core::result<wh::compose::graph_value> {
-  auto sender = invokable.invoke(
-      context, make_graph_request(std::forward<input_t>(input), call_options));
+  auto sender =
+      invokable.invoke(context, make_graph_request(std::forward<input_t>(input), call_options));
   return unwrap_graph_invoke_status(
-      wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(
-          std::move(sender)));
+      wait_sender_result<wh::core::result<wh::compose::graph_invoke_result>>(std::move(sender)));
 }
 
 template <typename invokable_t, typename input_t>
   requires(!sender_request_invokable_with_movable_options<invokable_t, input_t>)
-[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable,
-                                     input_t &&input,
+[[nodiscard]] auto invoke_value_sync(const invokable_t &invokable, input_t &&input,
                                      wh::core::run_context &context,
                                      wh::compose::graph_call_options &&)
     -> wh::core::result<wh::compose::graph_value> {
   return invoke_value_sync(invokable, std::forward<input_t>(input), context);
 }
 
-using synchronized_pair_gate_registry =
-    wh::testing::helper::async_pair_gate_registry;
+using synchronized_pair_gate_registry = wh::testing::helper::async_pair_gate_registry;
 
 struct synchronized_async_dispatchers {
   using scheduler_type = synchronized_scheduler_helper::scheduler_type;
 
   explicit synchronized_async_dispatchers(const std::uint32_t thread_count)
       : threads_(std::max<std::uint32_t>(thread_count, 2U)),
-        left_(threads_.scheduler_on_thread(0U)),
-        right_(threads_.scheduler_on_thread(1U)) {}
+        left_(threads_.scheduler_on_thread(0U)), right_(threads_.scheduler_on_thread(1U)) {}
 
   auto warm() -> void {
     auto left_ready =
-        stdexec::sync_wait(stdexec::schedule(left_) | stdexec::then([] {
-          return 0;
-        }));
+        stdexec::sync_wait(stdexec::schedule(left_) | stdexec::then([] { return 0; }));
     REQUIRE(left_ready.has_value());
 
     auto right_ready =
-        stdexec::sync_wait(stdexec::schedule(right_) | stdexec::then([] {
-          return 0;
-        }));
+        stdexec::sync_wait(stdexec::schedule(right_) | stdexec::then([] { return 0; }));
     REQUIRE(right_ready.has_value());
   }
 
@@ -382,8 +341,8 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
   stream = 1U,
 };
 
-[[nodiscard]] auto synchronized_dispatch_name(
-    const wh::compose::graph_dispatch_policy dispatch_policy)
+[[nodiscard]] auto
+synchronized_dispatch_name(const wh::compose::graph_dispatch_policy dispatch_policy)
     -> std::string_view {
   switch (dispatch_policy) {
   case wh::compose::graph_dispatch_policy::same_wave:
@@ -394,73 +353,63 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
   return "unknown";
 }
 
-[[nodiscard]] auto make_synchronized_async_value_source(
-    synchronized_async_dispatchers::scheduler_type scheduler,
-    const std::shared_ptr<synchronized_pair_gate_registry> &gates,
-    const int bias) {
-  return [scheduler = std::move(scheduler), gates, bias](
-             const wh::compose::graph_value &input, wh::core::run_context &,
-             const wh::compose::graph_call_scope &) {
+[[nodiscard]] auto
+make_synchronized_async_value_source(synchronized_async_dispatchers::scheduler_type scheduler,
+                                     const std::shared_ptr<synchronized_pair_gate_registry> &gates,
+                                     const int bias) {
+  return [scheduler = std::move(scheduler), gates, bias](const wh::compose::graph_value &input,
+                                                         wh::core::run_context &,
+                                                         const wh::compose::graph_call_scope &) {
     auto copied_input = input;
     return wh::compose::detail::bridge_graph_sender(stdexec::starts_on(
         scheduler,
         stdexec::just(std::move(copied_input)) |
-            stdexec::let_value([gates, bias](wh::compose::graph_value payload)
-                                   -> wh::compose::graph_sender {
-              auto typed = read_any<int>(std::move(payload));
-              if (typed.has_error()) {
-                return wh::compose::detail::failure_graph_sender(typed.error());
-              }
-              const int value = typed.value();
-              return wh::compose::detail::bridge_graph_sender(
-                  gates->arrive(value) |
-                  stdexec::then([value, bias]()
-                                    -> wh::core::result<wh::compose::graph_value> {
-                    return wh::core::any(value + bias);
-                  }));
-            })));
+            stdexec::let_value(
+                [gates, bias](wh::compose::graph_value payload) -> wh::compose::graph_sender {
+                  auto typed = read_any<int>(std::move(payload));
+                  if (typed.has_error()) {
+                    return wh::compose::detail::failure_graph_sender(typed.error());
+                  }
+                  const int value = typed.value();
+                  return wh::compose::detail::bridge_graph_sender(
+                      gates->arrive(value) |
+                      stdexec::then([value, bias]() -> wh::core::result<wh::compose::graph_value> {
+                        return wh::core::any(value + bias);
+                      }));
+                })));
   };
 }
 
-[[nodiscard]] auto make_synchronized_async_stream_source(
-    synchronized_async_dispatchers::scheduler_type scheduler,
-    const std::shared_ptr<synchronized_pair_gate_registry> &gates,
-    const int bias) {
-  return [scheduler = std::move(scheduler), gates, bias](
-             const wh::compose::graph_value &input, wh::core::run_context &,
-             const wh::compose::graph_call_scope &)
-             -> graph_stream_result_sender {
+[[nodiscard]] auto
+make_synchronized_async_stream_source(synchronized_async_dispatchers::scheduler_type scheduler,
+                                      const std::shared_ptr<synchronized_pair_gate_registry> &gates,
+                                      const int bias) {
+  return [scheduler = std::move(scheduler), gates,
+          bias](const wh::compose::graph_value &input, wh::core::run_context &,
+                const wh::compose::graph_call_scope &) -> graph_stream_result_sender {
     auto copied_input = input;
     auto sender = stdexec::starts_on(
         scheduler,
         stdexec::just(std::move(copied_input)) |
-            stdexec::let_value([gates, bias](wh::compose::graph_value payload)
-                                   -> graph_stream_result_sender {
+            stdexec::let_value([gates, bias](
+                                   wh::compose::graph_value payload) -> graph_stream_result_sender {
               auto typed = read_any<int>(std::move(payload));
               if (typed.has_error()) {
-                return graph_stream_result_sender{
-                    wh::core::detail::normalize_result_sender<
-                        wh::core::result<wh::compose::graph_stream_reader>>(
-                        stdexec::just(wh::core::result<
-                                      wh::compose::graph_stream_reader>::failure(
-                            typed.error())))};
+                return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
+                    wh::core::result<wh::compose::graph_stream_reader>>(stdexec::just(
+                    wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error())))};
               }
               const int value = typed.value();
-              return graph_stream_result_sender{
-                  wh::core::detail::normalize_result_sender<
-                      wh::core::result<wh::compose::graph_stream_reader>>(
-                      gates->arrive(value) |
-                      stdexec::then([value, bias]()
-                                        -> wh::core::result<
-                                            wh::compose::graph_stream_reader> {
-                        return make_int_graph_stream(
-                            {value + bias, value + bias + 1});
+              return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
+                  wh::core::result<wh::compose::graph_stream_reader>>(
+                  gates->arrive(value) |
+                  stdexec::then(
+                      [value, bias]() -> wh::core::result<wh::compose::graph_stream_reader> {
+                        return make_int_graph_stream({value + bias, value + bias + 1});
                       }))};
             }));
-    return graph_stream_result_sender{
-        wh::core::detail::normalize_result_sender<
-            wh::core::result<wh::compose::graph_stream_reader>>(
-            std::move(sender))};
+    return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
+        wh::core::result<wh::compose::graph_stream_reader>>(std::move(sender))};
   };
 }
 
@@ -479,41 +428,33 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
   wh::compose::graph graph{std::move(options)};
 
   if (shape == synchronized_async_fan_in_shape::value) {
+    REQUIRE(
+        graph
+            .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                        wh::compose::node_exec_mode::async>(
+                "left_source", make_synchronized_async_value_source(dispatchers->left(), gates, 0))
+            .has_value());
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::value,
-                            wh::compose::node_exec_mode::async>(
-                    "left_source",
-                    make_synchronized_async_value_source(dispatchers->left(), gates,
-                                                         0))
-                .has_value());
-    REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::value,
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
                             wh::compose::node_exec_mode::async>(
                     "right_source",
-                    make_synchronized_async_value_source(dispatchers->right(),
-                                                         gates, 10))
+                    make_synchronized_async_value_source(dispatchers->right(), gates, 10))
                 .has_value());
     REQUIRE(graph
                 .add_lambda(
                     "merged_value",
-                    [](const wh::compose::graph_value &input,
-                       wh::core::run_context &,
+                    [](const wh::compose::graph_value &input, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_value> {
-                      auto merged =
-                          read_any<wh::compose::graph_value_map>(input);
+                      auto merged = read_any<wh::compose::graph_value_map>(input);
                       if (merged.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            merged.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                       }
                       int total = 0;
                       for (const auto &entry : merged.value()) {
                         auto typed = read_any<int>(entry.second);
                         if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
+                          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
                         }
                         total += typed.value();
                       }
@@ -521,46 +462,39 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
                     })
                 .has_value());
   } else {
+    REQUIRE(
+        graph
+            .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                        wh::compose::node_exec_mode::async>(
+                "left_source", make_synchronized_async_stream_source(dispatchers->left(), gates, 0))
+            .has_value());
     REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream,
-                            wh::compose::node_exec_mode::async>(
-                    "left_source",
-                    make_synchronized_async_stream_source(dispatchers->left(),
-                                                          gates, 0))
-                .has_value());
-    REQUIRE(graph
-                .add_lambda<wh::compose::node_contract::value,
-                            wh::compose::node_contract::stream,
+                .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
                             wh::compose::node_exec_mode::async>(
                     "right_source",
-                    make_synchronized_async_stream_source(dispatchers->right(),
-                                                          gates, 10))
+                    make_synchronized_async_stream_source(dispatchers->right(), gates, 10))
                 .has_value());
     REQUIRE(graph
-                .add_lambda(
-                    "merged_value",
-                    [](const wh::compose::graph_value &input,
-                       wh::core::run_context &,
-                       const wh::compose::graph_call_scope &)
-                        -> wh::core::result<wh::compose::graph_value> {
-                      auto merged =
-                          read_any<wh::compose::graph_value_map>(input);
-                      if (merged.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            merged.error());
-                      }
-                      int total = 0;
-                      for (const auto &entry : merged.value()) {
-                        auto chunks = sum_collected_graph_chunks(entry.second);
-                        if (chunks.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              chunks.error());
-                        }
-                        total += chunks.value();
-                      }
-                      return wh::core::any(total);
-                    })
+                .add_lambda("merged_value",
+                            [](const wh::compose::graph_value &input, wh::core::run_context &,
+                               const wh::compose::graph_call_scope &)
+                                -> wh::core::result<wh::compose::graph_value> {
+                              auto merged = read_any<wh::compose::graph_value_map>(input);
+                              if (merged.has_error()) {
+                                return wh::core::result<wh::compose::graph_value>::failure(
+                                    merged.error());
+                              }
+                              int total = 0;
+                              for (const auto &entry : merged.value()) {
+                                auto chunks = sum_collected_graph_chunks(entry.second);
+                                if (chunks.has_error()) {
+                                  return wh::core::result<wh::compose::graph_value>::failure(
+                                      chunks.error());
+                                }
+                                total += chunks.value();
+                              }
+                              return wh::core::any(total);
+                            })
                 .has_value());
   }
 
@@ -577,47 +511,41 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
   return graph;
 }
 
-[[nodiscard]] auto build_async_stream_collect_graph(
-    const std::shared_ptr<exec::static_thread_pool> &pool)
+[[nodiscard]] auto
+build_async_stream_collect_graph(const std::shared_ptr<exec::static_thread_pool> &pool)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.max_parallel_nodes = 1U;
   wh::compose::graph graph{std::move(options)};
 
-  auto source = [pool](const wh::compose::graph_value &input,
-                       wh::core::run_context &,
+  auto source = [pool](const wh::compose::graph_value &input, wh::core::run_context &,
                        const wh::compose::graph_call_scope &) {
     auto copied_input = input;
     return stdexec::starts_on(
         pool->get_scheduler(),
         stdexec::just(std::move(copied_input)) |
             stdexec::then([](wh::compose::graph_value payload)
-                              -> wh::core::result<
-                                  wh::compose::graph_stream_reader> {
+                              -> wh::core::result<wh::compose::graph_stream_reader> {
               auto typed = read_any<int>(std::move(payload));
               if (typed.has_error()) {
-                return wh::core::result<wh::compose::graph_stream_reader>::
-                    failure(typed.error());
+                return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
               }
-              return make_int_graph_stream(
-                  {typed.value() + 3, typed.value() + 4});
+              return make_int_graph_stream({typed.value() + 3, typed.value() + 4});
             }));
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>("source",
-                                                              std::move(source))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("source", std::move(source))
               .has_value());
   REQUIRE(
-      graph.add_component(wh::compose::make_component_node<
-                          wh::core::component_kind::custom,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          std::vector<wh::compose::graph_value>, int>(
-                              "consumer", collected_sum_consumer{}))
+      graph
+          .add_component(
+              wh::compose::make_component_node<
+                  wh::core::component_kind::custom, wh::compose::node_contract::value,
+                  wh::compose::node_contract::value, std::vector<wh::compose::graph_value>, int>(
+                  "consumer", collected_sum_consumer{}))
           .has_value());
   REQUIRE(graph.add_entry_edge("source").has_value());
   REQUIRE(graph.add_edge("source", "consumer").has_value());
@@ -630,18 +558,19 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
   return graph;
 }
 
-[[nodiscard]] auto synchronized_expected_output(
-    const synchronized_async_fan_in_shape shape, const int input) -> int {
+[[nodiscard]] auto synchronized_expected_output(const synchronized_async_fan_in_shape shape,
+                                                const int input) -> int {
   if (shape == synchronized_async_fan_in_shape::value) {
     return 2 * input + 10;
   }
   return 4 * input + 22;
 }
 
-[[nodiscard]] auto run_synchronized_async_fan_in_wave(
-    const wh::compose::graph &graph,
-    const synchronized_async_fan_in_shape shape, const int worker_count,
-    const int iterations_per_worker, const int input_bias = 0)
+[[nodiscard]] auto run_synchronized_async_fan_in_wave(const wh::compose::graph &graph,
+                                                      const synchronized_async_fan_in_shape shape,
+                                                      const int worker_count,
+                                                      const int iterations_per_worker,
+                                                      const int input_bias = 0)
     -> std::vector<std::string> {
   std::atomic<bool> failed{false};
   std::mutex error_mutex{};
@@ -680,8 +609,7 @@ enum class synchronized_async_fan_in_shape : std::uint8_t {
             std::lock_guard lock{error_mutex};
             failed.store(true, std::memory_order_release);
             errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                             std::to_string(typed.value()) + ":" +
-                             std::to_string(expected));
+                             std::to_string(typed.value()) + ":" + std::to_string(expected));
             return;
           }
         }
@@ -716,21 +644,18 @@ template <typename fn_t> struct sync_embedding_impl {
   }
 };
 
-template <typename fn_t>
-sync_embedding_impl(fn_t) -> sync_embedding_impl<fn_t>;
+template <typename fn_t> sync_embedding_impl(fn_t) -> sync_embedding_impl<fn_t>;
 
 template <typename fn_t> struct sync_retriever_impl {
   fn_t fn;
 
-  [[nodiscard]] auto retrieve(
-      const wh::retriever::retriever_request &request) const
+  [[nodiscard]] auto retrieve(const wh::retriever::retriever_request &request) const
       -> decltype(std::invoke(fn, request)) {
     return std::invoke(fn, request);
   }
 };
 
-template <typename fn_t>
-sync_retriever_impl(fn_t) -> sync_retriever_impl<fn_t>;
+template <typename fn_t> sync_retriever_impl(fn_t) -> sync_retriever_impl<fn_t>;
 
 template <typename fn_t> struct sync_indexer_batch_impl {
   fn_t fn;
@@ -741,8 +666,7 @@ template <typename fn_t> struct sync_indexer_batch_impl {
   }
 };
 
-template <typename fn_t>
-sync_indexer_batch_impl(fn_t) -> sync_indexer_batch_impl<fn_t>;
+template <typename fn_t> sync_indexer_batch_impl(fn_t) -> sync_indexer_batch_impl<fn_t>;
 
 template <typename fn_t> struct sync_tool_stream_impl {
   fn_t fn;
@@ -754,8 +678,7 @@ template <typename fn_t> struct sync_tool_stream_impl {
   }
 };
 
-template <typename fn_t>
-sync_tool_stream_impl(fn_t) -> sync_tool_stream_impl<fn_t>;
+template <typename fn_t> sync_tool_stream_impl(fn_t) -> sync_tool_stream_impl<fn_t>;
 
 template <typename fn_t> struct sync_tool_invoke_impl {
   fn_t fn;
@@ -767,29 +690,24 @@ template <typename fn_t> struct sync_tool_invoke_impl {
   }
 };
 
-template <typename fn_t>
-sync_tool_invoke_impl(fn_t) -> sync_tool_invoke_impl<fn_t>;
+template <typename fn_t> sync_tool_invoke_impl(fn_t) -> sync_tool_invoke_impl<fn_t>;
 
-[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph,
-                                        wh::compose::component_node node)
+[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph, wh::compose::component_node node)
     -> wh::core::result<void> {
   return graph.add_component(std::move(node));
 }
 
-[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph,
-                                        wh::compose::lambda_node node)
+[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph, wh::compose::lambda_node node)
     -> wh::core::result<void> {
   return graph.add_lambda(std::move(node));
 }
 
-[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph,
-                                        wh::compose::subgraph_node node)
+[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph, wh::compose::subgraph_node node)
     -> wh::core::result<void> {
   return graph.add_subgraph(std::move(node));
 }
 
-[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph,
-                                        wh::compose::tools_node node)
+[[nodiscard]] inline auto add_test_node(wh::compose::graph &graph, wh::compose::tools_node node)
     -> wh::core::result<void> {
   return graph.add_tools(std::move(node));
 }
@@ -812,23 +730,21 @@ struct test_nested_graph_state {
     return bound_scheduler;
   }
 
-  [[nodiscard]] static auto invoke(
-      const void *, const wh::compose::graph &graph,
-      wh::core::run_context &context, wh::compose::graph_value &input,
-      const wh::compose::graph_call_scope *call_options,
-      const wh::compose::node_path *path_prefix,
-      wh::compose::graph_process_state *parent_process_state,
-      wh::compose::detail::runtime_state::invoke_outputs *nested_outputs,
-      const wh::compose::graph_node_trace *) -> wh::compose::graph_sender {
-    return wh::compose::detail::start_scoped_graph(
-        graph, context, input, call_options, path_prefix, parent_process_state,
-        nested_outputs, scheduler(), scheduler());
+  [[nodiscard]] static auto
+  invoke(const void *, const wh::compose::graph &graph, wh::core::run_context &context,
+         wh::compose::graph_value &input, const wh::compose::graph_call_scope *call_options,
+         const wh::compose::node_path *path_prefix,
+         wh::compose::graph_process_state *parent_process_state,
+         wh::compose::detail::runtime_state::invoke_outputs *nested_outputs,
+         const wh::compose::graph_node_trace *) -> wh::compose::graph_sender {
+    return wh::compose::detail::start_scoped_graph(graph, context, input, call_options, path_prefix,
+                                                   parent_process_state, nested_outputs,
+                                                   scheduler(), scheduler());
   }
 };
 
-auto ensure_test_nested_runtime(
-    wh::compose::node_runtime &runtime,
-    std::shared_ptr<test_nested_graph_state> &nested_state) -> void {
+auto ensure_test_nested_runtime(wh::compose::node_runtime &runtime,
+                                std::shared_ptr<test_nested_graph_state> &nested_state) -> void {
   if (!wh::compose::detail::node_runtime_access::nested_entry(runtime).bound()) {
     nested_state = std::make_shared<test_nested_graph_state>();
     wh::compose::detail::node_runtime_access::bind_internal(
@@ -839,8 +755,7 @@ auto ensure_test_nested_runtime(
         });
   }
   if (runtime.control_scheduler() == nullptr) {
-    runtime.set_control_scheduler(
-        std::addressof(test_nested_graph_state::scheduler()));
+    runtime.set_control_scheduler(std::addressof(test_nested_graph_state::scheduler()));
   }
 }
 
@@ -849,66 +764,58 @@ auto ensure_test_nested_runtime(
     -> wh::core::result<compiled_graph_node_view> {
   auto compiled_node = graph.compiled_node_by_key(key);
   if (compiled_node.has_error()) {
-    return wh::core::result<compiled_graph_node_view>::failure(
-        compiled_node.error());
+    return wh::core::result<compiled_graph_node_view>::failure(compiled_node.error());
   }
   return compiled_graph_node_view{
       .node = std::addressof(compiled_node.value().get()),
   };
 }
 
-[[nodiscard]] auto run_compiled_test_graph_node(
-    const compiled_graph_node_view view, wh::compose::graph_value input,
-    wh::core::run_context &context,
-    const wh::compose::node_runtime &runtime = {}) -> wh::compose::graph_sender {
+[[nodiscard]] auto run_compiled_test_graph_node(const compiled_graph_node_view view,
+                                                wh::compose::graph_value input,
+                                                wh::core::run_context &context,
+                                                const wh::compose::node_runtime &runtime = {})
+    -> wh::compose::graph_sender {
   if (view.node == nullptr) {
-    return wh::compose::detail::failure_graph_sender(
-        wh::core::errc::contract_violation);
+    return wh::compose::detail::failure_graph_sender(wh::core::errc::contract_violation);
   }
-  auto owned_input =
-      std::make_shared<wh::compose::graph_value>(std::move(input));
+  auto owned_input = std::make_shared<wh::compose::graph_value>(std::move(input));
   auto base_runtime = runtime;
   auto nested_state = std::shared_ptr<test_nested_graph_state>{};
   ensure_test_nested_runtime(base_runtime, nested_state);
-  auto owned_runtime =
-      std::make_shared<wh::compose::node_runtime>(std::move(base_runtime));
+  auto owned_runtime = std::make_shared<wh::compose::node_runtime>(std::move(base_runtime));
   return wh::compose::graph_sender{wh::compose::detail::normalize_graph_sender(
-      stdexec::just(std::move(owned_input), std::move(owned_runtime),
-                    std::move(nested_state)) |
+      stdexec::just(std::move(owned_input), std::move(owned_runtime), std::move(nested_state)) |
       stdexec::let_value(
-          [view, &context](
-              std::shared_ptr<wh::compose::graph_value> owned_node_input,
-              std::shared_ptr<wh::compose::node_runtime> owned_runtime_state,
-              std::shared_ptr<test_nested_graph_state> owned_nested_state) mutable {
+          [view, &context](std::shared_ptr<wh::compose::graph_value> owned_node_input,
+                           std::shared_ptr<wh::compose::node_runtime> owned_runtime_state,
+                           std::shared_ptr<test_nested_graph_state> owned_nested_state) mutable {
             if (wh::compose::compiled_node_is_sync(*view.node)) {
               return wh::compose::detail::bridge_graph_sender(
                   stdexec::just(wh::compose::run_compiled_sync_node(
-                      *view.node, *owned_node_input, context,
-                      *owned_runtime_state)) |
-                  stdexec::then(
-                      [owned_node_input = std::move(owned_node_input),
-                       owned_runtime_state = std::move(owned_runtime_state),
-                       owned_nested_state = std::move(owned_nested_state)](
-                          wh::core::result<wh::compose::graph_value> status) mutable {
-                        return status;
-                      }));
+                      *view.node, *owned_node_input, context, *owned_runtime_state)) |
+                  stdexec::then([owned_node_input = std::move(owned_node_input),
+                                 owned_runtime_state = std::move(owned_runtime_state),
+                                 owned_nested_state = std::move(owned_nested_state)](
+                                    wh::core::result<wh::compose::graph_value> status) mutable {
+                    return status;
+                  }));
             }
             return wh::compose::detail::bridge_graph_sender(
-                wh::compose::run_compiled_async_node(*view.node, *owned_node_input,
-                                                     context, *owned_runtime_state) |
-                stdexec::then(
-                    [owned_node_input = std::move(owned_node_input),
-                     owned_runtime_state = std::move(owned_runtime_state),
-                     owned_nested_state = std::move(owned_nested_state)](
-                        wh::core::result<wh::compose::graph_value> status) mutable {
-                      return status;
-                    }));
+                wh::compose::run_compiled_async_node(*view.node, *owned_node_input, context,
+                                                     *owned_runtime_state) |
+                stdexec::then([owned_node_input = std::move(owned_node_input),
+                               owned_runtime_state = std::move(owned_runtime_state),
+                               owned_nested_state = std::move(owned_nested_state)](
+                                  wh::core::result<wh::compose::graph_value> status) mutable {
+                  return status;
+                }));
           }))};
 }
 
 template <typename node_t>
-[[nodiscard]] auto make_single_node_graph(
-    node_t node, wh::compose::graph_compile_options options = {})
+[[nodiscard]] auto make_single_node_graph(node_t node,
+                                          wh::compose::graph_compile_options options = {})
     -> wh::core::result<wh::compose::graph> {
   auto key = std::string{node.key()};
   auto boundary = wh::compose::graph_boundary{
@@ -937,12 +844,11 @@ template <typename node_t>
 
 [[nodiscard]] constexpr auto runtime_modes() noexcept
     -> std::array<wh::compose::graph_runtime_mode, 2> {
-  return {wh::compose::graph_runtime_mode::dag,
-          wh::compose::graph_runtime_mode::pregel};
+  return {wh::compose::graph_runtime_mode::dag, wh::compose::graph_runtime_mode::pregel};
 }
 
-[[nodiscard]] constexpr auto runtime_mode_name(
-    const wh::compose::graph_runtime_mode mode) noexcept -> std::string_view {
+[[nodiscard]] constexpr auto runtime_mode_name(const wh::compose::graph_runtime_mode mode) noexcept
+    -> std::string_view {
   switch (mode) {
   case wh::compose::graph_runtime_mode::dag:
     return "dag";
@@ -952,9 +858,8 @@ template <typename node_t>
   return "unknown";
 }
 
-[[nodiscard]] auto checkpoint_pending_input(
-    const wh::compose::checkpoint_state &state, const std::string_view key)
-    -> wh::core::result<int> {
+[[nodiscard]] auto checkpoint_pending_input(const wh::compose::checkpoint_state &state,
+                                            const std::string_view key) -> wh::core::result<int> {
   const auto *payload = [&]() -> const wh::compose::graph_value * {
     const auto *pending = [&]() -> const wh::compose::checkpoint_pending_inputs * {
       if (state.runtime.dag.has_value() && !state.runtime.pregel.has_value()) {
@@ -979,9 +884,7 @@ template <typename node_t>
       return nullptr;
     }
     if (key == wh::compose::graph_start_node_key) {
-      return pending->entry.has_value()
-                 ? std::addressof(*pending->entry)
-                 : nullptr;
+      return pending->entry.has_value() ? std::addressof(*pending->entry) : nullptr;
     }
     for (const auto &node_input : pending->nodes) {
       if (node_input.key == key) {
@@ -1006,8 +909,7 @@ template <typename node_t>
   return wh::compose::make_values_stream_reader(std::move(chunks));
 }
 
-[[nodiscard]] auto make_string_graph_stream(
-    std::initializer_list<std::string_view> values)
+[[nodiscard]] auto make_string_graph_stream(std::initializer_list<std::string_view> values)
     -> wh::core::result<wh::compose::graph_stream_reader> {
   std::vector<wh::compose::graph_value> chunks{};
   chunks.reserve(values.size());
@@ -1036,25 +938,23 @@ template <typename node_t>
   return values;
 }
 
-[[nodiscard]] auto make_collect_graph_sender(
-    wh::compose::graph_stream_reader reader,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler)
+[[nodiscard]] auto
+make_collect_graph_sender(wh::compose::graph_stream_reader reader,
+                          const wh::core::detail::any_resume_scheduler_t &graph_scheduler)
     -> wh::compose::graph_sender {
-  return wh::compose::detail::bridge_graph_sender(
-      wh::compose::detail::make_child_pump_sender(
-          wh::compose::detail::collect_policy{
-              .reader = std::move(reader),
-          },
-          graph_scheduler));
+  return wh::compose::detail::bridge_graph_sender(wh::compose::detail::make_child_pump_sender(
+      wh::compose::detail::collect_policy{
+          .reader = std::move(reader),
+      },
+      graph_scheduler));
 }
 
-[[nodiscard]] inline auto make_auto_contract_edge_options()
-    -> wh::compose::edge_options {
+[[nodiscard]] inline auto make_auto_contract_edge_options() -> wh::compose::edge_options {
   return {};
 }
 
-[[nodiscard]] auto sum_collected_graph_chunks(
-    const wh::compose::graph_value &input) -> wh::core::result<int> {
+[[nodiscard]] auto sum_collected_graph_chunks(const wh::compose::graph_value &input)
+    -> wh::core::result<int> {
   auto collected = read_any<std::vector<wh::compose::graph_value>>(input);
   if (collected.has_error()) {
     return wh::core::result<int>::failure(collected.error());
@@ -1072,10 +972,9 @@ template <typename node_t>
 }
 
 template <typename sender_factory_t, typename validate_fn_t>
-[[nodiscard]] auto run_graph_sender_stress_wave(sender_factory_t make_sender,
-                                                validate_fn_t validate_output,
-                                                const int worker_count,
-                                                const int iterations_per_worker)
+[[nodiscard]] auto
+run_graph_sender_stress_wave(sender_factory_t make_sender, validate_fn_t validate_output,
+                             const int worker_count, const int iterations_per_worker)
     -> std::vector<std::string> {
   std::atomic<bool> failed{false};
   std::mutex error_mutex{};
@@ -1089,8 +988,7 @@ template <typename sender_factory_t, typename validate_fn_t>
         for (int iteration = 0; iteration < iterations_per_worker; ++iteration) {
           const int base = worker_id * 1000 + iteration * 10;
           auto waited =
-              wait_sender_result<wh::core::result<wh::compose::graph_value>>(
-                  make_sender(base));
+              wait_sender_result<wh::core::result<wh::compose::graph_value>>(make_sender(base));
           if (waited.has_error()) {
             std::lock_guard lock{error_mutex};
             failed.store(true, std::memory_order_release);
@@ -1099,8 +997,7 @@ template <typename sender_factory_t, typename validate_fn_t>
             return;
           }
 
-          if (auto validation =
-                  validate_output(base, std::move(waited).value());
+          if (auto validation = validate_output(base, std::move(waited).value());
               validation.has_value()) {
             std::lock_guard lock{error_mutex};
             failed.store(true, std::memory_order_release);
@@ -1140,8 +1037,7 @@ struct deep_nested_increment_graphs {
   std::string leaf_path_key{};
 };
 
-[[nodiscard]] auto make_deep_nested_increment_graphs(
-    const wh::compose::graph_runtime_mode mode)
+[[nodiscard]] auto make_deep_nested_increment_graphs(const wh::compose::graph_runtime_mode mode)
     -> wh::core::result<deep_nested_increment_graphs> {
   wh::compose::graph_compile_options leaf_options{};
   leaf_options.mode = mode;
@@ -1150,85 +1046,69 @@ struct deep_nested_increment_graphs {
   auto added_leaf = leaf.add_lambda(
       "inc",
       [](const wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto typed = read_any<int>(input);
         if (typed.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              typed.error());
+          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
         }
         return wh::core::any(typed.value() + 1);
       });
   if (added_leaf.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        added_leaf.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(added_leaf.error());
   }
   auto leaf_start = leaf.add_entry_edge("inc");
   if (leaf_start.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        leaf_start.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(leaf_start.error());
   }
   auto leaf_end = leaf.add_exit_edge("inc");
   if (leaf_end.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        leaf_end.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(leaf_end.error());
   }
   auto compiled_leaf = leaf.compile();
   if (compiled_leaf.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        compiled_leaf.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(compiled_leaf.error());
   }
 
   wh::compose::graph_compile_options middle_options{};
   middle_options.mode = mode;
   middle_options.name = "middle_graph";
   wh::compose::graph middle{std::move(middle_options)};
-  auto added_middle =
-      middle.add_subgraph(wh::compose::make_subgraph_node("leaf", leaf));
+  auto added_middle = middle.add_subgraph(wh::compose::make_subgraph_node("leaf", leaf));
   if (added_middle.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        added_middle.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(added_middle.error());
   }
   auto middle_start = middle.add_entry_edge("leaf");
   if (middle_start.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        middle_start.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(middle_start.error());
   }
   auto middle_end = middle.add_exit_edge("leaf");
   if (middle_end.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        middle_end.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(middle_end.error());
   }
   auto compiled_middle = middle.compile();
   if (compiled_middle.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        compiled_middle.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(compiled_middle.error());
   }
 
   wh::compose::graph_compile_options parent_options{};
   parent_options.mode = mode;
   parent_options.name = "parent_graph";
   wh::compose::graph parent{std::move(parent_options)};
-  auto added_parent =
-      parent.add_subgraph(wh::compose::make_subgraph_node("middle", middle));
+  auto added_parent = parent.add_subgraph(wh::compose::make_subgraph_node("middle", middle));
   if (added_parent.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        added_parent.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(added_parent.error());
   }
   auto parent_start = parent.add_entry_edge("middle");
   if (parent_start.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        parent_start.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(parent_start.error());
   }
   auto parent_end = parent.add_exit_edge("middle");
   if (parent_end.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        parent_end.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(parent_end.error());
   }
   auto compiled_parent = parent.compile();
   if (compiled_parent.has_error()) {
-    return wh::core::result<deep_nested_increment_graphs>::failure(
-        compiled_parent.error());
+    return wh::core::result<deep_nested_increment_graphs>::failure(compiled_parent.error());
   }
 
   return deep_nested_increment_graphs{
@@ -1243,24 +1123,20 @@ struct deep_nested_increment_graphs {
 }
 
 [[nodiscard]] auto collect_tool_results(const wh::compose::graph_value &value)
-    -> wh::core::result<std::reference_wrapper<
-        const std::vector<wh::compose::tool_result>>> {
-  if (const auto *results =
-          wh::core::any_cast<std::vector<wh::compose::tool_result>>(&value);
+    -> wh::core::result<std::reference_wrapper<const std::vector<wh::compose::tool_result>>> {
+  if (const auto *results = wh::core::any_cast<std::vector<wh::compose::tool_result>>(&value);
       results != nullptr) {
     return std::cref(*results);
   }
-  return wh::core::result<std::reference_wrapper<
-      const std::vector<wh::compose::tool_result>>>::failure(
-      wh::core::errc::type_mismatch);
+  return wh::core::result<std::reference_wrapper<const std::vector<wh::compose::tool_result>>>::
+      failure(wh::core::errc::type_mismatch);
 }
 
 [[nodiscard]] auto collect_tool_events(wh::compose::graph_stream_reader reader)
     -> wh::core::result<std::vector<wh::compose::tool_event>> {
   auto chunks = wh::compose::collect_graph_stream_reader(std::move(reader));
   if (chunks.has_error()) {
-    return wh::core::result<std::vector<wh::compose::tool_event>>::failure(
-        chunks.error());
+    return wh::core::result<std::vector<wh::compose::tool_event>>::failure(chunks.error());
   }
 
   std::vector<wh::compose::tool_event> events{};
@@ -1268,16 +1144,14 @@ struct deep_nested_increment_graphs {
   for (auto &chunk : chunks.value()) {
     auto event = read_any<wh::compose::tool_event>(std::move(chunk));
     if (event.has_error()) {
-      return wh::core::result<std::vector<wh::compose::tool_event>>::failure(
-          event.error());
+      return wh::core::result<std::vector<wh::compose::tool_event>>::failure(event.error());
     }
     events.push_back(std::move(event).value());
   }
   return events;
 }
 
-[[nodiscard]] constexpr auto sum_ints(std::span<const int> values) noexcept
-    -> int {
+[[nodiscard]] constexpr auto sum_ints(std::span<const int> values) noexcept -> int {
   int sum = 0;
   for (const auto value : values) {
     sum += value;
@@ -1285,13 +1159,11 @@ struct deep_nested_increment_graphs {
   return sum;
 }
 
-[[nodiscard]] auto sum_graph_value(const wh::compose::graph_value &value)
-    -> wh::core::result<int> {
+[[nodiscard]] auto sum_graph_value(const wh::compose::graph_value &value) -> wh::core::result<int> {
   if (const auto *typed = wh::core::any_cast<int>(&value); typed != nullptr) {
     return *typed;
   }
-  if (const auto *chunks =
-          wh::core::any_cast<std::vector<wh::compose::graph_value>>(&value);
+  if (const auto *chunks = wh::core::any_cast<std::vector<wh::compose::graph_value>>(&value);
       chunks != nullptr) {
     int total = 0;
     for (const auto &chunk : *chunks) {
@@ -1303,9 +1175,7 @@ struct deep_nested_increment_graphs {
     }
     return total;
   }
-  if (const auto *map =
-          wh::core::any_cast<wh::compose::graph_value_map>(&value);
-      map != nullptr) {
+  if (const auto *map = wh::core::any_cast<wh::compose::graph_value_map>(&value); map != nullptr) {
     int total = 0;
     for (const auto &[_, entry] : *map) {
       auto entry_sum = sum_graph_value(entry);
@@ -1320,8 +1190,7 @@ struct deep_nested_increment_graphs {
 }
 
 [[nodiscard]] auto read_named_int(const wh::compose::graph_value_map &map,
-                                  const std::string_view key)
-    -> wh::core::result<int> {
+                                  const std::string_view key) -> wh::core::result<int> {
   const auto iter = map.find(key);
   if (iter == map.end()) {
     return wh::core::result<int>::failure(wh::core::errc::not_found);
@@ -1338,15 +1207,13 @@ struct deep_nested_increment_graphs {
   return request;
 }
 
-[[nodiscard]] auto make_prompt_request(std::string name)
-    -> wh::prompt::prompt_render_request {
+[[nodiscard]] auto make_prompt_request(std::string name) -> wh::prompt::prompt_render_request {
   wh::prompt::template_context placeholders{};
   placeholders.emplace("name", wh::prompt::template_value{std::move(name)});
   return wh::prompt::prompt_render_request{std::move(placeholders), {}};
 }
 
-[[nodiscard]] auto make_document_request(std::string content)
-    -> wh::document::document_request {
+[[nodiscard]] auto make_document_request(std::string content) -> wh::document::document_request {
   wh::document::document_request request{};
   request.source_kind = wh::document::document_source_kind::content;
   request.source = std::move(content);
@@ -1356,8 +1223,8 @@ struct deep_nested_increment_graphs {
   return request;
 }
 
-[[nodiscard]] auto make_tool_batch(
-    std::initializer_list<wh::compose::tool_call> calls) -> wh::compose::tool_batch {
+[[nodiscard]] auto make_tool_batch(std::initializer_list<wh::compose::tool_call> calls)
+    -> wh::compose::tool_batch {
   return wh::compose::tool_batch{
       .calls = std::vector<wh::compose::tool_call>{calls},
   };
@@ -1416,8 +1283,7 @@ struct node_case_info {
   wh::compose::node_contract to{wh::compose::node_contract::value};
 };
 
-[[nodiscard]] constexpr auto describe_node_case(const node_case value) noexcept
-    -> node_case_info {
+[[nodiscard]] constexpr auto describe_node_case(const node_case value) noexcept -> node_case_info {
   using contract = wh::compose::node_contract;
 
   switch (value) {
@@ -1514,8 +1380,7 @@ struct node_case_info {
   return {};
 }
 
-[[nodiscard]] constexpr auto all_node_cases() noexcept
-    -> std::array<node_case, 44> {
+[[nodiscard]] constexpr auto all_node_cases() noexcept -> std::array<node_case, 44> {
   return {node_case::lambda_vv_sync,
           node_case::lambda_vs_sync,
           node_case::lambda_sv_sync,
@@ -1562,8 +1427,7 @@ struct node_case_info {
           node_case::subgraph_ss};
 }
 
-[[nodiscard]] constexpr auto node_case_name(const node_case value) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto node_case_name(const node_case value) noexcept -> std::string_view {
   return describe_node_case(value).name;
 }
 
@@ -1588,13 +1452,12 @@ struct node_case_info {
   switch (value) {
   case node_case::subgraph_vv: {
     auto added = child.add_lambda(
-        "leaf", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                    const wh::compose::graph_call_scope &)
-                    -> wh::core::result<wh::compose::graph_value> {
+        "leaf",
+        [](const wh::compose::graph_value &input, wh::core::run_context &,
+           const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
           auto typed = read_any<int>(input);
           if (typed.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                typed.error());
+            return wh::core::result<wh::compose::graph_value>::failure(typed.error());
           }
           return wh::core::any(typed.value() + 4);
         });
@@ -1604,67 +1467,66 @@ struct node_case_info {
     break;
   }
   case node_case::subgraph_vs: {
-    auto added = child.add_lambda<wh::compose::node_contract::value,
-                                  wh::compose::node_contract::stream>(
-        "leaf", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                    const wh::compose::graph_call_scope &)
-                    -> wh::core::result<wh::compose::graph_stream_reader> {
-          auto typed = read_any<int>(input);
-          if (typed.has_error()) {
-            return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                typed.error());
-          }
-          return make_int_graph_stream({typed.value() + 4, typed.value() + 5});
-        });
+    auto added =
+        child.add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
+            "leaf",
+            [](const wh::compose::graph_value &input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_stream_reader> {
+              auto typed = read_any<int>(input);
+              if (typed.has_error()) {
+                return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
+              }
+              return make_int_graph_stream({typed.value() + 4, typed.value() + 5});
+            });
     if (added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(added.error());
     }
     break;
   }
   case node_case::subgraph_sv: {
-    auto added = child.add_lambda<wh::compose::node_contract::stream,
-                                  wh::compose::node_contract::value>(
-        "leaf", [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-                    const wh::compose::graph_call_scope &)
-                    -> wh::core::result<wh::compose::graph_value> {
-          auto values = collect_int_graph_stream(std::move(input));
-          if (values.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                values.error());
-          }
-          return wh::core::any(sum_ints(values.value()) + 6);
-        });
+    auto added =
+        child.add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
+            "leaf",
+            [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_value> {
+              auto values = collect_int_graph_stream(std::move(input));
+              if (values.has_error()) {
+                return wh::core::result<wh::compose::graph_value>::failure(values.error());
+              }
+              return wh::core::any(sum_ints(values.value()) + 6);
+            });
     if (added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(added.error());
     }
     break;
   }
   case node_case::subgraph_ss: {
-    auto added = child.add_lambda<wh::compose::node_contract::stream,
-                                  wh::compose::node_contract::stream>(
-        "leaf", [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-                    const wh::compose::graph_call_scope &)
-                    -> wh::core::result<wh::compose::graph_stream_reader> {
-          auto values = collect_int_graph_stream(std::move(input));
-          if (values.has_error()) {
-            return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                values.error());
-          }
-          std::vector<wh::compose::graph_value> output{};
-          output.reserve(values.value().size());
-          for (const auto item : values.value()) {
-            output.emplace_back(wh::core::any(item + 7));
-          }
-          return wh::compose::make_values_stream_reader(std::move(output));
-        });
+    auto added =
+        child.add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::stream>(
+            "leaf",
+            [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_stream_reader> {
+              auto values = collect_int_graph_stream(std::move(input));
+              if (values.has_error()) {
+                return wh::core::result<wh::compose::graph_stream_reader>::failure(values.error());
+              }
+              std::vector<wh::compose::graph_value> output{};
+              output.reserve(values.value().size());
+              for (const auto item : values.value()) {
+                output.emplace_back(wh::core::any(item + 7));
+              }
+              return wh::compose::make_values_stream_reader(std::move(output));
+            });
     if (added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(added.error());
     }
     break;
   }
   default:
-    return wh::core::result<wh::compose::graph>::failure(
-        wh::core::errc::invalid_argument);
+    return wh::core::result<wh::compose::graph>::failure(wh::core::errc::invalid_argument);
   }
 
   auto start = child.add_entry_edge("leaf");
@@ -1694,135 +1556,141 @@ struct node_case_info {
 
   switch (value) {
   case node_case::lambda_vv_sync:
-    return make_single_node_graph(wh::compose::make_lambda_node(
-        "worker", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-          auto typed = read_any<int>(input);
-          if (typed.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                typed.error());
-          }
-          return wh::core::any(typed.value() + 1);
-        }),
+    return make_single_node_graph(
+        wh::compose::make_lambda_node(
+            "worker",
+            [](const wh::compose::graph_value &input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_value> {
+              auto typed = read_any<int>(input);
+              if (typed.has_error()) {
+                return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+              }
+              return wh::core::any(typed.value() + 1);
+            }),
         std::move(options));
   case node_case::lambda_vs_sync:
-    return make_single_node_graph(wh::compose::make_lambda_node<
-        wh::compose::node_contract::value, wh::compose::node_contract::stream>(
-        "worker", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-          auto typed = read_any<int>(input);
-          if (typed.has_error()) {
-            return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                typed.error());
-          }
-          return make_int_graph_stream({typed.value() + 1, typed.value() + 2});
-        }),
+    return make_single_node_graph(
+        wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                      wh::compose::node_contract::stream>(
+            "worker",
+            [](const wh::compose::graph_value &input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_stream_reader> {
+              auto typed = read_any<int>(input);
+              if (typed.has_error()) {
+                return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
+              }
+              return make_int_graph_stream({typed.value() + 1, typed.value() + 2});
+            }),
         std::move(options));
   case node_case::lambda_sv_sync:
-    return make_single_node_graph(wh::compose::make_lambda_node<
-        wh::compose::node_contract::stream, wh::compose::node_contract::value>(
-        "worker", [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-          auto values = collect_int_graph_stream(std::move(input));
-          if (values.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                values.error());
-          }
-          return wh::core::any(sum_ints(values.value()));
-        }),
+    return make_single_node_graph(
+        wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                      wh::compose::node_contract::value>(
+            "worker",
+            [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_value> {
+              auto values = collect_int_graph_stream(std::move(input));
+              if (values.has_error()) {
+                return wh::core::result<wh::compose::graph_value>::failure(values.error());
+              }
+              return wh::core::any(sum_ints(values.value()));
+            }),
         std::move(options));
   case node_case::lambda_ss_sync:
-    return make_single_node_graph(wh::compose::make_lambda_node<
-        wh::compose::node_contract::stream, wh::compose::node_contract::stream>(
-        "worker", [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-          auto values = collect_int_graph_stream(std::move(input));
-          if (values.has_error()) {
-            return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                values.error());
-          }
-          std::vector<wh::compose::graph_value> output{};
-          output.reserve(values.value().size());
-          for (const auto item : values.value()) {
-            output.emplace_back(wh::core::any(item * 2));
-          }
-          return wh::compose::make_values_stream_reader(std::move(output));
-        }),
+    return make_single_node_graph(
+        wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                      wh::compose::node_contract::stream>(
+            "worker",
+            [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_stream_reader> {
+              auto values = collect_int_graph_stream(std::move(input));
+              if (values.has_error()) {
+                return wh::core::result<wh::compose::graph_stream_reader>::failure(values.error());
+              }
+              std::vector<wh::compose::graph_value> output{};
+              output.reserve(values.value().size());
+              for (const auto item : values.value()) {
+                output.emplace_back(wh::core::any(item * 2));
+              }
+              return wh::compose::make_values_stream_reader(std::move(output));
+            }),
         std::move(options));
   case node_case::lambda_vv_async:
-    return make_single_node_graph(wh::compose::make_lambda_node<
-        wh::compose::node_contract::value, wh::compose::node_contract::value,
-        wh::compose::node_exec_mode::async>(
-        "worker", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &) {
-          auto typed = read_any<int>(input);
-          if (typed.has_error()) {
-            return stdexec::just(wh::core::result<wh::compose::graph_value>::failure(
-                typed.error()));
-          }
-          return stdexec::just(wh::core::result<wh::compose::graph_value>{
-              wh::core::any(typed.value() + 20)});
-        }),
+    return make_single_node_graph(
+        wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                      wh::compose::node_contract::value,
+                                      wh::compose::node_exec_mode::async>(
+            "worker",
+            [](const wh::compose::graph_value &input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &) {
+              auto typed = read_any<int>(input);
+              if (typed.has_error()) {
+                return stdexec::just(
+                    wh::core::result<wh::compose::graph_value>::failure(typed.error()));
+              }
+              return stdexec::just(
+                  wh::core::result<wh::compose::graph_value>{wh::core::any(typed.value() + 20)});
+            }),
         std::move(options));
   case node_case::lambda_vs_async:
-    return make_single_node_graph(wh::compose::make_lambda_node<
-        wh::compose::node_contract::value, wh::compose::node_contract::stream,
-        wh::compose::node_exec_mode::async>(
-        "worker", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &) {
-          auto typed = read_any<int>(input);
-          if (typed.has_error()) {
-            return stdexec::just(
-                wh::core::result<wh::compose::graph_stream_reader>::failure(
-                    typed.error()));
-          }
-          return stdexec::just(
-              wh::core::result<wh::compose::graph_stream_reader>{
-                  make_int_graph_stream({typed.value() + 21, typed.value() + 22})
-                      .value()});
-        }),
+    return make_single_node_graph(
+        wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                      wh::compose::node_contract::stream,
+                                      wh::compose::node_exec_mode::async>(
+            "worker",
+            [](const wh::compose::graph_value &input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &) {
+              auto typed = read_any<int>(input);
+              if (typed.has_error()) {
+                return stdexec::just(
+                    wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error()));
+              }
+              return stdexec::just(wh::core::result<wh::compose::graph_stream_reader>{
+                  make_int_graph_stream({typed.value() + 21, typed.value() + 22}).value()});
+            }),
         std::move(options));
   case node_case::lambda_sv_async:
-    return make_single_node_graph(wh::compose::make_lambda_node<
-        wh::compose::node_contract::stream, wh::compose::node_contract::value,
-        wh::compose::node_exec_mode::async>(
-        "worker", [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &) {
-          auto values = collect_int_graph_stream(std::move(input));
-          if (values.has_error()) {
-            return stdexec::just(
-                wh::core::result<wh::compose::graph_value>::failure(
-                    values.error()));
-          }
-          return stdexec::just(wh::core::result<wh::compose::graph_value>{
-              wh::core::any(sum_ints(values.value()) + 40)});
-        }),
+    return make_single_node_graph(
+        wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                      wh::compose::node_contract::value,
+                                      wh::compose::node_exec_mode::async>(
+            "worker",
+            [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &) {
+              auto values = collect_int_graph_stream(std::move(input));
+              if (values.has_error()) {
+                return stdexec::just(
+                    wh::core::result<wh::compose::graph_value>::failure(values.error()));
+              }
+              return stdexec::just(wh::core::result<wh::compose::graph_value>{
+                  wh::core::any(sum_ints(values.value()) + 40)});
+            }),
         std::move(options));
   case node_case::lambda_ss_async:
-    return make_single_node_graph(wh::compose::make_lambda_node<
-        wh::compose::node_contract::stream, wh::compose::node_contract::stream,
-        wh::compose::node_exec_mode::async>(
-        "worker", [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &) {
-          auto values = collect_int_graph_stream(std::move(input));
-          if (values.has_error()) {
-            return stdexec::just(
-                wh::core::result<wh::compose::graph_stream_reader>::failure(
-                    values.error()));
-          }
-          std::vector<wh::compose::graph_value> output{};
-          output.reserve(values.value().size());
-          for (const auto item : values.value()) {
-            output.emplace_back(wh::core::any(item + 50));
-          }
-          return stdexec::just(
-              wh::core::result<wh::compose::graph_stream_reader>{
+    return make_single_node_graph(
+        wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                      wh::compose::node_contract::stream,
+                                      wh::compose::node_exec_mode::async>(
+            "worker",
+            [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &) {
+              auto values = collect_int_graph_stream(std::move(input));
+              if (values.has_error()) {
+                return stdexec::just(
+                    wh::core::result<wh::compose::graph_stream_reader>::failure(values.error()));
+              }
+              std::vector<wh::compose::graph_value> output{};
+              output.reserve(values.value().size());
+              for (const auto item : values.value()) {
+                output.emplace_back(wh::core::any(item + 50));
+              }
+              return stdexec::just(wh::core::result<wh::compose::graph_stream_reader>{
                   wh::compose::make_values_stream_reader(std::move(output)).value()});
-        }),
+            }),
         std::move(options));
   case node_case::component_custom_vv_sync: {
     struct component {
@@ -1831,9 +1699,11 @@ struct node_case_info {
         return value + 5;
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::value,
-        wh::compose::node_contract::value, int, int>("worker", component{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<wh::compose::component_kind::custom,
+                                         wh::compose::node_contract::value,
+                                         wh::compose::node_contract::value, int, int>("worker",
+                                                                                      component{}),
         graph_options());
   }
   case node_case::component_custom_vs_sync: {
@@ -1843,17 +1713,17 @@ struct node_case_info {
         return make_int_graph_stream({value + 10});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::value,
-        wh::compose::node_contract::stream, int,
-        wh::compose::graph_stream_reader>("worker", component{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::custom, wh::compose::node_contract::value,
+            wh::compose::node_contract::stream, int, wh::compose::graph_stream_reader>("worker",
+                                                                                       component{}),
         graph_options());
   }
   case node_case::component_custom_sv_sync: {
     struct component {
       [[nodiscard]] auto invoke(wh::compose::graph_stream_reader reader,
-                                wh::core::run_context &) const
-          -> wh::core::result<int> {
+                                wh::core::run_context &) const -> wh::core::result<int> {
         auto values = collect_int_graph_stream(std::move(reader));
         if (values.has_error()) {
           return wh::core::result<int>::failure(values.error());
@@ -1861,10 +1731,11 @@ struct node_case_info {
         return sum_ints(values.value());
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::stream,
-        wh::compose::node_contract::value, wh::compose::graph_stream_reader,
-        int>("worker", component{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::custom, wh::compose::node_contract::stream,
+            wh::compose::node_contract::value, wh::compose::graph_stream_reader, int>("worker",
+                                                                                      component{}),
         graph_options());
   }
   case node_case::component_custom_ss_sync: {
@@ -1874,8 +1745,7 @@ struct node_case_info {
           -> wh::core::result<wh::compose::graph_stream_reader> {
         auto values = collect_int_graph_stream(std::move(reader));
         if (values.has_error()) {
-          return wh::core::result<wh::compose::graph_stream_reader>::failure(
-              values.error());
+          return wh::core::result<wh::compose::graph_stream_reader>::failure(values.error());
         }
         std::vector<wh::compose::graph_value> output{};
         output.reserve(values.value().size());
@@ -1885,10 +1755,11 @@ struct node_case_info {
         return wh::compose::make_values_stream_reader(std::move(output));
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::stream,
-        wh::compose::node_contract::stream, wh::compose::graph_stream_reader,
-        wh::compose::graph_stream_reader>("worker", component{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::custom, wh::compose::node_contract::stream,
+            wh::compose::node_contract::stream, wh::compose::graph_stream_reader,
+            wh::compose::graph_stream_reader>("worker", component{}),
         graph_options());
   }
   case node_case::component_custom_vv_async: {
@@ -1898,33 +1769,30 @@ struct node_case_info {
     struct component {
       std::shared_ptr<counts> state;
 
-      [[nodiscard]] auto async_invoke(const int &value,
-                                      wh::core::run_context &) const {
+      [[nodiscard]] auto async_invoke(const int &value, wh::core::run_context &) const {
         ++state->async_calls;
         return stdexec::just(wh::core::result<int>{value + 30});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::value,
-        wh::compose::node_contract::value, int, int,
-        wh::compose::node_exec_mode::async>(
-        "worker", component{std::make_shared<counts>()}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::custom, wh::compose::node_contract::value,
+            wh::compose::node_contract::value, int, int, wh::compose::node_exec_mode::async>(
+            "worker", component{std::make_shared<counts>()}),
         graph_options());
   }
   case node_case::component_custom_vs_async: {
     struct component {
-      [[nodiscard]] auto async_stream(const int &value,
-                                      wh::core::run_context &) const {
-        return stdexec::just(
-            wh::core::result<wh::compose::graph_stream_reader>{
-                make_int_graph_stream({value + 31, value + 32}).value()});
+      [[nodiscard]] auto async_stream(const int &value, wh::core::run_context &) const {
+        return stdexec::just(wh::core::result<wh::compose::graph_stream_reader>{
+            make_int_graph_stream({value + 31, value + 32}).value()});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::value,
-        wh::compose::node_contract::stream, int,
-        wh::compose::graph_stream_reader, wh::compose::node_exec_mode::async>(
-        "worker", component{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::custom, wh::compose::node_contract::value,
+            wh::compose::node_contract::stream, int, wh::compose::graph_stream_reader,
+            wh::compose::node_exec_mode::async>("worker", component{}),
         graph_options());
   }
   case node_case::component_custom_sv_async: {
@@ -1933,17 +1801,16 @@ struct node_case_info {
                                       wh::core::run_context &) const {
         auto values = collect_int_graph_stream(std::move(reader));
         if (values.has_error()) {
-          return stdexec::just(
-              wh::core::result<int>::failure(values.error()));
+          return stdexec::just(wh::core::result<int>::failure(values.error()));
         }
-        return stdexec::just(
-            wh::core::result<int>{sum_ints(values.value()) + 33});
+        return stdexec::just(wh::core::result<int>{sum_ints(values.value()) + 33});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::stream,
-        wh::compose::node_contract::value, wh::compose::graph_stream_reader,
-        int, wh::compose::node_exec_mode::async>("worker", component{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::custom, wh::compose::node_contract::stream,
+            wh::compose::node_contract::value, wh::compose::graph_stream_reader, int,
+            wh::compose::node_exec_mode::async>("worker", component{}),
         graph_options());
   }
   case node_case::component_custom_ss_async: {
@@ -1953,38 +1820,36 @@ struct node_case_info {
         auto values = collect_int_graph_stream(std::move(reader));
         if (values.has_error()) {
           return stdexec::just(
-              wh::core::result<wh::compose::graph_stream_reader>::failure(
-                  values.error()));
+              wh::core::result<wh::compose::graph_stream_reader>::failure(values.error()));
         }
         std::vector<wh::compose::graph_value> output{};
         output.reserve(values.value().size());
         for (const auto item : values.value()) {
           output.emplace_back(wh::core::any(item + 34));
         }
-        return stdexec::just(
-            wh::core::result<wh::compose::graph_stream_reader>{
-                wh::compose::make_values_stream_reader(std::move(output)).value()});
+        return stdexec::just(wh::core::result<wh::compose::graph_stream_reader>{
+            wh::compose::make_values_stream_reader(std::move(output)).value()});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::custom, wh::compose::node_contract::stream,
-        wh::compose::node_contract::stream, wh::compose::graph_stream_reader,
-        wh::compose::graph_stream_reader, wh::compose::node_exec_mode::async>(
-        "worker", component{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::custom, wh::compose::node_contract::stream,
+            wh::compose::node_contract::stream, wh::compose::graph_stream_reader,
+            wh::compose::graph_stream_reader, wh::compose::node_exec_mode::async>("worker",
+                                                                                  component{}),
         graph_options());
   }
   case node_case::component_embedding_vv: {
-    auto node = wh::compose::make_component_node<
-        wh::compose::component_kind::embedding, wh::compose::node_contract::value,
-        wh::compose::node_contract::value>(
+    auto node = wh::compose::make_component_node<wh::compose::component_kind::embedding,
+                                                 wh::compose::node_contract::value,
+                                                 wh::compose::node_contract::value>(
         "worker", wh::embedding::embedding{sync_embedding_impl{
                       [](const wh::embedding::embedding_request &request)
                           -> wh::core::result<wh::embedding::embedding_response> {
                         wh::embedding::embedding_response output{};
                         output.reserve(request.inputs.size());
                         for (const auto &entry : request.inputs) {
-                          output.push_back(
-                              std::vector<double>{static_cast<double>(entry.size())});
+                          output.push_back(std::vector<double>{static_cast<double>(entry.size())});
                         }
                         return output;
                       }}});
@@ -1992,12 +1857,10 @@ struct node_case_info {
   }
   case node_case::component_embedding_vv_async: {
     struct impl {
-      [[nodiscard]] auto embed_sender(
-          wh::embedding::embedding_request &&request) const {
+      [[nodiscard]] auto embed_sender(wh::embedding::embedding_request &&request) const {
         return stdexec::just(
-            wh::core::result<wh::embedding::embedding_response>{
-                wh::embedding::embedding_response{std::vector<double>{
-                    static_cast<double>(request.inputs.size() + 10U)}}});
+            wh::core::result<wh::embedding::embedding_response>{wh::embedding::embedding_response{
+                std::vector<double>{static_cast<double>(request.inputs.size() + 10U)}}});
       }
     };
     auto node = wh::compose::make_component_node<
@@ -2007,14 +1870,18 @@ struct node_case_info {
     return make_single_node_graph(std::move(node), graph_options());
   }
   case node_case::component_model_vv:
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::model, wh::compose::node_contract::value,
-        wh::compose::node_contract::value>("worker", wh::model::echo_chat_model{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<wh::compose::component_kind::model,
+                                         wh::compose::node_contract::value,
+                                         wh::compose::node_contract::value>(
+            "worker", wh::model::echo_chat_model{}),
         graph_options());
   case node_case::component_model_vs:
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::model, wh::compose::node_contract::value,
-        wh::compose::node_contract::stream>("worker", wh::model::echo_chat_model{}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<wh::compose::component_kind::model,
+                                         wh::compose::node_contract::value,
+                                         wh::compose::node_contract::stream>(
+            "worker", wh::model::echo_chat_model{}),
         graph_options());
   case node_case::component_model_vv_async: {
     struct impl {
@@ -2027,18 +1894,15 @@ struct node_case_info {
 
       [[nodiscard]] auto stream(const wh::model::chat_request &request) const
           -> wh::core::result<wh::model::chat_message_stream_reader> {
-        auto [writer, reader] =
-            wh::schema::stream::make_pipe_stream<wh::schema::message>(1U);
+        auto [writer, reader] = wh::schema::stream::make_pipe_stream<wh::schema::message>(1U);
         auto message = request.messages.front();
         auto wrote = writer.try_write(std::move(message));
         if (wrote.has_error()) {
-          return wh::core::result<wh::model::chat_message_stream_reader>::failure(
-              wrote.error());
+          return wh::core::result<wh::model::chat_message_stream_reader>::failure(wrote.error());
         }
         auto closed = writer.close();
         if (closed.has_error()) {
-          return wh::core::result<wh::model::chat_message_stream_reader>::failure(
-              closed.error());
+          return wh::core::result<wh::model::chat_message_stream_reader>::failure(closed.error());
         }
         return wh::model::chat_message_stream_reader{std::move(reader)};
       }
@@ -2051,10 +1915,11 @@ struct node_case_info {
         return stdexec::just(stream(request));
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::model, wh::compose::node_contract::value,
-        wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
-        "worker", wh::model::chat_model{impl{}}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::model, wh::compose::node_contract::value,
+            wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
+            "worker", wh::model::chat_model{impl{}}),
         graph_options());
   }
   case node_case::component_model_vs_async: {
@@ -2068,18 +1933,15 @@ struct node_case_info {
 
       [[nodiscard]] auto stream(const wh::model::chat_request &request) const
           -> wh::core::result<wh::model::chat_message_stream_reader> {
-        auto [writer, reader] =
-            wh::schema::stream::make_pipe_stream<wh::schema::message>(1U);
+        auto [writer, reader] = wh::schema::stream::make_pipe_stream<wh::schema::message>(1U);
         auto message = request.messages.front();
         auto wrote = writer.try_write(std::move(message));
         if (wrote.has_error()) {
-          return wh::core::result<wh::model::chat_message_stream_reader>::failure(
-              wrote.error());
+          return wh::core::result<wh::model::chat_message_stream_reader>::failure(wrote.error());
         }
         auto closed = writer.close();
         if (closed.has_error()) {
-          return wh::core::result<wh::model::chat_message_stream_reader>::failure(
-              closed.error());
+          return wh::core::result<wh::model::chat_message_stream_reader>::failure(closed.error());
         }
         return wh::model::chat_message_stream_reader{std::move(reader)};
       }
@@ -2092,25 +1954,26 @@ struct node_case_info {
         return stdexec::just(stream(request));
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::model, wh::compose::node_contract::value,
-        wh::compose::node_contract::stream, wh::compose::node_exec_mode::async>(
-        "worker", wh::model::chat_model{impl{}}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::model, wh::compose::node_contract::value,
+            wh::compose::node_contract::stream, wh::compose::node_exec_mode::async>(
+            "worker", wh::model::chat_model{impl{}}),
         graph_options());
   }
   case node_case::component_prompt_vv: {
-    wh::prompt::simple_chat_template prompt(
-        {wh::prompt::prompt_message_template{wh::schema::message_role::user,
-                                             "Hello {{name}}", "user"}});
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::prompt, wh::compose::node_contract::value,
-        wh::compose::node_contract::value>("worker", std::move(prompt)),
+    wh::prompt::simple_chat_template prompt({wh::prompt::prompt_message_template{
+        wh::schema::message_role::user, "Hello {{name}}", "user"}});
+    return make_single_node_graph(
+        wh::compose::make_component_node<wh::compose::component_kind::prompt,
+                                         wh::compose::node_contract::value,
+                                         wh::compose::node_contract::value>("worker",
+                                                                            std::move(prompt)),
         graph_options());
   }
   case node_case::component_prompt_vv_async: {
     struct impl {
-      [[nodiscard]] auto render_sender(
-          wh::prompt::prompt_render_request request) const {
+      [[nodiscard]] auto render_sender(wh::prompt::prompt_render_request request) const {
         std::string name = "unknown";
         const auto iter = request.context.find("name");
         if (iter != request.context.end()) {
@@ -2124,20 +1987,20 @@ struct node_case_info {
         message.parts.emplace_back(wh::schema::text_part{"Hello " + name});
         messages.push_back(std::move(message));
         return stdexec::just(
-            wh::core::result<std::vector<wh::schema::message>>{
-                std::move(messages)});
+            wh::core::result<std::vector<wh::schema::message>>{std::move(messages)});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::prompt, wh::compose::node_contract::value,
-        wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
-        "worker", wh::prompt::chat_template{impl{}}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::prompt, wh::compose::node_contract::value,
+            wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
+            "worker", wh::prompt::chat_template{impl{}}),
         graph_options());
   }
   case node_case::component_retriever_vv: {
-    auto node = wh::compose::make_component_node<
-        wh::compose::component_kind::retriever, wh::compose::node_contract::value,
-        wh::compose::node_contract::value>(
+    auto node = wh::compose::make_component_node<wh::compose::component_kind::retriever,
+                                                 wh::compose::node_contract::value,
+                                                 wh::compose::node_contract::value>(
         "worker", wh::retriever::retriever{sync_retriever_impl{
                       [](const wh::retriever::retriever_request &request)
                           -> wh::core::result<wh::retriever::retriever_response> {
@@ -2148,32 +2011,28 @@ struct node_case_info {
   }
   case node_case::component_retriever_vv_async: {
     struct impl {
-      [[nodiscard]] auto retrieve_sender(
-          wh::retriever::retriever_request request) const {
-        return stdexec::just(
-            wh::core::result<wh::retriever::retriever_response>{
-                wh::retriever::retriever_response{
-                    wh::schema::document{"hit:" + request.query}}});
+      [[nodiscard]] auto retrieve_sender(wh::retriever::retriever_request request) const {
+        return stdexec::just(wh::core::result<wh::retriever::retriever_response>{
+            wh::retriever::retriever_response{wh::schema::document{"hit:" + request.query}}});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::retriever,
-        wh::compose::node_contract::value, wh::compose::node_contract::value,
-        wh::compose::node_exec_mode::async>(
-        "worker", wh::retriever::retriever{impl{}}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::retriever, wh::compose::node_contract::value,
+            wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
+            "worker", wh::retriever::retriever{impl{}}),
         graph_options());
   }
   case node_case::component_indexer_vv: {
-    auto node = wh::compose::make_component_node<
-        wh::compose::component_kind::indexer, wh::compose::node_contract::value,
-        wh::compose::node_contract::value>(
+    auto node = wh::compose::make_component_node<wh::compose::component_kind::indexer,
+                                                 wh::compose::node_contract::value,
+                                                 wh::compose::node_contract::value>(
         "worker", wh::indexer::indexer{sync_indexer_batch_impl{
                       [](const wh::indexer::indexer_request &request)
                           -> wh::core::result<wh::indexer::indexer_response> {
                         wh::indexer::indexer_response response{};
                         response.success_count = request.documents.size();
-                        response.document_ids.resize(request.documents.size(),
-                                                     "indexed");
+                        response.document_ids.resize(request.documents.size(), "indexed");
                         return response;
                       }}});
     return make_single_node_graph(std::move(node), graph_options());
@@ -2184,55 +2043,50 @@ struct node_case_info {
         wh::indexer::indexer_response response{};
         response.success_count = request.documents.size();
         response.document_ids.resize(request.documents.size(), "indexed-async");
-        return stdexec::just(
-            wh::core::result<wh::indexer::indexer_response>{
-                std::move(response)});
+        return stdexec::just(wh::core::result<wh::indexer::indexer_response>{std::move(response)});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::indexer, wh::compose::node_contract::value,
-        wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
-        "worker", wh::indexer::indexer{impl{}}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::indexer, wh::compose::node_contract::value,
+            wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
+            "worker", wh::indexer::indexer{impl{}}),
         graph_options());
   }
   case node_case::component_document_vv: {
-    auto node = wh::compose::make_component_node<
-        wh::compose::component_kind::document, wh::compose::node_contract::value,
-        wh::compose::node_contract::value>(
-        "worker",
-        wh::document::document{
-            wh::document::document_processor{
-                wh::document::parser::make_text_parser()}});
+    auto node = wh::compose::make_component_node<wh::compose::component_kind::document,
+                                                 wh::compose::node_contract::value,
+                                                 wh::compose::node_contract::value>(
+        "worker", wh::document::document{
+                      wh::document::document_processor{wh::document::parser::make_text_parser()}});
     return make_single_node_graph(std::move(node), graph_options());
   }
   case node_case::component_document_vv_async: {
     struct impl {
-      [[nodiscard]] auto process_sender(
-          wh::document::document_request request) const {
+      [[nodiscard]] auto process_sender(wh::document::document_request request) const {
         wh::document::document_batch batch{};
         batch.push_back(wh::schema::document{request.source});
-        return stdexec::just(
-            wh::core::result<wh::document::document_batch>{std::move(batch)});
+        return stdexec::just(wh::core::result<wh::document::document_batch>{std::move(batch)});
       }
     };
-    return make_single_node_graph(wh::compose::make_component_node<
-        wh::compose::component_kind::document, wh::compose::node_contract::value,
-        wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
-        "worker", wh::document::document{impl{}}),
+    return make_single_node_graph(
+        wh::compose::make_component_node<
+            wh::compose::component_kind::document, wh::compose::node_contract::value,
+            wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
+            "worker", wh::document::document{impl{}}),
         graph_options());
   }
   case node_case::component_tool_vv: {
     wh::schema::tool_schema_definition schema{};
     schema.name = "echo";
-    auto node = wh::compose::make_component_node<
-        wh::compose::component_kind::tool, wh::compose::node_contract::value,
-        wh::compose::node_contract::value>(
+    auto node = wh::compose::make_component_node<wh::compose::component_kind::tool,
+                                                 wh::compose::node_contract::value,
+                                                 wh::compose::node_contract::value>(
         "worker",
         wh::tool::tool{std::move(schema),
                        sync_tool_invoke_impl{
                            [](const std::string_view input,
-                              const wh::tool::tool_options &)
-                               -> wh::core::result<std::string> {
+                              const wh::tool::tool_options &) -> wh::core::result<std::string> {
                              return std::string{"tool:"} + std::string{input};
                            }}});
     return make_single_node_graph(std::move(node), graph_options());
@@ -2240,35 +2094,31 @@ struct node_case_info {
   case node_case::component_tool_vs: {
     wh::schema::tool_schema_definition schema{};
     schema.name = "echo";
-    auto node = wh::compose::make_component_node<
-        wh::compose::component_kind::tool, wh::compose::node_contract::value,
-        wh::compose::node_contract::stream>(
+    auto node = wh::compose::make_component_node<wh::compose::component_kind::tool,
+                                                 wh::compose::node_contract::value,
+                                                 wh::compose::node_contract::stream>(
         "worker",
-        wh::tool::tool{std::move(schema),
-                       sync_tool_stream_impl{
-                           [](const std::string_view input,
-                              const wh::tool::tool_options &)
-                               -> wh::core::result<wh::tool::tool_output_stream_reader> {
-                             return wh::tool::tool_output_stream_reader{
-                                 wh::schema::stream::make_values_stream_reader(
-                                     std::vector<std::string>{std::string{input}})};
-                           }}});
+        wh::tool::tool{
+            std::move(schema),
+            sync_tool_stream_impl{[](const std::string_view input, const wh::tool::tool_options &)
+                                      -> wh::core::result<wh::tool::tool_output_stream_reader> {
+              return wh::tool::tool_output_stream_reader{
+                  wh::schema::stream::make_values_stream_reader(
+                      std::vector<std::string>{std::string{input}})};
+            }}});
     return make_single_node_graph(std::move(node), graph_options());
   }
   case node_case::component_tool_vv_async: {
     struct impl {
       [[nodiscard]] auto invoke_sender(wh::tool::tool_request request) const {
         return stdexec::just(
-            wh::core::result<std::string>{
-                std::string{"tool:"} + request.input_json});
+            wh::core::result<std::string>{std::string{"tool:"} + request.input_json});
       }
 
       [[nodiscard]] auto stream_sender(wh::tool::tool_request request) const {
-        return stdexec::just(
-            wh::core::result<wh::tool::tool_output_stream_reader>{
-                wh::tool::tool_output_stream_reader{
-                    wh::schema::stream::make_values_stream_reader(
-                        std::vector<std::string>{request.input_json})}});
+        return stdexec::just(wh::core::result<wh::tool::tool_output_stream_reader>{
+            wh::tool::tool_output_stream_reader{wh::schema::stream::make_values_stream_reader(
+                std::vector<std::string>{request.input_json})}});
       }
     };
     wh::schema::tool_schema_definition schema{};
@@ -2283,16 +2133,13 @@ struct node_case_info {
     struct impl {
       [[nodiscard]] auto invoke_sender(wh::tool::tool_request request) const {
         return stdexec::just(
-            wh::core::result<std::string>{
-                std::string{"tool:"} + request.input_json});
+            wh::core::result<std::string>{std::string{"tool:"} + request.input_json});
       }
 
       [[nodiscard]] auto stream_sender(wh::tool::tool_request request) const {
-        return stdexec::just(
-            wh::core::result<wh::tool::tool_output_stream_reader>{
-                wh::tool::tool_output_stream_reader{
-                    wh::schema::stream::make_values_stream_reader(
-                        std::vector<std::string>{request.input_json + ":async"})}});
+        return stdexec::just(wh::core::result<wh::tool::tool_output_stream_reader>{
+            wh::tool::tool_output_stream_reader{wh::schema::stream::make_values_stream_reader(
+                std::vector<std::string>{request.input_json + ":async"})}});
       }
     };
     wh::schema::tool_schema_definition schema{};
@@ -2305,83 +2152,73 @@ struct node_case_info {
   }
   case node_case::passthrough_value:
     return make_single_node_graph(
-        wh::compose::make_passthrough_node<wh::compose::node_contract::value>(
-            "worker"),
+        wh::compose::make_passthrough_node<wh::compose::node_contract::value>("worker"),
         graph_options());
   case node_case::passthrough_stream:
     return make_single_node_graph(
-        wh::compose::make_passthrough_node<wh::compose::node_contract::stream>(
-            "worker"),
+        wh::compose::make_passthrough_node<wh::compose::node_contract::stream>("worker"),
         graph_options());
   case node_case::tools_vv_sync: {
     wh::compose::tool_registry registry{};
     registry.insert_or_assign(
-        "echo", wh::compose::tool_entry{
-                    .invoke =
-                        [](const wh::compose::tool_call &call, wh::tool::call_scope)
-                            -> wh::core::result<wh::compose::graph_value> {
-                      return wh::core::any(std::string{"sync:"} + call.arguments);
-                    }});
-    return make_single_node_graph(
-        wh::compose::make_tools_node("worker", std::move(registry)),
-        graph_options());
+        "echo",
+        wh::compose::tool_entry{
+            .invoke = [](const wh::compose::tool_call &call,
+                         wh::tool::call_scope) -> wh::core::result<wh::compose::graph_value> {
+              return wh::core::any(std::string{"sync:"} + call.arguments);
+            }});
+    return make_single_node_graph(wh::compose::make_tools_node("worker", std::move(registry)),
+                                  graph_options());
   }
   case node_case::tools_vs_sync: {
     wh::compose::tool_registry registry{};
     registry.insert_or_assign(
-        "echo", wh::compose::tool_entry{
-                    .stream =
-                        [](const wh::compose::tool_call &call, wh::tool::call_scope)
-                            -> wh::core::result<wh::compose::graph_stream_reader> {
-                      return make_string_graph_stream(
-                          {call.arguments + ":1", call.arguments + ":2"});
-                    }});
-    return make_single_node_graph(wh::compose::make_tools_node<
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::stream>(
-        "worker", std::move(registry)),
-        graph_options());
+        "echo", wh::compose::tool_entry{.stream = [](const wh::compose::tool_call &call,
+                                                     wh::tool::call_scope)
+                                            -> wh::core::result<wh::compose::graph_stream_reader> {
+          return make_string_graph_stream({call.arguments + ":1", call.arguments + ":2"});
+        }});
+    return make_single_node_graph(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                               wh::compose::node_contract::stream>(
+                                      "worker", std::move(registry)),
+                                  graph_options());
   }
   case node_case::tools_vv_async: {
     wh::compose::tool_registry registry{};
     registry.insert_or_assign(
-        "echo", wh::compose::tool_entry{
-                    .async_invoke =
-                        [](wh::compose::tool_call call, wh::tool::call_scope)
-                            -> wh::compose::tools_invoke_sender {
-                      return stdexec::just(std::move(call.arguments)) |
-                             stdexec::then([](std::string text)
-                                               -> wh::core::result<wh::compose::graph_value> {
-                               return wh::core::any(std::string{"async:"} + text);
-                             });
-                    }});
-    return make_single_node_graph(wh::compose::make_tools_node<
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_exec_mode::async>(
-        "worker", std::move(registry)),
-        graph_options());
+        "echo",
+        wh::compose::tool_entry{.async_invoke =
+                                    [](wh::compose::tool_call call,
+                                       wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
+          return stdexec::just(std::move(call.arguments)) |
+                 stdexec::then([](std::string text) -> wh::core::result<wh::compose::graph_value> {
+                   return wh::core::any(std::string{"async:"} + text);
+                 });
+        }});
+    return make_single_node_graph(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                               wh::compose::node_contract::value,
+                                                               wh::compose::node_exec_mode::async>(
+                                      "worker", std::move(registry)),
+                                  graph_options());
   }
   case node_case::tools_vs_async: {
     wh::compose::tool_registry registry{};
     registry.insert_or_assign(
-        "echo", wh::compose::tool_entry{
-                    .async_stream =
-                        [](wh::compose::tool_call call, wh::tool::call_scope)
-                            -> wh::compose::tools_stream_sender {
-                      return stdexec::just(std::move(call.arguments)) |
-                             stdexec::then([](std::string text)
-                                               -> wh::core::result<wh::compose::graph_stream_reader> {
-                               return make_string_graph_stream(
-                                   {text + ":a", text + ":b"});
-                             });
-                    }});
-    return make_single_node_graph(wh::compose::make_tools_node<
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::stream,
-                                  wh::compose::node_exec_mode::async>(
-        "worker", std::move(registry)),
-        graph_options());
+        "echo",
+        wh::compose::tool_entry{.async_stream =
+                                    [](wh::compose::tool_call call,
+                                       wh::tool::call_scope) -> wh::compose::tools_stream_sender {
+          return stdexec::just(std::move(call.arguments)) |
+                 stdexec::then(
+                     [](std::string text) -> wh::core::result<wh::compose::graph_stream_reader> {
+                       return make_string_graph_stream({text + ":a", text + ":b"});
+                     });
+        }});
+    return make_single_node_graph(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                               wh::compose::node_contract::stream,
+                                                               wh::compose::node_exec_mode::async>(
+                                      "worker", std::move(registry)),
+                                  graph_options());
   }
   case node_case::subgraph_vv:
   case node_case::subgraph_vs:
@@ -2393,29 +2230,24 @@ struct node_case_info {
     }
     switch (value) {
     case node_case::subgraph_vv:
-      return make_single_node_graph(wh::compose::make_subgraph_node(
-          "worker", std::move(child).value()),
-          graph_options());
+      return make_single_node_graph(
+          wh::compose::make_subgraph_node("worker", std::move(child).value()), graph_options());
     case node_case::subgraph_vs:
-      return make_single_node_graph(wh::compose::make_subgraph_node(
-          "worker", std::move(child).value()),
-          graph_options());
+      return make_single_node_graph(
+          wh::compose::make_subgraph_node("worker", std::move(child).value()), graph_options());
     case node_case::subgraph_sv:
-      return make_single_node_graph(wh::compose::make_subgraph_node(
-          "worker", std::move(child).value()),
-          graph_options());
+      return make_single_node_graph(
+          wh::compose::make_subgraph_node("worker", std::move(child).value()), graph_options());
     case node_case::subgraph_ss:
-      return make_single_node_graph(wh::compose::make_subgraph_node(
-          "worker", std::move(child).value()),
-          graph_options());
+      return make_single_node_graph(
+          wh::compose::make_subgraph_node("worker", std::move(child).value()), graph_options());
     default:
       break;
     }
     break;
   }
   }
-  return wh::core::result<wh::compose::graph>::failure(
-      wh::core::errc::invalid_argument);
+  return wh::core::result<wh::compose::graph>::failure(wh::core::errc::invalid_argument);
 }
 
 [[nodiscard]] auto make_node_input(const node_case value, const int iteration)
@@ -2452,11 +2284,10 @@ struct node_case_info {
   }
   case node_case::component_embedding_vv:
     return wh::core::any(wh::embedding::embedding_request{
-        .inputs = std::vector<std::string>{std::string{"a"},
-                                           std::string(static_cast<std::size_t>(iteration % 3 + 2), 'b')}});
+        .inputs = std::vector<std::string>{
+            std::string{"a"}, std::string(static_cast<std::size_t>(iteration % 3 + 2), 'b')}});
   case node_case::component_embedding_vv_async:
-    return wh::core::any(
-        wh::embedding::embedding_request{.inputs = std::vector<std::string>{"x"}});
+    return wh::core::any(wh::embedding::embedding_request{.inputs = std::vector<std::string>{"x"}});
   case node_case::component_model_vv:
   case node_case::component_model_vs:
   case node_case::component_model_vv_async:
@@ -2467,8 +2298,8 @@ struct node_case_info {
     return wh::core::any(make_prompt_request("name-" + std::to_string(iteration)));
   case node_case::component_retriever_vv:
   case node_case::component_retriever_vv_async:
-    return wh::core::any(wh::retriever::retriever_request{
-        .query = "q-" + std::to_string(iteration), .index = "idx"});
+    return wh::core::any(wh::retriever::retriever_request{.query = "q-" + std::to_string(iteration),
+                                                          .index = "idx"});
   case node_case::component_indexer_vv:
   case node_case::component_indexer_vv_async:
     return wh::core::any(wh::indexer::indexer_request{
@@ -2482,8 +2313,7 @@ struct node_case_info {
   case node_case::component_tool_vv_async:
   case node_case::component_tool_vs_async:
     return wh::core::any(
-        wh::tool::tool_request{
-            .input_json = "payload-" + std::to_string(iteration)});
+        wh::tool::tool_request{.input_json = "payload-" + std::to_string(iteration)});
   case node_case::tools_vv_sync:
   case node_case::tools_vs_sync:
   case node_case::tools_vv_async:
@@ -2494,12 +2324,10 @@ struct node_case_info {
         .arguments = "payload-" + std::to_string(iteration),
     }}));
   }
-  return wh::core::result<wh::compose::graph_value>::failure(
-      wh::core::errc::invalid_argument);
+  return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::invalid_argument);
 }
 
-inline auto verify_node_output(const node_case value,
-                               wh::compose::graph_value output,
+inline auto verify_node_output(const node_case value, wh::compose::graph_value output,
                                const int iteration) -> void {
   switch (value) {
   case node_case::lambda_vv_sync:
@@ -2544,8 +2372,7 @@ inline auto verify_node_output(const node_case value,
     REQUIRE(reader.has_value());
     auto values = collect_int_graph_stream(std::move(reader).value());
     REQUIRE(values.has_value());
-    REQUIRE(values.value() ==
-            std::vector<int>{iteration + 50, iteration + 51, iteration + 52});
+    REQUIRE(values.value() == std::vector<int>{iteration + 50, iteration + 51, iteration + 52});
     break;
   }
   case node_case::component_custom_vv_sync:
@@ -2590,8 +2417,7 @@ inline auto verify_node_output(const node_case value,
     REQUIRE(reader.has_value());
     auto values = collect_int_graph_stream(std::move(reader).value());
     REQUIRE(values.has_value());
-    REQUIRE(values.value() ==
-            std::vector<int>{iteration + 34, iteration + 35, iteration + 36});
+    REQUIRE(values.value() == std::vector<int>{iteration + 34, iteration + 35, iteration + 36});
     break;
   }
   case node_case::component_embedding_vv: {
@@ -2599,8 +2425,7 @@ inline auto verify_node_output(const node_case value,
     REQUIRE(typed.has_value());
     REQUIRE(typed.value().size() == 2U);
     REQUIRE(typed.value()[0] == std::vector<double>{1.0});
-    REQUIRE(typed.value()[1] ==
-            std::vector<double>{static_cast<double>(iteration % 3 + 2)});
+    REQUIRE(typed.value()[1] == std::vector<double>{static_cast<double>(iteration % 3 + 2)});
     break;
   }
   case node_case::component_embedding_vv_async: {
@@ -2708,8 +2533,7 @@ inline auto verify_node_output(const node_case value,
     break;
   }
   case node_case::component_tool_vv:
-    REQUIRE(read_any<std::string>(output).value() ==
-            "tool:payload-" + std::to_string(iteration));
+    REQUIRE(read_any<std::string>(output).value() == "tool:payload-" + std::to_string(iteration));
     break;
   case node_case::component_tool_vs: {
     auto reader = read_any<wh::compose::graph_stream_reader>(std::move(output));
@@ -2723,8 +2547,7 @@ inline auto verify_node_output(const node_case value,
     break;
   }
   case node_case::component_tool_vv_async:
-    REQUIRE(read_any<std::string>(output).value() ==
-            "tool:payload-" + std::to_string(iteration));
+    REQUIRE(read_any<std::string>(output).value() == "tool:payload-" + std::to_string(iteration));
     break;
   case node_case::component_tool_vs_async: {
     auto reader = read_any<wh::compose::graph_stream_reader>(std::move(output));
@@ -2745,8 +2568,7 @@ inline auto verify_node_output(const node_case value,
     REQUIRE(reader.has_value());
     auto values = collect_int_graph_stream(std::move(reader).value());
     REQUIRE(values.has_value());
-    REQUIRE(values.value() ==
-            std::vector<int>{iteration, iteration + 1, iteration + 2});
+    REQUIRE(values.value() == std::vector<int>{iteration, iteration + 1, iteration + 2});
     break;
   }
   case node_case::tools_vv_sync: {
@@ -2808,8 +2630,7 @@ inline auto verify_node_output(const node_case value,
     REQUIRE(reader.has_value());
     auto values = collect_int_graph_stream(std::move(reader).value());
     REQUIRE(values.has_value());
-    REQUIRE(values.value() ==
-            std::vector<int>{iteration + 7, iteration + 8, iteration + 9});
+    REQUIRE(values.value() == std::vector<int>{iteration + 7, iteration + 8, iteration + 9});
     break;
   }
   }
@@ -2835,26 +2656,21 @@ enum class lowering_style : std::uint8_t {
   custom,
 };
 
-[[nodiscard]] constexpr auto all_source_shapes() noexcept
-    -> std::array<source_shape, 5> {
-  return {source_shape::single_value, source_shape::single_stream,
-          source_shape::multi_value, source_shape::multi_stream,
-          source_shape::mixed};
+[[nodiscard]] constexpr auto all_source_shapes() noexcept -> std::array<source_shape, 5> {
+  return {source_shape::single_value, source_shape::single_stream, source_shape::multi_value,
+          source_shape::multi_stream, source_shape::mixed};
 }
 
-[[nodiscard]] constexpr auto all_target_shapes() noexcept
-    -> std::array<target_shape, 4> {
-  return {target_shape::single_value, target_shape::single_stream,
-          target_shape::multi_value, target_shape::multi_stream};
+[[nodiscard]] constexpr auto all_target_shapes() noexcept -> std::array<target_shape, 4> {
+  return {target_shape::single_value, target_shape::single_stream, target_shape::multi_value,
+          target_shape::multi_stream};
 }
 
-[[nodiscard]] constexpr auto all_lowering_styles() noexcept
-    -> std::array<lowering_style, 2> {
+[[nodiscard]] constexpr auto all_lowering_styles() noexcept -> std::array<lowering_style, 2> {
   return {lowering_style::builtin, lowering_style::custom};
 }
 
-[[nodiscard]] constexpr auto shape_name(const source_shape value) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto shape_name(const source_shape value) noexcept -> std::string_view {
   switch (value) {
   case source_shape::single_value:
     return "single_value";
@@ -2870,8 +2686,7 @@ enum class lowering_style : std::uint8_t {
   return "unknown";
 }
 
-[[nodiscard]] constexpr auto shape_name(const target_shape value) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto shape_name(const target_shape value) noexcept -> std::string_view {
   switch (value) {
   case target_shape::single_value:
     return "single_value";
@@ -2885,8 +2700,7 @@ enum class lowering_style : std::uint8_t {
   return "unknown";
 }
 
-[[nodiscard]] constexpr auto style_name(const lowering_style value) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto style_name(const lowering_style value) noexcept -> std::string_view {
   switch (value) {
   case lowering_style::builtin:
     return "builtin";
@@ -2896,16 +2710,15 @@ enum class lowering_style : std::uint8_t {
   return "unknown";
 }
 
-[[nodiscard]] auto make_builtin_bridge_options(const bool source_stream,
-                                               const bool target_stream)
+[[nodiscard]] auto make_builtin_bridge_options(const bool source_stream, const bool target_stream)
     -> std::optional<wh::compose::edge_options> {
-  return source_stream == target_stream ? std::nullopt
-                                        : std::optional<wh::compose::edge_options>{
-                                              wh::compose::edge_options{}};
+  return source_stream == target_stream
+             ? std::nullopt
+             : std::optional<wh::compose::edge_options>{wh::compose::edge_options{}};
 }
 
-[[nodiscard]] constexpr auto base_sum(const source_shape shape,
-                                      const int iteration) noexcept -> int {
+[[nodiscard]] constexpr auto base_sum(const source_shape shape, const int iteration) noexcept
+    -> int {
   switch (shape) {
   case source_shape::single_value:
     return iteration + 1;
@@ -2921,83 +2734,65 @@ enum class lowering_style : std::uint8_t {
   return 0;
 }
 
-[[nodiscard]] auto add_value_source(wh::compose::graph &graph,
-                                    std::string_view key,
-                                    const int offset)
-    -> wh::core::result<void> {
+[[nodiscard]] auto add_value_source(wh::compose::graph &graph, std::string_view key,
+                                    const int offset) -> wh::core::result<void> {
   return graph.add_lambda(
       std::string{key},
-      [offset](const wh::compose::graph_value &input, wh::core::run_context &,
-               const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+      [offset](
+          const wh::compose::graph_value &input, wh::core::run_context &,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto typed = read_any<int>(input);
         if (typed.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              typed.error());
+          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
         }
         return wh::core::any(typed.value() + offset);
       });
 }
 
-[[nodiscard]] auto add_stream_source(wh::compose::graph &graph,
-                                     std::string_view key,
-                                     const int offset)
-    -> wh::core::result<void> {
-  return graph.add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
+[[nodiscard]] auto add_stream_source(wh::compose::graph &graph, std::string_view key,
+                                     const int offset) -> wh::core::result<void> {
+  return graph.add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
       std::string{key},
       [offset](const wh::compose::graph_value &input, wh::core::run_context &,
                const wh::compose::graph_call_scope &)
           -> wh::core::result<wh::compose::graph_stream_reader> {
         auto typed = read_any<int>(input);
         if (typed.has_error()) {
-          return wh::core::result<wh::compose::graph_stream_reader>::failure(
-              typed.error());
+          return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
         }
-        return make_int_graph_stream(
-            {typed.value() + offset, typed.value() + offset + 1});
+        return make_int_graph_stream({typed.value() + offset, typed.value() + offset + 1});
       });
 }
 
-[[nodiscard]] auto add_value_sink(wh::compose::graph &graph,
-                                  std::string_view key,
-                                  const int bias)
+[[nodiscard]] auto add_value_sink(wh::compose::graph &graph, std::string_view key, const int bias)
     -> wh::core::result<void> {
   return graph.add_lambda(
       std::string{key},
       [bias](const wh::compose::graph_value &input, wh::core::run_context &,
-             const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+             const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto total = sum_graph_value(input);
         if (total.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              total.error());
+          return wh::core::result<wh::compose::graph_value>::failure(total.error());
         }
         return wh::core::any(total.value() + bias);
       });
 }
 
-[[nodiscard]] auto add_stream_sink(wh::compose::graph &graph,
-                                   std::string_view key,
-                                   const int bias)
+[[nodiscard]] auto add_stream_sink(wh::compose::graph &graph, std::string_view key, const int bias)
     -> wh::core::result<void> {
-  return graph.add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+  return graph.add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
       std::string{key},
       [bias](wh::compose::graph_stream_reader input, wh::core::run_context &,
-             const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+             const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto values = collect_int_graph_stream(std::move(input));
         if (values.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              values.error());
+          return wh::core::result<wh::compose::graph_value>::failure(values.error());
         }
         return wh::core::any(sum_ints(values.value()) + bias);
       });
 }
 
-[[nodiscard]] auto make_custom_bridge_options(const bool source_stream,
-                                              const bool target_stream)
+[[nodiscard]] auto make_custom_bridge_options(const bool source_stream, const bool target_stream)
     -> std::optional<wh::compose::edge_options> {
   if (source_stream == target_stream) {
     return std::nullopt;
@@ -3006,31 +2801,24 @@ enum class lowering_style : std::uint8_t {
   wh::compose::edge_options options{};
   options.adapter.kind = wh::compose::edge_adapter_kind::custom;
   if (!source_stream && target_stream) {
-    options.adapter.custom.to_stream =
-        wh::compose::edge_to_stream_adapter{
-            [](wh::compose::graph_value &&input,
-               const wh::compose::edge_limits &,
-               wh::core::run_context &)
-                -> wh::core::result<wh::compose::graph_stream_reader> {
-              return wh::compose::make_single_value_stream_reader(
-                  std::move(input));
-            }};
+    options.adapter.custom.to_stream = wh::compose::edge_to_stream_adapter{
+        [](wh::compose::graph_value &&input, const wh::compose::edge_limits &,
+           wh::core::run_context &) -> wh::core::result<wh::compose::graph_stream_reader> {
+          return wh::compose::make_single_value_stream_reader(std::move(input));
+        }};
     return options;
   }
 
   options.adapter.custom.to_value = wh::compose::edge_to_value_adapter{
-      [](wh::compose::graph_stream_reader reader,
-         const wh::compose::edge_limits &,
+      [](wh::compose::graph_stream_reader reader, const wh::compose::edge_limits &,
          wh::core::run_context &) -> wh::compose::graph_value_sender {
         return wh::compose::detail::bridge_graph_sender(
             stdexec::just(std::move(reader)) |
             stdexec::then([](wh::compose::graph_stream_reader source)
                               -> wh::core::result<wh::compose::graph_value> {
-              auto chunks =
-                  wh::compose::collect_graph_stream_reader(std::move(source));
+              auto chunks = wh::compose::collect_graph_stream_reader(std::move(source));
               if (chunks.has_error()) {
-                return wh::core::result<wh::compose::graph_value>::failure(
-                    chunks.error());
+                return wh::core::result<wh::compose::graph_value>::failure(chunks.error());
               }
               return wh::core::any(std::move(chunks).value());
             }));
@@ -3038,8 +2826,7 @@ enum class lowering_style : std::uint8_t {
   return options;
 }
 
-[[nodiscard]] auto build_lowering_graph(const source_shape source,
-                                        const target_shape target,
+[[nodiscard]] auto build_lowering_graph(const source_shape source, const target_shape target,
                                         const lowering_style style,
                                         const wh::compose::graph_runtime_mode mode,
                                         const std::size_t parallel)
@@ -3047,8 +2834,7 @@ enum class lowering_style : std::uint8_t {
   wh::compose::graph_compile_options options{};
   options.mode = mode;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   options.max_parallel_nodes = parallel;
   options.max_parallel_per_node = parallel;
   wh::compose::graph graph{std::move(options)};
@@ -3144,13 +2930,12 @@ enum class lowering_style : std::uint8_t {
 
   if (target == target_shape::multi_value || target == target_shape::multi_stream) {
     auto added = graph.add_lambda(
-        "join", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                    const wh::compose::graph_call_scope &)
-                    -> wh::core::result<wh::compose::graph_value> {
+        "join",
+        [](const wh::compose::graph_value &input, wh::core::run_context &,
+           const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
           auto merged = read_any<wh::compose::graph_value_map>(input);
           if (merged.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                merged.error());
+            return wh::core::result<wh::compose::graph_value>::failure(merged.error());
           }
           auto left = read_named_int(merged.value(), "left");
           auto right = read_named_int(merged.value(), "right");
@@ -3179,14 +2964,12 @@ enum class lowering_style : std::uint8_t {
       return wh::compose::node_contract::value;
     }
     if (key == "sink") {
-      return target == target_shape::single_stream
-                 ? wh::compose::node_contract::stream
-                 : wh::compose::node_contract::value;
+      return target == target_shape::single_stream ? wh::compose::node_contract::stream
+                                                   : wh::compose::node_contract::value;
     }
     if (key == "left" || key == "right") {
-      return target == target_shape::multi_stream
-                 ? wh::compose::node_contract::stream
-                 : wh::compose::node_contract::value;
+      return target == target_shape::multi_stream ? wh::compose::node_contract::stream
+                                                  : wh::compose::node_contract::value;
     }
     return wh::compose::node_contract::value;
   };
@@ -3203,9 +2986,8 @@ enum class lowering_style : std::uint8_t {
       return wh::compose::node_contract::value;
     }
     if (key == "src") {
-      return source == source_shape::single_stream
-                 ? wh::compose::node_contract::stream
-                 : wh::compose::node_contract::value;
+      return source == source_shape::single_stream ? wh::compose::node_contract::stream
+                                                   : wh::compose::node_contract::value;
     }
     switch (source) {
     case source_shape::single_value:
@@ -3215,23 +2997,18 @@ enum class lowering_style : std::uint8_t {
     case source_shape::multi_stream:
       return wh::compose::node_contract::stream;
     case source_shape::mixed:
-      return key == "b" ? wh::compose::node_contract::stream
-                        : wh::compose::node_contract::value;
+      return key == "b" ? wh::compose::node_contract::stream : wh::compose::node_contract::value;
     }
     return wh::compose::node_contract::value;
   };
 
   const auto connect = [&](const std::string_view from,
-                           const std::string_view to)
-      -> wh::core::result<void> {
-    const auto source_stream =
-        output_contract_of(from) == wh::compose::node_contract::stream;
-    const auto target_stream =
-        input_contract_of(to) == wh::compose::node_contract::stream;
-    auto edge_options =
-        style == lowering_style::builtin
-            ? make_builtin_bridge_options(source_stream, target_stream)
-            : make_custom_bridge_options(source_stream, target_stream);
+                           const std::string_view to) -> wh::core::result<void> {
+    const auto source_stream = output_contract_of(from) == wh::compose::node_contract::stream;
+    const auto target_stream = input_contract_of(to) == wh::compose::node_contract::stream;
+    auto edge_options = style == lowering_style::builtin
+                            ? make_builtin_bridge_options(source_stream, target_stream)
+                            : make_custom_bridge_options(source_stream, target_stream);
     if (!edge_options.has_value()) {
       auto edge = graph.add_edge(std::string{from}, std::string{to});
       if (edge.has_error()) {
@@ -3240,8 +3017,7 @@ enum class lowering_style : std::uint8_t {
       return {};
     }
 
-    auto edge = graph.add_edge(std::string{from}, std::string{to},
-                               std::move(*edge_options));
+    auto edge = graph.add_edge(std::string{from}, std::string{to}, std::move(*edge_options));
     if (edge.has_error()) {
       return wh::core::result<void>::failure(edge.error());
     }
@@ -3320,8 +3096,7 @@ enum class lowering_style : std::uint8_t {
 
 [[nodiscard]] constexpr auto expected_lowering_output(const source_shape source,
                                                       const target_shape target,
-                                                      const int iteration) noexcept
-    -> int {
+                                                      const int iteration) noexcept -> int {
   const auto total = base_sum(source, iteration);
   switch (target) {
   case target_shape::single_value:
@@ -3370,12 +3145,10 @@ struct stream_observation {
       total += typed.value();
     }
   }
-  return stream_observation{.sum = total,
-                            .source_count = static_cast<int>(sources.size())};
+  return stream_observation{.sum = total, .source_count = static_cast<int>(sources.size())};
 }
 
-[[nodiscard]] auto parse_int_text(const std::string_view text)
-    -> wh::core::result<int> {
+[[nodiscard]] auto parse_int_text(const std::string_view text) -> wh::core::result<int> {
   try {
     return std::stoi(std::string{text});
   } catch (...) {
@@ -3395,13 +3168,11 @@ struct stream_observation {
   return parse_int_text(text->text);
 }
 
-[[nodiscard]] auto shift_int_stream(wh::compose::graph_stream_reader input,
-                                    const int delta)
+[[nodiscard]] auto shift_int_stream(wh::compose::graph_stream_reader input, const int delta)
     -> wh::core::result<wh::compose::graph_stream_reader> {
   auto values = collect_int_graph_stream(std::move(input));
   if (values.has_error()) {
-    return wh::core::result<wh::compose::graph_stream_reader>::failure(
-        values.error());
+    return wh::core::result<wh::compose::graph_stream_reader>::failure(values.error());
   }
   std::vector<wh::compose::graph_value> output{};
   output.reserve(values.value().size());
@@ -3411,8 +3182,7 @@ struct stream_observation {
   return wh::compose::make_values_stream_reader(std::move(output));
 }
 
-[[nodiscard]] auto sum_int_stream(wh::compose::graph_stream_reader input)
-    -> wh::core::result<int> {
+[[nodiscard]] auto sum_int_stream(wh::compose::graph_stream_reader input) -> wh::core::result<int> {
   auto values = collect_int_graph_stream(std::move(input));
   if (values.has_error()) {
     return wh::core::result<int>::failure(values.error());
@@ -3425,13 +3195,11 @@ struct stream_observation {
   return describe_node_case(value).from;
 }
 
-[[nodiscard]] constexpr auto case_to(const node_case value) noexcept
-    -> wh::compose::node_contract {
+[[nodiscard]] constexpr auto case_to(const node_case value) noexcept -> wh::compose::node_contract {
   return describe_node_case(value).to;
 }
 
-[[nodiscard]] auto parse_prefixed_int(const std::string_view text,
-                                      const std::string_view prefix)
+[[nodiscard]] auto parse_prefixed_int(const std::string_view text, const std::string_view prefix)
     -> wh::core::result<int> {
   if (!text.starts_with(prefix)) {
     return wh::core::result<int>::failure(wh::core::errc::type_mismatch);
@@ -3439,8 +3207,7 @@ struct stream_observation {
   return parse_int_text(text.substr(prefix.size()));
 }
 
-[[nodiscard]] auto parse_pair_suffix(const std::string_view text)
-    -> wh::core::result<int> {
+[[nodiscard]] auto parse_pair_suffix(const std::string_view text) -> wh::core::result<int> {
   const auto separator = text.find(':');
   if (separator == std::string_view::npos) {
     return parse_int_text(text);
@@ -3466,8 +3233,7 @@ struct stream_observation {
   return head.value() + tail.value();
 }
 
-[[nodiscard]] auto adapt_case_input(const node_case value,
-                                    const wh::compose::graph_value &input)
+[[nodiscard]] auto adapt_case_input(const node_case value, const wh::compose::graph_value &input)
     -> wh::core::result<wh::compose::graph_value> {
   auto base = sum_graph_value(input);
   if (base.has_error()) {
@@ -3489,8 +3255,8 @@ struct stream_observation {
     return wh::core::any(make_prompt_request(std::to_string(base.value())));
   case node_case::component_retriever_vv:
   case node_case::component_retriever_vv_async:
-    return wh::core::any(wh::retriever::retriever_request{
-        .query = std::to_string(base.value()), .index = "idx"});
+    return wh::core::any(
+        wh::retriever::retriever_request{.query = std::to_string(base.value()), .index = "idx"});
   case node_case::component_indexer_vv:
   case node_case::component_indexer_vv_async:
     return wh::core::any(wh::indexer::indexer_request{
@@ -3502,8 +3268,7 @@ struct stream_observation {
   case node_case::component_tool_vs:
   case node_case::component_tool_vv_async:
   case node_case::component_tool_vs_async:
-    return wh::core::any(
-        wh::tool::tool_request{.input_json = std::to_string(base.value())});
+    return wh::core::any(wh::tool::tool_request{.input_json = std::to_string(base.value())});
   case node_case::tools_vv_sync:
   case node_case::tools_vs_sync:
   case node_case::tools_vv_async:
@@ -3518,8 +3283,7 @@ struct stream_observation {
   }
 }
 
-[[nodiscard]] auto reduce_case_value(const node_case value,
-                                     const wh::compose::graph_value &output)
+[[nodiscard]] auto reduce_case_value(const node_case value, const wh::compose::graph_value &output)
     -> wh::core::result<int> {
   switch (value) {
   case node_case::component_embedding_vv:
@@ -3551,8 +3315,7 @@ struct stream_observation {
       return wh::core::result<int>::failure(wh::core::errc::not_found);
     }
     return parse_prefixed_int(
-        std::get<wh::schema::text_part>(typed.value().front().parts.front()).text,
-        "Hello ");
+        std::get<wh::schema::text_part>(typed.value().front().parts.front()).text, "Hello ");
   }
   case node_case::component_retriever_vv:
   case node_case::component_retriever_vv_async: {
@@ -3595,9 +3358,8 @@ struct stream_observation {
   case node_case::tools_vv_sync: {
     auto results = collect_tool_results(output);
     if (results.has_error() || results.value().get().empty()) {
-      return wh::core::result<int>::failure(results.has_error()
-                                                ? results.error()
-                                                : wh::core::errc::not_found);
+      return wh::core::result<int>::failure(results.has_error() ? results.error()
+                                                                : wh::core::errc::not_found);
     }
     auto typed = read_any<std::string>(results.value().get().front().value);
     if (typed.has_error()) {
@@ -3608,9 +3370,8 @@ struct stream_observation {
   case node_case::tools_vv_async: {
     auto results = collect_tool_results(output);
     if (results.has_error() || results.value().get().empty()) {
-      return wh::core::result<int>::failure(results.has_error()
-                                                ? results.error()
-                                                : wh::core::errc::not_found);
+      return wh::core::result<int>::failure(results.has_error() ? results.error()
+                                                                : wh::core::errc::not_found);
     }
     auto typed = read_any<std::string>(results.value().get().front().value);
     if (typed.has_error()) {
@@ -3623,8 +3384,7 @@ struct stream_observation {
   }
 }
 
-[[nodiscard]] auto reduce_case_stream_item(const node_case value,
-                                           wh::compose::graph_value item)
+[[nodiscard]] auto reduce_case_stream_item(const node_case value, wh::compose::graph_value item)
     -> wh::core::result<int> {
   switch (value) {
   case node_case::component_model_vs:
@@ -3679,30 +3439,24 @@ struct stream_observation {
   return total;
 }
 
-[[nodiscard]] auto make_block_stream_input(
-    const wh::compose::graph_value &input)
+[[nodiscard]] auto make_block_stream_input(const wh::compose::graph_value &input)
     -> wh::core::result<wh::compose::graph_stream_reader> {
   auto base = sum_graph_value(input);
   if (base.has_error()) {
-    return wh::core::result<wh::compose::graph_stream_reader>::failure(
-        base.error());
+    return wh::core::result<wh::compose::graph_stream_reader>::failure(base.error());
   }
   return make_int_graph_stream({base.value(), base.value() + 1, base.value() + 2});
 }
 
-[[nodiscard]] auto add_case_subgraph(wh::compose::graph &graph,
-                                     const std::string &key,
-                                     const node_case value,
-                                     const wh::compose::graph &child)
+[[nodiscard]] auto add_case_subgraph(wh::compose::graph &graph, const std::string &key,
+                                     const node_case value, const wh::compose::graph &child)
     -> wh::core::result<void> {
   (void)value;
   return graph.add_subgraph(wh::compose::make_subgraph_node(key, child));
 }
 
-[[nodiscard]] auto append_case_block(wh::compose::graph &graph,
-                                     const std::string &key,
-                                     const wh::compose::graph &child)
-    -> wh::core::result<void> {
+[[nodiscard]] auto append_case_block(wh::compose::graph &graph, const std::string &key,
+                                     const wh::compose::graph &child) -> wh::core::result<void> {
   return graph.add_subgraph(wh::compose::make_subgraph_node(key, child));
 }
 
@@ -3713,9 +3467,9 @@ struct block_case_runtime {
   wh::compose::graph block_graph{};
 };
 
-[[nodiscard]] auto make_case_block(
-    const node_case value, const wh::compose::graph_runtime_mode mode,
-    const wh::compose::graph &actual)
+[[nodiscard]] auto make_case_block(const node_case value,
+                                   const wh::compose::graph_runtime_mode mode,
+                                   const wh::compose::graph &actual)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph_compile_options options{};
   options.mode = mode;
@@ -3729,9 +3483,10 @@ struct block_case_runtime {
 
   if (case_from(value) == wh::compose::node_contract::value) {
     auto added = graph.add_lambda(
-        "pre", [value](const wh::compose::graph_value &input, wh::core::run_context &,
-                       const wh::compose::graph_call_scope &)
-                   -> wh::core::result<wh::compose::graph_value> {
+        "pre",
+        [value](
+            const wh::compose::graph_value &input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
           return adapt_case_input(value, input);
         });
     if (added.has_error()) {
@@ -3744,13 +3499,14 @@ struct block_case_runtime {
       return wh::core::result<wh::compose::graph>::failure(link.error());
     }
   } else {
-    auto added = graph.add_lambda<wh::compose::node_contract::value,
-                                  wh::compose::node_contract::stream>(
-        "pre", [](const wh::compose::graph_value &input, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &)
-                   -> wh::core::result<wh::compose::graph_stream_reader> {
-          return make_block_stream_input(input);
-        });
+    auto added =
+        graph.add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
+            "pre",
+            [](const wh::compose::graph_value &input, wh::core::run_context &,
+               const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_stream_reader> {
+              return make_block_stream_input(input);
+            });
     if (added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(added.error());
     }
@@ -3764,13 +3520,13 @@ struct block_case_runtime {
 
   if (case_to(value) == wh::compose::node_contract::value) {
     auto added = graph.add_lambda(
-        "post", [value](const wh::compose::graph_value &input, wh::core::run_context &,
-                        const wh::compose::graph_call_scope &)
-                    -> wh::core::result<wh::compose::graph_value> {
+        "post",
+        [value](
+            const wh::compose::graph_value &input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
           auto reduced = reduce_case_value(value, input);
           if (reduced.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                reduced.error());
+            return wh::core::result<wh::compose::graph_value>::failure(reduced.error());
           }
           return wh::core::any(reduced.value());
         });
@@ -3784,18 +3540,18 @@ struct block_case_runtime {
       return wh::core::result<wh::compose::graph>::failure(finish.error());
     }
   } else {
-    auto added = graph.add_lambda<wh::compose::node_contract::stream,
-                                  wh::compose::node_contract::value>(
-        "post", [value](wh::compose::graph_stream_reader input, wh::core::run_context &,
-                        const wh::compose::graph_call_scope &)
-                    -> wh::core::result<wh::compose::graph_value> {
-          auto reduced = reduce_case_stream(value, std::move(input));
-          if (reduced.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                reduced.error());
-          }
-          return wh::core::any(reduced.value());
-        });
+    auto added =
+        graph.add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
+            "post",
+            [value](wh::compose::graph_stream_reader input, wh::core::run_context &,
+                    const wh::compose::graph_call_scope &)
+                -> wh::core::result<wh::compose::graph_value> {
+              auto reduced = reduce_case_stream(value, std::move(input));
+              if (reduced.has_error()) {
+                return wh::core::result<wh::compose::graph_value>::failure(reduced.error());
+              }
+              return wh::core::any(reduced.value());
+            });
     if (added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(added.error());
     }
@@ -3814,8 +3570,7 @@ struct block_case_runtime {
   return graph;
 }
 
-[[nodiscard]] auto prepare_block_cases(
-    const wh::compose::graph_runtime_mode mode)
+[[nodiscard]] auto prepare_block_cases(const wh::compose::graph_runtime_mode mode)
     -> wh::core::result<std::vector<block_case_runtime>> {
   std::vector<block_case_runtime> blocks{};
   blocks.reserve(all_node_cases().size());
@@ -3823,13 +3578,11 @@ struct block_case_runtime {
   for (const auto item : all_node_cases()) {
     auto case_graph = build_node_graph(item, mode);
     if (case_graph.has_error()) {
-      return wh::core::result<std::vector<block_case_runtime>>::failure(
-          case_graph.error());
+      return wh::core::result<std::vector<block_case_runtime>>::failure(case_graph.error());
     }
     auto block_graph = make_case_block(item, mode, case_graph.value());
     if (block_graph.has_error()) {
-      return wh::core::result<std::vector<block_case_runtime>>::failure(
-          block_graph.error());
+      return wh::core::result<std::vector<block_case_runtime>>::failure(block_graph.error());
     }
 
     blocks.emplace_back(block_case_runtime{
@@ -3839,8 +3592,7 @@ struct block_case_runtime {
     });
     auto compiled = compile_test_graph_node(blocks.back().case_graph);
     if (compiled.has_error()) {
-      return wh::core::result<std::vector<block_case_runtime>>::failure(
-          compiled.error());
+      return wh::core::result<std::vector<block_case_runtime>>::failure(compiled.error());
     }
     blocks.back().case_node = compiled.value();
   }
@@ -3848,30 +3600,25 @@ struct block_case_runtime {
   return blocks;
 }
 
-[[nodiscard]] auto evaluate_case_block(const block_case_runtime &block,
-                                       const int input_value)
+[[nodiscard]] auto evaluate_case_block(const block_case_runtime &block, const int input_value)
     -> wh::core::result<wh::compose::graph_value> {
   wh::compose::graph_value input = wh::core::any(input_value);
-  auto prepared_input =
-      case_from(block.kind) == wh::compose::node_contract::value
-          ? adapt_case_input(block.kind, input)
-          : [&input]() -> wh::core::result<wh::compose::graph_value> {
-              auto reader = make_block_stream_input(input);
-              if (reader.has_error()) {
-                return wh::core::result<wh::compose::graph_value>::failure(
-                    reader.error());
-              }
-              return wh::core::any(std::move(reader).value());
-            }();
+  auto prepared_input = case_from(block.kind) == wh::compose::node_contract::value
+                            ? adapt_case_input(block.kind, input)
+                            : [&input]() -> wh::core::result<wh::compose::graph_value> {
+    auto reader = make_block_stream_input(input);
+    if (reader.has_error()) {
+      return wh::core::result<wh::compose::graph_value>::failure(reader.error());
+    }
+    return wh::core::any(std::move(reader).value());
+  }();
   if (prepared_input.has_error()) {
-    return wh::core::result<wh::compose::graph_value>::failure(
-        prepared_input.error());
+    return wh::core::result<wh::compose::graph_value>::failure(prepared_input.error());
   }
 
   wh::core::run_context context{};
   auto actual = wait_sender_result<wh::core::result<wh::compose::graph_value>>(
-      run_compiled_test_graph_node(block.case_node,
-                                   std::move(prepared_input).value(), context));
+      run_compiled_test_graph_node(block.case_node, std::move(prepared_input).value(), context));
   if (actual.has_error()) {
     return wh::core::result<wh::compose::graph_value>::failure(actual.error());
   }
@@ -3895,9 +3642,9 @@ struct block_case_runtime {
   return wh::core::any(reduced.value());
 }
 
-[[nodiscard]] auto make_block_chain(
-    const std::vector<std::reference_wrapper<const wh::compose::graph>> &blocks,
-    const wh::compose::graph_runtime_mode mode)
+[[nodiscard]] auto
+make_block_chain(const std::vector<std::reference_wrapper<const wh::compose::graph>> &blocks,
+                 const wh::compose::graph_runtime_mode mode)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph_compile_options options{};
   options.mode = mode;
@@ -3929,8 +3676,7 @@ struct block_case_runtime {
 }
 
 inline auto expect_same_block_output(wh::compose::graph_value actual,
-                                     wh::compose::graph_value expected)
-    -> void {
+                                     wh::compose::graph_value expected) -> void {
   auto actual_value = read_any<int>(std::move(actual));
   REQUIRE(actual_value.has_value());
   auto expected_value = read_any<int>(std::move(expected));
@@ -3938,8 +3684,7 @@ inline auto expect_same_block_output(wh::compose::graph_value actual,
   REQUIRE(actual_value.value() == expected_value.value());
 }
 
-inline auto run_pair_matrix_shard(
-    const std::size_t shard, const std::size_t shard_count) -> void {
+inline auto run_pair_matrix_shard(const std::size_t shard, const std::size_t shard_count) -> void {
   constexpr std::array iterations{0, 7};
 
   for (const auto mode : runtime_modes()) {
@@ -3956,17 +3701,16 @@ inline auto run_pair_matrix_shard(
       const auto &left = blocks.value()[left_index];
       const auto &right = blocks.value()[right_index];
 
-      DYNAMIC_SECTION(runtime_mode_name(mode) << ":shard=" << shard
-                                              << ":" << node_case_name(left.kind)
-                                              << "->" << node_case_name(right.kind)) {
-        auto graph = make_block_chain(
-            {std::cref(left.block_graph), std::cref(right.block_graph)}, mode);
+      DYNAMIC_SECTION(runtime_mode_name(mode)
+                      << ":shard=" << shard << ":" << node_case_name(left.kind) << "->"
+                      << node_case_name(right.kind)) {
+        auto graph =
+            make_block_chain({std::cref(left.block_graph), std::cref(right.block_graph)}, mode);
         REQUIRE(graph.has_value());
 
         for (const auto iteration : iterations) {
           wh::core::run_context actual_context{};
-          auto actual =
-              invoke_value_sync(graph.value(), wh::core::any(iteration), actual_context);
+          auto actual = invoke_value_sync(graph.value(), wh::core::any(iteration), actual_context);
           REQUIRE(actual.has_value());
 
           auto expected_left = evaluate_case_block(left, iteration);
@@ -3977,8 +3721,7 @@ inline auto run_pair_matrix_shard(
           auto expected_right = evaluate_case_block(right, left_value.value());
           REQUIRE(expected_right.has_value());
 
-          expect_same_block_output(std::move(actual).value(),
-                                   std::move(expected_right).value());
+          expect_same_block_output(std::move(actual).value(), std::move(expected_right).value());
         }
       }
     }
@@ -3988,24 +3731,21 @@ inline auto run_pair_matrix_shard(
 struct stream_shift_component {
   int delta{0};
 
-  [[nodiscard]] auto stream(wh::compose::graph_stream_reader input,
-                            wh::core::run_context &) const
+  [[nodiscard]] auto stream(wh::compose::graph_stream_reader input, wh::core::run_context &) const
       -> wh::core::result<wh::compose::graph_stream_reader> {
     return shift_int_stream(std::move(input), delta);
   }
 };
 
-[[nodiscard]] auto make_value_subgraph(const int delta)
-    -> wh::core::result<wh::compose::graph> {
+[[nodiscard]] auto make_value_subgraph(const int delta) -> wh::core::result<wh::compose::graph> {
   wh::compose::graph child{};
   auto added = child.add_lambda(
-      "leaf", [delta](const wh::compose::graph_value &input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
+      "leaf",
+      [delta](const wh::compose::graph_value &input, wh::core::run_context &,
+              const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto typed = read_any<int>(input);
         if (typed.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              typed.error());
+          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
         }
         return wh::core::any(typed.value() + delta);
       });
@@ -4025,8 +3765,7 @@ struct stream_shift_component {
   return child;
 }
 
-TEST_CASE("compose node family stress matrix remains stable",
-          "[core][compose][node][stress]") {
+TEST_CASE("compose node family stress matrix remains stable", "[core][compose][node][stress]") {
   for (const auto mode : runtime_modes()) {
     for (const auto item : all_node_cases()) {
       DYNAMIC_SECTION(runtime_mode_name(mode) << ":" << node_case_name(item)) {
@@ -4039,11 +3778,8 @@ TEST_CASE("compose node family stress matrix remains stable",
           auto input = make_node_input(item, iteration);
           REQUIRE(input.has_value());
           wh::core::run_context context{};
-          auto output =
-              wait_sender_result<wh::core::result<wh::compose::graph_value>>(
-                  run_compiled_test_graph_node(compiled.value(),
-                                               std::move(input).value(),
-                                               context));
+          auto output = wait_sender_result<wh::core::result<wh::compose::graph_value>>(
+              run_compiled_test_graph_node(compiled.value(), std::move(input).value(), context));
           REQUIRE(output.has_value());
           verify_node_output(item, std::move(output).value(), iteration);
         }
@@ -4071,8 +3807,7 @@ TEST_CASE("compose graph runtime preserves async lambda contracts",
         REQUIRE(input.has_value());
 
         wh::core::run_context context{};
-        auto actual =
-            invoke_value_sync(graph.value(), std::move(input).value(), context);
+        auto actual = invoke_value_sync(graph.value(), std::move(input).value(), context);
         REQUIRE(actual.has_value());
         verify_node_output(item, std::move(actual).value(), 7);
       }
@@ -4087,35 +3822,30 @@ TEST_CASE("compose graph runtime preserves async lambda map contracts",
       wh::compose::graph_compile_options options{};
       options.mode = mode;
       wh::compose::graph graph{std::move(options)};
-      REQUIRE(graph
-                  .add_lambda<wh::compose::node_contract::value,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_exec_mode::async>(
-                      "worker",
-                      [](wh::compose::graph_value_map &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &) {
-                        auto left = read_named_int(input, "left");
-                        auto right = read_named_int(input, "right");
-                        if (left.has_error()) {
-                          return stdexec::just(
-                              wh::core::result<wh::compose::graph_value_map>::
-                                  failure(left.error()));
-                        }
-                        if (right.has_error()) {
-                          return stdexec::just(
-                              wh::core::result<wh::compose::graph_value_map>::
-                                  failure(right.error()));
-                        }
-                        wh::compose::graph_value_map output{};
-                        output.emplace("sum", wh::core::any(left.value() + right.value()));
-                        output.emplace("product",
-                                       wh::core::any(left.value() * right.value()));
-                        return stdexec::just(
-                            wh::core::result<wh::compose::graph_value_map>{
-                                std::move(output)});
-                      })
-                  .has_value());
+      REQUIRE(
+          graph
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>(
+                  "worker",
+                  [](wh::compose::graph_value_map &input, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &) {
+                    auto left = read_named_int(input, "left");
+                    auto right = read_named_int(input, "right");
+                    if (left.has_error()) {
+                      return stdexec::just(
+                          wh::core::result<wh::compose::graph_value_map>::failure(left.error()));
+                    }
+                    if (right.has_error()) {
+                      return stdexec::just(
+                          wh::core::result<wh::compose::graph_value_map>::failure(right.error()));
+                    }
+                    wh::compose::graph_value_map output{};
+                    output.emplace("sum", wh::core::any(left.value() + right.value()));
+                    output.emplace("product", wh::core::any(left.value() * right.value()));
+                    return stdexec::just(
+                        wh::core::result<wh::compose::graph_value_map>{std::move(output)});
+                  })
+              .has_value());
       REQUIRE(graph.add_entry_edge("worker").has_value());
       REQUIRE(graph.add_exit_edge("worker").has_value());
       REQUIRE(graph.compile().has_value());
@@ -4125,8 +3855,7 @@ TEST_CASE("compose graph runtime preserves async lambda map contracts",
       input.emplace("right", wh::core::any(5));
 
       wh::core::run_context context{};
-      auto output =
-          invoke_value_sync(graph, wh::core::any(std::move(input)), context);
+      auto output = invoke_value_sync(graph, wh::core::any(std::move(input)), context);
       REQUIRE(output.has_value());
 
       auto typed = read_any<wh::compose::graph_value_map>(output.value());
@@ -4156,8 +3885,7 @@ TEST_CASE("compose graph runtime preserves async lambda move-only inputs",
       options.mode = mode;
       wh::compose::graph graph{std::move(options)};
       REQUIRE(graph
-                  .add_lambda<wh::compose::node_contract::value,
-                              wh::compose::node_contract::value,
+                  .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
                               wh::compose::node_exec_mode::async>(
                       "worker",
                       [](wh::compose::graph_value &input, wh::core::run_context &,
@@ -4165,12 +3893,10 @@ TEST_CASE("compose graph runtime preserves async lambda move-only inputs",
                         auto payload = read_any<move_only_payload>(std::move(input));
                         if (payload.has_error()) {
                           return stdexec::just(
-                              wh::core::result<wh::compose::graph_value>::failure(
-                                  payload.error()));
+                              wh::core::result<wh::compose::graph_value>::failure(payload.error()));
                         }
-                        return stdexec::just(
-                            wh::core::result<wh::compose::graph_value>{
-                                wh::core::any(payload.value().value + 9)});
+                        return stdexec::just(wh::core::result<wh::compose::graph_value>{
+                            wh::core::any(payload.value().value + 9)});
                       })
                   .has_value());
       REQUIRE(graph.add_entry_edge("worker").has_value());
@@ -4178,8 +3904,7 @@ TEST_CASE("compose graph runtime preserves async lambda move-only inputs",
       REQUIRE(graph.compile().has_value());
 
       wh::core::run_context context{};
-      auto output = invoke_value_sync(
-          graph, wh::core::any(move_only_payload{12}), context);
+      auto output = invoke_value_sync(graph, wh::core::any(move_only_payload{12}), context);
       REQUIRE(output.has_value());
       auto typed = read_any<int>(output.value());
       REQUIRE(typed.has_value());
@@ -4188,9 +3913,8 @@ TEST_CASE("compose graph runtime preserves async lambda move-only inputs",
   }
 }
 
-TEST_CASE(
-    "compose graph runtime rejects move-only value fanout to multiple async consumers",
-    "[core][compose][graph][runtime]") {
+TEST_CASE("compose graph runtime rejects move-only value fanout to multiple async consumers",
+          "[core][compose][graph][runtime]") {
   struct move_only_payload {
     int value{0};
 
@@ -4208,34 +3932,26 @@ TEST_CASE(
       options.mode = mode;
       wh::compose::graph graph{std::move(options)};
       std::atomic<int> executions{0};
-      const auto make_worker =
-          [&executions](const int delta) {
-            return [delta, &executions](wh::compose::graph_value &input,
-                                        wh::core::run_context &,
-                                        const wh::compose::graph_call_scope &) {
-              executions.fetch_add(1, std::memory_order_relaxed);
-              auto payload = read_any<move_only_payload>(std::move(input));
-              if (payload.has_error()) {
-                return stdexec::just(
-                    wh::core::result<wh::compose::graph_value>::failure(
-                        payload.error()));
-              }
-              return stdexec::just(
-                  wh::core::result<wh::compose::graph_value>{
-                      wh::core::any(payload.value().value + delta)});
-            };
-          };
+      const auto make_worker = [&executions](const int delta) {
+        return [delta, &executions](wh::compose::graph_value &input, wh::core::run_context &,
+                                    const wh::compose::graph_call_scope &) {
+          executions.fetch_add(1, std::memory_order_relaxed);
+          auto payload = read_any<move_only_payload>(std::move(input));
+          if (payload.has_error()) {
+            return stdexec::just(
+                wh::core::result<wh::compose::graph_value>::failure(payload.error()));
+          }
+          return stdexec::just(wh::core::result<wh::compose::graph_value>{
+              wh::core::any(payload.value().value + delta)});
+        };
+      };
       REQUIRE(graph
-                  .add_lambda<wh::compose::node_contract::value,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_exec_mode::async>(
-                      "left", make_worker(1))
+                  .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                              wh::compose::node_exec_mode::async>("left", make_worker(1))
                   .has_value());
       REQUIRE(graph
-                  .add_lambda<wh::compose::node_contract::value,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_exec_mode::async>(
-                      "right", make_worker(2))
+                  .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                              wh::compose::node_exec_mode::async>("right", make_worker(2))
                   .has_value());
       REQUIRE(graph.add_entry_edge("left").has_value());
       REQUIRE(graph.add_entry_edge("right").has_value());
@@ -4244,8 +3960,7 @@ TEST_CASE(
       REQUIRE(graph.compile().has_value());
 
       wh::core::run_context context{};
-      auto output = invoke_value_sync(
-          graph, wh::core::any(move_only_payload{12}), context);
+      auto output = invoke_value_sync(graph, wh::core::any(move_only_payload{12}), context);
       REQUIRE(output.has_error());
       REQUIRE(output.error() == wh::core::errc::contract_violation);
       REQUIRE(executions.load(std::memory_order_relaxed) == 0);
@@ -4275,8 +3990,7 @@ TEST_CASE("compose node block pair matrix shard 3 remains stable",
 
 TEST_CASE("compose node block chain length matrix remains stable",
           "[core][compose][graph][stress][chain_length]") {
-  constexpr std::array lengths{std::size_t{2U}, std::size_t{3U},
-                               std::size_t{5U}};
+  constexpr std::array lengths{std::size_t{2U}, std::size_t{3U}, std::size_t{5U}};
 
   for (const auto mode : runtime_modes()) {
     auto blocks = prepare_block_cases(mode);
@@ -4284,13 +3998,11 @@ TEST_CASE("compose node block chain length matrix remains stable",
 
     for (const auto length : lengths) {
       for (std::size_t start = 0U; start < blocks.value().size(); ++start) {
-        DYNAMIC_SECTION(runtime_mode_name(mode) << ":length=" << length
-                                                << ":start=" << start) {
+        DYNAMIC_SECTION(runtime_mode_name(mode) << ":length=" << length << ":start=" << start) {
           std::vector<std::reference_wrapper<const wh::compose::graph>> chain{};
           chain.reserve(length);
           for (std::size_t offset = 0U; offset < length; ++offset) {
-            const auto &entry =
-                blocks.value()[(start + offset) % blocks.value().size()];
+            const auto &entry = blocks.value()[(start + offset) % blocks.value().size()];
             chain.emplace_back(std::cref(entry.block_graph));
           }
 
@@ -4299,14 +4011,12 @@ TEST_CASE("compose node block chain length matrix remains stable",
 
           const int input = static_cast<int>(start + length);
           wh::core::run_context actual_context{};
-          auto actual = invoke_value_sync(graph.value(), wh::core::any(input),
-                                          actual_context);
+          auto actual = invoke_value_sync(graph.value(), wh::core::any(input), actual_context);
           REQUIRE(actual.has_value());
 
           wh::compose::graph_value expected_payload = wh::core::any(input);
           for (std::size_t offset = 0U; offset < length; ++offset) {
-            const auto &entry =
-                blocks.value()[(start + offset) % blocks.value().size()];
+            const auto &entry = blocks.value()[(start + offset) % blocks.value().size()];
             auto current = read_any<int>(std::move(expected_payload));
             REQUIRE(current.has_value());
             auto step = evaluate_case_block(entry, current.value());
@@ -4314,8 +4024,7 @@ TEST_CASE("compose node block chain length matrix remains stable",
             expected_payload = std::move(step).value();
           }
 
-          expect_same_block_output(std::move(actual).value(),
-                                   std::move(expected_payload));
+          expect_same_block_output(std::move(actual).value(), std::move(expected_payload));
         }
       }
     }
@@ -4326,26 +4035,22 @@ TEST_CASE("compose graph long mixed chain remains stable across repeated blocks"
           "[core][compose][graph][stress][chain]") {
   constexpr std::array modes{wh::compose::graph_runtime_mode::dag,
                              wh::compose::graph_runtime_mode::pregel};
-  constexpr std::array block_counts{std::size_t{1U}, std::size_t{2U},
-                                    std::size_t{4U}};
+  constexpr std::array block_counts{std::size_t{1U}, std::size_t{2U}, std::size_t{4U}};
 
   for (const auto mode : modes) {
     for (const auto block_count : block_counts) {
-      DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel"
-                                                                       : "dag")
+      DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel" : "dag")
                       << ":blocks=" << block_count) {
         wh::compose::graph_compile_options options{};
         options.mode = mode;
         options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-        options.fan_in_policy =
-            wh::compose::graph_fan_in_policy::require_all_sources;
+        options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
         options.max_parallel_nodes = 2U;
         options.max_parallel_per_node = 2U;
         wh::compose::graph graph{std::move(options)};
 
-        const auto connect =
-            [&graph](const std::string_view from,
-                     const std::string_view to) -> wh::core::result<void> {
+        const auto connect = [&graph](const std::string_view from,
+                                      const std::string_view to) -> wh::core::result<void> {
           auto status = graph.add_edge(std::string{from}, std::string{to});
           if (status.has_error()) {
             return wh::core::result<void>::failure(status.error());
@@ -4354,8 +4059,8 @@ TEST_CASE("compose graph long mixed chain remains stable across repeated blocks"
         };
 
         auto previous = std::string{wh::compose::graph_start_node_key};
-        const auto append_node =
-            [&graph, &connect, &previous](auto node) -> wh::core::result<void> {
+        const auto append_node = [&graph, &connect,
+                                  &previous](auto node) -> wh::core::result<void> {
           auto key = std::string{node.key()};
           auto added = add_test_node(graph, std::move(node));
           if (added.has_error()) {
@@ -4372,426 +4077,382 @@ TEST_CASE("compose graph long mixed chain remains stable across repeated blocks"
         for (std::size_t block = 0U; block < block_count; ++block) {
           const auto prefix = std::string{"block_"} + std::to_string(block);
 
-          REQUIRE(append_node(wh::compose::make_lambda_node<
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_exec_mode::async>(
-                      prefix + "_lambda_async",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &) {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return stdexec::just(
-                              wh::core::result<wh::compose::graph_value>::failure(
-                                  typed.error()));
-                        }
-                        return stdexec::just(
-                            wh::core::result<wh::compose::graph_value>{
-                                wh::core::any(typed.value() + 20)});
-                      }))
+          REQUIRE(append_node(wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                            wh::compose::node_contract::value,
+                                                            wh::compose::node_exec_mode::async>(
+                                  prefix + "_lambda_async",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &) {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return stdexec::just(
+                                          wh::core::result<wh::compose::graph_value>::failure(
+                                              typed.error()));
+                                    }
+                                    return stdexec::just(wh::core::result<wh::compose::graph_value>{
+                                        wh::core::any(typed.value() + 20)});
+                                  }))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_model_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(
-                            make_chat_request(std::to_string(typed.value())));
-                      }))
+                                  prefix + "_model_pre",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(
+                                        make_chat_request(std::to_string(typed.value())));
+                                  }))
                       .has_value());
 
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::model,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value>(
-                      prefix + "_model", wh::model::echo_chat_model{}))
-                      .has_value());
-
-          REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_model_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<wh::model::chat_response>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        auto value = read_message_text_int(typed.value().message);
-                        if (value.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              value.error());
-                        }
-                        return wh::core::any(value.value() + 1);
-                      }))
+          REQUIRE(append_node(wh::compose::make_component_node<wh::core::component_kind::model,
+                                                               wh::compose::node_contract::value,
+                                                               wh::compose::node_contract::value>(
+                                  prefix + "_model", wh::model::echo_chat_model{}))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_prompt_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(
-                            make_prompt_request(std::to_string(typed.value())));
-                      }))
-                      .has_value());
-
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::prompt,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value>(
-                      prefix + "_prompt",
-                      wh::prompt::simple_chat_template(
-                          {wh::prompt::prompt_message_template{
-                              wh::schema::message_role::user, "{{name}}",
-                              "user"}})))
+                                  prefix + "_model_post",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<wh::model::chat_response>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    auto value = read_message_text_int(typed.value().message);
+                                    if (value.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          value.error());
+                                    }
+                                    return wh::core::any(value.value() + 1);
+                                  }))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_prompt_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed =
-                            read_any<std::vector<wh::schema::message>>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        auto value = read_message_text_int(typed.value().front());
-                        if (value.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              value.error());
-                        }
-                        return wh::core::any(value.value() + 2);
-                      }))
+                                  prefix + "_prompt_pre",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(
+                                        make_prompt_request(std::to_string(typed.value())));
+                                  }))
                       .has_value());
+
+          REQUIRE(
+              append_node(wh::compose::make_component_node<wh::core::component_kind::prompt,
+                                                           wh::compose::node_contract::value,
+                                                           wh::compose::node_contract::value>(
+                              prefix + "_prompt",
+                              wh::prompt::simple_chat_template({wh::prompt::prompt_message_template{
+                                  wh::schema::message_role::user, "{{name}}", "user"}})))
+                  .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_embedding_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(wh::embedding::embedding_request{
-                            .inputs =
-                                std::vector<std::string>{
-                                    std::to_string(typed.value())}});
-                      }))
+                                  prefix + "_prompt_post",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<std::vector<wh::schema::message>>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    auto value = read_message_text_int(typed.value().front());
+                                    if (value.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          value.error());
+                                    }
+                                    return wh::core::any(value.value() + 2);
+                                  }))
                       .has_value());
 
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::embedding,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value>(
+          REQUIRE(append_node(
+                      wh::compose::make_lambda_node(
+                          prefix + "_embedding_pre",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(wh::embedding::embedding_request{
+                                .inputs = std::vector<std::string>{std::to_string(typed.value())}});
+                          }))
+                      .has_value());
+
+          REQUIRE(
+              append_node(
+                  wh::compose::make_component_node<wh::core::component_kind::embedding,
+                                                   wh::compose::node_contract::value,
+                                                   wh::compose::node_contract::value>(
                       prefix + "_embedding",
                       wh::embedding::embedding{sync_embedding_impl{
                           [](const wh::embedding::embedding_request &request)
-                              -> wh::core::result<
-                                  wh::embedding::embedding_response> {
+                              -> wh::core::result<wh::embedding::embedding_response> {
                             auto value = parse_int_text(request.inputs.front());
                             if (value.has_error()) {
-                              return wh::core::result<
-                                  wh::embedding::embedding_response>::failure(
+                              return wh::core::result<wh::embedding::embedding_response>::failure(
                                   value.error());
                             }
                             return wh::embedding::embedding_response{
                                 std::vector<std::vector<double>>{
                                     {static_cast<double>(value.value())}}};
                           }}}))
+                  .has_value());
+
+          REQUIRE(append_node(wh::compose::make_lambda_node(
+                                  prefix + "_embedding_post",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<wh::embedding::embedding_response>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(
+                                        static_cast<int>(typed.value().front().front()) + 4);
+                                  }))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_embedding_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed =
-                            read_any<wh::embedding::embedding_response>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(
-                            static_cast<int>(typed.value().front().front()) + 4);
-                      }))
+                                  prefix + "_retriever_pre",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(wh::retriever::retriever_request{
+                                        .query = std::to_string(typed.value()), .index = "idx"});
+                                  }))
+                      .has_value());
+
+          REQUIRE(append_node(wh::compose::make_component_node<wh::core::component_kind::retriever,
+                                                               wh::compose::node_contract::value,
+                                                               wh::compose::node_contract::value>(
+                                  prefix + "_retriever",
+                                  wh::retriever::retriever{sync_retriever_impl{
+                                      [](const wh::retriever::retriever_request &request)
+                                          -> wh::core::result<wh::retriever::retriever_response> {
+                                        return wh::retriever::retriever_response{
+                                            std::vector<wh::schema::document>{
+                                                wh::schema::document{request.query}}};
+                                      }}}))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_retriever_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(wh::retriever::retriever_request{
-                            .query = std::to_string(typed.value()),
-                            .index = "idx"});
-                      }))
+                                  prefix + "_retriever_post",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<wh::retriever::retriever_response>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    auto value = parse_int_text(typed.value().front().content());
+                                    if (value.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          value.error());
+                                    }
+                                    return wh::core::any(value.value() + 5);
+                                  }))
                       .has_value());
 
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::retriever,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value>(
-                      prefix + "_retriever",
-                      wh::retriever::retriever{sync_retriever_impl{
-                          [](const wh::retriever::retriever_request &request)
-                              -> wh::core::result<
-                                  wh::retriever::retriever_response> {
-                            return wh::retriever::retriever_response{
-                                std::vector<wh::schema::document>{
-                                    wh::schema::document{request.query}}};
-                          }}}))
-                      .has_value());
-
-          REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_retriever_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed =
-                            read_any<wh::retriever::retriever_response>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        auto value =
-                            parse_int_text(typed.value().front().content());
-                        if (value.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              value.error());
-                        }
-                        return wh::core::any(value.value() + 5);
-                      }))
-                      .has_value());
-
-          REQUIRE(append_node(wh::compose::make_lambda_node(
+          REQUIRE(
+              append_node(
+                  wh::compose::make_lambda_node(
                       prefix + "_indexer_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
+                      [](const wh::compose::graph_value &input, wh::core::run_context &,
                          const wh::compose::graph_call_scope &)
                           -> wh::core::result<wh::compose::graph_value> {
                         auto typed = read_any<int>(input);
                         if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
+                          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
                         }
                         return wh::core::any(wh::indexer::indexer_request{
-                            .documents = {wh::schema::document{
-                                std::to_string(typed.value())}}});
+                            .documents = {wh::schema::document{std::to_string(typed.value())}}});
                       }))
-                      .has_value());
+                  .has_value());
 
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::indexer,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value>(
-                      prefix + "_indexer",
-                      wh::indexer::indexer{sync_indexer_batch_impl{
-                          [](const wh::indexer::indexer_request &request)
-                              -> wh::core::result<
-                                  wh::indexer::indexer_response> {
-                            wh::indexer::indexer_response response{};
-                            response.document_ids.push_back(
-                                request.documents.front().content());
-                            response.success_count = 1U;
-                            return response;
-                          }}}))
+          REQUIRE(append_node(wh::compose::make_component_node<wh::core::component_kind::indexer,
+                                                               wh::compose::node_contract::value,
+                                                               wh::compose::node_contract::value>(
+                                  prefix + "_indexer",
+                                  wh::indexer::indexer{sync_indexer_batch_impl{
+                                      [](const wh::indexer::indexer_request &request)
+                                          -> wh::core::result<wh::indexer::indexer_response> {
+                                        wh::indexer::indexer_response response{};
+                                        response.document_ids.push_back(
+                                            request.documents.front().content());
+                                        response.success_count = 1U;
+                                        return response;
+                                      }}}))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_indexer_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed =
-                            read_any<wh::indexer::indexer_response>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        auto value =
-                            parse_int_text(typed.value().document_ids.front());
-                        if (value.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              value.error());
-                        }
-                        return wh::core::any(value.value() + 6);
-                      }))
+                                  prefix + "_indexer_post",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<wh::indexer::indexer_response>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    auto value = parse_int_text(typed.value().document_ids.front());
+                                    if (value.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          value.error());
+                                    }
+                                    return wh::core::any(value.value() + 6);
+                                  }))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_document_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(
-                            make_document_request(std::to_string(typed.value())));
-                      }))
+                                  prefix + "_document_pre",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(
+                                        make_document_request(std::to_string(typed.value())));
+                                  }))
                       .has_value());
 
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::document,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value>(
-                      prefix + "_document",
-                      wh::document::document{
-                          wh::document::document_processor{
-                              wh::document::parser::make_text_parser()}}))
+          REQUIRE(append_node(wh::compose::make_component_node<wh::core::component_kind::document,
+                                                               wh::compose::node_contract::value,
+                                                               wh::compose::node_contract::value>(
+                                  prefix + "_document",
+                                  wh::document::document{wh::document::document_processor{
+                                      wh::document::parser::make_text_parser()}}))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_document_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed =
-                            read_any<wh::document::document_batch>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        auto value =
-                            parse_int_text(typed.value().front().content());
-                        if (value.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              value.error());
-                        }
-                        return wh::core::any(value.value() + 7);
-                      }))
+                                  prefix + "_document_post",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<wh::document::document_batch>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    auto value = parse_int_text(typed.value().front().content());
+                                    if (value.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          value.error());
+                                    }
+                                    return wh::core::any(value.value() + 7);
+                                  }))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_component_tool_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(wh::tool::tool_request{
-                            .input_json = std::to_string(typed.value())});
-                      }))
+                                  prefix + "_component_tool_pre",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(wh::tool::tool_request{
+                                        .input_json = std::to_string(typed.value())});
+                                  }))
                       .has_value());
 
           wh::schema::tool_schema_definition component_tool_schema{};
           component_tool_schema.name = prefix + "_component_tool";
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::tool,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value>(
-                      prefix + "_component_tool",
-                      wh::tool::tool{
-                          std::move(component_tool_schema),
-                          sync_tool_invoke_impl{
-                              [](const std::string_view input,
-                                 const wh::tool::tool_options &)
-                                  -> wh::tool::tool_invoke_result {
-                                return std::string{input};
-                              }}}))
+          REQUIRE(append_node(
+                      wh::compose::make_component_node<wh::core::component_kind::tool,
+                                                       wh::compose::node_contract::value,
+                                                       wh::compose::node_contract::value>(
+                          prefix + "_component_tool",
+                          wh::tool::tool{std::move(component_tool_schema),
+                                         sync_tool_invoke_impl{[](const std::string_view input,
+                                                                  const wh::tool::tool_options &)
+                                                                   -> wh::tool::tool_invoke_result {
+                                           return std::string{input};
+                                         }}}))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_component_tool_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<std::string>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        auto value = parse_int_text(typed.value());
-                        if (value.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              value.error());
-                        }
-                        return wh::core::any(value.value() + 8);
-                      }))
+                                  prefix + "_component_tool_post",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<std::string>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    auto value = parse_int_text(typed.value());
+                                    if (value.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          value.error());
+                                    }
+                                    return wh::core::any(value.value() + 8);
+                                  }))
                       .has_value());
 
           REQUIRE(append_node(wh::compose::make_lambda_node(
-                      prefix + "_tools_pre",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
-                        }
-                        return wh::core::any(make_tool_batch(
-                            {wh::compose::tool_call{.call_id = "call",
-                                                    .tool_name = "echo",
-                                                    .arguments =
-                                                        std::to_string(
-                                                            typed.value())}}));
-                      }))
+                                  prefix + "_tools_pre",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(make_tool_batch({wh::compose::tool_call{
+                                        .call_id = "call",
+                                        .tool_name = "echo",
+                                        .arguments = std::to_string(typed.value())}}));
+                                  }))
                       .has_value());
 
           wh::compose::tool_registry tools{};
           tools.insert_or_assign(
               "echo",
               wh::compose::tool_entry{
-                  .async_invoke =
-                      [](wh::compose::tool_call call, wh::tool::call_scope)
-                          -> wh::compose::tools_invoke_sender {
+                  .async_invoke = [](wh::compose::tool_call call,
+                                     wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
                     return stdexec::just(
-                        wh::core::result<wh::compose::graph_value>{
-                            wh::core::any(call.arguments)});
+                        wh::core::result<wh::compose::graph_value>{wh::core::any(call.arguments)});
                   }});
-          REQUIRE(append_node(wh::compose::make_tools_node<
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_exec_mode::async>(
-                      prefix + "_tools", std::move(tools)))
+          REQUIRE(append_node(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                           wh::compose::node_contract::value,
+                                                           wh::compose::node_exec_mode::async>(
+                                  prefix + "_tools", std::move(tools)))
                       .has_value());
 
-          REQUIRE(append_node(wh::compose::make_lambda_node(
+          REQUIRE(
+              append_node(
+                  wh::compose::make_lambda_node(
                       prefix + "_tools_post",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
+                      [](const wh::compose::graph_value &input, wh::core::run_context &,
                          const wh::compose::graph_call_scope &)
                           -> wh::core::result<wh::compose::graph_value> {
                         auto results = collect_tool_results(input);
@@ -4799,80 +4460,70 @@ TEST_CASE("compose graph long mixed chain remains stable across repeated blocks"
                           return wh::core::result<wh::compose::graph_value>::failure(
                               results.error());
                         }
-                        auto typed =
-                            read_any<std::string>(results.value().get().front().value);
+                        auto typed = read_any<std::string>(results.value().get().front().value);
                         if (typed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              typed.error());
+                          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
                         }
                         auto value = parse_int_text(typed.value());
                         if (value.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              value.error());
+                          return wh::core::result<wh::compose::graph_value>::failure(value.error());
                         }
                         return wh::core::any(value.value() + 9);
                       }))
-                      .has_value());
+                  .has_value());
 
-          REQUIRE(append_node(
-                      wh::compose::make_passthrough_node<
-                          wh::compose::node_contract::value>(prefix + "_pass_value"))
+          REQUIRE(append_node(wh::compose::make_passthrough_node<wh::compose::node_contract::value>(
+                                  prefix + "_pass_value"))
                       .has_value());
 
           auto child = make_value_subgraph(10);
           REQUIRE(child.has_value());
-          REQUIRE(append_node(wh::compose::make_subgraph_node(
-                      prefix + "_subgraph", std::move(child).value()))
-                      .has_value());
-
-          REQUIRE(append_node(wh::compose::make_lambda_node<
-                                  wh::compose::node_contract::value,
-                                  wh::compose::node_contract::stream>(
-                      prefix + "_value_to_stream",
-                      [](const wh::compose::graph_value &input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_stream_reader> {
-                        auto typed = read_any<int>(input);
-                        if (typed.has_error()) {
-                          return wh::core::result<
-                              wh::compose::graph_stream_reader>::failure(
-                              typed.error());
-                        }
-                        return make_int_graph_stream(
-                            {typed.value(), typed.value() + 1});
-                      }))
-                      .has_value());
-
-          REQUIRE(append_node(wh::compose::make_component_node<
-                                  wh::core::component_kind::custom,
-                                  wh::compose::node_contract::stream,
-                                  wh::compose::node_contract::stream,
-                                  wh::compose::graph_stream_reader,
-                                  wh::compose::graph_stream_reader>(
-                      prefix + "_stream_shift", stream_shift_component{1}))
+          REQUIRE(append_node(wh::compose::make_subgraph_node(prefix + "_subgraph",
+                                                              std::move(child).value()))
                       .has_value());
 
           REQUIRE(append_node(
-                      wh::compose::make_passthrough_node<
-                          wh::compose::node_contract::stream>(prefix + "_pass_stream"))
+                      wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                    wh::compose::node_contract::stream>(
+                          prefix + "_value_to_stream",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_stream_reader> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_stream_reader>::failure(
+                                  typed.error());
+                            }
+                            return make_int_graph_stream({typed.value(), typed.value() + 1});
+                          }))
                       .has_value());
 
-          REQUIRE(append_node(wh::compose::make_lambda_node<
-                                  wh::compose::node_contract::stream,
-                                  wh::compose::node_contract::value>(
-                      prefix + "_stream_sum",
-                      [](wh::compose::graph_stream_reader input,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<wh::compose::graph_value> {
-                        auto summed = sum_int_stream(std::move(input));
-                        if (summed.has_error()) {
-                          return wh::core::result<wh::compose::graph_value>::failure(
-                              summed.error());
-                        }
-                        return wh::core::any(summed.value());
-                      }))
+          REQUIRE(
+              append_node(wh::compose::make_component_node<
+                              wh::core::component_kind::custom, wh::compose::node_contract::stream,
+                              wh::compose::node_contract::stream, wh::compose::graph_stream_reader,
+                              wh::compose::graph_stream_reader>(prefix + "_stream_shift",
+                                                                stream_shift_component{1}))
+                  .has_value());
+
+          REQUIRE(
+              append_node(wh::compose::make_passthrough_node<wh::compose::node_contract::stream>(
+                              prefix + "_pass_stream"))
+                  .has_value());
+
+          REQUIRE(append_node(wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                                            wh::compose::node_contract::value>(
+                                  prefix + "_stream_sum",
+                                  [](wh::compose::graph_stream_reader input,
+                                     wh::core::run_context &, const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto summed = sum_int_stream(std::move(input));
+                                    if (summed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          summed.error());
+                                    }
+                                    return wh::core::any(summed.value());
+                                  }))
                       .has_value());
         }
 
@@ -4896,8 +4547,7 @@ TEST_CASE("compose graph long mixed chain remains stable across repeated blocks"
   }
 }
 
-TEST_CASE("compose graph lowering shape matrix remains stable",
-          "[core][compose][graph][stress]") {
+TEST_CASE("compose graph lowering shape matrix remains stable", "[core][compose][graph][stress]") {
   constexpr std::array modes{wh::compose::graph_runtime_mode::dag,
                              wh::compose::graph_runtime_mode::pregel};
   constexpr std::array parallels{std::size_t{1U}, std::size_t{2U}};
@@ -4907,24 +4557,21 @@ TEST_CASE("compose graph lowering shape matrix remains stable",
       for (const auto style : all_lowering_styles()) {
         for (const auto mode : modes) {
           for (const auto parallel : parallels) {
-            DYNAMIC_SECTION(shape_name(source) << "->" << shape_name(target)
-                                               << ":style=" << style_name(style)
-                                               << ":mode="
-                                               << (mode == wh::compose::graph_runtime_mode::pregel ? "pregel"
-                                                                                                    : "dag")
-                                               << ":parallel=" << parallel) {
+            DYNAMIC_SECTION(shape_name(source)
+                            << "->" << shape_name(target) << ":style=" << style_name(style)
+                            << ":mode="
+                            << (mode == wh::compose::graph_runtime_mode::pregel ? "pregel" : "dag")
+                            << ":parallel=" << parallel) {
               auto graph = build_lowering_graph(source, target, style, mode, parallel);
               REQUIRE(graph.has_value());
 
               for (int iteration = 0; iteration < 16; ++iteration) {
                 wh::core::run_context context{};
-                auto output =
-                    invoke_value_sync(graph.value(), wh::core::any(iteration), context);
+                auto output = invoke_value_sync(graph.value(), wh::core::any(iteration), context);
                 REQUIRE(output.has_value());
                 auto typed = read_any<int>(output.value());
                 REQUIRE(typed.has_value());
-                REQUIRE(typed.value() ==
-                        expected_lowering_output(source, target, iteration));
+                REQUIRE(typed.value() == expected_lowering_output(source, target, iteration));
               }
             }
           }
@@ -4950,67 +4597,63 @@ TEST_CASE("compose graph partial merged readers keep late lanes stable",
       options.max_parallel_per_node = 4U;
       wh::compose::graph graph{std::move(options)};
 
-      REQUIRE(graph.add_lambda<wh::compose::node_contract::value,
-                               wh::compose::node_contract::stream,
-                               wh::compose::node_exec_mode::async>(
-                  "fast",
-                  [](const wh::compose::graph_value &input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &) {
-                    const auto *typed = wh::core::any_cast<int>(&input);
-                    return graph_stream_result_sender{
-                        wh::core::detail::normalize_result_sender<
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                              wh::compose::node_exec_mode::async>(
+                      "fast",
+                      [](const wh::compose::graph_value &input, wh::core::run_context &,
+                         const wh::compose::graph_call_scope &) {
+                        const auto *typed = wh::core::any_cast<int>(&input);
+                        return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
                             wh::core::result<wh::compose::graph_stream_reader>>(
-                            stdexec::just(
-                                wh::core::result<wh::compose::graph_stream_reader>{
-                                    make_int_graph_stream({*typed + 1, *typed + 2}).value()}))};
-                  })
+                            stdexec::just(wh::core::result<wh::compose::graph_stream_reader>{
+                                make_int_graph_stream({*typed + 1, *typed + 2}).value()}))};
+                      })
                   .has_value());
-      REQUIRE(graph.add_lambda<wh::compose::node_contract::value,
-                               wh::compose::node_contract::stream,
-                               wh::compose::node_exec_mode::async>(
-                  "slow",
-                  [scheduler = pool.get_scheduler()](const wh::compose::graph_value &input,
-                                                     wh::core::run_context &,
-                                                     const wh::compose::graph_call_scope &) {
-                    const auto *typed = wh::core::any_cast<int>(&input);
-                    return graph_stream_result_sender{
-                        wh::core::detail::normalize_result_sender<
-                            wh::core::result<wh::compose::graph_stream_reader>>(
-                            stdexec::starts_on(
-                                scheduler,
-                                stdexec::just(*typed) |
-                                    stdexec::then([](int value)
-                                                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                                        std::this_thread::sleep_for(std::chrono::milliseconds{5});
-                                        return make_int_graph_stream({value + 10, value + 11});
-                                      })))};
-                  })
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                              wh::compose::node_exec_mode::async>(
+                      "slow",
+                      [scheduler = pool.get_scheduler()](const wh::compose::graph_value &input,
+                                                         wh::core::run_context &,
+                                                         const wh::compose::graph_call_scope &) {
+                        const auto *typed = wh::core::any_cast<int>(&input);
+                        return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
+                            wh::core::result<wh::compose::graph_stream_reader>>(stdexec::starts_on(
+                            scheduler,
+                            stdexec::just(*typed) |
+                                stdexec::then(
+                                    [](int value)
+                                        -> wh::core::result<wh::compose::graph_stream_reader> {
+                                      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+                                      return make_int_graph_stream({value + 10, value + 11});
+                                    })))};
+                      })
                   .has_value());
-      REQUIRE(graph.add_lambda<wh::compose::node_contract::stream,
-                               wh::compose::node_contract::value,
-                               wh::compose::node_exec_mode::async>(
-                  "left",
-                  [scheduler = pool.get_scheduler()](
-                      wh::compose::graph_stream_reader input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &) {
-                    return stdexec::starts_on(
-                        scheduler,
-                        stdexec::just(std::move(input)) |
-                            stdexec::then([](wh::compose::graph_stream_reader lane_input)
-                                              -> wh::core::result<wh::compose::graph_value> {
-                              auto observed = observe_stream(std::move(lane_input));
-                              if (observed.has_error()) {
-                                return wh::core::result<wh::compose::graph_value>::failure(
-                                    observed.error());
-                              }
-                              wh::compose::graph_value_map output{};
-                              output.emplace("sum", wh::core::any(observed.value().sum));
-                              output.emplace(
-                                  "sources",
-                                  wh::core::any(observed.value().source_count));
-                              return wh::core::any(std::move(output));
-                            }));
-                  })
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value,
+                              wh::compose::node_exec_mode::async>(
+                      "left",
+                      [scheduler = pool.get_scheduler()](wh::compose::graph_stream_reader input,
+                                                         wh::core::run_context &,
+                                                         const wh::compose::graph_call_scope &) {
+                        return stdexec::starts_on(
+                            scheduler,
+                            stdexec::just(std::move(input)) |
+                                stdexec::then([](wh::compose::graph_stream_reader lane_input)
+                                                  -> wh::core::result<wh::compose::graph_value> {
+                                  auto observed = observe_stream(std::move(lane_input));
+                                  if (observed.has_error()) {
+                                    return wh::core::result<wh::compose::graph_value>::failure(
+                                        observed.error());
+                                  }
+                                  wh::compose::graph_value_map output{};
+                                  output.emplace("sum", wh::core::any(observed.value().sum));
+                                  output.emplace("sources",
+                                                 wh::core::any(observed.value().source_count));
+                                  return wh::core::any(std::move(output));
+                                }));
+                      })
                   .has_value());
       REQUIRE(graph.add_entry_edge("fast").has_value());
       REQUIRE(graph.add_entry_edge("slow").has_value());
@@ -5045,8 +4688,7 @@ TEST_CASE("compose graph partial aggregation follows runtime barrier semantics",
                              wh::compose::graph_runtime_mode::pregel};
 
   for (const auto mode : modes) {
-    DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel"
-                                                                     : "dag")) {
+    DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel" : "dag")) {
       exec::static_thread_pool pool{4U};
       wh::compose::graph_compile_options options{};
       options.mode = mode;
@@ -5056,137 +4698,126 @@ TEST_CASE("compose graph partial aggregation follows runtime barrier semantics",
       options.max_parallel_per_node = 4U;
       wh::compose::graph graph{std::move(options)};
 
-      REQUIRE(graph.add_lambda<wh::compose::node_contract::value,
-                               wh::compose::node_contract::stream,
-                               wh::compose::node_exec_mode::async>(
-                  "fast",
-                  [](const wh::compose::graph_value &input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &) {
-                    const auto *typed = wh::core::any_cast<int>(&input);
-                    return graph_stream_result_sender{
-                        wh::core::detail::normalize_result_sender<
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                              wh::compose::node_exec_mode::async>(
+                      "fast",
+                      [](const wh::compose::graph_value &input, wh::core::run_context &,
+                         const wh::compose::graph_call_scope &) {
+                        const auto *typed = wh::core::any_cast<int>(&input);
+                        return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
                             wh::core::result<wh::compose::graph_stream_reader>>(
-                            stdexec::just(
-                                wh::core::result<wh::compose::graph_stream_reader>{
-                                    make_int_graph_stream({*typed + 1, *typed + 2}).value()}))};
-                  })
+                            stdexec::just(wh::core::result<wh::compose::graph_stream_reader>{
+                                make_int_graph_stream({*typed + 1, *typed + 2}).value()}))};
+                      })
                   .has_value());
-      REQUIRE(graph.add_lambda<wh::compose::node_contract::value,
-                               wh::compose::node_contract::stream,
-                               wh::compose::node_exec_mode::async>(
-                  "slow",
-                  [scheduler = pool.get_scheduler()](
-                      const wh::compose::graph_value &input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &) {
-                    const auto *typed = wh::core::any_cast<int>(&input);
-                    return graph_stream_result_sender{
-                        wh::core::detail::normalize_result_sender<
-                            wh::core::result<wh::compose::graph_stream_reader>>(
-                            stdexec::starts_on(
-                                scheduler,
-                                stdexec::just(*typed) |
-                                    stdexec::then([](int value)
-                                                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                                        std::this_thread::sleep_for(
-                                            std::chrono::milliseconds{5});
-                                        return make_int_graph_stream(
-                                            {value + 10, value + 11});
-                                      })))};
-                  })
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                              wh::compose::node_exec_mode::async>(
+                      "slow",
+                      [scheduler = pool.get_scheduler()](const wh::compose::graph_value &input,
+                                                         wh::core::run_context &,
+                                                         const wh::compose::graph_call_scope &) {
+                        const auto *typed = wh::core::any_cast<int>(&input);
+                        return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
+                            wh::core::result<wh::compose::graph_stream_reader>>(stdexec::starts_on(
+                            scheduler,
+                            stdexec::just(*typed) |
+                                stdexec::then(
+                                    [](int value)
+                                        -> wh::core::result<wh::compose::graph_stream_reader> {
+                                      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+                                      return make_int_graph_stream({value + 10, value + 11});
+                                    })))};
+                      })
                   .has_value());
 
-      REQUIRE(graph.add_lambda<wh::compose::node_contract::stream,
-                               wh::compose::node_contract::value,
-                               wh::compose::node_exec_mode::async>(
-                  "left",
-                  [scheduler = pool.get_scheduler()](
-                      wh::compose::graph_stream_reader input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &) {
-                    return stdexec::starts_on(
-                        scheduler,
-                        stdexec::just(std::move(input)) |
-                            stdexec::then([](wh::compose::graph_stream_reader lane_input)
-                                              -> wh::core::result<wh::compose::graph_value> {
-                              auto observed = observe_stream(std::move(lane_input));
-                              if (observed.has_error()) {
-                                return wh::core::result<wh::compose::graph_value>::failure(
-                                    observed.error());
-                              }
-                              wh::compose::graph_value_map output{};
-                              output.emplace("sum", wh::core::any(observed.value().sum));
-                              output.emplace(
-                                  "sources",
-                                  wh::core::any(observed.value().source_count));
-                              return wh::core::any(std::move(output));
-                            }));
-                  })
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value,
+                              wh::compose::node_exec_mode::async>(
+                      "left",
+                      [scheduler = pool.get_scheduler()](wh::compose::graph_stream_reader input,
+                                                         wh::core::run_context &,
+                                                         const wh::compose::graph_call_scope &) {
+                        return stdexec::starts_on(
+                            scheduler,
+                            stdexec::just(std::move(input)) |
+                                stdexec::then([](wh::compose::graph_stream_reader lane_input)
+                                                  -> wh::core::result<wh::compose::graph_value> {
+                                  auto observed = observe_stream(std::move(lane_input));
+                                  if (observed.has_error()) {
+                                    return wh::core::result<wh::compose::graph_value>::failure(
+                                        observed.error());
+                                  }
+                                  wh::compose::graph_value_map output{};
+                                  output.emplace("sum", wh::core::any(observed.value().sum));
+                                  output.emplace("sources",
+                                                 wh::core::any(observed.value().source_count));
+                                  return wh::core::any(std::move(output));
+                                }));
+                      })
                   .has_value());
-      REQUIRE(graph.add_lambda<wh::compose::node_contract::stream,
-                               wh::compose::node_contract::value,
-                               wh::compose::node_exec_mode::async>(
-                  "right",
-                  [scheduler = pool.get_scheduler()](
-                      wh::compose::graph_stream_reader input, wh::core::run_context &,
-                      const wh::compose::graph_call_scope &) {
-                    return stdexec::starts_on(
-                        scheduler,
-                        stdexec::just(std::move(input)) |
-                            stdexec::then([](wh::compose::graph_stream_reader lane_input)
-                                              -> wh::core::result<wh::compose::graph_value> {
-                              auto observed = observe_stream(std::move(lane_input));
-                              if (observed.has_error()) {
-                                return wh::core::result<wh::compose::graph_value>::failure(
-                                    observed.error());
-                              }
-                              std::this_thread::sleep_for(
-                                  std::chrono::milliseconds{20});
-                              wh::compose::graph_value_map output{};
-                              output.emplace("sum", wh::core::any(observed.value().sum));
-                              output.emplace(
-                                  "sources",
-                                  wh::core::any(observed.value().source_count));
-                              return wh::core::any(std::move(output));
-                            }));
-                  })
+      REQUIRE(graph
+                  .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value,
+                              wh::compose::node_exec_mode::async>(
+                      "right",
+                      [scheduler = pool.get_scheduler()](wh::compose::graph_stream_reader input,
+                                                         wh::core::run_context &,
+                                                         const wh::compose::graph_call_scope &) {
+                        return stdexec::starts_on(
+                            scheduler,
+                            stdexec::just(std::move(input)) |
+                                stdexec::then([](wh::compose::graph_stream_reader lane_input)
+                                                  -> wh::core::result<wh::compose::graph_value> {
+                                  auto observed = observe_stream(std::move(lane_input));
+                                  if (observed.has_error()) {
+                                    return wh::core::result<wh::compose::graph_value>::failure(
+                                        observed.error());
+                                  }
+                                  std::this_thread::sleep_for(std::chrono::milliseconds{20});
+                                  wh::compose::graph_value_map output{};
+                                  output.emplace("sum", wh::core::any(observed.value().sum));
+                                  output.emplace("sources",
+                                                 wh::core::any(observed.value().source_count));
+                                  return wh::core::any(std::move(output));
+                                }));
+                      })
                   .has_value());
 
-      REQUIRE(graph.add_lambda(
-                  "join",
-                  [](const wh::compose::graph_value &input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    auto merged = read_any<wh::compose::graph_value_map>(input);
-                    if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
-                    }
-                    wh::compose::graph_value_map output{};
-                    output.emplace("contributors",
-                                   wh::core::any(static_cast<int>(merged.value().size())));
-                    if (merged.value().contains("left")) {
-                      output.emplace(
-                          "left_sum",
-                          wh::core::any(
-                              read_named_int(
-                                  read_any<wh::compose::graph_value_map>(
-                                      merged.value().at("left"))
-                                      .value(),
-                                  "sum")
-                                  .value()));
-                    }
-                    if (merged.value().contains("right")) {
-                      output.emplace(
-                          "right_sum",
-                          wh::core::any(
-                              read_named_int(
-                                  read_any<wh::compose::graph_value_map>(
-                                      merged.value().at("right"))
-                                      .value(),
-                                  "sum")
-                                  .value()));
-                    }
-                    return wh::core::any(std::move(output));
-                  })
+      REQUIRE(graph
+                  .add_lambda(
+                      "join",
+                      [](const wh::compose::graph_value &input, wh::core::run_context &,
+                         const wh::compose::graph_call_scope &)
+                          -> wh::core::result<wh::compose::graph_value> {
+                        auto merged = read_any<wh::compose::graph_value_map>(input);
+                        if (merged.has_error()) {
+                          return wh::core::result<wh::compose::graph_value>::failure(
+                              merged.error());
+                        }
+                        wh::compose::graph_value_map output{};
+                        output.emplace("contributors",
+                                       wh::core::any(static_cast<int>(merged.value().size())));
+                        if (merged.value().contains("left")) {
+                          output.emplace(
+                              "left_sum",
+                              wh::core::any(read_named_int(read_any<wh::compose::graph_value_map>(
+                                                               merged.value().at("left"))
+                                                               .value(),
+                                                           "sum")
+                                                .value()));
+                        }
+                        if (merged.value().contains("right")) {
+                          output.emplace(
+                              "right_sum",
+                              wh::core::any(read_named_int(read_any<wh::compose::graph_value_map>(
+                                                               merged.value().at("right"))
+                                                               .value(),
+                                                           "sum")
+                                                .value()));
+                        }
+                        return wh::core::any(std::move(output));
+                      })
                   .has_value());
 
       REQUIRE(graph.add_entry_edge("fast").has_value());
@@ -5204,14 +4835,11 @@ TEST_CASE("compose graph partial aggregation follows runtime barrier semantics",
         wh::core::run_context context{};
         wh::compose::graph_call_options call_options{};
         call_options.record_transition_log = true;
-        auto status =
-            invoke_graph_sync(graph, wh::core::any(iteration), context, call_options,
-                              {});
+        auto status = invoke_graph_sync(graph, wh::core::any(iteration), context, call_options, {});
         if (!status.has_value()) {
           const std::string mode_text =
               mode == wh::compose::graph_runtime_mode::dag ? "dag" : "pregel";
-          std::string diag = "mode=" + mode_text +
-                             " iteration=" + std::to_string(iteration) +
+          std::string diag = "mode=" + mode_text + " iteration=" + std::to_string(iteration) +
                              " error=" + status.error().message() + "#" +
                              std::to_string(status.error().value());
 
@@ -5246,8 +4874,7 @@ TEST_CASE("compose graph partial aggregation follows runtime barrier semantics",
           FAIL(diag);
         }
         REQUIRE(status.value().output_status.has_value());
-        auto result =
-            read_any<wh::compose::graph_value_map>(status.value().output_status.value());
+        auto result = read_any<wh::compose::graph_value_map>(status.value().output_status.value());
         REQUIRE(result.has_value());
         if (mode == wh::compose::graph_runtime_mode::dag) {
           REQUIRE(read_named_int(result.value(), "contributors").value() == 1);
@@ -5280,8 +4907,7 @@ TEST_CASE("compose graph allow-no-data stream fallback remains stable",
   node_options.allow_no_control = true;
   node_options.allow_no_data = true;
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                   "sink",
                   [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
@@ -5292,8 +4918,7 @@ TEST_CASE("compose graph allow-no-data stream fallback remains stable",
                     }
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          values.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(values.error());
                     }
                     return wh::core::any(static_cast<int>(values.value().size()));
                   },
@@ -5319,14 +4944,11 @@ enum class pace_case : std::uint8_t {
   slow_both,
 };
 
-[[nodiscard]] constexpr auto all_pace_cases() noexcept
-    -> std::array<pace_case, 4> {
-  return {pace_case::fast_fast, pace_case::slow_source,
-          pace_case::slow_sink, pace_case::slow_both};
+[[nodiscard]] constexpr auto all_pace_cases() noexcept -> std::array<pace_case, 4> {
+  return {pace_case::fast_fast, pace_case::slow_source, pace_case::slow_sink, pace_case::slow_both};
 }
 
-[[nodiscard]] constexpr auto pace_name(const pace_case value) noexcept
-    -> std::string_view {
+[[nodiscard]] constexpr auto pace_name(const pace_case value) noexcept -> std::string_view {
   switch (value) {
   case pace_case::fast_fast:
     return "fast_fast";
@@ -5368,89 +4990,77 @@ enum class pace_case : std::uint8_t {
 
 [[nodiscard]] auto build_paced_graph(exec::static_thread_pool::scheduler scheduler,
                                      const wh::compose::graph_runtime_mode mode,
-                                     const pace_case pace,
-                                     const std::size_t parallel)
+                                     const pace_case pace, const std::size_t parallel)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph_compile_options options{};
   options.mode = mode;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   options.max_parallel_nodes = parallel;
   options.max_parallel_per_node = parallel;
   wh::compose::graph graph{std::move(options)};
 
   const auto source_wait = source_delay(pace);
-  REQUIRE(graph.add_lambda<wh::compose::node_contract::value,
-                           wh::compose::node_contract::stream,
-                           wh::compose::node_exec_mode::async>(
+  REQUIRE(
+      graph
+          .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                      wh::compose::node_exec_mode::async>(
               "source",
               [scheduler, source_wait](const wh::compose::graph_value &input,
                                        wh::core::run_context &,
                                        const wh::compose::graph_call_scope &) {
                 const auto *typed = wh::core::any_cast<int>(&input);
-                return graph_stream_result_sender{
-                    wh::core::detail::normalize_result_sender<
-                        wh::core::result<wh::compose::graph_stream_reader>>(
-                        stdexec::starts_on(
-                            scheduler,
-                            stdexec::just(*typed) |
-                                stdexec::then(
-                                    [source_wait](int value)
-                                        -> wh::core::result<
-                                            wh::compose::graph_stream_reader> {
-                                      if (source_wait !=
-                                          std::chrono::milliseconds{0}) {
-                                        std::this_thread::sleep_for(source_wait);
-                                      }
-                                      return make_int_graph_stream(
-                                          {value + 1, value + 2, value + 3});
-                                    })))};
-              })
-              .has_value());
-
-  REQUIRE(graph.add_lambda<wh::compose::node_contract::stream,
-                           wh::compose::node_contract::value,
-                           wh::compose::node_exec_mode::async>(
-              "left",
-              [scheduler](wh::compose::graph_stream_reader input,
-                          wh::core::run_context &,
-                          const wh::compose::graph_call_scope &) {
-                return stdexec::starts_on(
+                return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
+                    wh::core::result<wh::compose::graph_stream_reader>>(stdexec::starts_on(
                     scheduler,
-                    stdexec::just(std::move(input)) |
-                        stdexec::then([](wh::compose::graph_stream_reader reader)
-                                          -> wh::core::result<
-                                              wh::compose::graph_value> {
-                          auto values = collect_int_graph_stream(std::move(reader));
-                          if (values.has_error()) {
-                            return wh::core::result<wh::compose::graph_value>::failure(
-                                values.error());
+                    stdexec::just(*typed) |
+                        stdexec::then([source_wait](int value)
+                                          -> wh::core::result<wh::compose::graph_stream_reader> {
+                          if (source_wait != std::chrono::milliseconds{0}) {
+                            std::this_thread::sleep_for(source_wait);
                           }
-                          return wh::core::any(sum_ints(values.value()) + 10);
-                        }));
+                          return make_int_graph_stream({value + 1, value + 2, value + 3});
+                        })))};
               })
+          .has_value());
+
+  REQUIRE(graph
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>(
+                  "left",
+                  [scheduler](wh::compose::graph_stream_reader input, wh::core::run_context &,
+                              const wh::compose::graph_call_scope &) {
+                    return stdexec::starts_on(
+                        scheduler,
+                        stdexec::just(std::move(input)) |
+                            stdexec::then([](wh::compose::graph_stream_reader reader)
+                                              -> wh::core::result<wh::compose::graph_value> {
+                              auto values = collect_int_graph_stream(std::move(reader));
+                              if (values.has_error()) {
+                                return wh::core::result<wh::compose::graph_value>::failure(
+                                    values.error());
+                              }
+                              return wh::core::any(sum_ints(values.value()) + 10);
+                            }));
+                  })
               .has_value());
 
   const auto right_wait = right_sink_delay(pace);
-  REQUIRE(graph.add_lambda<wh::compose::node_contract::stream,
-                           wh::compose::node_contract::value,
-                           wh::compose::node_exec_mode::async>(
-              "right",
-              [scheduler, right_wait](wh::compose::graph_stream_reader input,
-                                      wh::core::run_context &,
-                                      const wh::compose::graph_call_scope &) {
-                return stdexec::starts_on(
-                    scheduler,
-                    stdexec::just(std::move(input)) |
-                        stdexec::then(
-                            [right_wait](wh::compose::graph_stream_reader reader)
-                                -> wh::core::result<wh::compose::graph_value> {
-                              auto values =
-                                  collect_int_graph_stream(std::move(reader));
+  REQUIRE(graph
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>(
+                  "right",
+                  [scheduler, right_wait](wh::compose::graph_stream_reader input,
+                                          wh::core::run_context &,
+                                          const wh::compose::graph_call_scope &) {
+                    return stdexec::starts_on(
+                        scheduler,
+                        stdexec::just(std::move(input)) |
+                            stdexec::then([right_wait](wh::compose::graph_stream_reader reader)
+                                              -> wh::core::result<wh::compose::graph_value> {
+                              auto values = collect_int_graph_stream(std::move(reader));
                               if (values.has_error()) {
-                                return wh::core::result<
-                                    wh::compose::graph_value>::failure(
+                                return wh::core::result<wh::compose::graph_value>::failure(
                                     values.error());
                               }
                               if (right_wait != std::chrono::milliseconds{0}) {
@@ -5458,31 +5068,29 @@ enum class pace_case : std::uint8_t {
                               }
                               return wh::core::any(sum_ints(values.value()) + 20);
                             }));
-              })
+                  })
               .has_value());
 
-  REQUIRE(graph.add_lambda(
-              "join",
-              [](const wh::compose::graph_value &input, wh::core::run_context &,
-                 const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
-                auto merged = read_any<wh::compose::graph_value_map>(input);
-                if (merged.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      merged.error());
-                }
-                auto left = read_named_int(merged.value(), "left");
-                auto right = read_named_int(merged.value(), "right");
-                if (left.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      left.error());
-                }
-                if (right.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      right.error());
-                }
-                return wh::core::any(left.value() + right.value());
-              })
+  REQUIRE(graph
+              .add_lambda(
+                  "join",
+                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    auto merged = read_any<wh::compose::graph_value_map>(input);
+                    if (merged.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
+                    }
+                    auto left = read_named_int(merged.value(), "left");
+                    auto right = read_named_int(merged.value(), "right");
+                    if (left.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
+                    }
+                    if (right.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
+                    }
+                    return wh::core::any(left.value() + right.value());
+                  })
               .has_value());
 
   REQUIRE(graph.add_entry_edge("source").has_value());
@@ -5495,65 +5103,64 @@ enum class pace_case : std::uint8_t {
   return graph;
 }
 
-[[nodiscard]] auto build_loop_region_graph(
-    const wh::compose::graph_runtime_mode mode)
+[[nodiscard]] auto build_loop_region_graph(const wh::compose::graph_runtime_mode mode)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph_compile_options options{};
   options.mode = mode;
   options.max_steps = 32U;
   wh::compose::graph graph{std::move(options)};
 
-  REQUIRE(graph.add_lambda(
-              "entry",
-              [](const wh::compose::graph_value &input, wh::core::run_context &,
-                 const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+  REQUIRE(graph
+              .add_lambda("entry",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
-  REQUIRE(graph.add_lambda(
-              "loop_a",
-              [](const wh::compose::graph_value &input, wh::core::run_context &,
-                 const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
-                auto typed = sum_graph_value(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 2);
-              })
+  REQUIRE(graph
+              .add_lambda("loop_a",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = sum_graph_value(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 2);
+                          })
               .has_value());
-  REQUIRE(graph.add_lambda(
-              "loop_b",
-              [](const wh::compose::graph_value &input, wh::core::run_context &,
-                 const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 3);
-              })
+  REQUIRE(graph
+              .add_lambda("loop_b",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 3);
+                          })
               .has_value());
-  REQUIRE(graph.add_lambda(
-              "tail",
-              [](const wh::compose::graph_value &input, wh::core::run_context &,
-                 const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 100);
-              })
+  REQUIRE(graph
+              .add_lambda("tail",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 100);
+                          })
               .has_value());
 
   REQUIRE(graph.add_entry_edge("entry").has_value());
@@ -5576,57 +5183,52 @@ enum class pace_case : std::uint8_t {
   wh::compose::graph_compile_options options{};
   options.mode = mode;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   options.max_parallel_nodes = 2U;
   options.max_parallel_per_node = 2U;
   wh::compose::graph graph{std::move(options)};
 
-  REQUIRE(graph.add_lambda<wh::compose::node_contract::value,
-                           wh::compose::node_contract::stream,
-                           wh::compose::node_exec_mode::async>(
+  REQUIRE(
+      graph
+          .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                      wh::compose::node_exec_mode::async>(
               "source",
               [scheduler](const wh::compose::graph_value &input, wh::core::run_context &,
                           const wh::compose::graph_call_scope &) {
                 const auto *typed = wh::core::any_cast<int>(&input);
-                return graph_stream_result_sender{
-                    wh::core::detail::normalize_result_sender<
-                        wh::core::result<wh::compose::graph_stream_reader>>(
-                        stdexec::starts_on(
-                            scheduler,
-                            stdexec::just(*typed) |
-                                stdexec::then([](int value)
-                                                  -> wh::core::result<wh::compose::graph_stream_reader> {
-                                      std::this_thread::sleep_for(std::chrono::milliseconds{2});
-                                      return make_int_graph_stream(
-                                          {value + 1, value + 2, value + 3});
-                                    })))};
+                return graph_stream_result_sender{wh::core::detail::normalize_result_sender<
+                    wh::core::result<wh::compose::graph_stream_reader>>(stdexec::starts_on(
+                    scheduler,
+                    stdexec::just(*typed) |
+                        stdexec::then(
+                            [](int value) -> wh::core::result<wh::compose::graph_stream_reader> {
+                              std::this_thread::sleep_for(std::chrono::milliseconds{2});
+                              return make_int_graph_stream({value + 1, value + 2, value + 3});
+                            })))};
               })
-              .has_value());
+          .has_value());
   REQUIRE(add_stream_sink(graph, "left", 10).has_value());
   REQUIRE(add_stream_sink(graph, "right", 20).has_value());
-  REQUIRE(graph.add_lambda(
-              "join",
-              [](const wh::compose::graph_value &input, wh::core::run_context &,
-                 const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
-                auto merged = read_any<wh::compose::graph_value_map>(input);
-                if (merged.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      merged.error());
-                }
-                auto left = read_named_int(merged.value(), "left");
-                auto right = read_named_int(merged.value(), "right");
-                if (left.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      left.error());
-                }
-                if (right.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      right.error());
-                }
-                return wh::core::any(left.value() + right.value());
-              })
+  REQUIRE(graph
+              .add_lambda(
+                  "join",
+                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    auto merged = read_any<wh::compose::graph_value_map>(input);
+                    if (merged.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
+                    }
+                    auto left = read_named_int(merged.value(), "left");
+                    auto right = read_named_int(merged.value(), "right");
+                    if (left.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
+                    }
+                    if (right.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
+                    }
+                    return wh::core::any(left.value() + right.value());
+                  })
               .has_value());
 
   REQUIRE(graph.add_entry_edge("source").has_value());
@@ -5644,8 +5246,7 @@ enum class pace_case : std::uint8_t {
 
 template <typename expected_fn_t>
 auto require_concurrent_graph_invoke_stable(const wh::compose::graph &graph,
-                                            expected_fn_t expected_fn,
-                                            const int worker_count,
+                                            expected_fn_t expected_fn, const int worker_count,
                                             const int rounds_per_worker) -> void {
   std::atomic<int> failures{0};
   std::mutex error_mutex{};
@@ -5675,9 +5276,8 @@ auto require_concurrent_graph_invoke_stable(const wh::compose::graph &graph,
           if (error_text.empty()) {
             error_text = typed.has_error()
                              ? typed.error().message()
-                             : "unexpected output:" + std::to_string(input) +
-                                   ":" + std::to_string(typed.value()) + ":" +
-                                   std::to_string(expected);
+                             : "unexpected output:" + std::to_string(input) + ":" +
+                                   std::to_string(typed.value()) + ":" + std::to_string(expected);
           }
           return;
         }
@@ -5715,19 +5315,16 @@ TEST_CASE("compose graph stream fan-out lowering concurrent invoke remains stabl
                              wh::compose::graph_runtime_mode::pregel};
 
   for (const auto mode : modes) {
-    DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel"
-                                                                     : "dag")) {
-      auto graph =
-          build_lowering_graph(source_shape::single_stream,
-                               target_shape::multi_value,
-                               lowering_style::builtin, mode, 4U);
+    DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel" : "dag")) {
+      auto graph = build_lowering_graph(source_shape::single_stream, target_shape::multi_value,
+                                        lowering_style::builtin, mode, 4U);
       REQUIRE(graph.has_value());
 
       require_concurrent_graph_invoke_stable(
           graph.value(),
           [](const int input) {
-            return expected_lowering_output(source_shape::single_stream,
-                                            target_shape::multi_value, input);
+            return expected_lowering_output(source_shape::single_stream, target_shape::multi_value,
+                                            input);
           },
           6, 16);
     }
@@ -5740,30 +5337,26 @@ TEST_CASE("compose graph stream fan-in lowering concurrent invoke remains stable
                              wh::compose::graph_runtime_mode::pregel};
 
   for (const auto mode : modes) {
-    DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel"
-                                                                     : "dag")) {
-      auto graph =
-          build_lowering_graph(source_shape::multi_stream,
-                               target_shape::single_value,
-                               lowering_style::builtin, mode, 4U);
+    DYNAMIC_SECTION((mode == wh::compose::graph_runtime_mode::pregel ? "pregel" : "dag")) {
+      auto graph = build_lowering_graph(source_shape::multi_stream, target_shape::single_value,
+                                        lowering_style::builtin, mode, 4U);
       REQUIRE(graph.has_value());
 
       require_concurrent_graph_invoke_stable(
           graph.value(),
           [](const int input) {
-            return expected_lowering_output(source_shape::multi_stream,
-                                            target_shape::single_value, input);
+            return expected_lowering_output(source_shape::multi_stream, target_shape::single_value,
+                                            input);
           },
           6, 16);
     }
   }
 }
 
-TEST_CASE(
-    "compose graph synchronized async value fan-in remains stable across "
-    "sequential invokes",
-    "[core][compose][graph][value][stress][concurrency][fanin][synchronized]"
-    "[sequential]") {
+TEST_CASE("compose graph synchronized async value fan-in remains stable across "
+          "sequential invokes",
+          "[core][compose][graph][value][stress][concurrency][fanin][synchronized]"
+          "[sequential]") {
   constexpr std::array dispatch_policies{
       wh::compose::graph_dispatch_policy::same_wave,
       wh::compose::graph_dispatch_policy::next_wave,
@@ -5774,9 +5367,8 @@ TEST_CASE(
       auto dispatchers = std::make_shared<synchronized_async_dispatchers>(2U);
       dispatchers->warm();
       auto gates = std::make_shared<synchronized_pair_gate_registry>();
-      auto graph = build_synchronized_async_fan_in_graph(
-          synchronized_async_fan_in_shape::value, dispatch_policy, dispatchers,
-          gates);
+      auto graph = build_synchronized_async_fan_in_graph(synchronized_async_fan_in_shape::value,
+                                                         dispatch_policy, dispatchers, gates);
       REQUIRE(graph.has_value());
 
       auto errors = run_synchronized_async_fan_in_wave(
@@ -5789,11 +5381,10 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph synchronized async value fan-in remains stable across "
-    "repeated concurrent invokes",
-    "[core][compose][graph][value][stress][concurrency][fanin][synchronized]"
-    "[concurrent]") {
+TEST_CASE("compose graph synchronized async value fan-in remains stable across "
+          "repeated concurrent invokes",
+          "[core][compose][graph][value][stress][concurrency][fanin][synchronized]"
+          "[concurrent]") {
   constexpr std::array dispatch_policies{
       wh::compose::graph_dispatch_policy::same_wave,
       wh::compose::graph_dispatch_policy::next_wave,
@@ -5806,9 +5397,8 @@ TEST_CASE(
       auto dispatchers = std::make_shared<synchronized_async_dispatchers>(2U);
       dispatchers->warm();
       auto gates = std::make_shared<synchronized_pair_gate_registry>();
-      auto graph = build_synchronized_async_fan_in_graph(
-          synchronized_async_fan_in_shape::value, dispatch_policy, dispatchers,
-          gates);
+      auto graph = build_synchronized_async_fan_in_graph(synchronized_async_fan_in_shape::value,
+                                                         dispatch_policy, dispatchers, gates);
       REQUIRE(graph.has_value());
 
       auto errors = run_synchronized_async_fan_in_wave(
@@ -5821,11 +5411,10 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph synchronized async stream fan-in remains stable across "
-    "repeated concurrent invokes",
-    "[core][compose][graph][stream][stress][concurrency][fanin][synchronized]"
-    "[concurrent]") {
+TEST_CASE("compose graph synchronized async stream fan-in remains stable across "
+          "repeated concurrent invokes",
+          "[core][compose][graph][stream][stress][concurrency][fanin][synchronized]"
+          "[concurrent]") {
   constexpr std::array dispatch_policies{
       wh::compose::graph_dispatch_policy::same_wave,
       wh::compose::graph_dispatch_policy::next_wave,
@@ -5836,9 +5425,8 @@ TEST_CASE(
       auto dispatchers = std::make_shared<synchronized_async_dispatchers>(2U);
       dispatchers->warm();
       auto gates = std::make_shared<synchronized_pair_gate_registry>();
-      auto graph = build_synchronized_async_fan_in_graph(
-          synchronized_async_fan_in_shape::stream, dispatch_policy, dispatchers,
-          gates);
+      auto graph = build_synchronized_async_fan_in_graph(synchronized_async_fan_in_shape::stream,
+                                                         dispatch_policy, dispatchers, gates);
       REQUIRE(graph.has_value());
 
       auto errors = run_synchronized_async_fan_in_wave(
@@ -5851,9 +5439,8 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph repeated direct async stream collect waves remain stable",
-    "[core][compose][graph][stream][stress][concurrency][collect][async]") {
+TEST_CASE("compose graph repeated direct async stream collect waves remain stable",
+          "[core][compose][graph][stream][stress][concurrency][collect][async]") {
   auto pool = std::make_shared<exec::static_thread_pool>(4U);
   auto graph = build_async_stream_collect_graph(pool);
   REQUIRE(graph.has_value());
@@ -5864,24 +5451,21 @@ TEST_CASE(
   }
 }
 
-TEST_CASE("compose graph slow-fast matrix remains stable",
-          "[core][compose][graph][stress][pace]") {
+TEST_CASE("compose graph slow-fast matrix remains stable", "[core][compose][graph][stress][pace]") {
   constexpr std::array parallels{std::size_t{1U}, std::size_t{2U}};
 
   for (const auto mode : runtime_modes()) {
     for (const auto pace : all_pace_cases()) {
       for (const auto parallel : parallels) {
-        DYNAMIC_SECTION(runtime_mode_name(mode) << ":" << pace_name(pace)
-                                                << ":parallel=" << parallel) {
+        DYNAMIC_SECTION(runtime_mode_name(mode)
+                        << ":" << pace_name(pace) << ":parallel=" << parallel) {
           exec::static_thread_pool pool{4U};
-          auto graph =
-              build_paced_graph(pool.get_scheduler(), mode, pace, parallel);
+          auto graph = build_paced_graph(pool.get_scheduler(), mode, pace, parallel);
           REQUIRE(graph.has_value());
 
           for (int iteration = 0; iteration < 8; ++iteration) {
             wh::core::run_context context{};
-            auto output =
-                invoke_value_sync(graph.value(), wh::core::any(iteration), context);
+            auto output = invoke_value_sync(graph.value(), wh::core::any(iteration), context);
             REQUIRE(output.has_value());
             auto typed = read_any<int>(output.value());
             REQUIRE(typed.has_value());
@@ -5911,9 +5495,7 @@ TEST_CASE("compose graph partial loop region matrix remains stable",
         wh::core::run_context context{};
         wh::compose::graph_call_options call_options{};
         call_options.pregel_max_steps = budget;
-        auto status =
-            invoke_graph_sync(graph.value(), wh::core::any(1), context,
-                              call_options, {});
+        auto status = invoke_graph_sync(graph.value(), wh::core::any(1), context, call_options, {});
         REQUIRE(status.has_value());
         REQUIRE(status.value().output_status.has_error());
         REQUIRE(status.value().output_status.error() == wh::core::errc::timeout);
@@ -5921,10 +5503,8 @@ TEST_CASE("compose graph partial loop region matrix remains stable",
         const auto &detail = *status.value().report.step_limit_error;
         REQUIRE(detail.budget == budget);
         REQUIRE(detail.step > detail.budget);
-        REQUIRE(std::find(detail.completed_node_keys.begin(),
-                          detail.completed_node_keys.end(),
-                          std::string{"loop_a"}) !=
-                detail.completed_node_keys.end());
+        REQUIRE(std::find(detail.completed_node_keys.begin(), detail.completed_node_keys.end(),
+                          std::string{"loop_a"}) != detail.completed_node_keys.end());
       }
     }
   }
@@ -5934,41 +5514,34 @@ TEST_CASE("compose graph interrupt hook matrix remains stable",
           "[core][compose][graph][stress][interrupt]") {
   for (const auto mode : runtime_modes()) {
     for (const auto post_hook : {false, true}) {
-      DYNAMIC_SECTION(runtime_mode_name(mode)
-                      << ":" << (post_hook ? "post_hook" : "pre_hook")) {
+      DYNAMIC_SECTION(runtime_mode_name(mode) << ":" << (post_hook ? "post_hook" : "pre_hook")) {
         wh::compose::graph_compile_options options{};
         options.mode = mode;
         wh::compose::graph graph{std::move(options)};
         REQUIRE(graph
-                    .add_lambda(
-                        "worker",
-                        [](wh::compose::graph_value &input, wh::core::run_context &,
-                           const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                          return std::move(input);
-                        })
+                    .add_lambda("worker",
+                                [](wh::compose::graph_value &input, wh::core::run_context &,
+                                   const wh::compose::graph_call_scope &)
+                                    -> wh::core::result<wh::compose::graph_value> {
+                                  return std::move(input);
+                                })
                     .has_value());
         REQUIRE(graph.add_entry_edge("worker").has_value());
         REQUIRE(graph.add_exit_edge("worker").has_value());
         REQUIRE(graph.compile().has_value());
 
         wh::core::run_context context{};
-        const auto interrupt_id =
-            std::string{post_hook ? "post-int" : "pre-int"} + "-" +
-            std::string{runtime_mode_name(mode)};
+        const auto interrupt_id = std::string{post_hook ? "post-int" : "pre-int"} + "-" +
+                                  std::string{runtime_mode_name(mode)};
         const auto hook = wh::compose::graph_interrupt_node_hook{
-            [interrupt_id](const std::string_view node_key,
-                           const wh::compose::graph_value &payload,
+            [interrupt_id](const std::string_view node_key, const wh::compose::graph_value &payload,
                            wh::core::run_context &)
-                -> wh::core::result<
-                    std::optional<wh::core::interrupt_signal>> {
+                -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
               if (node_key != "worker") {
                 return std::optional<wh::core::interrupt_signal>{};
               }
-              return std::optional<wh::core::interrupt_signal>{
-                  wh::compose::make_interrupt_signal(
-                      interrupt_id, wh::core::make_address({"graph", "worker"}),
-                      payload)};
+              return std::optional<wh::core::interrupt_signal>{wh::compose::make_interrupt_signal(
+                  interrupt_id, wh::core::make_address({"graph", "worker"}), payload)};
             }};
         wh::compose::graph_invoke_controls controls{};
         if (post_hook) {
@@ -5996,8 +5569,7 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
     wait_rerun,
   };
 
-  const auto case_name = [](const restore_case value) noexcept
-      -> std::string_view {
+  const auto case_name = [](const restore_case value) noexcept -> std::string_view {
     switch (value) {
     case restore_case::plain:
       return "plain";
@@ -6009,8 +5581,7 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
     return "unknown";
   };
 
-  constexpr std::array cases{restore_case::plain,
-                             restore_case::immediate_rerun,
+  constexpr std::array cases{restore_case::plain, restore_case::immediate_rerun,
                              restore_case::wait_rerun};
 
   for (const auto mode : runtime_modes()) {
@@ -6021,20 +5592,17 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
           options.mode = mode;
           wh::compose::graph graph{std::move(options)};
           REQUIRE(graph
-                      .add_lambda(
-                          "inc",
-                          [](const wh::compose::graph_value &input,
-                             wh::core::run_context &,
-                             const wh::compose::graph_call_scope &)
-                              -> wh::core::result<wh::compose::graph_value> {
-                            auto typed = read_any<int>(input);
-                            if (typed.has_error()) {
-                              return wh::core::result<
-                                  wh::compose::graph_value>::failure(
-                                  typed.error());
-                            }
-                            return wh::core::any(typed.value() + 1);
-                          })
+                      .add_lambda("inc",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(typed.value() + 1);
+                                  })
                       .has_value());
           REQUIRE(graph.add_entry_edge("inc").has_value());
           REQUIRE(graph.add_exit_edge("inc").has_value());
@@ -6042,25 +5610,21 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
 
           wh::compose::checkpoint_store store{};
           const auto checkpoint_id =
-              std::string{"stress-plain-"} +
-              std::string{runtime_mode_name(mode)};
+              std::string{"stress-plain-"} + std::string{runtime_mode_name(mode)};
           wh::compose::checkpoint_save_options save_options{};
           save_options.checkpoint_id = checkpoint_id;
 
           wh::core::run_context capture_context{};
-          auto checkpoint =
-              capture_exact_checkpoint(graph, wh::core::any(10), capture_context);
+          auto checkpoint = capture_exact_checkpoint(graph, wh::core::any(10), capture_context);
           REQUIRE(checkpoint.has_value());
           checkpoint->checkpoint_id = checkpoint_id;
           REQUIRE(store.save(std::move(checkpoint).value(), save_options).has_value());
 
-          auto persisted = store.load(
-              wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
+          auto persisted =
+              store.load(wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
           REQUIRE(persisted.has_value());
-          REQUIRE(
-              checkpoint_pending_input(persisted.value(),
-                                     wh::compose::graph_start_node_key)
-                  .value() == 10);
+          REQUIRE(checkpoint_pending_input(persisted.value(), wh::compose::graph_start_node_key)
+                      .value() == 10);
 
           wh::compose::graph_invoke_controls resume_controls{};
           resume_controls.checkpoint.load =
@@ -6071,8 +5635,7 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
           services.checkpoint.store = std::addressof(store);
           auto resumed =
               invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                                resume_context, resume_controls,
-                                std::addressof(services));
+                                resume_context, resume_controls, std::addressof(services));
           REQUIRE(resumed.has_value());
           REQUIRE(resumed.value().output_status.has_value());
           REQUIRE(read_any<int>(resumed.value().output_status.value()).value() == 11);
@@ -6084,20 +5647,17 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
           options.mode = mode;
           wh::compose::graph graph{std::move(options)};
           REQUIRE(graph
-                      .add_lambda(
-                          "worker",
-                          [](const wh::compose::graph_value &input,
-                             wh::core::run_context &,
-                             const wh::compose::graph_call_scope &)
-                              -> wh::core::result<wh::compose::graph_value> {
-                            auto typed = read_any<int>(input);
-                            if (typed.has_error()) {
-                              return wh::core::result<
-                                  wh::compose::graph_value>::failure(
-                                  typed.error());
-                            }
-                            return wh::core::any(typed.value() + 1);
-                          })
+                      .add_lambda("worker",
+                                  [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                                    auto typed = read_any<int>(input);
+                                    if (typed.has_error()) {
+                                      return wh::core::result<wh::compose::graph_value>::failure(
+                                          typed.error());
+                                    }
+                                    return wh::core::any(typed.value() + 1);
+                                  })
                       .has_value());
           REQUIRE(graph.add_entry_edge("worker").has_value());
           REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -6105,8 +5665,7 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
 
           wh::compose::checkpoint_store store{};
           const auto checkpoint_id =
-              std::string{"stress-immediate-"} +
-              std::string{runtime_mode_name(mode)};
+              std::string{"stress-immediate-"} + std::string{runtime_mode_name(mode)};
           wh::compose::checkpoint_save_options save_options{};
           save_options.checkpoint_id = checkpoint_id;
 
@@ -6122,31 +5681,24 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
           controls.checkpoint.save = save_options;
 
           wh::compose::graph_call_options call_options{};
-          call_options.external_interrupt_policy =
-              wh::compose::graph_external_interrupt_policy{
-                  .timeout = std::chrono::milliseconds{0},
-                  .mode =
-                      wh::compose::graph_interrupt_timeout_mode::immediate_rerun,
-                  .auto_persist_external_interrupt = true,
-                  .manual_persist_internal_interrupt = true,
-              };
-          auto canceled = invoke_graph_sync(graph, wh::core::any(9), context,
-                                            call_options, controls,
-                                            std::addressof(services));
+          call_options.external_interrupt_policy = wh::compose::graph_external_interrupt_policy{
+              .timeout = std::chrono::milliseconds{0},
+              .mode = wh::compose::graph_interrupt_timeout_mode::immediate_rerun,
+              .auto_persist_external_interrupt = true,
+              .manual_persist_internal_interrupt = true,
+          };
+          auto canceled = invoke_graph_sync(graph, wh::core::any(9), context, call_options,
+                                            controls, std::addressof(services));
           REQUIRE(canceled.has_value());
           REQUIRE(canceled.value().output_status.has_error());
-          REQUIRE(canceled.value().output_status.error() ==
-                  wh::core::errc::canceled);
+          REQUIRE(canceled.value().output_status.error() == wh::core::errc::canceled);
 
-          auto persisted = store.load(
-              wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
+          auto persisted =
+              store.load(wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
           REQUIRE(persisted.has_value());
-          REQUIRE(
-              checkpoint_pending_input(persisted.value(),
-                                     wh::compose::graph_start_node_key)
-                  .value() == 9);
-          REQUIRE(checkpoint_pending_input(persisted.value(), "worker").value() ==
-                  9);
+          REQUIRE(checkpoint_pending_input(persisted.value(), wh::compose::graph_start_node_key)
+                      .value() == 9);
+          REQUIRE(checkpoint_pending_input(persisted.value(), "worker").value() == 9);
 
           wh::compose::graph_invoke_controls resume_controls{};
           resume_controls.checkpoint.load =
@@ -6155,15 +5707,12 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
           wh::core::run_context resume_context{};
           auto resumed =
               invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                                resume_context, resume_controls,
-                                std::addressof(services));
+                                resume_context, resume_controls, std::addressof(services));
           REQUIRE(resumed.has_value());
           REQUIRE(resumed.value().output_status.has_error());
-          REQUIRE(resumed.value().output_status.error() ==
-                  wh::core::errc::canceled);
+          REQUIRE(resumed.value().output_status.error() == wh::core::errc::canceled);
           REQUIRE(resume_context.interrupt_info.has_value());
-          REQUIRE(resume_context.interrupt_info->interrupt_id ==
-                  "stress-immediate");
+          REQUIRE(resume_context.interrupt_info->interrupt_id == "stress-immediate");
           continue;
         }
 
@@ -6172,37 +5721,31 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
         options.max_parallel_nodes = 1U;
         wh::compose::graph graph{std::move(options)};
         REQUIRE(graph
-                    .add_lambda(
-                        "slow",
-                        [](const wh::compose::graph_value &input,
-                           wh::core::run_context &,
-                           const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                          auto typed = read_any<int>(input);
-                          if (typed.has_error()) {
-                            return wh::core::result<wh::compose::graph_value>::failure(
-                                typed.error());
-                          }
-                          std::this_thread::sleep_for(
-                              std::chrono::milliseconds{4});
-                          return wh::core::any(typed.value());
-                        })
+                    .add_lambda("slow",
+                                [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                   const wh::compose::graph_call_scope &)
+                                    -> wh::core::result<wh::compose::graph_value> {
+                                  auto typed = read_any<int>(input);
+                                  if (typed.has_error()) {
+                                    return wh::core::result<wh::compose::graph_value>::failure(
+                                        typed.error());
+                                  }
+                                  std::this_thread::sleep_for(std::chrono::milliseconds{4});
+                                  return wh::core::any(typed.value());
+                                })
                     .has_value());
         REQUIRE(graph
-                    .add_lambda(
-                        "tail",
-                        [](const wh::compose::graph_value &input,
-                           wh::core::run_context &,
-                           const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                          auto typed = read_any<int>(input);
-                          if (typed.has_error()) {
-                            return wh::core::result<
-                                wh::compose::graph_value>::failure(
-                                typed.error());
-                          }
-                          return wh::core::any(typed.value() + 1);
-                        })
+                    .add_lambda("tail",
+                                [](const wh::compose::graph_value &input, wh::core::run_context &,
+                                   const wh::compose::graph_call_scope &)
+                                    -> wh::core::result<wh::compose::graph_value> {
+                                  auto typed = read_any<int>(input);
+                                  if (typed.has_error()) {
+                                    return wh::core::result<wh::compose::graph_value>::failure(
+                                        typed.error());
+                                  }
+                                  return wh::core::any(typed.value() + 1);
+                                })
                     .has_value());
         REQUIRE(graph.add_entry_edge("slow").has_value());
         REQUIRE(graph.add_edge("slow", "tail").has_value());
@@ -6227,27 +5770,23 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
         controls.checkpoint.save = save_options;
 
         wh::compose::graph_call_options call_options{};
-        call_options.external_interrupt_policy =
-            wh::compose::graph_external_interrupt_policy{
-                .timeout = std::chrono::milliseconds{1},
-                .mode = wh::compose::graph_interrupt_timeout_mode::wait_inflight,
-                .auto_persist_external_interrupt = true,
-                .manual_persist_internal_interrupt = true,
-            };
-        auto canceled = invoke_graph_sync(graph, wh::core::any(12), context,
-                                          call_options, controls,
+        call_options.external_interrupt_policy = wh::compose::graph_external_interrupt_policy{
+            .timeout = std::chrono::milliseconds{1},
+            .mode = wh::compose::graph_interrupt_timeout_mode::wait_inflight,
+            .auto_persist_external_interrupt = true,
+            .manual_persist_internal_interrupt = true,
+        };
+        auto canceled = invoke_graph_sync(graph, wh::core::any(12), context, call_options, controls,
                                           std::addressof(services));
         REQUIRE(canceled.has_value());
         REQUIRE(canceled.value().output_status.has_error());
-        REQUIRE(canceled.value().output_status.error() ==
-                wh::core::errc::canceled);
+        REQUIRE(canceled.value().output_status.error() == wh::core::errc::canceled);
 
-        auto persisted = store.load(
-            wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
+        auto persisted =
+            store.load(wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id});
         REQUIRE(persisted.has_value());
         auto persisted_start =
-            checkpoint_pending_input(persisted.value(),
-                                     wh::compose::graph_start_node_key);
+            checkpoint_pending_input(persisted.value(), wh::compose::graph_start_node_key);
         auto persisted_tail = checkpoint_pending_input(persisted.value(), "tail");
         REQUIRE(persisted_start.has_value());
         REQUIRE(persisted_start.value() == 12);
@@ -6259,14 +5798,11 @@ TEST_CASE("compose graph checkpoint restore matrix remains stable",
             wh::compose::checkpoint_load_options{.checkpoint_id = checkpoint_id};
         resume_controls.checkpoint.save = save_options;
         wh::core::run_context resume_context{};
-        auto resumed =
-            invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                              resume_context, resume_controls,
-                              std::addressof(services));
+        auto resumed = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
+                                         resume_context, resume_controls, std::addressof(services));
         REQUIRE(resumed.has_value());
         REQUIRE(resumed.value().output_status.has_error());
-        REQUIRE(resumed.value().output_status.error() ==
-                wh::core::errc::canceled);
+        REQUIRE(resumed.value().output_status.error() == wh::core::errc::canceled);
         REQUIRE(resume_context.interrupt_info.has_value());
         REQUIRE(resume_context.interrupt_info->interrupt_id == "stress-wait");
       }
@@ -6281,8 +5817,7 @@ TEST_CASE("compose nested graph checkpoint restore matrix remains stable",
     force_new_run,
   };
 
-  const auto case_name = [](const restore_case value) noexcept
-      -> std::string_view {
+  const auto case_name = [](const restore_case value) noexcept -> std::string_view {
     switch (value) {
     case restore_case::matching_descendant:
       return "matching_descendant";
@@ -6292,8 +5827,7 @@ TEST_CASE("compose nested graph checkpoint restore matrix remains stable",
     return "unknown";
   };
 
-  constexpr std::array cases{restore_case::matching_descendant,
-                             restore_case::force_new_run};
+  constexpr std::array cases{restore_case::matching_descendant, restore_case::force_new_run};
 
   for (const auto mode : runtime_modes()) {
     for (const auto item : cases) {
@@ -6304,32 +5838,29 @@ TEST_CASE("compose nested graph checkpoint restore matrix remains stable",
 
         std::size_t prepare_calls = 0U;
         wh::compose::checkpoint_backend backend{};
-        backend.prepare_restore =
-            wh::compose::checkpoint_backend_prepare_restore{
-                [&prepare_calls](const wh::compose::checkpoint_load_options &,
-                                 wh::core::run_context &)
-                    -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-                  ++prepare_calls;
-                  return wh::compose::checkpoint_restore_plan{
-                      .restore_from_checkpoint = false,
-                      .checkpoint = std::nullopt,
-                  };
-                }};
+        backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+            [&prepare_calls](const wh::compose::checkpoint_load_options &, wh::core::run_context &)
+                -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+              ++prepare_calls;
+              return wh::compose::checkpoint_restore_plan{
+                  .restore_from_checkpoint = false,
+                  .checkpoint = std::nullopt,
+              };
+            }};
         backend.save = wh::compose::checkpoint_backend_save{
-            [](wh::compose::checkpoint_state &&,
-               wh::compose::checkpoint_save_options &&,
+            [](wh::compose::checkpoint_state &&, wh::compose::checkpoint_save_options &&,
                wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
         wh::core::run_context middle_capture_context{};
-        auto middle_checkpoint = capture_exact_checkpoint(
-            graphs.middle, wh::core::any(7), middle_capture_context);
+        auto middle_checkpoint =
+            capture_exact_checkpoint(graphs.middle, wh::core::any(7), middle_capture_context);
         REQUIRE(middle_checkpoint.has_value());
         middle_checkpoint->checkpoint_id =
             std::string{"middle-"} + std::string{runtime_mode_name(mode)};
 
         wh::core::run_context leaf_capture_context{};
-        auto leaf_checkpoint = capture_exact_checkpoint(
-            graphs.leaf, wh::core::any(7), leaf_capture_context);
+        auto leaf_checkpoint =
+            capture_exact_checkpoint(graphs.leaf, wh::core::any(7), leaf_capture_context);
         REQUIRE(leaf_checkpoint.has_value());
         leaf_checkpoint->checkpoint_id =
             std::string{"leaf-"} + std::string{runtime_mode_name(mode)};
@@ -6344,27 +5875,25 @@ TEST_CASE("compose nested graph checkpoint restore matrix remains stable",
 
         if (item == restore_case::matching_descendant) {
           wh::core::run_context ghost_capture_context{};
-          auto ghost_checkpoint = capture_exact_checkpoint(
-              graphs.leaf, wh::core::any(100), ghost_capture_context);
+          auto ghost_checkpoint =
+              capture_exact_checkpoint(graphs.leaf, wh::core::any(100), ghost_capture_context);
           REQUIRE(ghost_checkpoint.has_value());
           ghost_checkpoint->checkpoint_id = "ghost";
           forwarded.emplace("ghost_graph", std::move(ghost_checkpoint).value());
 
           wh::compose::graph_invoke_controls controls{};
           controls.checkpoint.forwarded_once = std::move(forwarded);
-          auto invoked = invoke_graph_sync(
-              graphs.parent, wh::compose::graph_input::restore_checkpoint(), context,
-              std::move(controls), std::addressof(services));
+          auto invoked =
+              invoke_graph_sync(graphs.parent, wh::compose::graph_input::restore_checkpoint(),
+                                context, std::move(controls), std::addressof(services));
           REQUIRE(invoked.has_value());
           REQUIRE(invoked.value().output_status.has_value());
-          REQUIRE(read_any<int>(invoked.value().output_status.value()).value() ==
-                  8);
+          REQUIRE(read_any<int>(invoked.value().output_status.value()).value() == 8);
           REQUIRE(prepare_calls == 1U);
-          const auto &remaining =
-              invoked.value().report.remaining_forwarded_checkpoint_keys;
+          const auto &remaining = invoked.value().report.remaining_forwarded_checkpoint_keys;
           REQUIRE(remaining.size() == 1U);
-          REQUIRE(std::find(remaining.begin(), remaining.end(),
-                            std::string{"ghost_graph"}) != remaining.end());
+          REQUIRE(std::find(remaining.begin(), remaining.end(), std::string{"ghost_graph"}) !=
+                  remaining.end());
           continue;
         }
 
@@ -6375,33 +5904,28 @@ TEST_CASE("compose nested graph checkpoint restore matrix remains stable",
         controls.checkpoint.forwarded_once = std::move(forwarded);
 
         auto invoked = invoke_graph_sync(graphs.parent, wh::core::any(1), context,
-                                         std::move(controls),
-                                         std::addressof(services));
+                                         std::move(controls), std::addressof(services));
         REQUIRE(invoked.has_value());
         REQUIRE(invoked.value().output_status.has_value());
         REQUIRE(read_any<int>(invoked.value().output_status.value()).value() == 2);
         REQUIRE(prepare_calls == 0U);
-        const auto &remaining =
-            invoked.value().report.remaining_forwarded_checkpoint_keys;
+        const auto &remaining = invoked.value().report.remaining_forwarded_checkpoint_keys;
         REQUIRE(remaining.size() == 2U);
-        REQUIRE(std::find(remaining.begin(), remaining.end(),
-                          graphs.middle_path_key) != remaining.end());
-        REQUIRE(std::find(remaining.begin(), remaining.end(),
-                          graphs.leaf_path_key) != remaining.end());
+        REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.middle_path_key) !=
+                remaining.end());
+        REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.leaf_path_key) !=
+                remaining.end());
       }
     }
   }
 }
 
-TEST_CASE(
-    "compose detail collect stream pump remains stable across repeated concurrent waves",
-    "[core][compose][graph][detail][stream][stress][concurrency]") {
+TEST_CASE("compose detail collect stream pump remains stable across repeated concurrent waves",
+          "[core][compose][graph][detail][stream][stress][concurrency]") {
   exec::static_thread_pool pool{4U};
-  auto graph_scheduler =
-      wh::core::detail::erase_resume_scheduler(pool.get_scheduler());
+  auto graph_scheduler = wh::core::detail::erase_resume_scheduler(pool.get_scheduler());
 
-  const auto make_sender =
-      [&graph_scheduler](const int base) -> wh::compose::graph_sender {
+  const auto make_sender = [&graph_scheduler](const int base) -> wh::compose::graph_sender {
     auto reader = make_int_graph_stream({base, base + 1, base + 2});
     return make_collect_graph_sender(std::move(reader).value(), graph_scheduler);
   };
@@ -6409,16 +5933,14 @@ TEST_CASE(
   for (int round = 0; round < 8; ++round) {
     auto errors = run_graph_sender_stress_wave(
         make_sender,
-        [](const int base, wh::compose::graph_value output)
-            -> std::optional<std::string> {
+        [](const int base, wh::compose::graph_value output) -> std::optional<std::string> {
           auto sum = sum_collected_graph_chunks(output);
           if (sum.has_error()) {
             return std::string{"type error:"} + std::to_string(base);
           }
           const int expected = 3 * base + 3;
           if (sum.value() != expected) {
-            return "mismatch:" + std::to_string(base) + ":" +
-                   std::to_string(sum.value()) + ":" +
+            return "mismatch:" + std::to_string(base) + ":" + std::to_string(sum.value()) + ":" +
                    std::to_string(expected);
           }
           return std::nullopt;
@@ -6432,12 +5954,10 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose detail child batch single collect lane remains stable",
-    "[core][compose][graph][detail][batch][stress][concurrency]") {
+TEST_CASE("compose detail child batch single collect lane remains stable",
+          "[core][compose][graph][detail][batch][stress][concurrency]") {
   exec::static_thread_pool pool{4U};
-  auto graph_scheduler =
-      wh::core::detail::erase_resume_scheduler(pool.get_scheduler());
+  auto graph_scheduler = wh::core::detail::erase_resume_scheduler(pool.get_scheduler());
 
   struct batch_stage {
     std::vector<wh::compose::graph_value> collected{};
@@ -6446,14 +5966,12 @@ TEST_CASE(
   const auto make_sender = [&graph_scheduler](const int base) {
     std::vector<wh::compose::graph_sender> senders{};
     auto reader = make_int_graph_stream({base, base + 1});
-    senders.push_back(
-        make_collect_graph_sender(std::move(reader).value(), graph_scheduler));
+    senders.push_back(make_collect_graph_sender(std::move(reader).value(), graph_scheduler));
 
     return wh::compose::detail::make_child_batch_sender(
         std::move(senders), batch_stage{},
         [](batch_stage &stage, const std::size_t,
-           wh::core::result<wh::compose::graph_value> current)
-            -> wh::core::result<void> {
+           wh::core::result<wh::compose::graph_value> current) -> wh::core::result<void> {
           if (current.has_error()) {
             return wh::core::result<void>::failure(current.error());
           }
@@ -6465,8 +5983,7 @@ TEST_CASE(
           for (auto &entry : stage.collected) {
             auto current = sum_collected_graph_chunks(entry);
             if (current.has_error()) {
-              return wh::core::result<wh::compose::graph_value>::failure(
-                  current.error());
+              return wh::core::result<wh::compose::graph_value>::failure(current.error());
             }
             sum += current.value();
           }
@@ -6478,16 +5995,14 @@ TEST_CASE(
   for (int round = 0; round < 8; ++round) {
     auto errors = run_graph_sender_stress_wave(
         make_sender,
-        [](const int base, wh::compose::graph_value output)
-            -> std::optional<std::string> {
+        [](const int base, wh::compose::graph_value output) -> std::optional<std::string> {
           auto typed = read_any<int>(std::move(output));
           if (typed.has_error()) {
             return std::string{"type error:"} + std::to_string(base);
           }
           const int expected = 2 * base + 1;
           if (typed.value() != expected) {
-            return "mismatch:" + std::to_string(base) + ":" +
-                   std::to_string(typed.value()) + ":" +
+            return "mismatch:" + std::to_string(base) + ":" + std::to_string(typed.value()) + ":" +
                    std::to_string(expected);
           }
           return std::nullopt;
@@ -6501,12 +6016,10 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose detail child batch mixed collect lanes remains stable",
-    "[core][compose][graph][detail][batch][stream][stress][concurrency]") {
+TEST_CASE("compose detail child batch mixed collect lanes remains stable",
+          "[core][compose][graph][detail][batch][stream][stress][concurrency]") {
   exec::static_thread_pool pool{4U};
-  auto graph_scheduler =
-      wh::core::detail::erase_resume_scheduler(pool.get_scheduler());
+  auto graph_scheduler = wh::core::detail::erase_resume_scheduler(pool.get_scheduler());
 
   struct batch_stage {
     std::vector<wh::compose::graph_value> collected{};
@@ -6516,16 +6029,13 @@ TEST_CASE(
     std::vector<wh::compose::graph_sender> senders{};
     auto left = make_int_graph_stream({base, base + 1});
     auto right = make_int_graph_stream({base + 10, base + 11});
-    senders.push_back(
-        make_collect_graph_sender(std::move(left).value(), graph_scheduler));
-    senders.push_back(
-        make_collect_graph_sender(std::move(right).value(), graph_scheduler));
+    senders.push_back(make_collect_graph_sender(std::move(left).value(), graph_scheduler));
+    senders.push_back(make_collect_graph_sender(std::move(right).value(), graph_scheduler));
 
     return wh::compose::detail::make_child_batch_sender(
         std::move(senders), batch_stage{},
         [](batch_stage &stage, const std::size_t,
-           wh::core::result<wh::compose::graph_value> current)
-            -> wh::core::result<void> {
+           wh::core::result<wh::compose::graph_value> current) -> wh::core::result<void> {
           if (current.has_error()) {
             return wh::core::result<void>::failure(current.error());
           }
@@ -6537,8 +6047,7 @@ TEST_CASE(
           for (auto &entry : stage.collected) {
             auto current = sum_collected_graph_chunks(entry);
             if (current.has_error()) {
-              return wh::core::result<wh::compose::graph_value>::failure(
-                  current.error());
+              return wh::core::result<wh::compose::graph_value>::failure(current.error());
             }
             sum += current.value();
           }
@@ -6550,16 +6059,14 @@ TEST_CASE(
   for (int round = 0; round < 8; ++round) {
     auto errors = run_graph_sender_stress_wave(
         make_sender,
-        [](const int base, wh::compose::graph_value output)
-            -> std::optional<std::string> {
+        [](const int base, wh::compose::graph_value output) -> std::optional<std::string> {
           auto typed = read_any<int>(std::move(output));
           if (typed.has_error()) {
             return std::string{"type error:"} + std::to_string(base);
           }
           const int expected = 4 * base + 22;
           if (typed.value() != expected) {
-            return "mismatch:" + std::to_string(base) + ":" +
-                   std::to_string(typed.value()) + ":" +
+            return "mismatch:" + std::to_string(base) + ":" + std::to_string(typed.value()) + ":" +
                    std::to_string(expected);
           }
           return std::nullopt;
@@ -6573,9 +6080,8 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph minimal concurrent stream fan-in remains stable in next-wave mode",
-    "[core][compose][graph][stream][stress][concurrency][fanin][next-wave]") {
+TEST_CASE("compose graph minimal concurrent stream fan-in remains stable in next-wave mode",
+          "[core][compose][graph][stream][stress][concurrency][fanin][next-wave]") {
   auto pool = std::make_shared<exec::static_thread_pool>(4U);
 
   wh::compose::graph_compile_options options{};
@@ -6583,43 +6089,34 @@ TEST_CASE(
   options.dispatch_policy = wh::compose::graph_dispatch_policy::next_wave;
   options.max_parallel_nodes = 2U;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   wh::compose::graph graph{std::move(options)};
 
   auto make_async_source = [pool](const int bias) {
-    return [pool, bias](const wh::compose::graph_value &input,
-                        wh::core::run_context &,
+    return [pool, bias](const wh::compose::graph_value &input, wh::core::run_context &,
                         const wh::compose::graph_call_scope &) {
       auto copied_input = input;
       return stdexec::starts_on(
           pool->get_scheduler(),
           stdexec::just(std::move(copied_input)) |
               stdexec::then([bias](wh::compose::graph_value payload)
-                                -> wh::core::result<
-                                    wh::compose::graph_stream_reader> {
+                                -> wh::core::result<wh::compose::graph_stream_reader> {
                 auto typed = read_any<int>(std::move(payload));
                 if (typed.has_error()) {
-                  return wh::core::result<
-                      wh::compose::graph_stream_reader>::failure(typed.error());
+                  return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
                 }
-                return make_int_graph_stream(
-                    {typed.value() + bias, typed.value() + bias + 1});
+                return make_int_graph_stream({typed.value() + bias, typed.value() + bias + 1});
               }));
     };
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>(
-                  "left_source", make_async_source(0))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("left_source", make_async_source(0))
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>(
-                  "right_source", make_async_source(10))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("right_source", make_async_source(10))
               .has_value());
   REQUIRE(graph
               .add_lambda(
@@ -6627,18 +6124,15 @@ TEST_CASE(
                   [](const wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    auto merged =
-                        read_any<wh::compose::graph_value_map>(input);
+                    auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
                     int total = 0;
                     for (const auto &entry : merged.value()) {
                       auto chunks = sum_collected_graph_chunks(entry.second);
                       if (chunks.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            chunks.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(chunks.error());
                       }
                       total += chunks.value();
                     }
@@ -6647,18 +6141,15 @@ TEST_CASE(
               .has_value());
   REQUIRE(graph.add_entry_edge("left_source").has_value());
   REQUIRE(graph.add_entry_edge("right_source").has_value());
-  REQUIRE(graph.add_edge("left_source", "merged_value",
-                         make_auto_contract_edge_options())
-              .has_value());
-  REQUIRE(graph.add_edge("right_source", "merged_value",
-                         make_auto_contract_edge_options())
+  REQUIRE(
+      graph.add_edge("left_source", "merged_value", make_auto_contract_edge_options()).has_value());
+  REQUIRE(graph.add_edge("right_source", "merged_value", make_auto_contract_edge_options())
               .has_value());
   REQUIRE(graph.add_exit_edge("merged_value").has_value());
   REQUIRE(graph.compile().has_value());
 
-  auto run_wave =
-      [&graph](const int worker_count, const int iterations_per_worker,
-               const int input_bias = 0) -> std::vector<std::string> {
+  auto run_wave = [&graph](const int worker_count, const int iterations_per_worker,
+                           const int input_bias = 0) -> std::vector<std::string> {
     std::atomic<bool> failed{false};
     std::mutex error_mutex{};
     std::vector<std::string> errors{};
@@ -6668,8 +6159,7 @@ TEST_CASE(
     for (int worker_id = 0; worker_id < worker_count; ++worker_id) {
       workers.emplace_back([&, worker_id]() {
         try {
-          for (int iteration = 0; iteration < iterations_per_worker;
-               ++iteration) {
+          for (int iteration = 0; iteration < iterations_per_worker; ++iteration) {
             const int input = input_bias + worker_id * 100 + iteration;
             wh::core::run_context context{};
             auto invoked = invoke_value_sync(graph, wh::core::any(input), context);
@@ -6691,8 +6181,7 @@ TEST_CASE(
               std::lock_guard lock{error_mutex};
               failed.store(true, std::memory_order_release);
               errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                               std::to_string(typed.value()) + ":" +
-                               std::to_string(expected));
+                               std::to_string(typed.value()) + ":" + std::to_string(expected));
               return;
             }
           }
@@ -6728,9 +6217,8 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph minimal concurrent value fan-in remains stable",
-    "[core][compose][graph][value][stress][concurrency][fanin]") {
+TEST_CASE("compose graph minimal concurrent value fan-in remains stable",
+          "[core][compose][graph][value][stress][concurrency][fanin]") {
   auto pool = std::make_shared<exec::static_thread_pool>(4U);
 
   wh::compose::graph_compile_options options{};
@@ -6740,8 +6228,7 @@ TEST_CASE(
   wh::compose::graph graph{std::move(options)};
 
   auto make_async_source = [pool](const int bias) {
-    return [pool, bias](const wh::compose::graph_value &input,
-                        wh::core::run_context &,
+    return [pool, bias](const wh::compose::graph_value &input, wh::core::run_context &,
                         const wh::compose::graph_call_scope &) {
       auto copied_input = input;
       return stdexec::starts_on(
@@ -6751,8 +6238,7 @@ TEST_CASE(
                                 -> wh::core::result<wh::compose::graph_value> {
                 auto typed = read_any<int>(std::move(payload));
                 if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
+                  return wh::core::result<wh::compose::graph_value>::failure(typed.error());
                 }
                 return wh::core::any(typed.value() + bias);
               }));
@@ -6760,16 +6246,12 @@ TEST_CASE(
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_exec_mode::async>(
-                  "left_source", make_async_source(0))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>("left_source", make_async_source(0))
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_exec_mode::async>(
-                  "right_source", make_async_source(10))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
+                          wh::compose::node_exec_mode::async>("right_source", make_async_source(10))
               .has_value());
   REQUIRE(graph
               .add_lambda(
@@ -6777,18 +6259,15 @@ TEST_CASE(
                   [](const wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    auto merged =
-                        read_any<wh::compose::graph_value_map>(input);
+                    auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
                     int total = 0;
                     for (const auto &entry : merged.value()) {
                       auto typed = read_any<int>(entry.second);
                       if (typed.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            typed.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(typed.error());
                       }
                       total += typed.value();
                     }
@@ -6802,9 +6281,8 @@ TEST_CASE(
   REQUIRE(graph.add_exit_edge("merged_value").has_value());
   REQUIRE(graph.compile().has_value());
 
-  auto run_wave =
-      [&graph](const int worker_count, const int iterations_per_worker,
-               const int input_bias = 0) -> std::vector<std::string> {
+  auto run_wave = [&graph](const int worker_count, const int iterations_per_worker,
+                           const int input_bias = 0) -> std::vector<std::string> {
     std::atomic<bool> failed{false};
     std::mutex error_mutex{};
     std::vector<std::string> errors{};
@@ -6814,8 +6292,7 @@ TEST_CASE(
     for (int worker_id = 0; worker_id < worker_count; ++worker_id) {
       workers.emplace_back([&, worker_id]() {
         try {
-          for (int iteration = 0; iteration < iterations_per_worker;
-               ++iteration) {
+          for (int iteration = 0; iteration < iterations_per_worker; ++iteration) {
             const int input = input_bias + worker_id * 100 + iteration;
             wh::core::run_context context{};
             auto invoked = invoke_value_sync(graph, wh::core::any(input), context);
@@ -6837,8 +6314,7 @@ TEST_CASE(
               std::lock_guard lock{error_mutex};
               failed.store(true, std::memory_order_release);
               errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                               std::to_string(typed.value()) + ":" +
-                               std::to_string(expected));
+                               std::to_string(typed.value()) + ":" + std::to_string(expected));
               return;
             }
           }
@@ -6874,9 +6350,8 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph immediate value fan-in remains stable across repeated concurrent waves",
-    "[core][compose][graph][value][stress][concurrency][fanin][inline]") {
+TEST_CASE("compose graph immediate value fan-in remains stable across repeated concurrent waves",
+          "[core][compose][graph][value][stress][concurrency][fanin][inline]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.max_parallel_nodes = 2U;
@@ -6884,16 +6359,16 @@ TEST_CASE(
   wh::compose::graph graph{std::move(options)};
 
   auto make_source = [](const int bias) {
-    return [bias](const wh::compose::graph_value &input, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &)
-               -> wh::core::result<wh::compose::graph_value> {
-      auto typed = read_any<int>(input);
-      if (typed.has_error()) {
-        return wh::core::result<wh::compose::graph_value>::failure(
-            typed.error());
-      }
-      return wh::core::any(typed.value() + bias);
-    };
+    return
+        [bias](
+            const wh::compose::graph_value &input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto typed = read_any<int>(input);
+          if (typed.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+          }
+          return wh::core::any(typed.value() + bias);
+        };
   };
 
   REQUIRE(graph.add_lambda("left_source", make_source(0)).has_value());
@@ -6906,15 +6381,13 @@ TEST_CASE(
                       -> wh::core::result<wh::compose::graph_value> {
                     auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
                     int total = 0;
                     for (const auto &entry : merged.value()) {
                       auto typed = read_any<int>(entry.second);
                       if (typed.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            typed.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(typed.error());
                       }
                       total += typed.value();
                     }
@@ -6928,9 +6401,8 @@ TEST_CASE(
   REQUIRE(graph.add_exit_edge("merged_value").has_value());
   REQUIRE(graph.compile().has_value());
 
-  auto run_wave =
-      [&graph](const int worker_count, const int iterations_per_worker,
-               const int input_bias = 0) -> std::vector<std::string> {
+  auto run_wave = [&graph](const int worker_count, const int iterations_per_worker,
+                           const int input_bias = 0) -> std::vector<std::string> {
     std::atomic<bool> failed{false};
     std::mutex error_mutex{};
     std::vector<std::string> errors{};
@@ -6940,8 +6412,7 @@ TEST_CASE(
     for (int worker_id = 0; worker_id < worker_count; ++worker_id) {
       workers.emplace_back([&, worker_id]() {
         try {
-          for (int iteration = 0; iteration < iterations_per_worker;
-               ++iteration) {
+          for (int iteration = 0; iteration < iterations_per_worker; ++iteration) {
             const int input = input_bias + worker_id * 100 + iteration;
             wh::core::run_context context{};
             auto invoked = invoke_value_sync(graph, wh::core::any(input), context);
@@ -6963,8 +6434,7 @@ TEST_CASE(
               std::lock_guard lock{error_mutex};
               failed.store(true, std::memory_order_release);
               errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                               std::to_string(typed.value()) + ":" +
-                               std::to_string(expected));
+                               std::to_string(typed.value()) + ":" + std::to_string(expected));
               return;
             }
           }
@@ -7000,9 +6470,8 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph minimal concurrent stream fan-in remains stable in same-wave mode",
-    "[core][compose][graph][stream][stress][concurrency][fanin][same-wave]") {
+TEST_CASE("compose graph minimal concurrent stream fan-in remains stable in same-wave mode",
+          "[core][compose][graph][stream][stress][concurrency][fanin][same-wave]") {
   auto pool = std::make_shared<exec::static_thread_pool>(4U);
 
   wh::compose::graph_compile_options options{};
@@ -7010,43 +6479,34 @@ TEST_CASE(
   options.dispatch_policy = wh::compose::graph_dispatch_policy::same_wave;
   options.max_parallel_nodes = 2U;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   wh::compose::graph graph{std::move(options)};
 
   auto make_async_source = [pool](const int bias) {
-    return [pool, bias](const wh::compose::graph_value &input,
-                        wh::core::run_context &,
+    return [pool, bias](const wh::compose::graph_value &input, wh::core::run_context &,
                         const wh::compose::graph_call_scope &) {
       auto copied_input = input;
       return stdexec::starts_on(
           pool->get_scheduler(),
           stdexec::just(std::move(copied_input)) |
               stdexec::then([bias](wh::compose::graph_value payload)
-                                -> wh::core::result<
-                                    wh::compose::graph_stream_reader> {
+                                -> wh::core::result<wh::compose::graph_stream_reader> {
                 auto typed = read_any<int>(std::move(payload));
                 if (typed.has_error()) {
-                  return wh::core::result<
-                      wh::compose::graph_stream_reader>::failure(typed.error());
+                  return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
                 }
-                return make_int_graph_stream(
-                    {typed.value() + bias, typed.value() + bias + 1});
+                return make_int_graph_stream({typed.value() + bias, typed.value() + bias + 1});
               }));
     };
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>(
-                  "left_source", make_async_source(0))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("left_source", make_async_source(0))
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>(
-                  "right_source", make_async_source(10))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("right_source", make_async_source(10))
               .has_value());
   REQUIRE(graph
               .add_lambda(
@@ -7054,18 +6514,15 @@ TEST_CASE(
                   [](const wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    auto merged =
-                        read_any<wh::compose::graph_value_map>(input);
+                    auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
                     int total = 0;
                     for (const auto &entry : merged.value()) {
                       auto chunks = sum_collected_graph_chunks(entry.second);
                       if (chunks.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            chunks.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(chunks.error());
                       }
                       total += chunks.value();
                     }
@@ -7074,18 +6531,15 @@ TEST_CASE(
               .has_value());
   REQUIRE(graph.add_entry_edge("left_source").has_value());
   REQUIRE(graph.add_entry_edge("right_source").has_value());
-  REQUIRE(graph.add_edge("left_source", "merged_value",
-                         make_auto_contract_edge_options())
-              .has_value());
-  REQUIRE(graph.add_edge("right_source", "merged_value",
-                         make_auto_contract_edge_options())
+  REQUIRE(
+      graph.add_edge("left_source", "merged_value", make_auto_contract_edge_options()).has_value());
+  REQUIRE(graph.add_edge("right_source", "merged_value", make_auto_contract_edge_options())
               .has_value());
   REQUIRE(graph.add_exit_edge("merged_value").has_value());
   REQUIRE(graph.compile().has_value());
 
-  auto run_wave =
-      [&graph](const int worker_count, const int iterations_per_worker,
-               const int input_bias = 0) -> std::vector<std::string> {
+  auto run_wave = [&graph](const int worker_count, const int iterations_per_worker,
+                           const int input_bias = 0) -> std::vector<std::string> {
     std::atomic<bool> failed{false};
     std::mutex error_mutex{};
     std::vector<std::string> errors{};
@@ -7095,8 +6549,7 @@ TEST_CASE(
     for (int worker_id = 0; worker_id < worker_count; ++worker_id) {
       workers.emplace_back([&, worker_id]() {
         try {
-          for (int iteration = 0; iteration < iterations_per_worker;
-               ++iteration) {
+          for (int iteration = 0; iteration < iterations_per_worker; ++iteration) {
             const int input = input_bias + worker_id * 100 + iteration;
             wh::core::run_context context{};
             auto invoked = invoke_value_sync(graph, wh::core::any(input), context);
@@ -7118,8 +6571,7 @@ TEST_CASE(
               std::lock_guard lock{error_mutex};
               failed.store(true, std::memory_order_release);
               errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                               std::to_string(typed.value()) + ":" +
-                               std::to_string(expected));
+                               std::to_string(typed.value()) + ":" + std::to_string(expected));
               return;
             }
           }
@@ -7155,48 +6607,42 @@ TEST_CASE(
   }
 }
 
-TEST_CASE(
-    "compose graph repeated direct sync stream collect waves remain stable",
-    "[core][compose][graph][stream][stress][concurrency][collect][sync]") {
+TEST_CASE("compose graph repeated direct sync stream collect waves remain stable",
+          "[core][compose][graph][stream][stress][concurrency][collect][sync]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.max_parallel_nodes = 1U;
   wh::compose::graph graph{std::move(options)};
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream>(
                   "source",
-                  [](const wh::compose::graph_value &input,
-                     wh::core::run_context &,
+                  [](const wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_stream_reader> {
                     auto typed = read_any<int>(input);
                     if (typed.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_stream_reader>::failure(
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
                           typed.error());
                     }
-                    return make_int_graph_stream(
-                        {typed.value() + 3, typed.value() + 4});
+                    return make_int_graph_stream({typed.value() + 3, typed.value() + 4});
                   })
               .has_value());
   REQUIRE(
-      graph.add_component(wh::compose::make_component_node<
-                          wh::core::component_kind::custom,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          std::vector<wh::compose::graph_value>, int>(
-                              "consumer", collected_sum_consumer{}))
+      graph
+          .add_component(
+              wh::compose::make_component_node<
+                  wh::core::component_kind::custom, wh::compose::node_contract::value,
+                  wh::compose::node_contract::value, std::vector<wh::compose::graph_value>, int>(
+                  "consumer", collected_sum_consumer{}))
           .has_value());
   REQUIRE(graph.add_entry_edge("source").has_value());
   REQUIRE(graph.add_edge("source", "consumer").has_value());
   REQUIRE(graph.add_exit_edge("consumer").has_value());
   REQUIRE(graph.compile().has_value());
 
-  auto run_wave =
-      [&graph](const int worker_count, const int iterations_per_worker,
-               const int input_bias = 0) -> std::vector<std::string> {
+  auto run_wave = [&graph](const int worker_count, const int iterations_per_worker,
+                           const int input_bias = 0) -> std::vector<std::string> {
     std::atomic<bool> failed{false};
     std::mutex error_mutex{};
     std::vector<std::string> errors{};
@@ -7206,8 +6652,7 @@ TEST_CASE(
     for (int worker_id = 0; worker_id < worker_count; ++worker_id) {
       workers.emplace_back([&, worker_id]() {
         try {
-          for (int iteration = 0; iteration < iterations_per_worker;
-               ++iteration) {
+          for (int iteration = 0; iteration < iterations_per_worker; ++iteration) {
             const int input = input_bias + worker_id * 100 + iteration;
             wh::core::run_context context{};
             auto invoked = invoke_value_sync(graph, wh::core::any(input), context);
@@ -7229,8 +6674,7 @@ TEST_CASE(
               std::lock_guard lock{error_mutex};
               failed.store(true, std::memory_order_release);
               errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                               std::to_string(typed.value()) + ":" +
-                               std::to_string(expected));
+                               std::to_string(typed.value()) + ":" + std::to_string(expected));
               return;
             }
           }
@@ -7271,8 +6715,7 @@ struct concurrent_mixed_stream_fixture {
   wh::compose::graph graph{};
 };
 
-[[nodiscard]] auto make_concurrent_mixed_stream_fixture()
-    -> concurrent_mixed_stream_fixture {
+[[nodiscard]] auto make_concurrent_mixed_stream_fixture() -> concurrent_mixed_stream_fixture {
   concurrent_mixed_stream_fixture fixture{};
   fixture.pool = std::make_shared<exec::static_thread_pool>(4U);
 
@@ -7280,44 +6723,35 @@ struct concurrent_mixed_stream_fixture {
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.max_parallel_nodes = 2U;
   options.trigger_mode = wh::compose::graph_trigger_mode::all_predecessors;
-  options.fan_in_policy =
-      wh::compose::graph_fan_in_policy::require_all_sources;
+  options.fan_in_policy = wh::compose::graph_fan_in_policy::require_all_sources;
   fixture.graph = wh::compose::graph{std::move(options)};
 
   auto &graph = fixture.graph;
   auto make_async_source = [pool = fixture.pool](const int bias) {
-    return [pool, bias](const wh::compose::graph_value &input,
-                        wh::core::run_context &,
+    return [pool, bias](const wh::compose::graph_value &input, wh::core::run_context &,
                         const wh::compose::graph_call_scope &) {
       auto copied_input = input;
       return stdexec::starts_on(
           pool->get_scheduler(),
           stdexec::just(std::move(copied_input)) |
               stdexec::then([bias](wh::compose::graph_value payload)
-                                -> wh::core::result<
-                                    wh::compose::graph_stream_reader> {
+                                -> wh::core::result<wh::compose::graph_stream_reader> {
                 auto typed = read_any<int>(std::move(payload));
                 if (typed.has_error()) {
-                  return wh::core::result<
-                      wh::compose::graph_stream_reader>::failure(typed.error());
+                  return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
                 }
-                return make_int_graph_stream(
-                    {typed.value() + bias, typed.value() + bias + 1});
+                return make_int_graph_stream({typed.value() + bias, typed.value() + bias + 1});
               }));
     };
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>(
-                  "left_source", make_async_source(0))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("left_source", make_async_source(0))
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>(
-                  "right_source", make_async_source(10))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("right_source", make_async_source(10))
               .has_value());
   REQUIRE(graph
               .add_lambda(
@@ -7325,18 +6759,15 @@ struct concurrent_mixed_stream_fixture {
                   [](const wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    auto merged =
-                        read_any<wh::compose::graph_value_map>(input);
+                    auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
                     int total = 0;
                     for (const auto &entry : merged.value()) {
                       auto chunks = sum_collected_graph_chunks(entry.second);
                       if (chunks.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            chunks.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(chunks.error());
                       }
                       total += chunks.value();
                     }
@@ -7344,34 +6775,27 @@ struct concurrent_mixed_stream_fixture {
                   })
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                   "count_sink",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<
-                          wh::compose::graph_value>::failure(values.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(values.error());
                     }
-                    return wh::core::any(
-                        static_cast<int>(values.value().size()));
+                    return wh::core::any(static_cast<int>(values.value().size()));
                   })
               .has_value());
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::value>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
                   "sum_sink",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
                     auto values = collect_int_graph_stream(std::move(input));
                     if (values.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          values.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(values.error());
                     }
                     int sum = 0;
                     for (const auto value : values.value()) {
@@ -7386,21 +6810,17 @@ struct concurrent_mixed_stream_fixture {
                   [](const wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    auto merged =
-                        read_any<wh::compose::graph_value_map>(input);
+                    auto merged = read_any<wh::compose::graph_value_map>(input);
                     if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(merged.error());
                     }
                     auto count = read_any<int>(merged.value().at("count_sink"));
                     auto sum = read_any<int>(merged.value().at("sum_sink"));
                     if (count.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          count.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(count.error());
                     }
                     if (sum.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          sum.error());
+                      return wh::core::result<wh::compose::graph_value>::failure(sum.error());
                     }
                     return wh::core::any(count.value() + sum.value());
                   })
@@ -7408,18 +6828,14 @@ struct concurrent_mixed_stream_fixture {
 
   REQUIRE(graph.add_entry_edge("left_source").has_value());
   REQUIRE(graph.add_entry_edge("right_source").has_value());
-  REQUIRE(graph.add_edge("left_source", "merged_value",
-                         make_auto_contract_edge_options())
+  REQUIRE(
+      graph.add_edge("left_source", "merged_value", make_auto_contract_edge_options()).has_value());
+  REQUIRE(graph.add_edge("right_source", "merged_value", make_auto_contract_edge_options())
               .has_value());
-  REQUIRE(graph.add_edge("right_source", "merged_value",
-                         make_auto_contract_edge_options())
-              .has_value());
-  REQUIRE(graph.add_edge("merged_value", "count_sink",
-                         make_auto_contract_edge_options())
-              .has_value());
-  REQUIRE(graph.add_edge("merged_value", "sum_sink",
-                         make_auto_contract_edge_options())
-              .has_value());
+  REQUIRE(
+      graph.add_edge("merged_value", "count_sink", make_auto_contract_edge_options()).has_value());
+  REQUIRE(
+      graph.add_edge("merged_value", "sum_sink", make_auto_contract_edge_options()).has_value());
   REQUIRE(graph.add_edge("count_sink", "final_join").has_value());
   REQUIRE(graph.add_edge("sum_sink", "final_join").has_value());
   REQUIRE(graph.add_exit_edge("final_join").has_value());
@@ -7433,8 +6849,7 @@ struct direct_stream_collect_fixture {
   wh::compose::graph graph{};
 };
 
-[[nodiscard]] auto make_direct_stream_collect_fixture()
-    -> direct_stream_collect_fixture {
+[[nodiscard]] auto make_direct_stream_collect_fixture() -> direct_stream_collect_fixture {
   direct_stream_collect_fixture fixture{};
   fixture.pool = std::make_shared<exec::static_thread_pool>(4U);
 
@@ -7445,40 +6860,34 @@ struct direct_stream_collect_fixture {
 
   auto &graph = fixture.graph;
   auto make_async_source = [pool = fixture.pool](const int bias) {
-    return [pool, bias](const wh::compose::graph_value &input,
-                        wh::core::run_context &,
+    return [pool, bias](const wh::compose::graph_value &input, wh::core::run_context &,
                         const wh::compose::graph_call_scope &) {
       auto copied_input = input;
       return stdexec::starts_on(
           pool->get_scheduler(),
           stdexec::just(std::move(copied_input)) |
               stdexec::then([bias](wh::compose::graph_value payload)
-                                -> wh::core::result<
-                                    wh::compose::graph_stream_reader> {
+                                -> wh::core::result<wh::compose::graph_stream_reader> {
                 auto typed = read_any<int>(std::move(payload));
                 if (typed.has_error()) {
-                  return wh::core::result<
-                      wh::compose::graph_stream_reader>::failure(typed.error());
+                  return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
                 }
-                return make_int_graph_stream(
-                    {typed.value() + bias, typed.value() + bias + 1});
+                return make_int_graph_stream({typed.value() + bias, typed.value() + bias + 1});
               }));
     };
   };
 
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
-                          wh::compose::node_exec_mode::async>(
-                  "source", make_async_source(3))
+              .add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::stream,
+                          wh::compose::node_exec_mode::async>("source", make_async_source(3))
               .has_value());
   REQUIRE(
-      graph.add_component(wh::compose::make_component_node<
-                          wh::core::component_kind::custom,
-                          wh::compose::node_contract::value,
-                          wh::compose::node_contract::value,
-                          std::vector<wh::compose::graph_value>, int>(
-                              "consumer", collected_sum_consumer{}))
+      graph
+          .add_component(
+              wh::compose::make_component_node<
+                  wh::core::component_kind::custom, wh::compose::node_contract::value,
+                  wh::compose::node_contract::value, std::vector<wh::compose::graph_value>, int>(
+                  "consumer", collected_sum_consumer{}))
           .has_value());
   REQUIRE(graph.add_entry_edge("source").has_value());
   REQUIRE(graph.add_edge("source", "consumer").has_value());
@@ -7488,9 +6897,9 @@ struct direct_stream_collect_fixture {
   return fixture;
 }
 
-[[nodiscard]] auto run_direct_stream_collect_wave(
-    const wh::compose::graph &graph, const int worker_count,
-    const int iterations_per_worker, const int input_bias = 0)
+[[nodiscard]] auto
+run_direct_stream_collect_wave(const wh::compose::graph &graph, const int worker_count,
+                               const int iterations_per_worker, const int input_bias = 0)
     -> std::vector<std::string> {
   std::atomic<bool> failed{false};
   std::mutex error_mutex{};
@@ -7523,8 +6932,7 @@ struct direct_stream_collect_fixture {
             std::lock_guard lock{error_mutex};
             failed.store(true, std::memory_order_release);
             errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                             std::to_string(typed.value()) + ":" +
-                             std::to_string(expected));
+                             std::to_string(typed.value()) + ":" + std::to_string(expected));
             return;
           }
         }
@@ -7550,9 +6958,9 @@ struct direct_stream_collect_fixture {
   return errors;
 }
 
-[[nodiscard]] auto run_concurrent_mixed_stream_wave(
-    const wh::compose::graph &graph, const int worker_count,
-    const int iterations_per_worker, const int input_bias = 0)
+[[nodiscard]] auto
+run_concurrent_mixed_stream_wave(const wh::compose::graph &graph, const int worker_count,
+                                 const int iterations_per_worker, const int input_bias = 0)
     -> std::vector<std::string> {
   std::atomic<bool> failed{false};
   std::mutex error_mutex{};
@@ -7585,8 +6993,7 @@ struct direct_stream_collect_fixture {
             std::lock_guard lock{error_mutex};
             failed.store(true, std::memory_order_release);
             errors.push_back("mismatch:" + std::to_string(input) + ":" +
-                             std::to_string(typed.value()) + ":" +
-                             std::to_string(expected));
+                             std::to_string(typed.value()) + ":" + std::to_string(expected));
             return;
           }
         }
@@ -7627,8 +7034,7 @@ TEST_CASE("compose graph repeated concurrent mixed stream waves remain stable",
   auto fixture = make_concurrent_mixed_stream_fixture();
 
   for (int round = 0; round < 8; ++round) {
-    auto errors =
-        run_concurrent_mixed_stream_wave(fixture.graph, 8, 32, round * 10000);
+    auto errors = run_concurrent_mixed_stream_wave(fixture.graph, 8, 32, round * 10000);
     INFO("round=" << round);
     if (!errors.empty()) {
       INFO(errors.front());
@@ -7642,8 +7048,7 @@ TEST_CASE("compose graph repeated direct stream collect waves remain stable",
   auto fixture = make_direct_stream_collect_fixture();
 
   for (int round = 0; round < 8; ++round) {
-    auto errors = run_direct_stream_collect_wave(fixture.graph, 8, 32,
-                                                 round * 10000);
+    auto errors = run_direct_stream_collect_wave(fixture.graph, 8, 32, round * 10000);
     INFO("round=" << round);
     if (!errors.empty()) {
       INFO(errors.front());

@@ -1,17 +1,16 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <optional>
 #include <stop_token>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
-#include "wh/core/intrusive_ptr.hpp"
 #include "helper/manual_scheduler.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
 #include "wh/core/cursor_reader/detail/read_sender.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 
 namespace {
 
@@ -48,13 +47,10 @@ struct sender_async_source {
 };
 
 using scheduler_t = wh::testing::helper::manual_scheduler<void>;
-using env_t = wh::testing::helper::scheduler_env<scheduler_t,
-                                                 wh::testing::helper::stop_token>;
+using env_t = wh::testing::helper::scheduler_env<scheduler_t, wh::testing::helper::stop_token>;
 using capture_t = wh::testing::helper::sender_capture<result_t>;
-using receiver_t =
-    wh::testing::helper::sender_capture_receiver<result_t, env_t>;
-using policy_t =
-    wh::core::cursor_reader_detail::default_policy<sender_async_source>;
+using receiver_t = wh::testing::helper::sender_capture_receiver<result_t, env_t>;
+using policy_t = wh::core::cursor_reader_detail::default_policy<sender_async_source>;
 using sender_t = wh::core::cursor_reader_detail::read_sender<sender_async_source, policy_t>;
 
 struct inline_handoff_observer_state {
@@ -94,12 +90,10 @@ struct observing_inline_scheduler {
     inline_handoff_observer_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
-    [[nodiscard]] auto connect(receiver_t receiver) const
-        -> schedule_op<receiver_t> {
+    [[nodiscard]] auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
       ++state->connect_calls;
       return schedule_op<receiver_t>{state, std::move(receiver)};
     }
@@ -109,9 +103,7 @@ struct observing_inline_scheduler {
 
   inline_handoff_observer_state *state{nullptr};
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return {state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return {state}; }
 
   [[nodiscard]] auto operator==(const observing_inline_scheduler &) const noexcept
       -> bool = default;
@@ -119,16 +111,17 @@ struct observing_inline_scheduler {
 
 } // namespace
 
-TEST_CASE("read sender returns internal and closed results for null and released states",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_sender::connect][branch][boundary]") {
+TEST_CASE(
+    "read sender returns internal and closed results for null and released states",
+    "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_sender::connect][branch][boundary]") {
   wh::testing::helper::manual_scheduler_state scheduler_state{};
   scheduler_t scheduler{&scheduler_state};
   env_t env{scheduler, {}};
 
   capture_t missing_capture{};
-  auto missing_operation = stdexec::connect(
-      sender_t{.state_ = nullptr, .reader_index = 0U, .released = false},
-      receiver_t{&missing_capture, env});
+  auto missing_operation =
+      stdexec::connect(sender_t{.state_ = nullptr, .reader_index = 0U, .released = false},
+                       receiver_t{&missing_capture, env});
   stdexec::start(missing_operation);
   REQUIRE(missing_capture.ready.try_acquire());
   REQUIRE(missing_capture.value.has_value());
@@ -141,9 +134,9 @@ TEST_CASE("read sender returns internal and closed results for null and released
       sender_async_source{stats}, 1U);
 
   capture_t released_capture{};
-  auto released_operation = stdexec::connect(
-      sender_t{.state_ = state, .reader_index = 0U, .released = true},
-      receiver_t{&released_capture, env});
+  auto released_operation =
+      stdexec::connect(sender_t{.state_ = state, .reader_index = 0U, .released = true},
+                       receiver_t{&released_capture, env});
   stdexec::start(released_operation);
   REQUIRE(released_capture.ready.try_acquire());
   REQUIRE(released_capture.value.has_value());
@@ -152,7 +145,8 @@ TEST_CASE("read sender returns internal and closed results for null and released
 }
 
 TEST_CASE("read sender honors pre-requested stop before registering waiter",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::start][condition][branch]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "read_sender.hpp][read_operation::start][condition][branch]") {
   wh::testing::helper::manual_scheduler_state scheduler_state{};
   scheduler_t scheduler{&scheduler_state};
   wh::testing::helper::stop_source stop_source{};
@@ -167,8 +161,7 @@ TEST_CASE("read sender honors pre-requested stop before registering waiter",
 
   capture_t capture{};
   auto operation = stdexec::connect(
-      sender_t{.state_ = state, .reader_index = 0U, .released = false},
-      receiver_t{&capture, env});
+      sender_t{.state_ = state, .reader_index = 0U, .released = false}, receiver_t{&capture, env});
   stdexec::start(operation);
 
   REQUIRE(capture.ready.try_acquire());
@@ -177,7 +170,8 @@ TEST_CASE("read sender honors pre-requested stop before registering waiter",
 }
 
 TEST_CASE("read sender prebuffered ready path schedules handoff delivery on non-matching scheduler",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::begin_completion][branch]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "read_sender.hpp][read_operation::begin_completion][branch]") {
   auto handoff_stats = std::make_shared<sender_source_stats>();
   handoff_stats->try_results = {std::optional<result_t>{result_t{9}}};
 
@@ -193,9 +187,9 @@ TEST_CASE("read sender prebuffered ready path schedules handoff delivery on non-
   REQUIRE(primed_handoff->value() == 9);
 
   capture_t handoff_capture{};
-  auto handoff_operation = stdexec::connect(
-      sender_t{.state_ = handoff_state, .reader_index = 0U, .released = false},
-      receiver_t{&handoff_capture, handoff_env});
+  auto handoff_operation =
+      stdexec::connect(sender_t{.state_ = handoff_state, .reader_index = 0U, .released = false},
+                       receiver_t{&handoff_capture, handoff_env});
   stdexec::start(handoff_operation);
   REQUIRE_FALSE(handoff_capture.ready.try_acquire());
   REQUIRE(handoff_scheduler_state.pending_count() == 1U);
@@ -207,7 +201,8 @@ TEST_CASE("read sender prebuffered ready path schedules handoff delivery on non-
 }
 
 TEST_CASE("read sender pending async path starts pull and hands off final completion",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::complete_ready][concurrency][branch]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "read_sender.hpp][read_operation::complete_ready][concurrency][branch]") {
   auto stats = std::make_shared<sender_source_stats>();
   stats->try_results = {std::nullopt};
   stats->async_result = result_t{13};
@@ -221,8 +216,7 @@ TEST_CASE("read sender pending async path starts pull and hands off final comple
 
   capture_t capture{};
   auto operation = stdexec::connect(
-      sender_t{.state_ = state, .reader_index = 0U, .released = false},
-      receiver_t{&capture, env});
+      sender_t{.state_ = state, .reader_index = 0U, .released = false}, receiver_t{&capture, env});
   stdexec::start(operation);
 
   REQUIRE_FALSE(capture.ready.try_acquire());
@@ -237,8 +231,9 @@ TEST_CASE("read sender pending async path starts pull and hands off final comple
   REQUIRE(capture.value->value() == 13);
 }
 
-TEST_CASE("read sender pending async path finishes on first scheduler turn when marked same-scheduler",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::finish][branch]") {
+TEST_CASE(
+    "read sender pending async path finishes on first scheduler turn when marked same-scheduler",
+    "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::finish][branch]") {
   auto stats = std::make_shared<sender_source_stats>();
   stats->try_results = {std::nullopt};
   stats->async_result = result_t{21};
@@ -253,8 +248,7 @@ TEST_CASE("read sender pending async path finishes on first scheduler turn when 
 
   capture_t capture{};
   auto operation = stdexec::connect(
-      sender_t{.state_ = state, .reader_index = 0U, .released = false},
-      receiver_t{&capture, env});
+      sender_t{.state_ = state, .reader_index = 0U, .released = false}, receiver_t{&capture, env});
   stdexec::start(operation);
 
   REQUIRE_FALSE(capture.ready.try_acquire());
@@ -268,7 +262,8 @@ TEST_CASE("read sender pending async path finishes on first scheduler turn when 
 }
 
 TEST_CASE("read sender supports consecutive async pulls on the same shared state",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::start][concurrency][regression]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "read_sender.hpp][read_operation::start][concurrency][regression]") {
   auto stats = std::make_shared<sender_source_stats>();
   stats->try_results = {std::nullopt, std::nullopt};
   stats->async_results = {result_t{34}, result_t{55}};
@@ -281,9 +276,9 @@ TEST_CASE("read sender supports consecutive async pulls on the same shared state
       sender_async_source{stats}, 1U);
 
   capture_t first_capture{};
-  auto first_operation = stdexec::connect(
-      sender_t{.state_ = state, .reader_index = 0U, .released = false},
-      receiver_t{&first_capture, env});
+  auto first_operation =
+      stdexec::connect(sender_t{.state_ = state, .reader_index = 0U, .released = false},
+                       receiver_t{&first_capture, env});
   stdexec::start(first_operation);
 
   REQUIRE_FALSE(first_capture.ready.try_acquire());
@@ -299,9 +294,9 @@ TEST_CASE("read sender supports consecutive async pulls on the same shared state
   REQUIRE(scheduler_state.pending_count() == 0U);
 
   capture_t second_capture{};
-  auto second_operation = stdexec::connect(
-      sender_t{.state_ = state, .reader_index = 0U, .released = false},
-      receiver_t{&second_capture, env});
+  auto second_operation =
+      stdexec::connect(sender_t{.state_ = state, .reader_index = 0U, .released = false},
+                       receiver_t{&second_capture, env});
   stdexec::start(second_operation);
 
   REQUIRE_FALSE(second_capture.ready.try_acquire());
@@ -318,7 +313,8 @@ TEST_CASE("read sender supports consecutive async pulls on the same shared state
 }
 
 TEST_CASE("read sender inline handoff does not destroy the handoff op before start returns",
-          "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::begin_completion][handoff][lifecycle]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "read_sender.hpp][read_operation::begin_completion][handoff][lifecycle]") {
   auto stats = std::make_shared<sender_source_stats>();
   stats->try_results = {std::optional<result_t>{result_t{88}}};
 
@@ -331,9 +327,8 @@ TEST_CASE("read sender inline handoff does not destroy the handoff op before sta
   REQUIRE(primed->value() == 88);
 
   inline_handoff_observer_state observer{};
-  using inline_env_t =
-      wh::testing::helper::scheduler_env<observing_inline_scheduler,
-                                         wh::testing::helper::stop_token>;
+  using inline_env_t = wh::testing::helper::scheduler_env<observing_inline_scheduler,
+                                                          wh::testing::helper::stop_token>;
   capture_t capture{};
   auto operation = stdexec::connect(
       sender_t{.state_ = state, .reader_index = 0U, .released = false},

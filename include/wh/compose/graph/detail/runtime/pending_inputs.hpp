@@ -25,25 +25,20 @@ public:
     active_count_ = 0U;
   }
 
-  [[nodiscard]] auto contains_input(const std::uint32_t node_id) const noexcept
-      -> bool {
+  [[nodiscard]] auto contains_input(const std::uint32_t node_id) const noexcept -> bool {
     return node_id < inputs_.size() && present_.test(node_id);
   }
 
-  [[nodiscard]] auto active_input_count() const noexcept -> std::size_t {
-    return active_count_;
-  }
+  [[nodiscard]] auto active_input_count() const noexcept -> std::size_t { return active_count_; }
 
-  [[nodiscard]] auto find_input(const std::uint32_t node_id) noexcept
-      -> graph_value * {
+  [[nodiscard]] auto find_input(const std::uint32_t node_id) noexcept -> graph_value * {
     if (!contains_input(node_id)) {
       return nullptr;
     }
     return std::addressof(inputs_[node_id]);
   }
 
-  [[nodiscard]] auto find_input(const std::uint32_t node_id) const noexcept
-      -> const graph_value * {
+  [[nodiscard]] auto find_input(const std::uint32_t node_id) const noexcept -> const graph_value * {
     if (!contains_input(node_id)) {
       return nullptr;
     }
@@ -58,12 +53,9 @@ public:
     present_.set(node_id);
   }
 
-  auto mark_restored_node(const std::uint32_t node_id) noexcept -> void {
-    restored_.set(node_id);
-  }
+  auto mark_restored_node(const std::uint32_t node_id) noexcept -> void { restored_.set(node_id); }
 
-  [[nodiscard]] auto restored_node(const std::uint32_t node_id) const noexcept
-      -> bool {
+  [[nodiscard]] auto restored_node(const std::uint32_t node_id) const noexcept -> bool {
     return node_id < inputs_.size() && restored_.test(node_id);
   }
 
@@ -71,8 +63,7 @@ public:
     restored_input_.set(node_id);
   }
 
-  [[nodiscard]] auto restored_input(const std::uint32_t node_id) const noexcept
-      -> bool {
+  [[nodiscard]] auto restored_input(const std::uint32_t node_id) const noexcept -> bool {
     return node_id < inputs_.size() && restored_input_.test(node_id);
   }
 

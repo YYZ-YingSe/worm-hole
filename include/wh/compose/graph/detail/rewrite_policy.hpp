@@ -1,22 +1,20 @@
 // Defines graph stream rewrite policy used by graph state-stream rewriting.
 #pragma once
 
-#include "wh/core/compiler.hpp"
 #include "wh/compose/graph/detail/child_pump.hpp"
+#include "wh/core/compiler.hpp"
 
 namespace wh::compose::detail {
 
 template <typename handler_t> struct rewrite_policy {
-  using child_sender_type =
-      decltype(std::declval<graph_stream_reader &>().read_async());
+  using child_sender_type = decltype(std::declval<graph_stream_reader &>().read_async());
   using completion_type = graph_stream_reader::chunk_result_type;
 
   graph_stream_reader reader{};
   graph_stream_writer writer{};
   wh_no_unique_address handler_t handler;
 
-  [[nodiscard]] auto next_step()
-      -> wh::core::result<child_pump_step<child_sender_type>> {
+  [[nodiscard]] auto next_step() -> wh::core::result<child_pump_step<child_sender_type>> {
     return child_pump_step<child_sender_type>::launch(reader.read_async());
   }
 
@@ -59,9 +57,10 @@ template <typename handler_t> struct rewrite_policy {
 };
 
 template <typename handler_t>
-[[nodiscard]] inline auto make_rewrite_stream_sender(
-    graph_stream_reader source, graph_stream_writer writer, handler_t &&handler,
-    const wh::core::detail::any_resume_scheduler_t &graph_scheduler) {
+[[nodiscard]] inline auto
+make_rewrite_stream_sender(graph_stream_reader source, graph_stream_writer writer,
+                           handler_t &&handler,
+                           const wh::core::detail::any_resume_scheduler_t &graph_scheduler) {
   return make_child_pump_sender(
       rewrite_policy<std::remove_cvref_t<handler_t>>{
           .reader = std::move(source),

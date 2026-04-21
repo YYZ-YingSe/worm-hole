@@ -15,8 +15,8 @@ enum class bounded_queue_status : std::uint8_t {
   busy_async,
 };
 
-[[nodiscard]] constexpr auto
-to_string(const bounded_queue_status status) noexcept -> std::string_view {
+[[nodiscard]] constexpr auto to_string(const bounded_queue_status status) noexcept
+    -> std::string_view {
   switch (status) {
   case bounded_queue_status::success:
     return "success";
@@ -36,8 +36,7 @@ to_string(const bounded_queue_status status) noexcept -> std::string_view {
 }
 
 template <typename char_t, typename traits_t>
-auto operator<<(std::basic_ostream<char_t, traits_t> &stream,
-                const bounded_queue_status status)
+auto operator<<(std::basic_ostream<char_t, traits_t> &stream, const bounded_queue_status status)
     -> std::basic_ostream<char_t, traits_t> & {
   stream << to_string(status);
   return stream;

@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/flow.hpp"
@@ -17,15 +16,13 @@ namespace {
 template <typename fn_t> struct sync_retriever_impl {
   fn_t fn;
 
-  [[nodiscard]] auto retrieve(
-      const wh::retriever::retriever_request &request) const
+  [[nodiscard]] auto retrieve(const wh::retriever::retriever_request &request) const
       -> decltype(std::invoke(fn, request)) {
     return std::invoke(fn, request);
   }
 };
 
-template <typename fn_t>
-sync_retriever_impl(fn_t) -> sync_retriever_impl<fn_t>;
+template <typename fn_t> sync_retriever_impl(fn_t) -> sync_retriever_impl<fn_t>;
 
 template <typename fn_t> struct sync_indexer_impl {
   fn_t fn;
@@ -36,22 +33,20 @@ template <typename fn_t> struct sync_indexer_impl {
   }
 };
 
-template <typename fn_t>
-sync_indexer_impl(fn_t) -> sync_indexer_impl<fn_t>;
+template <typename fn_t> sync_indexer_impl(fn_t) -> sync_indexer_impl<fn_t>;
 
 [[nodiscard]] auto make_retriever(std::string prefix) {
   return wh::retriever::retriever{sync_retriever_impl{
       [prefix = std::move(prefix)](const wh::retriever::retriever_request &request)
           -> wh::core::result<wh::retriever::retriever_response> {
-        return wh::retriever::retriever_response{
-            wh::schema::document{prefix + request.query}};
+        return wh::retriever::retriever_response{wh::schema::document{prefix + request.query}};
       }}};
 }
 
 [[nodiscard]] auto make_indexer() {
-  return wh::indexer::indexer{sync_indexer_impl{
-      [](const wh::indexer::indexer_request &request)
-          -> wh::core::result<wh::indexer::indexer_response> {
+  return wh::indexer::indexer{
+      sync_indexer_impl{[](const wh::indexer::indexer_request &request)
+                            -> wh::core::result<wh::indexer::indexer_response> {
         wh::indexer::indexer_response response{};
         response.success_count = request.documents.size();
         for (std::size_t index = 0U; index < request.documents.size(); ++index) {
@@ -73,8 +68,7 @@ TEST_CASE("flow public umbrella exposes retrieval and indexing facades through o
   REQUIRE(multi_query.set_max_queries(2U).has_value());
   REQUIRE(multi_query.freeze().has_value());
 
-  auto retrieved_waited =
-      stdexec::sync_wait(multi_query.retrieve(retrieve_request, context));
+  auto retrieved_waited = stdexec::sync_wait(multi_query.retrieve(retrieve_request, context));
   REQUIRE(retrieved_waited.has_value());
   auto retrieved_status = std::move(std::get<0>(retrieved_waited.value()));
   REQUIRE(retrieved_status.has_value());
@@ -85,14 +79,13 @@ TEST_CASE("flow public umbrella exposes retrieval and indexing facades through o
   index_request.documents.push_back(wh::schema::document{"parent-doc"});
   auto parent = wh::flow::indexing::parent{
       make_indexer(),
-      [](const wh::schema::document &document, wh::core::run_context &)
-          -> wh::core::result<std::vector<wh::schema::document>> {
+      [](const wh::schema::document &document,
+         wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::document>> {
         return std::vector<wh::schema::document>{
             wh::schema::document{document.content() + "/chunk"}};
       },
       [](const wh::schema::document &, const std::size_t count,
-         wh::core::run_context &)
-          -> wh::core::result<std::vector<std::string>> {
+         wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
         std::vector<std::string> ids{};
         for (std::size_t index = 0U; index < count; ++index) {
           ids.push_back("sub-" + std::to_string(index));

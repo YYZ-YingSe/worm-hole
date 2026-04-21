@@ -66,8 +66,7 @@ struct react_state {
   /// Return-direct tool-call id that terminated the run, when any.
   std::optional<std::string> return_direct_call_id{};
   /// Optional output slot written when the run finishes successfully.
-  std::unordered_map<std::string, wh::core::any,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, wh::core::any, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       output_values{};
 };
@@ -107,9 +106,7 @@ public:
   [[nodiscard]] auto name() const noexcept -> std::string_view { return name_; }
 
   /// Returns the authored shell description.
-  [[nodiscard]] auto description() const noexcept -> std::string_view {
-    return description_;
-  }
+  [[nodiscard]] auto description() const noexcept -> std::string_view { return description_; }
 
   /// Returns true after authoring has been frozen successfully.
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
@@ -137,15 +134,13 @@ public:
   }
 
   /// Renders the authored instruction string.
-  [[nodiscard]] auto
-  render_instruction(const std::string_view separator = "\n") const
+  [[nodiscard]] auto render_instruction(const std::string_view separator = "\n") const
       -> std::string {
     return instruction_.render(separator);
   }
 
   /// Registers one raw compose tool entry before freeze.
-  auto add_tool_entry(wh::schema::tool_schema_definition schema,
-                      wh::compose::tool_entry entry,
+  auto add_tool_entry(wh::schema::tool_schema_definition schema, wh::compose::tool_entry entry,
                       const wh::agent::tool_registration registration = {})
       -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
@@ -157,8 +152,7 @@ public:
 
   /// Registers one executable tool component before freeze.
   template <wh::agent::detail::registered_tool_component tool_t>
-  auto add_tool(const tool_t &tool,
-                const wh::agent::tool_registration registration = {})
+  auto add_tool(const tool_t &tool, const wh::agent::tool_registration registration = {})
       -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
@@ -168,8 +162,7 @@ public:
   }
 
   /// Appends one shared tool middleware layer before freeze.
-  auto add_tool_middleware(wh::compose::tool_middleware middleware)
-      -> wh::core::result<void> {
+  auto add_tool_middleware(wh::compose::tool_middleware middleware) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -188,8 +181,7 @@ public:
   }
 
   /// Replaces the maximum loop iterations. Zero falls back to one.
-  auto set_max_iterations(const std::size_t max_iterations)
-      -> wh::core::result<void> {
+  auto set_max_iterations(const std::size_t max_iterations) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -225,44 +217,34 @@ public:
     if (mutable_status.has_error()) {
       return mutable_status;
     }
-    model_node_.emplace(
-        wh::compose::make_component_node<wh::compose::component_kind::model,
-                                         wh::compose::node_contract::value,
-                                         wh::compose::node_contract::stream>(
-            react_model_node_key, std::forward<model_t>(model)));
+    model_node_.emplace(wh::compose::make_component_node<wh::compose::component_kind::model,
+                                                         wh::compose::node_contract::value,
+                                                         wh::compose::node_contract::stream>(
+        react_model_node_key, std::forward<model_t>(model)));
     return {};
   }
 
   /// Returns the frozen toolset surface.
-  [[nodiscard]] auto tools() const noexcept -> const wh::agent::toolset & {
-    return tools_;
-  }
+  [[nodiscard]] auto tools() const noexcept -> const wh::agent::toolset & { return tools_; }
 
   /// Returns the frozen model node used by this shell.
-  [[nodiscard]] auto model_node() const -> wh::core::result<
-      std::reference_wrapper<const wh::compose::component_node>> {
+  [[nodiscard]] auto model_node() const
+      -> wh::core::result<std::reference_wrapper<const wh::compose::component_node>> {
     if (!model_node_.has_value()) {
-      return wh::core::result<
-          std::reference_wrapper<const wh::compose::component_node>>::
-          failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<const wh::compose::component_node>>::failure(
+          wh::core::errc::not_found);
     }
     return std::cref(*model_node_);
   }
 
   /// Returns the configured maximum iterations.
-  [[nodiscard]] auto max_iterations() const noexcept -> std::size_t {
-    return max_iterations_;
-  }
+  [[nodiscard]] auto max_iterations() const noexcept -> std::size_t { return max_iterations_; }
 
   /// Returns the configured output slot name.
-  [[nodiscard]] auto output_key() const noexcept -> std::string_view {
-    return output_key_;
-  }
+  [[nodiscard]] auto output_key() const noexcept -> std::string_view { return output_key_; }
 
   /// Returns the configured output materialization mode.
-  [[nodiscard]] auto output_mode() const noexcept -> react_output_mode {
-    return output_mode_;
-  }
+  [[nodiscard]] auto output_mode() const noexcept -> react_output_mode { return output_mode_; }
 
   /// Converts this frozen authored shell into the common executable agent surface.
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
@@ -282,8 +264,7 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     if (!tools_.node_options().has_value()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     frozen_ = true;
     return {};
@@ -292,8 +273,7 @@ public:
 private:
   [[nodiscard]] auto ensure_mutable() const -> wh::core::result<void> {
     if (frozen_) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     return {};
   }
@@ -324,8 +304,7 @@ rewrite_history_message_as_context_prompt(const wh::schema::message &message)
   if (message.role == wh::schema::message_role::assistant) {
     std::string rendered{};
     for (const auto &part : message.parts) {
-      if (const auto *typed = std::get_if<wh::schema::text_part>(&part);
-          typed != nullptr) {
+      if (const auto *typed = std::get_if<wh::schema::text_part>(&part); typed != nullptr) {
         rendered.append(typed->text);
       }
     }
@@ -350,8 +329,7 @@ rewrite_history_message_as_context_prompt(const wh::schema::message &message)
   } else {
     std::string rendered{};
     for (const auto &part : message.parts) {
-      if (const auto *typed = std::get_if<wh::schema::text_part>(&part);
-          typed != nullptr) {
+      if (const auto *typed = std::get_if<wh::schema::text_part>(&part); typed != nullptr) {
         rendered.append(typed->text);
       }
     }

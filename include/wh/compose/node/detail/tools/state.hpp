@@ -65,8 +65,7 @@ namespace detail {
 using tool_after = wh::core::callback_function<wh::core::result<void>(
     const tool_call &, graph_value &, const wh::tool::call_scope &) const>;
 
-struct tool_after_chain final
-    : wh::core::detail::intrusive_enable_from_this<tool_after_chain> {
+struct tool_after_chain final : wh::core::detail::intrusive_enable_from_this<tool_after_chain> {
   std::vector<tool_after> handlers{};
 
   tool_after_chain() = default;
@@ -75,8 +74,7 @@ struct tool_after_chain final
       : handlers(std::move(handlers_value)) {}
 };
 
-using tool_after_chain_ptr =
-    wh::core::detail::intrusive_ptr<const tool_after_chain>;
+using tool_after_chain_ptr = wh::core::detail::intrusive_ptr<const tool_after_chain>;
 
 [[nodiscard]] inline auto make_tool_after_chain(const tools_options &options)
     -> tool_after_chain_ptr {
@@ -91,18 +89,15 @@ using tool_after_chain_ptr =
   if (handlers.empty()) {
     return {};
   }
-  return wh::core::detail::make_intrusive<tool_after_chain>(
-      std::move(handlers));
+  return wh::core::detail::make_intrusive<tool_after_chain>(std::move(handlers));
 }
 
-[[nodiscard]] inline auto has_tool_afters(
-    const tool_after_chain_ptr &afters) noexcept -> bool {
+[[nodiscard]] inline auto has_tool_afters(const tool_after_chain_ptr &afters) noexcept -> bool {
   return static_cast<bool>(afters);
 }
 
-[[nodiscard]] inline auto run_after(const tool_after_chain_ptr &afters,
-                                    const tool_call &call, graph_value &value,
-                                    const wh::tool::call_scope &scope)
+[[nodiscard]] inline auto run_after(const tool_after_chain_ptr &afters, const tool_call &call,
+                                    graph_value &value, const wh::tool::call_scope &scope)
     -> wh::core::result<void> {
   if (!afters) {
     return {};

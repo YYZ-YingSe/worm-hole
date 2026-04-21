@@ -26,27 +26,26 @@
 
 namespace wh::flow::retrieval {
 
-inline constexpr std::string_view parent_id_metadata_key =
-    wh::document::parent_id_metadata_key;
+inline constexpr std::string_view parent_id_metadata_key = wh::document::parent_id_metadata_key;
 
 namespace detail::parent {
 
 template <typename retriever_t>
 concept retriever_component =
-    requires(const retriever_t &retriever,
-             const wh::retriever::retriever_request &request,
+    requires(const retriever_t &retriever, const wh::retriever::retriever_request &request,
              wh::core::run_context &context) {
-      { retriever.retrieve(request, context) }
-      -> std::same_as<wh::core::result<wh::retriever::retriever_response>>;
+      {
+        retriever.retrieve(request, context)
+      } -> std::same_as<wh::core::result<wh::retriever::retriever_response>>;
     };
 
 template <typename loader_t>
-concept parent_loader =
-    requires(loader_t loader, const std::vector<std::string> &parent_ids,
-             wh::core::run_context &context) {
-      { loader(parent_ids, context) }
-      -> std::same_as<wh::core::result<std::vector<wh::schema::document>>>;
-    };
+concept parent_loader = requires(loader_t loader, const std::vector<std::string> &parent_ids,
+                                 wh::core::run_context &context) {
+  {
+    loader(parent_ids, context)
+  } -> std::same_as<wh::core::result<std::vector<wh::schema::document>>>;
+};
 
 struct parent_lookup_state {
   /// Ordered unique parent ids extracted from child hits.
@@ -61,9 +60,8 @@ template <retriever_component retriever_t> struct borrowed_retriever {
     return retriever->descriptor();
   }
 
-  [[nodiscard]] auto retrieve(
-      const wh::retriever::retriever_request &request,
-      wh::core::run_context &context) const
+  [[nodiscard]] auto retrieve(const wh::retriever::retriever_request &request,
+                              wh::core::run_context &context) const
       -> wh::core::result<wh::retriever::retriever_response> {
     return retriever->retrieve(request, context);
   }
@@ -77,11 +75,9 @@ template <retriever_component retriever_t> struct borrowed_retriever {
   template <typename request_t>
     requires requires(const retriever_t &value, request_t &&request,
                       wh::core::run_context &context) {
-      { value.async_retrieve(std::forward<request_t>(request), context) }
-      -> stdexec::sender;
+      { value.async_retrieve(std::forward<request_t>(request), context) } -> stdexec::sender;
     }
-  [[nodiscard]] auto async_retrieve(request_t &&request,
-                                    wh::core::run_context &context) const {
+  [[nodiscard]] auto async_retrieve(request_t &&request, wh::core::run_context &context) const {
     return retriever->async_retrieve(std::forward<request_t>(request), context);
   }
 };
@@ -101,8 +97,7 @@ template <typename value_t>
       wh::core::detail::map_result_sender<retrieve_result>(
           std::forward<decltype(sender)>(sender),
           [](wh::compose::graph_value value) -> retrieve_result {
-            return read_graph_value<wh::retriever::retriever_response>(
-                std::move(value));
+            return read_graph_value<wh::retriever::retriever_response>(std::move(value));
           }));
 }
 
@@ -113,8 +108,7 @@ template <detail::parent::retriever_component retriever_t,
           detail::parent::parent_loader parent_loader_t>
 class parent {
   struct authored_state {
-    authored_state(retriever_t child_retriever_value,
-                   parent_loader_t parent_loader_value) noexcept
+    authored_state(retriever_t child_retriever_value, parent_loader_t parent_loader_value) noexcept
         : child_retriever(std::move(child_retriever_value)),
           parent_loader(std::move(parent_loader_value)) {}
 
@@ -123,8 +117,7 @@ class parent {
   };
 
   struct runtime_state {
-    runtime_state(retriever_t child_retriever_value,
-                  parent_loader_t parent_loader_value) noexcept
+    runtime_state(retriever_t child_retriever_value, parent_loader_t parent_loader_value) noexcept
         : child_retriever(std::move(child_retriever_value)),
           parent_loader(std::move(parent_loader_value)) {}
 
@@ -135,8 +128,7 @@ class parent {
 
 public:
   parent(retriever_t child_retriever, parent_loader_t parent_loader) noexcept
-      : authored_(std::in_place, std::move(child_retriever),
-                  std::move(parent_loader)) {}
+      : authored_(std::in_place, std::move(child_retriever), std::move(parent_loader)) {}
 
   parent(const parent &) = default;
   auto operator=(const parent &) -> parent & = default;
@@ -161,8 +153,8 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
 
-    auto runtime = std::make_shared<runtime_state>(
-        std::move(authored_->child_retriever), std::move(authored_->parent_loader));
+    auto runtime = std::make_shared<runtime_state>(std::move(authored_->child_retriever),
+                                                   std::move(authored_->parent_loader));
 
     wh::compose::graph_compile_options options{};
     options.name = "retrieval_parent";
@@ -172,10 +164,9 @@ public:
         wh::compose::make_component_node<wh::compose::component_kind::retriever,
                                          wh::compose::node_contract::value,
                                          wh::compose::node_contract::value>(
-            "parent_child_retriever",
-            detail::parent::borrowed_retriever<retriever_t>{
-                .retriever = &runtime->child_retriever,
-            }));
+            "parent_child_retriever", detail::parent::borrowed_retriever<retriever_t>{
+                                          .retriever = &runtime->child_retriever,
+                                      }));
     if (child_added.has_error()) {
       return child_added;
     }
@@ -183,14 +174,11 @@ public:
     auto collect_added = runtime->runtime_graph.append(wh::compose::make_lambda_node(
         "parent_collect_ids",
         [](const wh::compose::graph_value &input, wh::core::run_context &,
-           const wh::compose::graph_call_scope &)
-            -> wh::core::result<wh::compose::graph_value> {
-          auto child_hits =
-              detail::parent::read_graph_value<wh::retriever::retriever_response>(
-                  wh::compose::graph_value{input});
+           const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto child_hits = detail::parent::read_graph_value<wh::retriever::retriever_response>(
+              wh::compose::graph_value{input});
           if (child_hits.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                child_hits.error());
+            return wh::core::result<wh::compose::graph_value>::failure(child_hits.error());
           }
 
           std::unordered_set<std::string, wh::core::transparent_string_hash,
@@ -217,24 +205,19 @@ public:
         "parent_load_documents",
         [loader = &runtime->parent_loader](
             const wh::compose::graph_value &input, wh::core::run_context &context,
-            const wh::compose::graph_call_scope &)
-            -> wh::core::result<wh::compose::graph_value> {
-          auto state =
-              detail::parent::read_graph_value<detail::parent::parent_lookup_state>(
-                  wh::compose::graph_value{input});
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto state = detail::parent::read_graph_value<detail::parent::parent_lookup_state>(
+              wh::compose::graph_value{input});
           if (state.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                state.error());
+            return wh::core::result<wh::compose::graph_value>::failure(state.error());
           }
 
           auto loaded = (*loader)(state.value().parent_ids, context);
           if (loaded.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                loaded.error());
+            return wh::core::result<wh::compose::graph_value>::failure(loaded.error());
           }
 
-          std::unordered_map<std::string, wh::schema::document,
-                             wh::core::transparent_string_hash,
+          std::unordered_map<std::string, wh::schema::document, wh::core::transparent_string_hash,
                              wh::core::transparent_string_equal>
               documents{};
           for (auto &document : loaded.value()) {
@@ -277,9 +260,8 @@ public:
   }
 
   /// Async component-node entry that forwards to the flow-level sender.
-  [[nodiscard]] auto async_retrieve(
-      const wh::retriever::retriever_request &request,
-      wh::core::run_context &context) const {
+  [[nodiscard]] auto async_retrieve(const wh::retriever::retriever_request &request,
+                                    wh::core::run_context &context) const {
     return dispatch_request(wh::retriever::retriever_request{request}, context);
   }
 
@@ -291,32 +273,26 @@ public:
 
 private:
   template <typename request_t>
-    requires std::same_as<std::remove_cvref_t<request_t>,
-                          wh::retriever::retriever_request>
-  [[nodiscard]] auto dispatch_request(request_t &&request,
-                                      wh::core::run_context &context) const {
+    requires std::same_as<std::remove_cvref_t<request_t>, wh::retriever::retriever_request>
+  [[nodiscard]] auto dispatch_request(request_t &&request, wh::core::run_context &context) const {
     using retrieve_result = wh::core::result<wh::retriever::retriever_response>;
-    using failure_sender_t = decltype(
-        wh::core::detail::failure_result_sender<retrieve_result>(
-            wh::core::errc::internal_error));
+    using failure_sender_t = decltype(wh::core::detail::failure_result_sender<retrieve_result>(
+        wh::core::errc::internal_error));
     using mapped_sender_t = decltype(detail::parent::map_parent_result_sender(
         std::declval<const wh::compose::chain &>().invoke(
-            context, wh::compose::graph_value{wh::core::any(std::declval<
-                         wh::retriever::retriever_request>())})));
-    using dispatch_sender_t =
-        wh::core::detail::variant_sender<failure_sender_t, mapped_sender_t>;
+            context, wh::compose::graph_value{
+                         wh::core::any(std::declval<wh::retriever::retriever_request>())})));
+    using dispatch_sender_t = wh::core::detail::variant_sender<failure_sender_t, mapped_sender_t>;
 
     if (runtime_ == nullptr) {
-      return dispatch_sender_t{
-          wh::core::detail::failure_result_sender<retrieve_result>(
-              wh::core::errc::contract_violation)};
+      return dispatch_sender_t{wh::core::detail::failure_result_sender<retrieve_result>(
+          wh::core::errc::contract_violation)};
     }
 
-    return dispatch_sender_t{detail::parent::map_parent_result_sender(
-        runtime_->runtime_graph.invoke(
+    return dispatch_sender_t{
+        detail::parent::map_parent_result_sender(runtime_->runtime_graph.invoke(
             context, wh::compose::graph_value{wh::core::any(
-                         wh::retriever::retriever_request{
-                             std::forward<request_t>(request)})}))};
+                         wh::retriever::retriever_request{std::forward<request_t>(request)})}))};
   }
 
   std::optional<authored_state> authored_{};

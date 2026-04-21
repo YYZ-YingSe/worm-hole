@@ -1,9 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <exception>
 #include <stdexcept>
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/sender_capture.hpp"
@@ -27,8 +26,7 @@ struct throwing_stop_token {
 struct throwing_stop_env {
   throwing_stop_token stop_token{};
 
-  [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept
-      -> throwing_stop_token {
+  [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept -> throwing_stop_token {
     return stop_token;
   }
 };
@@ -39,8 +37,8 @@ TEST_CASE("normalize_result_sender preserves result values and result failures",
           "[UT][wh/core/stdexec/result_sender.hpp][normalize_result_sender][condition][branch]") {
   using result_t = wh::core::result<int>;
 
-  auto ready_sender = wh::core::detail::normalize_result_sender<result_t>(
-      stdexec::just(result_t{7}));
+  auto ready_sender =
+      wh::core::detail::normalize_result_sender<result_t>(stdexec::just(result_t{7}));
   auto ready_awaited = stdexec::sync_wait(std::move(ready_sender));
 
   REQUIRE(ready_awaited.has_value());
@@ -89,13 +87,11 @@ TEST_CASE("result_sender reports outer stop binding failures as internal result 
   wh::testing::helper::sender_capture<result_t> capture{};
   auto operation = stdexec::connect(
       wh::core::detail::result_sender<result_t>{stdexec::just(result_t{7})},
-      wh::testing::helper::sender_capture_receiver<result_t, throwing_stop_env>{
-          &capture, {}});
+      wh::testing::helper::sender_capture_receiver<result_t, throwing_stop_env>{&capture, {}});
   stdexec::start(operation);
 
   REQUIRE(capture.ready.try_acquire());
-  REQUIRE(capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::value);
   REQUIRE(capture.value.has_value());
   REQUIRE(capture.value->has_error());
   REQUIRE(capture.value->error() == wh::core::errc::internal_error);

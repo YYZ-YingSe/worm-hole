@@ -539,8 +539,7 @@ template <typename result_t, typename run_attempt_t>
 template <typename result_t, typename state_t, typename make_attempt_t>
 class tool_attempt_loop_sender {
   template <typename receiver_t> class operation {
-    friend class wh::core::detail::scheduled_resume_turn<operation,
-                                                         exec::trampoline_scheduler>;
+    friend class wh::core::detail::scheduled_resume_turn<operation, exec::trampoline_scheduler>;
 
     using receiver_env_t = decltype(stdexec::get_env(std::declval<const receiver_t &>()));
     using outer_stop_token_t = stdexec::stop_token_of_t<receiver_env_t>;
@@ -571,20 +570,17 @@ class tool_attempt_loop_sender {
       }
 
       template <typename error_t> auto set_error(error_t &&) && noexcept -> void {
-        op->publish_child_completion(
-            result_t::failure(wh::core::errc::internal_error));
+        op->publish_child_completion(result_t::failure(wh::core::errc::internal_error));
       }
 
-      auto set_stopped() && noexcept -> void {
-        op->publish_child_completion(stopped_tag{});
-      }
+      auto set_stopped() && noexcept -> void { op->publish_child_completion(stopped_tag{}); }
 
       [[nodiscard]] auto get_env() const noexcept { return env_; }
     };
 
     using child_sender_t = std::remove_cvref_t<std::invoke_result_t<make_attempt_t &, state_t &>>;
-    using adapted_child_sender_t =
-        decltype(stdexec::write_env(std::declval<child_sender_t>(), std::declval<stop_token_env_t>()));
+    using adapted_child_sender_t = decltype(stdexec::write_env(std::declval<child_sender_t>(),
+                                                               std::declval<stop_token_env_t>()));
     using child_op_t = stdexec::connect_result_t<adapted_child_sender_t, child_receiver>;
     using child_completion_t = std::variant<result_t, stopped_tag>;
     using stop_callback_t = stdexec::stop_callback_for_t<outer_stop_token_t, stop_callback>;
@@ -595,8 +591,7 @@ class tool_attempt_loop_sender {
                    std::constructible_from<make_attempt_t, stored_make_attempt_t &&>
     explicit operation(stored_state_t &&state, stored_make_attempt_t &&make_attempt,
                        receiver_t receiver)
-        : receiver_(std::move(receiver)),
-          receiver_env_(stdexec::get_env(receiver_)),
+        : receiver_(std::move(receiver)), receiver_env_(stdexec::get_env(receiver_)),
           run_state_(std::forward<stored_state_t>(state)),
           make_attempt_(std::forward<stored_make_attempt_t>(make_attempt)) {}
 
@@ -651,15 +646,13 @@ class tool_attempt_loop_sender {
     auto mark_stopped() noexcept -> void {
       auto expected = control_state::started;
       if (state_.compare_exchange_strong(expected, control_state::stopped,
-                                         std::memory_order_acq_rel,
-                                         std::memory_order_acquire)) {
+                                         std::memory_order_acq_rel, std::memory_order_acquire)) {
         stop_source_.request_stop();
       }
     }
 
     auto arrive() noexcept -> void {
-      if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U &&
-          should_complete()) {
+      if (count_.fetch_sub(1U, std::memory_order_acq_rel) == 1U && should_complete()) {
         complete();
       }
     }
@@ -681,43 +674,34 @@ class tool_attempt_loop_sender {
       const auto state = state_.load(std::memory_order_acquire);
       if (state == control_state::stopped) {
         return !child_active_.load(std::memory_order_acquire) &&
-               !child_completion_ready_.load(std::memory_order_acquire) &&
-               !resume_turn_.running();
+               !child_completion_ready_.load(std::memory_order_acquire) && !resume_turn_.running();
       }
       return terminal_ready_.load(std::memory_order_acquire) &&
              !child_active_.load(std::memory_order_acquire) &&
-             !child_completion_ready_.load(std::memory_order_acquire) &&
-             !resume_turn_.running();
+             !child_completion_ready_.load(std::memory_order_acquire) && !resume_turn_.running();
     }
 
     auto publish_child_completion(child_completion_t completion) noexcept -> void {
       if (completed()) {
         return;
       }
-      wh_invariant(
-          !child_completion_ready_.load(std::memory_order_acquire));
+      wh_invariant(!child_completion_ready_.load(std::memory_order_acquire));
       child_completion_.emplace(std::move(completion));
       child_completion_ready_.store(true, std::memory_order_release);
       request_resume();
       arrive();
     }
 
-    [[nodiscard]] auto resume_turn_completed() const noexcept -> bool {
-      return completed();
-    }
+    [[nodiscard]] auto resume_turn_completed() const noexcept -> bool { return completed(); }
 
     auto resume_turn_arrive() noexcept -> void { arrive(); }
 
-    auto resume_turn_add_ref() noexcept -> void {
-      count_.fetch_add(1U, std::memory_order_relaxed);
-    }
+    auto resume_turn_add_ref() noexcept -> void { count_.fetch_add(1U, std::memory_order_relaxed); }
 
-    auto resume_turn_schedule_error(const wh::core::error_code error) noexcept
-        -> void {
+    auto resume_turn_schedule_error(const wh::core::error_code error) noexcept -> void {
       if (run_state_.has_value()) {
         terminal_ready_.store(
-            consume_tool_attempt_result(run_state_.value(),
-                                        result_t::failure(error)),
+            consume_tool_attempt_result(run_state_.value(), result_t::failure(error)),
             std::memory_order_release);
       } else {
         run_state_ = wh::core::result<state_t>::failure(error);
@@ -751,8 +735,7 @@ class tool_attempt_loop_sender {
 
         if (state_.load(std::memory_order_acquire) != control_state::started ||
             terminal_ready_.load(std::memory_order_acquire) ||
-            child_active_.load(std::memory_order_acquire) ||
-            run_state_.has_error()) {
+            child_active_.load(std::memory_order_acquire) || run_state_.has_error()) {
           return;
         }
 
@@ -767,12 +750,11 @@ class tool_attempt_loop_sender {
           auto attempt_sender = std::invoke(make_attempt_, run_state);
           [[maybe_unused]] auto &attempt_op =
               attempt_op_.template construct_with<child_op_t>([&]() -> child_op_t {
-            return stdexec::connect(stdexec::write_env(
-                                        std::move(attempt_sender),
-                                        stdexec::prop{stdexec::get_stop_token,
-                                                      stop_source_.get_token()}),
-                                    child_receiver{this, receiver_env_});
-          });
+                return stdexec::connect(stdexec::write_env(std::move(attempt_sender),
+                                                           stdexec::prop{stdexec::get_stop_token,
+                                                                         stop_source_.get_token()}),
+                                        child_receiver{this, receiver_env_});
+              });
           attempt_op_engaged_ = true;
           count_.fetch_add(1U, std::memory_order_relaxed);
           child_active_.store(true, std::memory_order_release);
@@ -781,10 +763,9 @@ class tool_attempt_loop_sender {
         } catch (...) {
           cleanup_current_attempt();
           child_active_.store(false, std::memory_order_release);
-          terminal_ready_.store(
-              consume_tool_attempt_result(
-                  run_state, result_t::failure(wh::core::errc::internal_error)),
-              std::memory_order_release);
+          terminal_ready_.store(consume_tool_attempt_result(
+                                    run_state, result_t::failure(wh::core::errc::internal_error)),
+                                std::memory_order_release);
           continue;
         }
       }
@@ -814,29 +795,24 @@ class tool_attempt_loop_sender {
         run_state.last_error = wh::core::make_error(wh::core::errc::canceled);
         mark_error(run_state.callback, run_state.last_error,
                    resolve_options_view(run_state.resolved_options));
-        emit_callback(run_state.sink, wh::callbacks::stage::error,
-                      run_state.callback);
-        stdexec::set_value(std::move(receiver_),
-                           result_t::failure(wh::core::errc::canceled));
+        emit_callback(run_state.sink, wh::callbacks::stage::error, run_state.callback);
+        stdexec::set_value(std::move(receiver_), result_t::failure(wh::core::errc::canceled));
         return;
       }
 
       if (run_state_.has_error()) {
-        stdexec::set_value(std::move(receiver_),
-                           result_t::failure(run_state_.error()));
+        stdexec::set_value(std::move(receiver_), result_t::failure(run_state_.error()));
         return;
       }
 
-      stdexec::set_value(std::move(receiver_),
-                         finish_tool_run(std::move(run_state_).value()));
+      stdexec::set_value(std::move(receiver_), finish_tool_run(std::move(run_state_).value()));
     }
 
     receiver_t receiver_;
     receiver_env_t receiver_env_{};
     wh::core::result<state_t> run_state_;
     make_attempt_t make_attempt_;
-    wh::core::detail::manual_storage<sizeof(child_op_t), alignof(child_op_t)>
-        attempt_op_{};
+    wh::core::detail::manual_storage<sizeof(child_op_t), alignof(child_op_t)> attempt_op_{};
     std::optional<stop_callback_t> on_stop_{};
     stdexec::inplace_stop_source stop_source_{};
     std::optional<child_completion_t> child_completion_{};
@@ -847,8 +823,8 @@ class tool_attempt_loop_sender {
     std::atomic<bool> child_completion_ready_{false};
     std::atomic<bool> completed_{false};
     std::atomic<bool> terminal_ready_{false};
-    wh::core::detail::scheduled_resume_turn<operation, exec::trampoline_scheduler>
-        resume_turn_{exec::trampoline_scheduler{}};
+    wh::core::detail::scheduled_resume_turn<operation, exec::trampoline_scheduler> resume_turn_{
+        exec::trampoline_scheduler{}};
   };
 
 public:
@@ -867,8 +843,7 @@ public:
   STDEXEC_EXPLICIT_THIS_BEGIN(auto connect)(this self_t &&self, receiver_t receiver) {
     using stored_receiver_t = std::remove_cvref_t<receiver_t>;
     using operation_t = operation<stored_receiver_t>;
-    return operation_t{std::forward<self_t>(self).state_,
-                       std::forward<self_t>(self).make_attempt_,
+    return operation_t{std::forward<self_t>(self).state_, std::forward<self_t>(self).make_attempt_,
                        std::move(receiver)};
   }
   STDEXEC_EXPLICIT_THIS_END(connect)

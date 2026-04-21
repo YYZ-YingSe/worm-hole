@@ -8,8 +8,9 @@ TEST_CASE("stacktrace capture returns a best effort diagnostic string",
   REQUIRE_FALSE(stack.empty());
 }
 
-TEST_CASE("stacktrace capture remains stable across repeated calls",
-          "[UT][wh/internal/stacktrace.hpp][capture_call_stack][condition][branch][boundary][repeat]") {
+TEST_CASE(
+    "stacktrace capture remains stable across repeated calls",
+    "[UT][wh/internal/stacktrace.hpp][capture_call_stack][condition][branch][boundary][repeat]") {
   const auto first = wh::internal::capture_call_stack();
   const auto second = wh::internal::capture_call_stack();
   REQUIRE_FALSE(first.empty());

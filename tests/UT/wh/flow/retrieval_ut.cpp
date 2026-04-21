@@ -4,10 +4,8 @@
 
 TEST_CASE("flow retrieval facade exports stable helper keys and defaults",
           "[UT][wh/flow/retrieval.hpp][request_node_key][condition][branch][boundary]") {
-  REQUIRE(wh::flow::retrieval::parent_id_metadata_key ==
-          wh::document::parent_id_metadata_key);
-  REQUIRE(wh::flow::retrieval::detail::multi_query::request_node_key() ==
-          "multi_query_request");
+  REQUIRE(wh::flow::retrieval::parent_id_metadata_key == wh::document::parent_id_metadata_key);
+  REQUIRE(wh::flow::retrieval::detail::multi_query::request_node_key() == "multi_query_request");
   REQUIRE(wh::flow::retrieval::detail::router::router_stage_name == "Router");
 }
 

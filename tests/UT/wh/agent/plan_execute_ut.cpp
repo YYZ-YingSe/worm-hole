@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/bind.hpp"
@@ -14,8 +14,8 @@ TEST_CASE("plan execute contracts carry plan step context readers and effective 
       .result = "done",
   };
   wh::agent::plan_execute_context context{
-      .input_messages = {wh::testing::helper::make_text_message(
-          wh::schema::message_role::user, "input")},
+      .input_messages = {wh::testing::helper::make_text_message(wh::schema::message_role::user,
+                                                                "input")},
       .current_plan = plan,
       .executed_steps = {executed},
   };
@@ -24,8 +24,8 @@ TEST_CASE("plan execute contracts carry plan step context readers and effective 
 
   wh::agent::plan_execute_decision decision{
       .kind = wh::agent::plan_execute_decision_kind::respond,
-      .response = wh::testing::helper::make_text_message(
-          wh::schema::message_role::assistant, "final"),
+      .response =
+          wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "final"),
   };
   REQUIRE(decision.kind == wh::agent::plan_execute_decision_kind::respond);
 
@@ -56,27 +56,18 @@ TEST_CASE("plan execute contracts carry plan step context readers and effective 
   REQUIRE(authored.effective_replanner_name().has_value());
   REQUIRE(authored.effective_replanner_name().value() == "planner");
 
-  REQUIRE(authored
-              .set_planner_request_builder(
-                  wh::testing::helper::make_plan_request_builder())
+  REQUIRE(authored.set_planner_request_builder(wh::testing::helper::make_plan_request_builder())
               .has_value());
-  REQUIRE(authored
-              .set_executor_request_builder(
-                  wh::testing::helper::make_plan_request_builder())
+  REQUIRE(authored.set_executor_request_builder(wh::testing::helper::make_plan_request_builder())
               .has_value());
-  REQUIRE(authored
-              .set_replanner_request_builder(
-                  wh::testing::helper::make_plan_request_builder())
+  REQUIRE(authored.set_replanner_request_builder(wh::testing::helper::make_plan_request_builder())
               .has_value());
-  REQUIRE(authored.set_planner_plan_reader(
-              wh::testing::helper::make_plan_reader())
-              .has_value());
-  REQUIRE(authored.set_executor_step_reader(
-              wh::testing::helper::make_step_reader())
-              .has_value());
-  REQUIRE(authored.set_replanner_decision_reader(
-              wh::testing::helper::make_plan_execute_decision_reader())
-              .has_value());
+  REQUIRE(authored.set_planner_plan_reader(wh::testing::helper::make_plan_reader()).has_value());
+  REQUIRE(authored.set_executor_step_reader(wh::testing::helper::make_step_reader()).has_value());
+  REQUIRE(
+      authored
+          .set_replanner_decision_reader(wh::testing::helper::make_plan_execute_decision_reader())
+          .has_value());
 
   auto replanner = wh::testing::helper::make_executable_agent("replanner");
   REQUIRE(replanner.has_value());
@@ -92,36 +83,26 @@ TEST_CASE("plan execute contracts carry plan step context readers and effective 
   REQUIRE(lowered.value().executable());
 }
 
-TEST_CASE("plan execute shell rejects invalid builders roles and late mutation",
-          "[UT][wh/agent/plan_execute.hpp][plan_execute::set_planner_request_builder][condition][branch][boundary]") {
+TEST_CASE(
+    "plan execute shell rejects invalid builders roles and late mutation",
+    "[UT][wh/agent/"
+    "plan_execute.hpp][plan_execute::set_planner_request_builder][condition][branch][boundary]") {
   wh::agent::plan_execute missing{"missing"};
   auto missing_freeze = missing.freeze();
   REQUIRE(missing_freeze.has_error());
   REQUIRE(missing_freeze.error() == wh::core::errc::invalid_argument);
 
-  REQUIRE(missing
-              .set_planner_request_builder(
-                  wh::agent::plan_execute_request_builder{nullptr})
+  REQUIRE(missing.set_planner_request_builder(wh::agent::plan_execute_request_builder{nullptr})
               .has_error());
-  REQUIRE(missing
-              .set_executor_request_builder(
-                  wh::agent::plan_execute_request_builder{nullptr})
+  REQUIRE(missing.set_executor_request_builder(wh::agent::plan_execute_request_builder{nullptr})
               .has_error());
-  REQUIRE(missing
-              .set_replanner_request_builder(
-                  wh::agent::plan_execute_request_builder{nullptr})
+  REQUIRE(missing.set_replanner_request_builder(wh::agent::plan_execute_request_builder{nullptr})
               .has_error());
-  REQUIRE(missing
-              .set_planner_plan_reader(
-                  wh::agent::plan_execute_plan_reader{nullptr})
-              .has_error());
-  REQUIRE(missing
-              .set_executor_step_reader(
-                  wh::agent::plan_execute_step_reader{nullptr})
-              .has_error());
-  REQUIRE(missing
-              .set_replanner_decision_reader(
-                  wh::agent::plan_execute_decision_reader{nullptr})
+  REQUIRE(
+      missing.set_planner_plan_reader(wh::agent::plan_execute_plan_reader{nullptr}).has_error());
+  REQUIRE(
+      missing.set_executor_step_reader(wh::agent::plan_execute_step_reader{nullptr}).has_error());
+  REQUIRE(missing.set_replanner_decision_reader(wh::agent::plan_execute_decision_reader{nullptr})
               .has_error());
   REQUIRE(missing.set_planner(wh::agent::agent{""}).has_error());
   REQUIRE(missing.set_executor(wh::agent::agent{""}).has_error());
@@ -130,38 +111,29 @@ TEST_CASE("plan execute shell rejects invalid builders roles and late mutation",
   wh::agent::plan_execute conflicting{"conflicting"};
   REQUIRE(conflicting.set_planner(wh::agent::agent{"same"}).has_value());
   REQUIRE(conflicting.set_executor(wh::agent::agent{"same"}).has_value());
-  REQUIRE(conflicting
-              .set_planner_request_builder(
-                  wh::testing::helper::make_plan_request_builder())
+  REQUIRE(conflicting.set_planner_request_builder(wh::testing::helper::make_plan_request_builder())
               .has_value());
-  REQUIRE(conflicting
-              .set_executor_request_builder(
-                  wh::testing::helper::make_plan_request_builder())
+  REQUIRE(conflicting.set_executor_request_builder(wh::testing::helper::make_plan_request_builder())
               .has_value());
-  REQUIRE(conflicting
-              .set_replanner_request_builder(
-                  wh::testing::helper::make_plan_request_builder())
-              .has_value());
-  REQUIRE(conflicting.set_planner_plan_reader(
-              wh::testing::helper::make_plan_reader())
-              .has_value());
-  REQUIRE(conflicting.set_executor_step_reader(
-              wh::testing::helper::make_step_reader())
-              .has_value());
-  REQUIRE(conflicting.set_replanner_decision_reader(
-              wh::testing::helper::make_plan_execute_decision_reader())
-              .has_value());
+  REQUIRE(
+      conflicting.set_replanner_request_builder(wh::testing::helper::make_plan_request_builder())
+          .has_value());
+  REQUIRE(conflicting.set_planner_plan_reader(wh::testing::helper::make_plan_reader()).has_value());
+  REQUIRE(
+      conflicting.set_executor_step_reader(wh::testing::helper::make_step_reader()).has_value());
+  REQUIRE(
+      conflicting
+          .set_replanner_decision_reader(wh::testing::helper::make_plan_execute_decision_reader())
+          .has_value());
   auto conflicting_freeze = conflicting.freeze();
   REQUIRE(conflicting_freeze.has_error());
   REQUIRE(conflicting_freeze.error() == wh::core::errc::contract_violation);
 
-  auto configured =
-      wh::testing::helper::make_configured_plan_execute("configured");
+  auto configured = wh::testing::helper::make_configured_plan_execute("configured");
   REQUIRE(configured.has_value());
   REQUIRE(configured->freeze().has_value());
   REQUIRE(configured->set_output_key("late").has_error());
-  REQUIRE(configured->set_planner_request_builder(
-              wh::testing::helper::make_plan_request_builder())
+  REQUIRE(configured->set_planner_request_builder(wh::testing::helper::make_plan_request_builder())
               .has_error());
   REQUIRE(configured->set_planner(wh::agent::agent{"late"}).has_error());
   REQUIRE(configured->set_max_iterations(3U).has_error());

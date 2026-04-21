@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -9,6 +7,8 @@
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/component_contract_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
@@ -31,37 +31,35 @@ TEST_CASE("compose graph executes runtime branch routing and enforces whitelist"
   wh::compose::graph graph{};
 
   auto route = wh::compose::make_lambda_node(
-      "route", [](wh::compose::graph_value &input, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &)
-                   -> wh::core::result<wh::compose::graph_value> {
+      "route",
+      [](wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         return std::move(input);
       });
 
   int left_count = 0;
   int right_count = 0;
   auto left = wh::compose::make_lambda_node(
-      "left", [&left_count](const wh::compose::graph_value &input,
-                            wh::core::run_context &,
-                            const wh::compose::graph_call_scope &)
-                  -> wh::core::result<wh::compose::graph_value> {
+      "left",
+      [&left_count](
+          const wh::compose::graph_value &input, wh::core::run_context &,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         ++left_count;
         auto typed = read_any<int>(input);
         if (typed.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              typed.error());
+          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
         }
         return wh::core::any(typed.value() + 10);
       });
   auto right = wh::compose::make_lambda_node(
-      "right", [&right_count](const wh::compose::graph_value &input,
-                              wh::core::run_context &,
-                              const wh::compose::graph_call_scope &)
-                   -> wh::core::result<wh::compose::graph_value> {
+      "right",
+      [&right_count](
+          const wh::compose::graph_value &input, wh::core::run_context &,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         ++right_count;
         auto typed = read_any<int>(input);
         if (typed.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              typed.error());
+          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
         }
         return wh::core::any(typed.value() + 100);
       });
@@ -76,28 +74,26 @@ TEST_CASE("compose graph executes runtime branch routing and enforces whitelist"
   REQUIRE(left_id.has_value());
   auto right_id = graph.node_id("right");
   REQUIRE(right_id.has_value());
-  REQUIRE(graph
-              .add_value_branch(wh::compose::graph_value_branch{
-                  .from = "route",
-                  .end_nodes = {"left", "right"},
-                  .selector_ids =
-                      [left = left_id.value(), right = right_id.value()](
-                          const wh::compose::graph_value &output,
-                          wh::core::run_context &,
-                          const wh::compose::graph_call_scope &)
-                          -> wh::core::result<std::vector<std::uint32_t>> {
-                    auto typed = read_any<int>(output);
-                    if (typed.has_error()) {
-                      return wh::core::result<std::vector<std::uint32_t>>::failure(
-                          typed.error());
-                    }
-                    if ((typed.value() % 2) == 0) {
-                      return std::vector<std::uint32_t>{left};
-                    }
-                    return std::vector<std::uint32_t>{right};
-                  },
-              })
-              .has_value());
+  REQUIRE(
+      graph
+          .add_value_branch(wh::compose::graph_value_branch{
+              .from = "route",
+              .end_nodes = {"left", "right"},
+              .selector_ids = [left = left_id.value(), right = right_id.value()](
+                                  const wh::compose::graph_value &output, wh::core::run_context &,
+                                  const wh::compose::graph_call_scope &)
+                  -> wh::core::result<std::vector<std::uint32_t>> {
+                auto typed = read_any<int>(output);
+                if (typed.has_error()) {
+                  return wh::core::result<std::vector<std::uint32_t>>::failure(typed.error());
+                }
+                if ((typed.value() % 2) == 0) {
+                  return std::vector<std::uint32_t>{left};
+                }
+                return std::vector<std::uint32_t>{right};
+              },
+          })
+          .has_value());
   REQUIRE(graph.compile().has_value());
 
   wh::core::run_context context{};
@@ -132,27 +128,22 @@ TEST_CASE("compose graph executes runtime branch routing and enforces whitelist"
               .add_value_branch(wh::compose::graph_value_branch{
                   .from = "route",
                   .end_nodes = {"left"},
-                  .selector_ids =
-                      [](const wh::compose::graph_value &,
-                         wh::core::run_context &,
-                         const wh::compose::graph_call_scope &)
-                          -> wh::core::result<std::vector<std::uint32_t>> {
-                    return std::vector<std::uint32_t>{
-                        std::numeric_limits<std::uint32_t>::max()};
+                  .selector_ids = [](const wh::compose::graph_value &, wh::core::run_context &,
+                                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<std::vector<std::uint32_t>> {
+                    return std::vector<std::uint32_t>{std::numeric_limits<std::uint32_t>::max()};
                   },
               })
               .has_value());
   REQUIRE(invalid_graph.compile().has_value());
-  auto invalid_invoked =
-      invoke_value_sync(invalid_graph, wh::core::any(1), context);
+  auto invalid_invoked = invoke_value_sync(invalid_graph, wh::core::any(1), context);
   REQUIRE(invalid_invoked.has_error());
   REQUIRE(invalid_invoked.error() == wh::core::errc::contract_violation);
 }
 
 TEST_CASE("compose graph trigger mode controls readiness policy",
           "[core][compose][graph][condition]") {
-  auto build_case = [](wh::compose::graph_trigger_mode trigger_mode)
-      -> wh::compose::graph {
+  auto build_case = [](wh::compose::graph_trigger_mode trigger_mode) -> wh::compose::graph {
     wh::compose::graph_compile_options options{};
     options.mode = wh::compose::graph_runtime_mode::dag;
     options.trigger_mode = trigger_mode;
@@ -160,28 +151,23 @@ TEST_CASE("compose graph trigger mode controls readiness policy",
     auto route = wh::compose::make_passthrough_node("route");
     auto left = make_int_add_node("left", 10);
     auto right = make_int_add_node("right", 20);
-    auto target =
-        wh::compose::make_lambda_node(
-            "target",
-            [](const wh::compose::graph_value &input, wh::core::run_context &,
-               const wh::compose::graph_call_scope &)
-                -> wh::core::result<wh::compose::graph_value> {
-              if (auto merged = read_any<wh::compose::graph_value_map>(input);
-                  merged.has_value()) {
-                auto left_value = read_any<int>(merged.value().at("left"));
-                if (left_value.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      left_value.error());
-                }
-                return wh::core::any(left_value.value() + 1);
-              }
-              auto typed = read_any<int>(input);
-              if (typed.has_error()) {
-                return wh::core::result<wh::compose::graph_value>::failure(
-                    typed.error());
-              }
-              return wh::core::any(typed.value() + 1);
-            });
+    auto target = wh::compose::make_lambda_node(
+        "target",
+        [](const wh::compose::graph_value &input, wh::core::run_context &,
+           const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          if (auto merged = read_any<wh::compose::graph_value_map>(input); merged.has_value()) {
+            auto left_value = read_any<int>(merged.value().at("left"));
+            if (left_value.has_error()) {
+              return wh::core::result<wh::compose::graph_value>::failure(left_value.error());
+            }
+            return wh::core::any(left_value.value() + 1);
+          }
+          auto typed = read_any<int>(input);
+          if (typed.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+          }
+          return wh::core::any(typed.value() + 1);
+        });
     REQUIRE(graph.add_passthrough(std::move(route)).has_value());
     REQUIRE(graph.add_lambda(std::move(left)).has_value());
     REQUIRE(graph.add_lambda(std::move(right)).has_value());
@@ -196,12 +182,10 @@ TEST_CASE("compose graph trigger mode controls readiness policy",
                 .add_value_branch(wh::compose::graph_value_branch{
                     .from = "route",
                     .end_nodes = {"left", "right"},
-                    .selector_ids =
-                        [left = left_id.value()](
-                            const wh::compose::graph_value &,
-                            wh::core::run_context &,
-                            const wh::compose::graph_call_scope &)
-                            -> wh::core::result<std::vector<std::uint32_t>> {
+                    .selector_ids = [left = left_id.value()](const wh::compose::graph_value &,
+                                                             wh::core::run_context &,
+                                                             const wh::compose::graph_call_scope &)
+                        -> wh::core::result<std::vector<std::uint32_t>> {
                       return std::vector<std::uint32_t>{left};
                     },
                 })
@@ -234,45 +218,40 @@ TEST_CASE("compose graph fan-in policy require-all merges active inputs",
   wh::compose::graph graph{std::move(options)};
   std::size_t merged_count = 0U;
   REQUIRE(graph
-              .add_lambda("a", [](const wh::compose::graph_value &,
-                                  wh::core::run_context &,
-                                  const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                return wh::core::any(10);
-              })
+              .add_lambda(
+                  "a",
+                  [](const wh::compose::graph_value &, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> { return wh::core::any(10); })
               .has_value());
   REQUIRE(graph
-              .add_lambda("b", [](const wh::compose::graph_value &,
-                                  wh::core::run_context &,
-                                  const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                return wh::core::any(20);
-              })
+              .add_lambda(
+                  "b",
+                  [](const wh::compose::graph_value &, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> { return wh::core::any(20); })
               .has_value());
   REQUIRE(graph
-              .add_lambda("join",
-                          [&merged_count](const wh::compose::graph_value &input,
-                                          wh::core::run_context &,
-                                          const wh::compose::graph_call_scope &)
-                              -> wh::core::result<wh::compose::graph_value> {
-                            auto typed = read_any<wh::compose::graph_value_map>(input);
-                            if (typed.has_error()) {
-                              return wh::core::result<wh::compose::graph_value>::failure(
-                                  typed.error());
-                            }
-                            merged_count = typed.value().size();
-                            auto left = read_any<int>(typed.value().at("a"));
-                            auto right = read_any<int>(typed.value().at("b"));
-                            if (left.has_error()) {
-                              return wh::core::result<wh::compose::graph_value>::failure(
-                                  left.error());
-                            }
-                            if (right.has_error()) {
-                              return wh::core::result<wh::compose::graph_value>::failure(
-                                  right.error());
-                            }
-                            return wh::core::any(left.value() + right.value());
-                          })
+              .add_lambda(
+                  "join",
+                  [&merged_count](const wh::compose::graph_value &input, wh::core::run_context &,
+                                  const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> {
+                    auto typed = read_any<wh::compose::graph_value_map>(input);
+                    if (typed.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+                    }
+                    merged_count = typed.value().size();
+                    auto left = read_any<int>(typed.value().at("a"));
+                    auto right = read_any<int>(typed.value().at("b"));
+                    if (left.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(left.error());
+                    }
+                    if (right.has_error()) {
+                      return wh::core::result<wh::compose::graph_value>::failure(right.error());
+                    }
+                    return wh::core::any(left.value() + right.value());
+                  })
               .has_value());
   REQUIRE(graph.add_entry_edge("a").has_value());
   REQUIRE(graph.add_entry_edge("b").has_value());
@@ -303,22 +282,19 @@ TEST_CASE("compose graph allow-partial preserves static value fan-in shape",
   std::size_t merged_count = 0U;
   auto add_join = graph.add_lambda(
       "join",
-      [&merged_count](const wh::compose::graph_value &input,
-                      wh::core::run_context &,
-                      const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+      [&merged_count](
+          const wh::compose::graph_value &input, wh::core::run_context &,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto typed = read_any<wh::compose::graph_value_map>(input);
         if (typed.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              typed.error());
+          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
         }
         merged_count = typed.value().size();
         REQUIRE(typed.value().contains("left"));
         REQUIRE(!typed.value().contains("right"));
         auto left = read_any<int>(typed.value().at("left"));
         if (left.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              left.error());
+          return wh::core::result<wh::compose::graph_value>::failure(left.error());
         }
         return wh::core::any(left.value() + 1);
       });
@@ -335,11 +311,10 @@ TEST_CASE("compose graph allow-partial preserves static value fan-in shape",
               .add_value_branch(wh::compose::graph_value_branch{
                   .from = "route",
                   .end_nodes = {"left", "right"},
-                  .selector_ids =
-                      [left = left_id.value()](
-                          const wh::compose::graph_value &, wh::core::run_context &,
-                          const wh::compose::graph_call_scope &)
-                          -> wh::core::result<std::vector<std::uint32_t>> {
+                  .selector_ids = [left = left_id.value()](const wh::compose::graph_value &,
+                                                           wh::core::run_context &,
+                                                           const wh::compose::graph_call_scope &)
+                      -> wh::core::result<std::vector<std::uint32_t>> {
                     return std::vector<std::uint32_t>{left};
                   },
               })
@@ -355,8 +330,7 @@ TEST_CASE("compose graph allow-partial preserves static value fan-in shape",
   REQUIRE(merged_count == 1U);
 }
 
-TEST_CASE("compose graph enforces dag-pregel mode constraints",
-          "[core][compose][graph][branch]") {
+TEST_CASE("compose graph enforces dag-pregel mode constraints", "[core][compose][graph][branch]") {
   wh::compose::graph_compile_options dag_options{};
   wh::compose::dag dag_graph{dag_options};
   REQUIRE(dag_graph.add_lambda(make_int_add_node("a", 1)).has_value());
@@ -383,8 +357,7 @@ TEST_CASE("compose graph enforces dag-pregel mode constraints",
   wh::compose::graph_compile_options pregel_budget_options{};
   pregel_budget_options.max_steps = 8U;
   wh::compose::pregel pregel_budget_graph{pregel_budget_options};
-  REQUIRE(
-      pregel_budget_graph.add_lambda(make_int_add_node("single", 1)).has_value());
+  REQUIRE(pregel_budget_graph.add_lambda(make_int_add_node("single", 1)).has_value());
   REQUIRE(pregel_budget_graph.add_entry_edge("single").has_value());
   REQUIRE(pregel_budget_graph.add_exit_edge("single").has_value());
   REQUIRE(pregel_budget_graph.compile().has_value());
@@ -393,8 +366,7 @@ TEST_CASE("compose graph enforces dag-pregel mode constraints",
   wh::compose::graph_call_options call_options{};
   call_options.pregel_max_steps = static_cast<std::size_t>(1U);
   auto invoked =
-      invoke_graph_sync(pregel_budget_graph, wh::core::any(1), context,
-                        call_options, {});
+      invoke_graph_sync(pregel_budget_graph, wh::core::any(1), context, call_options, {});
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_error());
   REQUIRE(invoked.value().output_status.error() == wh::core::errc::timeout);
@@ -409,9 +381,8 @@ TEST_CASE("compose graph enforces dag-pregel mode constraints",
 
   wh::compose::graph_call_options pregel_call_options{};
   pregel_call_options.pregel_max_steps = static_cast<std::size_t>(4U);
-  auto invoked_with_call_options =
-      invoke_value_sync(pregel_budget_graph, wh::core::any(1), context,
-                        std::move(pregel_call_options));
+  auto invoked_with_call_options = invoke_value_sync(pregel_budget_graph, wh::core::any(1), context,
+                                                     std::move(pregel_call_options));
   REQUIRE(invoked_with_call_options.has_value());
   auto called_output = read_any<int>(invoked_with_call_options.value());
   REQUIRE(called_output.has_value());
@@ -425,8 +396,7 @@ TEST_CASE("compose graph enforces dag-pregel mode constraints",
   wh::compose::graph_call_options dag_call_options{};
   dag_call_options.pregel_max_steps = static_cast<std::size_t>(2U);
   auto dag_invoked =
-      invoke_value_sync(dag_budget_graph, wh::core::any(1), context,
-                        std::move(dag_call_options));
+      invoke_value_sync(dag_budget_graph, wh::core::any(1), context, std::move(dag_call_options));
   REQUIRE(dag_invoked.has_error());
   REQUIRE(dag_invoked.error() == wh::core::errc::contract_violation);
 }
@@ -441,28 +411,25 @@ TEST_CASE("compose pregel runtime uses strict superstep barriers",
   REQUIRE(pregel.add_lambda(make_int_add_node("a", 1)).has_value());
   REQUIRE(pregel.add_lambda(make_int_add_node("b", 2)).has_value());
   REQUIRE(pregel
-              .add_lambda(
-                  "join",
-                  [](const wh::compose::graph_value &input, wh::core::run_context &,
-                     const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    auto merged = read_any<wh::compose::graph_value_map>(input);
-                    if (merged.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          merged.error());
-                    }
-                    auto a = read_any<int>(merged.value().at("a"));
-                    auto b = read_any<int>(merged.value().at("b"));
-                    if (a.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          a.error());
-                    }
-                    if (b.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          b.error());
-                    }
-                    return wh::core::any(a.value() + b.value() + 3);
-                  })
+              .add_lambda("join",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto merged = read_any<wh::compose::graph_value_map>(input);
+                            if (merged.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  merged.error());
+                            }
+                            auto a = read_any<int>(merged.value().at("a"));
+                            auto b = read_any<int>(merged.value().at("b"));
+                            if (a.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(a.error());
+                            }
+                            if (b.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(b.error());
+                            }
+                            return wh::core::any(a.value() + b.value() + 3);
+                          })
               .has_value());
   REQUIRE(pregel.add_entry_edge("a").has_value());
   REQUIRE(pregel.add_entry_edge("b").has_value());
@@ -474,23 +441,21 @@ TEST_CASE("compose pregel runtime uses strict superstep barriers",
   wh::core::run_context context{};
   wh::compose::graph_call_options call_options{};
   call_options.record_transition_log = true;
-  auto invoked =
-      invoke_graph_sync(pregel, wh::core::any(1), context, call_options, {});
+  auto invoked = invoke_graph_sync(pregel, wh::core::any(1), context, call_options, {});
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
   REQUIRE(typed.has_value());
   REQUIRE(typed.value() == 8);
 
-  const auto find_enter_step = [&](const std::string_view node_key)
-      -> std::optional<std::size_t> {
+  const auto find_enter_step = [&](const std::string_view node_key) -> std::optional<std::size_t> {
     const auto &events = invoked.value().report.transition_log;
-    const auto iter = std::find_if(
-        events.begin(), events.end(),
-        [node_key](const wh::compose::graph_state_transition_event &event) {
-          return event.kind == wh::compose::graph_state_transition_kind::node_enter &&
-                 event.cause.node_key == node_key;
-        });
+    const auto iter =
+        std::find_if(events.begin(), events.end(),
+                     [node_key](const wh::compose::graph_state_transition_event &event) {
+                       return event.kind == wh::compose::graph_state_transition_kind::node_enter &&
+                              event.cause.node_key == node_key;
+                     });
     if (iter == events.end()) {
       return std::nullopt;
     }
@@ -531,33 +496,30 @@ TEST_CASE("compose dag and pregel helpers enforce cycle policy",
   REQUIRE(pregel_graph.compile().has_value());
 }
 
-TEST_CASE("compose graph applies retry budget",
-          "[core][compose][graph][branch]") {
+TEST_CASE("compose graph applies retry budget", "[core][compose][graph][branch]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
   options.retry_budget = 2U;
   wh::compose::graph graph{std::move(options)};
   int run_count = 0;
-  REQUIRE(graph
-              .add_lambda(
-                  "flaky",
-                  [&run_count](const wh::compose::graph_value &input,
-                               wh::core::run_context &,
-                               const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    ++run_count;
-                    if (run_count <= 2) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          wh::core::errc::unavailable);
-                    }
-                    auto typed = read_any<int>(input);
-                    if (typed.has_error()) {
-                      return wh::core::result<wh::compose::graph_value>::failure(
-                          typed.error());
-                    }
-                    return wh::core::any(typed.value() + 1);
-                  })
-              .has_value());
+  REQUIRE(
+      graph
+          .add_lambda("flaky",
+                      [&run_count](const wh::compose::graph_value &input, wh::core::run_context &,
+                                   const wh::compose::graph_call_scope &)
+                          -> wh::core::result<wh::compose::graph_value> {
+                        ++run_count;
+                        if (run_count <= 2) {
+                          return wh::core::result<wh::compose::graph_value>::failure(
+                              wh::core::errc::unavailable);
+                        }
+                        auto typed = read_any<int>(input);
+                        if (typed.has_error()) {
+                          return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+                        }
+                        return wh::core::any(typed.value() + 1);
+                      })
+          .has_value());
   REQUIRE(graph.add_entry_edge("flaky").has_value());
   REQUIRE(graph.add_exit_edge("flaky").has_value());
   REQUIRE(graph.compile().has_value());
@@ -591,8 +553,7 @@ TEST_CASE("compose graph supports node-level retry and timeout overrides",
     REQUIRE(graph
                 .add_lambda(
                     "flaky",
-                    [&attempts](const wh::compose::graph_value &input,
-                                wh::core::run_context &,
+                    [&attempts](const wh::compose::graph_value &input, wh::core::run_context &,
                                 const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_value> {
                       ++attempts;
@@ -602,8 +563,7 @@ TEST_CASE("compose graph supports node-level retry and timeout overrides",
                       }
                       auto typed = read_any<int>(input);
                       if (typed.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(
-                            typed.error());
+                        return wh::core::result<wh::compose::graph_value>::failure(typed.error());
                       }
                       return wh::core::any(typed.value() + 1);
                     },

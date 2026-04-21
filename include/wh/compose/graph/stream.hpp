@@ -44,13 +44,11 @@ namespace detail {
   using dynamic_merge_t = wh::schema::stream::merge_stream_reader<
       graph_stream_reader, wh::schema::stream::merge_topology_mode::dynamic_injection>;
 
-  if (auto *merged = reader.template target_if<static_merge_t>();
-      merged != nullptr) {
+  if (auto *merged = reader.template target_if<static_merge_t>(); merged != nullptr) {
     return graph_stream_reader{merged->share()};
   }
 
-  if (auto *merged = reader.template target_if<dynamic_merge_t>();
-      merged != nullptr) {
+  if (auto *merged = reader.template target_if<dynamic_merge_t>(); merged != nullptr) {
     return graph_stream_reader{merged->share()};
   }
 
@@ -214,11 +212,8 @@ template <typename reader_t>
 template <typename reader_t>
   requires(!std::same_as<std::remove_cvref_t<reader_t>, graph_stream_reader>) &&
           wh::schema::stream::stream_reader<std::remove_cvref_t<reader_t>> &&
-          (!std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
-                         graph_value>) &&
-          std::constructible_from<
-              graph_value,
-              typename std::remove_cvref_t<reader_t>::value_type>
+          (!std::same_as<typename std::remove_cvref_t<reader_t>::value_type, graph_value>) &&
+          std::constructible_from<graph_value, typename std::remove_cvref_t<reader_t>::value_type>
 [[nodiscard]] inline auto to_graph_stream_reader(reader_t &&reader)
     -> wh::core::result<graph_stream_reader> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;

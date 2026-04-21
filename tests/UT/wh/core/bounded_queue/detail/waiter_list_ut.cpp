@@ -13,7 +13,8 @@ struct list_waiter {
 } // namespace
 
 TEST_CASE("waiter list push remove pop and detach preserve intrusive links",
-          "[UT][wh/core/bounded_queue/detail/waiter_list.hpp][waiter_list::push_back][condition][branch]") {
+          "[UT][wh/core/bounded_queue/detail/"
+          "waiter_list.hpp][waiter_list::push_back][condition][branch]") {
   wh::core::detail::waiter_list<list_waiter> list{};
   list_waiter first{.id = 1};
   list_waiter second{.id = 2};

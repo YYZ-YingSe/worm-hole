@@ -60,9 +60,7 @@ protected:
   static auto on_access() -> void {
     throw std::logic_error("Attempted to access an invalid object!");
   }
-  static auto on_copy() -> void {
-    throw std::logic_error("Attempted to copy an invalid object!");
-  }
+  static auto on_copy() -> void { throw std::logic_error("Attempted to copy an invalid object!"); }
 
   throw_on_error_base() = default;
   ~throw_on_error_base() = default;

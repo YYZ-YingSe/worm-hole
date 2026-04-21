@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -10,36 +8,34 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
+#include "helper/sender_capture.hpp"
 #include "wh/adk/agent_tool.hpp"
 #include "wh/adk/detail/history_request.hpp"
 #include "wh/compose/graph.hpp"
 #include "wh/compose/node/compiled.hpp"
-#include "wh/schema/stream/reader.hpp"
 #include "wh/schema/stream.hpp"
-#include "helper/sender_capture.hpp"
+#include "wh/schema/stream/reader.hpp"
 
 namespace {
 
-[[nodiscard]] auto make_user_message(const std::string &text)
-    -> wh::schema::message {
+[[nodiscard]] auto make_user_message(const std::string &text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
   message.parts.emplace_back(wh::schema::text_part{text});
   return message;
 }
 
-[[nodiscard]] auto make_assistant_message(const std::string &text)
-    -> wh::schema::message {
+[[nodiscard]] auto make_assistant_message(const std::string &text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::assistant;
   message.parts.emplace_back(wh::schema::text_part{text});
   return message;
 }
 
-[[nodiscard]] auto message_text(const wh::schema::message &message)
-    -> std::string {
+[[nodiscard]] auto message_text(const wh::schema::message &message) -> std::string {
   return std::get<wh::schema::text_part>(message.parts.front()).text;
 }
 
@@ -59,15 +55,13 @@ namespace {
   return events;
 }
 
-[[nodiscard]] auto read_graph_string(wh::compose::graph_value &&value)
-    -> std::string {
+[[nodiscard]] auto read_graph_string(wh::compose::graph_value &&value) -> std::string {
   auto *typed = wh::core::any_cast<std::string>(&value);
   REQUIRE(typed != nullptr);
   return std::move(*typed);
 }
 
-[[nodiscard]] auto
-read_graph_stream_text(wh::compose::graph_stream_reader &reader)
+[[nodiscard]] auto read_graph_stream_text(wh::compose::graph_stream_reader &reader)
     -> std::vector<std::string> {
   std::vector<std::string> chunks{};
   while (true) {
@@ -96,19 +90,16 @@ struct scripted_agent_tool_runner_state {
   bool add_child_metadata{false};
   bool set_interrupt_context{false};
   std::size_t resume_projection_count{0U};
-  std::optional<wh::compose::interrupt_decision_kind>
-      expected_resume_decision{};
+  std::optional<wh::compose::interrupt_decision_kind> expected_resume_decision{};
   std::string child_interrupt_id{"child-interrupt"};
-  wh::core::address child_interrupt_location{
-      {"agent", "worker", "tool", "leaf", "call-1"}};
+  wh::core::address child_interrupt_location{{"agent", "worker", "tool", "leaf", "call-1"}};
   wh::core::any child_interrupt_state{std::string{"child-state"}};
   wh::core::any child_interrupt_payload{std::string{"child-payload"}};
 };
 
-[[nodiscard]] auto
-run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
-                        const wh::adk::run_request &request,
-                        wh::core::run_context &context)
+[[nodiscard]] auto run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
+                                           const wh::adk::run_request &request,
+                                           wh::core::run_context &context)
     -> wh::adk::agent_run_result {
   state.seen_requests.push_back(request);
 
@@ -126,8 +117,7 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
     }
   }
 
-  const auto &message_texts =
-      resumed ? state.resumed_message_texts : state.message_texts;
+  const auto &message_texts = resumed ? state.resumed_message_texts : state.message_texts;
   std::vector<wh::adk::agent_event> events{};
   for (const auto &text : message_texts) {
     wh::adk::event_metadata metadata{};
@@ -135,8 +125,8 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
       metadata.path = wh::adk::run_path{{"agent", "leaf"}};
       metadata.agent_name = "leaf";
     }
-    events.push_back(wh::adk::make_message_event(make_assistant_message(text),
-                                                 std::move(metadata)));
+    events.push_back(
+        wh::adk::make_message_event(make_assistant_message(text), std::move(metadata)));
   }
   if (state.emit_transfer) {
     events.push_back(wh::adk::make_control_event(wh::adk::control_action{
@@ -156,8 +146,8 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
         }));
   }
   if (state.emit_error) {
-    events.push_back(wh::adk::make_error_event(
-        wh::core::make_error(wh::core::errc::unavailable), "child failed"));
+    events.push_back(wh::adk::make_error_event(wh::core::make_error(wh::core::errc::unavailable),
+                                               "child failed"));
   }
 
   if (state.emit_interrupt && state.set_interrupt_context) {
@@ -176,17 +166,14 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
   }
 
   return wh::adk::agent_run_output{
-      .events =
-          wh::adk::agent_event_stream_reader{
-              wh::schema::stream::make_values_stream_reader(std::move(events))},
+      .events = wh::adk::agent_event_stream_reader{wh::schema::stream::make_values_stream_reader(
+          std::move(events))},
       .final_message = std::move(final_message),
   };
 }
 
-[[nodiscard]] auto make_call_scope(wh::core::run_context &context,
-                                   const std::string_view tool_name,
-                                   const std::string_view call_id)
-    -> wh::tool::call_scope {
+[[nodiscard]] auto make_call_scope(wh::core::run_context &context, const std::string_view tool_name,
+                                   const std::string_view call_id) -> wh::tool::call_scope {
   return wh::tool::call_scope{
       .run = context,
       .component = "agent_tool_test",
@@ -201,14 +188,12 @@ run_scripted_agent_tool(scripted_agent_tool_runner_state &state,
 TEST_CASE("agent tool request mode maps request json to child chat request and "
           "aggregates text",
           "[core][agent][condition]") {
-  wh::adk::agent_tool tool{"delegate", "delegate request",
-                           wh::agent::agent{"worker"}};
+  wh::adk::agent_tool tool{"delegate", "delegate request", wh::agent::agent{"worker"}};
   auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
       scripted_agent_tool_runner_state{.message_texts = {"bridge result"}});
   REQUIRE(
       tool.bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -220,37 +205,30 @@ TEST_CASE("agent tool request mode maps request json to child chat request and "
       .arguments = R"({"request":"hello bridge"})",
   };
   wh::core::run_context context{};
-  auto result =
-      tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
+  auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
   REQUIRE(result.has_value());
   REQUIRE(runner_state->seen_requests.size() == 1U);
   REQUIRE(runner_state->seen_requests.front().messages.size() == 1U);
-  REQUIRE(message_text(runner_state->seen_requests.front().messages.front()) ==
-          "hello bridge");
-  REQUIRE(result.value().output_chunks ==
-          std::vector<std::string>{"bridge result"});
+  REQUIRE(message_text(runner_state->seen_requests.front().messages.front()) == "hello bridge");
+  REQUIRE(result.value().output_chunks == std::vector<std::string>{"bridge result"});
   REQUIRE(result.value().output_text == "bridge result");
 
   auto reader = std::move(result).value().events;
   auto events = collect_events(reader);
   REQUIRE(events.size() == 1U);
-  REQUIRE(events.front().metadata.path.to_string("/") ==
-          "tool/delegate/call-1/agent/worker");
+  REQUIRE(events.front().metadata.path.to_string("/") == "tool/delegate/call-1/agent/worker");
 }
 
 TEST_CASE("agent tool message history mode reads projected react state and "
           "strips trailing assistant tool call",
           "[core][agent][condition]") {
-  wh::adk::agent_tool tool{"delegate_history", "delegate history",
-                           wh::agent::agent{"worker"}};
-  REQUIRE(tool.set_input_mode(wh::adk::agent_tool_input_mode::message_history)
-              .has_value());
+  wh::adk::agent_tool tool{"delegate_history", "delegate history", wh::agent::agent{"worker"}};
+  REQUIRE(tool.set_input_mode(wh::adk::agent_tool_input_mode::message_history).has_value());
   auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
       scripted_agent_tool_runner_state{.message_texts = {"history result"}});
   REQUIRE(
       tool.bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -266,27 +244,22 @@ TEST_CASE("agent tool message history mode reads projected react state and "
           .messages = {make_user_message("keep user")},
       }),
   };
-  auto result =
-      tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
+  auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
   REQUIRE(result.has_value());
   REQUIRE(runner_state->seen_requests.size() == 1U);
   REQUIRE(runner_state->seen_requests.front().messages.size() == 1U);
-  REQUIRE(message_text(runner_state->seen_requests.front().messages.front()) ==
-          "keep user");
+  REQUIRE(message_text(runner_state->seen_requests.front().messages.front()) == "keep user");
 }
 
 TEST_CASE("agent tool message history mode accepts shared history-request payload",
           "[core][agent][condition]") {
-  wh::adk::agent_tool tool{"delegate_payload", "delegate payload",
-                           wh::agent::agent{"worker"}};
-  REQUIRE(tool.set_input_mode(wh::adk::agent_tool_input_mode::message_history)
-              .has_value());
+  wh::adk::agent_tool tool{"delegate_payload", "delegate payload", wh::agent::agent{"worker"}};
+  REQUIRE(tool.set_input_mode(wh::adk::agent_tool_input_mode::message_history).has_value());
   auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
       scripted_agent_tool_runner_state{.message_texts = {"history result"}});
   REQUIRE(
       tool.bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -294,8 +267,7 @@ TEST_CASE("agent tool message history mode accepts shared history-request payloa
 
   wh::core::run_context context{};
   wh::adk::detail::history_request_payload payload{};
-  payload.history_request.messages.push_back(
-      make_user_message("keep structured user"));
+  payload.history_request.messages.push_back(make_user_message("keep structured user"));
   payload.state_payload = wh::core::any(std::string{"bridge-state"});
 
   wh::compose::tool_call call{
@@ -304,8 +276,7 @@ TEST_CASE("agent tool message history mode accepts shared history-request payloa
       .arguments = "{}",
       .payload = wh::core::any(std::move(payload)),
   };
-  auto result =
-      tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
+  auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
   REQUIRE(result.has_value());
   REQUIRE(runner_state->seen_requests.size() == 1U);
   REQUIRE(runner_state->seen_requests.front().messages.size() == 1U);
@@ -316,38 +287,34 @@ TEST_CASE("agent tool message history mode accepts shared history-request payloa
 TEST_CASE("agent tool flattens child message substreams without rebuilding a "
           "second event vector",
           "[core][agent][condition]") {
-  wh::adk::agent_tool tool{"delegate_stream", "delegate stream",
-                           wh::agent::agent{"worker"}};
+  wh::adk::agent_tool tool{"delegate_stream", "delegate stream", wh::agent::agent{"worker"}};
   REQUIRE(tool.set_forward_internal_events(true).has_value());
   auto bind_stream_runner =
-      tool.bind_runner(
-          [](const wh::adk::run_request &request,
-             wh::core::run_context &) -> wh::adk::agent_run_result {
-            REQUIRE(request.messages.size() == 1U);
-            REQUIRE(message_text(request.messages.front()) == "stream please");
+      tool.bind_runner([](const wh::adk::run_request &request,
+                          wh::core::run_context &) -> wh::adk::agent_run_result {
+        REQUIRE(request.messages.size() == 1U);
+        REQUIRE(message_text(request.messages.front()) == "stream please");
 
-            std::vector<wh::schema::message> streamed_messages{};
-            streamed_messages.push_back(make_assistant_message("first"));
-            streamed_messages.push_back(make_assistant_message("second"));
+        std::vector<wh::schema::message> streamed_messages{};
+        streamed_messages.push_back(make_assistant_message("first"));
+        streamed_messages.push_back(make_assistant_message("second"));
 
-            std::vector<wh::adk::agent_event> events{};
-            events.push_back(wh::adk::make_message_event(
-                wh::adk::agent_message_stream_reader{
-                    wh::schema::stream::make_values_stream_reader(
-                        std::move(streamed_messages))},
-                wh::adk::event_metadata{
-                    .path = wh::adk::run_path{{"agent", "worker"}},
-                    .agent_name = "worker",
-                }));
+        std::vector<wh::adk::agent_event> events{};
+        events.push_back(wh::adk::make_message_event(
+            wh::adk::agent_message_stream_reader{
+                wh::schema::stream::make_values_stream_reader(std::move(streamed_messages))},
+            wh::adk::event_metadata{
+                .path = wh::adk::run_path{{"agent", "worker"}},
+                .agent_name = "worker",
+            }));
 
-            return wh::adk::agent_run_output{
-                .events =
-                    wh::adk::agent_event_stream_reader{
-                        wh::schema::stream::make_values_stream_reader(
-                            std::move(events))},
-                .final_message = make_assistant_message("second"),
-            };
-          });
+        return wh::adk::agent_run_output{
+            .events =
+                wh::adk::agent_event_stream_reader{
+                    wh::schema::stream::make_values_stream_reader(std::move(events))},
+            .final_message = make_assistant_message("second"),
+        };
+      });
   REQUIRE(bind_stream_runner.has_value());
   REQUIRE(tool.freeze().has_value());
 
@@ -357,11 +324,9 @@ TEST_CASE("agent tool flattens child message substreams without rebuilding a "
       .arguments = R"({"request":"stream please"})",
   };
   wh::core::run_context context{};
-  auto result =
-      tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
+  auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
   REQUIRE(result.has_value());
-  REQUIRE(result.value().output_chunks ==
-          std::vector<std::string>{"first", "second"});
+  REQUIRE(result.value().output_chunks == std::vector<std::string>{"first", "second"});
   REQUIRE(result.value().output_text == "firstsecond");
 
   auto reader = std::move(result).value().events;
@@ -370,31 +335,27 @@ TEST_CASE("agent tool flattens child message substreams without rebuilding a "
   REQUIRE(std::holds_alternative<wh::adk::message_event>(events[0].payload));
   REQUIRE(std::holds_alternative<wh::adk::message_event>(events[1].payload));
   REQUIRE(message_text(std::get<wh::schema::message>(
-              std::get<wh::adk::message_event>(events[0].payload).content)) ==
-          "first");
+              std::get<wh::adk::message_event>(events[0].payload).content)) == "first");
   REQUIRE(message_text(std::get<wh::schema::message>(
-              std::get<wh::adk::message_event>(events[1].payload).content)) ==
-          "second");
+              std::get<wh::adk::message_event>(events[1].payload).content)) == "second");
 }
 
 TEST_CASE("agent tool boundary consumes non interrupt controls and fails when "
           "no boundary event remains",
           "[core][agent][boundary]") {
-  wh::adk::agent_tool filtered{"delegate", "delegate request",
-                               wh::agent::agent{"worker"}};
-  auto success_state = std::make_shared<scripted_agent_tool_runner_state>(
-      scripted_agent_tool_runner_state{
+  wh::adk::agent_tool filtered{"delegate", "delegate request", wh::agent::agent{"worker"}};
+  auto success_state =
+      std::make_shared<scripted_agent_tool_runner_state>(scripted_agent_tool_runner_state{
           .message_texts = {"visible result"},
           .emit_transfer = true,
       });
-  REQUIRE(
-      filtered
-          .bind_runner([success_state](const wh::adk::run_request &request,
-                                       wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
-            return run_scripted_agent_tool(*success_state, request, context);
-          })
-          .has_value());
+  REQUIRE(filtered
+              .bind_runner(
+                  [success_state](const wh::adk::run_request &request,
+                                  wh::core::run_context &context) -> wh::adk::agent_run_result {
+                    return run_scripted_agent_tool(*success_state, request, context);
+                  })
+              .has_value());
   REQUIRE(filtered.freeze().has_value());
 
   wh::compose::tool_call success_call{
@@ -404,27 +365,23 @@ TEST_CASE("agent tool boundary consumes non interrupt controls and fails when "
   };
   wh::core::run_context success_context{};
   auto success = filtered.run(
-      success_call, make_call_scope(success_context, success_call.tool_name,
-                                    success_call.call_id));
+      success_call, make_call_scope(success_context, success_call.tool_name, success_call.call_id));
   REQUIRE(success.has_value());
   auto success_reader = std::move(success).value().events;
   auto success_events = collect_events(success_reader);
   REQUIRE(success_events.size() == 1U);
-  REQUIRE_FALSE(std::holds_alternative<wh::adk::control_action>(
-      success_events.front().payload));
+  REQUIRE_FALSE(std::holds_alternative<wh::adk::control_action>(success_events.front().payload));
 
-  wh::adk::agent_tool empty{"delegate_empty", "delegate request",
-                            wh::agent::agent{"worker"}};
+  wh::adk::agent_tool empty{"delegate_empty", "delegate request", wh::agent::agent{"worker"}};
   auto empty_state = std::make_shared<scripted_agent_tool_runner_state>(
-      scripted_agent_tool_runner_state{.emit_transfer = true,
-                                       .omit_final_message = true});
-  REQUIRE(empty
-              .bind_runner([empty_state](const wh::adk::run_request &request,
-                                         wh::core::run_context &context)
-                               -> wh::adk::agent_run_result {
-                return run_scripted_agent_tool(*empty_state, request, context);
-              })
-              .has_value());
+      scripted_agent_tool_runner_state{.emit_transfer = true, .omit_final_message = true});
+  REQUIRE(
+      empty
+          .bind_runner([empty_state](const wh::adk::run_request &request,
+                                     wh::core::run_context &context) -> wh::adk::agent_run_result {
+            return run_scripted_agent_tool(*empty_state, request, context);
+          })
+          .has_value());
   REQUIRE(empty.freeze().has_value());
 
   wh::compose::tool_call empty_call{
@@ -433,27 +390,24 @@ TEST_CASE("agent tool boundary consumes non interrupt controls and fails when "
       .arguments = R"({"request":"hello"})",
   };
   wh::core::run_context empty_context{};
-  auto empty_result =
-      empty.run(empty_call, make_call_scope(empty_context, empty_call.tool_name,
-                                            empty_call.call_id));
+  auto empty_result = empty.run(
+      empty_call, make_call_scope(empty_context, empty_call.tool_name, empty_call.call_id));
   REQUIRE(empty_result.has_error());
   REQUIRE(empty_result.error() == wh::core::errc::protocol_error);
 }
 
 TEST_CASE("agent tool forwards internal events with prefixed tool run path",
           "[core][agent][condition]") {
-  wh::adk::agent_tool tool{"delegate_stream", "delegate stream",
-                           wh::agent::agent{"worker"}};
+  wh::adk::agent_tool tool{"delegate_stream", "delegate stream", wh::agent::agent{"worker"}};
   REQUIRE(tool.set_forward_internal_events(true).has_value());
-  auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
-      scripted_agent_tool_runner_state{
+  auto runner_state =
+      std::make_shared<scripted_agent_tool_runner_state>(scripted_agent_tool_runner_state{
           .message_texts = {"chunk-a", "chunk-b"},
           .add_child_metadata = true,
       });
   REQUIRE(
       tool.bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -465,32 +419,27 @@ TEST_CASE("agent tool forwards internal events with prefixed tool run path",
       .arguments = R"({"request":"hello"})",
   };
   wh::core::run_context context{};
-  auto result =
-      tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
+  auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
   REQUIRE(result.has_value());
   auto reader = std::move(result).value().events;
   auto events = collect_events(reader);
   REQUIRE(events.size() == 2U);
-  REQUIRE(events.front().metadata.path.to_string("/") ==
-          "tool/delegate_stream/call-5/agent/leaf");
-  REQUIRE(events.back().metadata.path.to_string("/") ==
-          "tool/delegate_stream/call-5/agent/leaf");
+  REQUIRE(events.front().metadata.path.to_string("/") == "tool/delegate_stream/call-5/agent/leaf");
+  REQUIRE(events.back().metadata.path.to_string("/") == "tool/delegate_stream/call-5/agent/leaf");
 }
 
 TEST_CASE("agent tool compose entry reuses same bridge for invoke and stream",
           "[core][agent][condition]") {
-  wh::adk::agent_tool tool{"delegate_entry", "delegate entry",
-                           wh::agent::agent{"worker"}};
+  wh::adk::agent_tool tool{"delegate_entry", "delegate entry", wh::agent::agent{"worker"}};
   REQUIRE(tool.set_forward_internal_events(true).has_value());
-  auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
-      scripted_agent_tool_runner_state{
+  auto runner_state =
+      std::make_shared<scripted_agent_tool_runner_state>(scripted_agent_tool_runner_state{
           .message_texts = {"first", "second"},
           .add_child_metadata = true,
       });
   REQUIRE(
       tool.bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -524,35 +473,31 @@ TEST_CASE("agent tool compose entry stream flattens child message substreams",
                            wh::agent::agent{"worker"}};
   REQUIRE(tool.set_forward_internal_events(true).has_value());
   auto bind_entry_stream_runner =
-      tool.bind_runner(
-          [](const wh::adk::run_request &request,
-             wh::core::run_context &) -> wh::adk::agent_run_result {
-            REQUIRE(request.messages.size() == 1U);
-            REQUIRE(message_text(request.messages.front()) ==
-                    "stream through entry");
+      tool.bind_runner([](const wh::adk::run_request &request,
+                          wh::core::run_context &) -> wh::adk::agent_run_result {
+        REQUIRE(request.messages.size() == 1U);
+        REQUIRE(message_text(request.messages.front()) == "stream through entry");
 
-            std::vector<wh::schema::message> streamed_messages{};
-            streamed_messages.push_back(make_assistant_message("first"));
-            streamed_messages.push_back(make_assistant_message("second"));
+        std::vector<wh::schema::message> streamed_messages{};
+        streamed_messages.push_back(make_assistant_message("first"));
+        streamed_messages.push_back(make_assistant_message("second"));
 
-            std::vector<wh::adk::agent_event> events{};
-            events.push_back(wh::adk::make_message_event(
-                wh::adk::agent_message_stream_reader{
-                    wh::schema::stream::make_values_stream_reader(
-                        std::move(streamed_messages))},
-                wh::adk::event_metadata{
-                    .path = wh::adk::run_path{{"agent", "worker"}},
-                    .agent_name = "worker",
-                }));
+        std::vector<wh::adk::agent_event> events{};
+        events.push_back(wh::adk::make_message_event(
+            wh::adk::agent_message_stream_reader{
+                wh::schema::stream::make_values_stream_reader(std::move(streamed_messages))},
+            wh::adk::event_metadata{
+                .path = wh::adk::run_path{{"agent", "worker"}},
+                .agent_name = "worker",
+            }));
 
-            return wh::adk::agent_run_output{
-                .events =
-                    wh::adk::agent_event_stream_reader{
-                        wh::schema::stream::make_values_stream_reader(
-                            std::move(events))},
-                .final_message = make_assistant_message("second"),
-            };
-          });
+        return wh::adk::agent_run_output{
+            .events =
+                wh::adk::agent_event_stream_reader{
+                    wh::schema::stream::make_values_stream_reader(std::move(events))},
+            .final_message = make_assistant_message("second"),
+        };
+      });
   REQUIRE(bind_entry_stream_runner.has_value());
   REQUIRE(tool.freeze().has_value());
 
@@ -584,36 +529,32 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
   auto [message_writer, message_reader] =
       wh::schema::stream::make_pipe_stream<wh::schema::message>(4U);
 
-  auto child_reader =
-      std::make_shared<std::optional<wh::adk::agent_message_stream_reader>>(
-          wh::adk::agent_message_stream_reader{std::move(message_reader)});
+  auto child_reader = std::make_shared<std::optional<wh::adk::agent_message_stream_reader>>(
+      wh::adk::agent_message_stream_reader{std::move(message_reader)});
 
   wh::adk::agent_tool tool{"delegate_entry_live", "delegate entry live",
                            wh::agent::agent{"worker"}};
   auto bind_live_entry_runner =
-      tool.bind_runner(
-          [child_reader](const wh::adk::run_request &request,
-                         wh::core::run_context &) -> wh::adk::agent_run_result {
-            REQUIRE(request.messages.size() == 1U);
-            REQUIRE(message_text(request.messages.front()) == "live please");
-            REQUIRE(child_reader->has_value());
+      tool.bind_runner([child_reader](const wh::adk::run_request &request,
+                                      wh::core::run_context &) -> wh::adk::agent_run_result {
+        REQUIRE(request.messages.size() == 1U);
+        REQUIRE(message_text(request.messages.front()) == "live please");
+        REQUIRE(child_reader->has_value());
 
-            std::vector<wh::adk::agent_event> events{};
-            events.push_back(wh::adk::make_message_event(
-                std::move(**child_reader),
-                wh::adk::event_metadata{
-                    .path = wh::adk::run_path{{"agent", "worker"}},
-                    .agent_name = "worker",
-                }));
-            child_reader->reset();
+        std::vector<wh::adk::agent_event> events{};
+        events.push_back(wh::adk::make_message_event(
+            std::move(**child_reader), wh::adk::event_metadata{
+                                           .path = wh::adk::run_path{{"agent", "worker"}},
+                                           .agent_name = "worker",
+                                       }));
+        child_reader->reset();
 
-            return wh::adk::agent_run_output{
-                .events =
-                    wh::adk::agent_event_stream_reader{
-                        wh::schema::stream::make_values_stream_reader(
-                            std::move(events))},
-            };
-          });
+        return wh::adk::agent_run_output{
+            .events =
+                wh::adk::agent_event_stream_reader{
+                    wh::schema::stream::make_values_stream_reader(std::move(events))},
+        };
+      });
   REQUIRE(bind_live_entry_runner.has_value());
   REQUIRE(tool.freeze().has_value());
 
@@ -634,11 +575,9 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
   std::thread producer{[&]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     write_succeeded.store(
-        message_writer.try_write(make_assistant_message("late chunk"))
-            .has_value(),
+        message_writer.try_write(make_assistant_message("late chunk")).has_value(),
         std::memory_order_release);
-    close_succeeded.store(message_writer.close().has_value(),
-                          std::memory_order_release);
+    close_succeeded.store(message_writer.close().has_value(), std::memory_order_release);
     produced.store(true, std::memory_order_release);
   }};
 
@@ -651,19 +590,17 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
   {
     stdexec::inplace_stop_source stop_source{};
     wh::testing::helper::sender_capture<> completion{};
-    auto operation = stdexec::connect(
-        reader.read_async(),
-        wh::testing::helper::sender_capture_receiver{
-            &completion,
-            wh::testing::helper::make_scheduler_env(stdexec::inline_scheduler{},
-                                                    stop_source.get_token()),
-        });
+    auto operation = stdexec::connect(reader.read_async(),
+                                      wh::testing::helper::sender_capture_receiver{
+                                          &completion,
+                                          wh::testing::helper::make_scheduler_env(
+                                              stdexec::inline_scheduler{}, stop_source.get_token()),
+                                      });
     stdexec::start(operation);
     stop_source.request_stop();
 
     REQUIRE(completion.ready.try_acquire_for(std::chrono::milliseconds(100)));
-    REQUIRE(completion.terminal ==
-            wh::testing::helper::sender_terminal_kind::stopped);
+    REQUIRE(completion.terminal == wh::testing::helper::sender_terminal_kind::stopped);
   }
 
   producer.join();
@@ -685,21 +622,18 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
 TEST_CASE("agent tool resume reuses bridge checkpoint state without "
           "duplicating prior text",
           "[core][agent][checkpoint][condition]") {
-  wh::adk::agent_tool tool{"delegate_resume", "delegate resume",
-                           wh::agent::agent{"worker"}};
-  auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
-      scripted_agent_tool_runner_state{
+  wh::adk::agent_tool tool{"delegate_resume", "delegate resume", wh::agent::agent{"worker"}};
+  auto runner_state =
+      std::make_shared<scripted_agent_tool_runner_state>(scripted_agent_tool_runner_state{
           .message_texts = {"draft"},
           .resumed_message_texts = {" rest"},
           .emit_interrupt = true,
           .set_interrupt_context = true,
-          .expected_resume_decision =
-              wh::compose::interrupt_decision_kind::approve,
+          .expected_resume_decision = wh::compose::interrupt_decision_kind::approve,
       });
   REQUIRE(
       tool.bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -712,39 +646,33 @@ TEST_CASE("agent tool resume reuses bridge checkpoint state without "
   };
 
   wh::core::run_context first_context{};
-  auto first = tool.run(
-      call, make_call_scope(first_context, call.tool_name, call.call_id));
+  auto first = tool.run(call, make_call_scope(first_context, call.tool_name, call.call_id));
   REQUIRE(first.has_value());
   REQUIRE(first.value().interrupted);
   REQUIRE(first.value().output_text == "draft");
   REQUIRE(first_context.interrupt_info.has_value());
   REQUIRE(first_context.interrupt_info->location.to_string("/") ==
           "tool/delegate_resume/call-resume-1");
-  auto *stored_state =
-      wh::core::any_cast<wh::adk::detail::agent_tool_interrupt_state>(
-          &first_context.interrupt_info->state);
+  auto *stored_state = wh::core::any_cast<wh::adk::detail::agent_tool_interrupt_state>(
+      &first_context.interrupt_info->state);
   REQUIRE(stored_state != nullptr);
-  REQUIRE(stored_state->checkpoint.output_chunks ==
-          std::vector<std::string>{"draft"});
+  REQUIRE(stored_state->checkpoint.output_chunks == std::vector<std::string>{"draft"});
   REQUIRE(stored_state->child_interrupt.has_value());
-  REQUIRE(stored_state->child_interrupt->interrupt_id ==
-          runner_state->child_interrupt_id);
+  REQUIRE(stored_state->child_interrupt->interrupt_id == runner_state->child_interrupt_id);
 
   const auto saved_interrupt = *first_context.interrupt_info;
 
-  auto run_resumed = [&](wh::core::run_context &context)
-      -> wh::core::result<wh::adk::agent_tool_result> {
+  auto run_resumed =
+      [&](wh::core::run_context &context) -> wh::core::result<wh::adk::agent_tool_result> {
     context.interrupt_info = saved_interrupt;
     context.resume_info.emplace();
     REQUIRE(wh::compose::add_resume_target(
-                *context.resume_info, saved_interrupt.interrupt_id,
-                saved_interrupt.location,
+                *context.resume_info, saved_interrupt.interrupt_id, saved_interrupt.location,
                 wh::compose::resume_patch{
                     .decision = wh::compose::interrupt_decision_kind::approve,
                 })
                 .has_value());
-    return tool.run(call,
-                    make_call_scope(context, call.tool_name, call.call_id));
+    return tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
   };
 
   runner_state->emit_interrupt = false;
@@ -767,14 +695,12 @@ TEST_CASE("agent tool resume reuses bridge checkpoint state without "
 TEST_CASE("agent tool exact resume target fails when bridge checkpoint state "
           "is missing",
           "[core][agent][checkpoint][boundary]") {
-  wh::adk::agent_tool tool{"delegate_resume", "delegate resume",
-                           wh::agent::agent{"worker"}};
+  wh::adk::agent_tool tool{"delegate_resume", "delegate resume", wh::agent::agent{"worker"}};
   auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
       scripted_agent_tool_runner_state{.resumed_message_texts = {"rest"}});
   REQUIRE(
       tool.bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -789,22 +715,19 @@ TEST_CASE("agent tool exact resume target fails when bridge checkpoint state "
   wh::core::run_context context{};
   context.interrupt_info = wh::core::interrupt_context{
       .interrupt_id = "outer-interrupt",
-      .location =
-          wh::core::address{"tool", "delegate_resume", "call-resume-missing"},
+      .location = wh::core::address{"tool", "delegate_resume", "call-resume-missing"},
       .state = wh::core::any(std::string{"wrong-state"}),
   };
   context.resume_info.emplace();
-  REQUIRE(
-      wh::compose::add_resume_target(
-          *context.resume_info, "outer-interrupt",
-          wh::core::address{"tool", "delegate_resume", "call-resume-missing"},
-          wh::compose::resume_patch{
-              .decision = wh::compose::interrupt_decision_kind::approve,
-          })
-          .has_value());
+  REQUIRE(wh::compose::add_resume_target(
+              *context.resume_info, "outer-interrupt",
+              wh::core::address{"tool", "delegate_resume", "call-resume-missing"},
+              wh::compose::resume_patch{
+                  .decision = wh::compose::interrupt_decision_kind::approve,
+              })
+              .has_value());
 
-  auto resumed =
-      tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
+  auto resumed = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
   REQUIRE(resumed.has_error());
   REQUIRE(resumed.error() == wh::core::errc::type_mismatch);
 }
@@ -814,8 +737,8 @@ TEST_CASE("agent tool compose tools node projects bridge interrupt context "
           "[core][agent][checkpoint][condition]") {
   wh::adk::agent_tool bridge{"delegate_graph_resume", "delegate graph resume",
                              wh::agent::agent{"worker"}};
-  auto runner_state = std::make_shared<scripted_agent_tool_runner_state>(
-      scripted_agent_tool_runner_state{
+  auto runner_state =
+      std::make_shared<scripted_agent_tool_runner_state>(scripted_agent_tool_runner_state{
           .message_texts = {"draft"},
           .emit_interrupt = true,
           .set_interrupt_context = true,
@@ -823,8 +746,7 @@ TEST_CASE("agent tool compose tools node projects bridge interrupt context "
   REQUIRE(
       bridge
           .bind_runner([runner_state](const wh::adk::run_request &request,
-                                      wh::core::run_context &context)
-                           -> wh::adk::agent_run_result {
+                                      wh::core::run_context &context) -> wh::adk::agent_run_result {
             return run_scripted_agent_tool(*runner_state, request, context);
           })
           .has_value());
@@ -836,9 +758,7 @@ TEST_CASE("agent tool compose tools node projects bridge interrupt context "
   tools.insert_or_assign("delegate_graph_resume", entry.value());
 
   wh::compose::graph graph{};
-  REQUIRE(
-      graph.add_tools(wh::compose::make_tools_node("tools", std::move(tools)))
-          .has_value());
+  REQUIRE(graph.add_tools(wh::compose::make_tools_node("tools", std::move(tools))).has_value());
   REQUIRE(graph.add_entry_edge("tools").has_value());
   REQUIRE(graph.add_exit_edge("tools").has_value());
   REQUIRE(graph.compile().has_value());
@@ -851,23 +771,20 @@ TEST_CASE("agent tool compose tools node projects bridge interrupt context "
       .arguments = R"({"request":"resume graph"})",
   };
 
-  wh::compose::graph_value input = wh::core::any(wh::compose::tool_batch{
-      .calls = std::vector<wh::compose::tool_call>{call}});
+  wh::compose::graph_value input =
+      wh::core::any(wh::compose::tool_batch{.calls = std::vector<wh::compose::tool_call>{call}});
   wh::core::run_context context{};
-  auto status = wh::compose::run_compiled_sync_node(
-      compiled.value().get(), input, context, wh::compose::node_runtime{});
+  auto status = wh::compose::run_compiled_sync_node(compiled.value().get(), input, context,
+                                                    wh::compose::node_runtime{});
   REQUIRE(status.has_error());
   REQUIRE(status.error() == wh::core::errc::canceled);
   REQUIRE(context.interrupt_info.has_value());
   REQUIRE(context.interrupt_info->location.to_string("/") ==
           "tool/delegate_graph_resume/call-graph-resume");
-  auto *stored_state =
-      wh::core::any_cast<wh::adk::detail::agent_tool_interrupt_state>(
-          &context.interrupt_info->state);
+  auto *stored_state = wh::core::any_cast<wh::adk::detail::agent_tool_interrupt_state>(
+      &context.interrupt_info->state);
   REQUIRE(stored_state != nullptr);
-  REQUIRE(stored_state->checkpoint.output_chunks ==
-          std::vector<std::string>{"draft"});
+  REQUIRE(stored_state->checkpoint.output_chunks == std::vector<std::string>{"draft"});
   REQUIRE(stored_state->child_interrupt.has_value());
-  REQUIRE(stored_state->child_interrupt->interrupt_id ==
-          runner_state->child_interrupt_id);
+  REQUIRE(stored_state->child_interrupt->interrupt_id == runner_state->child_interrupt_id);
 }

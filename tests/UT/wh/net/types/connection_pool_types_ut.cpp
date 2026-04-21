@@ -3,7 +3,8 @@
 #include "wh/net/types/connection_pool_types.hpp"
 
 TEST_CASE("connection pool types project owned keys into borrowed views",
-          "[UT][wh/net/types/connection_pool_types.hpp][make_connection_key_view][condition][branch][boundary]") {
+          "[UT][wh/net/types/"
+          "connection_pool_types.hpp][make_connection_key_view][condition][branch][boundary]") {
   wh::net::connection_key key{};
   key.scheme = "https";
   key.host = "example.com";
@@ -16,7 +17,8 @@ TEST_CASE("connection pool types project owned keys into borrowed views",
 }
 
 TEST_CASE("connection pool types default lease and release metadata stay stable",
-          "[UT][wh/net/types/connection_pool_types.hpp][connection_release][condition][branch][boundary]") {
+          "[UT][wh/net/types/"
+          "connection_pool_types.hpp][connection_release][condition][branch][boundary]") {
   wh::net::connection_lease lease{};
   REQUIRE(lease.lease_id.empty());
   REQUIRE_FALSE(lease.reused);

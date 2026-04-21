@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
 #include <optional>
 #include <stdexcept>
@@ -7,6 +5,7 @@
 #include <thread>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/manual_scheduler.hpp"
@@ -25,14 +24,12 @@ using manual_scheduler = wh::testing::helper::manual_scheduler<would_block>;
 
 template <typename scheduler_t>
 using receiver_env_t =
-    wh::testing::helper::scheduler_env<scheduler_t,
-                                       wh::testing::helper::stop_token>;
+    wh::testing::helper::scheduler_env<scheduler_t, wh::testing::helper::stop_token>;
 using receiver_env = receiver_env_t<manual_scheduler>;
 
 template <typename scheduler_t>
 using completion_receiver_env_t =
-    wh::testing::helper::completion_scheduler_env<
-        scheduler_t, wh::testing::helper::stop_token>;
+    wh::testing::helper::completion_scheduler_env<scheduler_t, wh::testing::helper::stop_token>;
 using completion_receiver_env = completion_receiver_env_t<manual_scheduler>;
 
 struct receiver_state {
@@ -68,9 +65,7 @@ struct completion_lock_receiver {
   }
   template <typename error_t> auto set_error(error_t &&) noexcept -> void {}
   auto set_stopped() noexcept -> void { state->stopped_called = true; }
-  [[nodiscard]] auto get_env() const noexcept -> completion_receiver_env {
-    return env;
-  }
+  [[nodiscard]] auto get_env() const noexcept -> completion_receiver_env { return env; }
 };
 
 struct ordering_state {
@@ -115,14 +110,12 @@ struct throwing_scheduler {
     throwing_scheduler_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
     auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
       ++state->connect_calls;
-      if (state->fail_on_connect.has_value() &&
-          state->connect_calls == *state->fail_on_connect) {
+      if (state->fail_on_connect.has_value() && state->connect_calls == *state->fail_on_connect) {
         throw std::runtime_error("async_mutex handoff connect failed");
       }
       return schedule_op<receiver_t>{std::move(receiver)};
@@ -133,12 +126,9 @@ struct throwing_scheduler {
 
   throwing_scheduler_state *state{nullptr};
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return schedule_sender{state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return schedule_sender{state}; }
 
-  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept
-      -> bool = default;
+  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept -> bool = default;
 };
 
 struct throwing_stop_token {
@@ -191,8 +181,7 @@ struct observing_inline_scheduler {
     inline_handoff_observer_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
     auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
@@ -205,9 +194,7 @@ struct observing_inline_scheduler {
 
   inline_handoff_observer_state *state{nullptr};
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return schedule_sender{state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return schedule_sender{state}; }
 
   [[nodiscard]] auto operator==(const observing_inline_scheduler &) const noexcept
       -> bool = default;
@@ -238,16 +225,16 @@ TEST_CASE("async mutex lock completes on scheduler and unlocks contended waiters
   manual_scheduler_state sched2{};
 
   receiver_state state1{};
-  auto op1 = stdexec::connect(
-      mutex.lock(), lock_receiver{&state1, receiver_env{manual_scheduler{&sched1}}});
+  auto op1 = stdexec::connect(mutex.lock(),
+                              lock_receiver{&state1, receiver_env{manual_scheduler{&sched1}}});
   stdexec::start(op1);
   sched1.run_all();
   REQUIRE(state1.value_called);
   REQUIRE(state1.guard.has_value());
 
   receiver_state state2{};
-  auto op2 = stdexec::connect(
-      mutex.lock(), lock_receiver{&state2, receiver_env{manual_scheduler{&sched2}}});
+  auto op2 = stdexec::connect(mutex.lock(),
+                              lock_receiver{&state2, receiver_env{manual_scheduler{&sched2}}});
   stdexec::start(op2);
   sched2.run_all();
   REQUIRE_FALSE(state2.value_called);
@@ -281,9 +268,8 @@ TEST_CASE("async mutex lock honors completion scheduler and stop cancellation",
   stop_source.request_stop();
   manual_scheduler_state stop_sched{};
   auto stopped_op = stdexec::connect(
-      mutex.lock(), lock_receiver{&stopped_state,
-                                  receiver_env{manual_scheduler{&stop_sched},
-                                               stop_source.get_token()}});
+      mutex.lock(), lock_receiver{&stopped_state, receiver_env{manual_scheduler{&stop_sched},
+                                                               stop_source.get_token()}});
   stdexec::start(stopped_op);
   stop_sched.run_all();
   REQUIRE(stopped_state.stopped_called);
@@ -301,8 +287,7 @@ TEST_CASE("async mutex preserves FIFO waiter ordering under contention",
 
   receiver_state holder_state{};
   auto holder_op = stdexec::connect(
-      mutex.lock(),
-      lock_receiver{&holder_state, receiver_env{manual_scheduler{&holder_sched}}});
+      mutex.lock(), lock_receiver{&holder_state, receiver_env{manual_scheduler{&holder_sched}}});
   stdexec::start(holder_op);
   holder_sched.run_all();
   REQUIRE(holder_state.value_called);
@@ -338,8 +323,7 @@ TEST_CASE("async mutex preserves FIFO waiter ordering under contention",
 TEST_CASE("async mutex reports handoff construction failure as stopped without leaking ownership",
           "[UT][wh/sync/async_mutex.hpp][async_mutex::lock_sender][error][scheduler]") {
   using env_t =
-      wh::testing::helper::scheduler_env<throwing_scheduler,
-                                         wh::testing::helper::stop_token>;
+      wh::testing::helper::scheduler_env<throwing_scheduler, wh::testing::helper::stop_token>;
 
   mutex_t mutex{};
   throwing_scheduler_state scheduler_state{
@@ -351,8 +335,7 @@ TEST_CASE("async mutex reports handoff construction failure as stopped without l
   wh::testing::helper::sender_capture<lock_guard_t> capture{};
   auto operation = stdexec::connect(
       mutex.lock(),
-      wh::testing::helper::sender_capture_receiver<lock_guard_t, env_t>{&capture,
-                                                                        env});
+      wh::testing::helper::sender_capture_receiver<lock_guard_t, env_t>{&capture, env});
   stdexec::start(operation);
 
   REQUIRE(capture.ready.try_acquire());
@@ -364,9 +347,8 @@ TEST_CASE("async mutex reports handoff construction failure as stopped without l
 
 TEST_CASE("async mutex inline handoff does not destroy the handoff op before start returns",
           "[UT][wh/sync/async_mutex.hpp][async_mutex::lock_sender][handoff][lifecycle]") {
-  using env_t =
-      wh::testing::helper::scheduler_env<observing_inline_scheduler,
-                                         wh::testing::helper::stop_token>;
+  using env_t = wh::testing::helper::scheduler_env<observing_inline_scheduler,
+                                                   wh::testing::helper::stop_token>;
 
   mutex_t mutex{};
   inline_handoff_observer_state observer{};
@@ -375,8 +357,7 @@ TEST_CASE("async mutex inline handoff does not destroy the handoff op before sta
   wh::testing::helper::sender_capture<lock_guard_t> capture{};
   auto operation = stdexec::connect(
       mutex.lock(),
-      wh::testing::helper::sender_capture_receiver<lock_guard_t, env_t>{&capture,
-                                                                        env});
+      wh::testing::helper::sender_capture_receiver<lock_guard_t, env_t>{&capture, env});
   stdexec::start(operation);
 
   REQUIRE(capture.ready.try_acquire());
@@ -389,8 +370,7 @@ TEST_CASE("async mutex inline handoff does not destroy the handoff op before sta
 
 TEST_CASE("async mutex stop callback setup failure completes before waiter publication",
           "[UT][wh/sync/async_mutex.hpp][async_mutex::lock_sender][error][stop]") {
-  using env_t = wh::testing::helper::scheduler_env<manual_scheduler,
-                                                   throwing_stop_token>;
+  using env_t = wh::testing::helper::scheduler_env<manual_scheduler, throwing_stop_token>;
 
   mutex_t mutex{};
   auto holder = mutex.try_lock();
@@ -401,8 +381,7 @@ TEST_CASE("async mutex stop callback setup failure completes before waiter publi
   auto operation = stdexec::connect(
       mutex.lock(),
       wh::testing::helper::sender_capture_receiver<lock_guard_t, env_t>{
-          &capture,
-          {.scheduler = manual_scheduler{&scheduler_state}, .stop_token = {}}});
+          &capture, {.scheduler = manual_scheduler{&scheduler_state}, .stop_token = {}}});
   stdexec::start(operation);
 
   REQUIRE_FALSE(capture.ready.try_acquire());

@@ -45,8 +45,7 @@ struct model_fallback_policy {
 /// Data contract for `structured_output_policy`.
 struct structured_output_policy {
   /// Preference order between provider-native and tool-call output modes.
-  structured_output_preference preference{
-      structured_output_preference::provider_native_first};
+  structured_output_preference preference{structured_output_preference::provider_native_first};
   /// Allows tool-call fallback when provider-native path is unavailable.
   bool allow_tool_fallback{true};
 };
@@ -72,8 +71,7 @@ struct chat_model_common_options {
   /// Optional stop token list for completion truncation.
   std::vector<std::string> stop_tokens{};
   /// Candidate ordering strategy for fallback model selection.
-  model_selection_policy selection_policy{
-      model_selection_policy::quality_first};
+  model_selection_policy selection_policy{model_selection_policy::quality_first};
   /// Fallback behavior configuration.
   model_fallback_policy fallback{};
   /// Tool-selection policy used by model execution.
@@ -97,8 +95,7 @@ struct resolved_chat_model_options_view {
   /// Effective stop-token list.
   std::span<const std::string> stop_tokens{};
   /// Effective model-selection policy.
-  model_selection_policy selection_policy{
-      model_selection_policy::quality_first};
+  model_selection_policy selection_policy{model_selection_policy::quality_first};
   /// Effective fallback policy storage.
   const model_fallback_policy *fallback{nullptr};
   /// Effective tool-choice policy storage.
@@ -109,20 +106,17 @@ struct resolved_chat_model_options_view {
   const structured_output_policy *structured_output{nullptr};
 
   /// Returns resolved fallback policy by reference.
-  [[nodiscard]] auto fallback_ref() const noexcept
-      -> const model_fallback_policy & {
+  [[nodiscard]] auto fallback_ref() const noexcept -> const model_fallback_policy & {
     return *fallback;
   }
 
   /// Returns resolved tool-choice policy by reference.
-  [[nodiscard]] auto tool_choice_ref() const noexcept
-      -> const wh::schema::tool_choice & {
+  [[nodiscard]] auto tool_choice_ref() const noexcept -> const wh::schema::tool_choice & {
     return *tool_choice;
   }
 
   /// Returns resolved structured-output policy by reference.
-  [[nodiscard]] auto structured_output_ref() const noexcept
-      -> const structured_output_policy & {
+  [[nodiscard]] auto structured_output_ref() const noexcept -> const structured_output_policy & {
     return *structured_output;
   }
 };
@@ -133,8 +127,7 @@ public:
   chat_model_options() = default;
 
   /// Sets baseline options used when no per-call override is provided.
-  auto set_base(const chat_model_common_options &options)
-      -> chat_model_options & {
+  auto set_base(const chat_model_common_options &options) -> chat_model_options & {
     base_ = options;
     return *this;
   }
@@ -146,24 +139,19 @@ public:
   }
 
   /// Sets per-call option overrides merged on top of the baseline options.
-  auto set_call_override(const chat_model_common_options &options)
-      -> chat_model_options & {
+  auto set_call_override(const chat_model_common_options &options) -> chat_model_options & {
     override_ = options;
     return *this;
   }
 
   /// Sets per-call option overrides merged on top of the baseline options.
-  auto set_call_override(chat_model_common_options &&options)
-      -> chat_model_options & {
+  auto set_call_override(chat_model_common_options &&options) -> chat_model_options & {
     override_ = std::move(options);
     return *this;
   }
 
   /// Returns the stored baseline option set.
-  [[nodiscard]] auto base() const noexcept
-      -> const chat_model_common_options & {
-    return base_;
-  }
+  [[nodiscard]] auto base() const noexcept -> const chat_model_common_options & { return base_; }
 
   /// Returns the optional per-call override option set.
   [[nodiscard]] auto call_override() const noexcept
@@ -172,8 +160,7 @@ public:
   }
 
   /// Resolves effective options into a borrowed view without deep copies.
-  [[nodiscard]] auto resolve_view() const noexcept
-      -> resolved_chat_model_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept -> resolved_chat_model_options_view {
     resolved_chat_model_options_view view{};
     view.model_id = base_.model_id;
     view.temperature = base_.temperature;
@@ -254,14 +241,12 @@ public:
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept
-      -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
     return component_options_;
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() const noexcept
-      -> const wh::core::component_options & {
+  [[nodiscard]] auto component_options() const noexcept -> const wh::core::component_options & {
     return component_options_;
   }
 
@@ -281,8 +266,7 @@ freeze_model_candidates(const chat_model_common_options &options,
                         std::span<const std::string> discovered_candidates)
     -> std::vector<std::string> {
   std::vector<std::string> ordered{};
-  ordered.reserve(1U + discovered_candidates.size() +
-                  options.fallback.ordered_candidates.size());
+  ordered.reserve(1U + discovered_candidates.size() + options.fallback.ordered_candidates.size());
 
   if (!options.model_id.empty()) {
     ordered.push_back(options.model_id);
@@ -353,13 +337,11 @@ freeze_model_candidates(const resolved_chat_model_options_view &options,
 
 /// Negotiates the effective structured-output mode from policy and runtime
 /// capabilities.
-[[nodiscard]] inline auto
-negotiate_structured_output(const structured_output_policy &policy,
-                            const bool provider_native_supported,
-                            const bool tool_call_supported)
+[[nodiscard]] inline auto negotiate_structured_output(const structured_output_policy &policy,
+                                                      const bool provider_native_supported,
+                                                      const bool tool_call_supported)
     -> structured_output_plan {
-  if (policy.preference ==
-      structured_output_preference::provider_native_first) {
+  if (policy.preference == structured_output_preference::provider_native_first) {
     if (provider_native_supported) {
       return structured_output_plan{true, false};
     }
@@ -381,11 +363,9 @@ negotiate_structured_output(const structured_output_policy &policy,
 /// Negotiates structured-output mode from a resolved options view.
 [[nodiscard]] inline auto
 negotiate_structured_output(const resolved_chat_model_options_view &options,
-                            const bool provider_native_supported,
-                            const bool tool_call_supported)
+                            const bool provider_native_supported, const bool tool_call_supported)
     -> structured_output_plan {
-  return negotiate_structured_output(options.structured_output_ref(),
-                                     provider_native_supported,
+  return negotiate_structured_output(options.structured_output_ref(), provider_native_supported,
                                      tool_call_supported);
 }
 

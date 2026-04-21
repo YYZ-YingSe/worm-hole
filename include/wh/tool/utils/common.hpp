@@ -20,8 +20,7 @@ namespace wh::tool::utils {
     }
 
     if (capitalize_next) {
-      output.push_back(
-          static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+      output.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
       capitalize_next = false;
     } else {
       output.push_back(ch);

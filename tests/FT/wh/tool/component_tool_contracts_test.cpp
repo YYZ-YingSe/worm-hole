@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <array>
 #include <atomic>
 #include <memory>
@@ -7,6 +5,7 @@
 #include <thread>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
@@ -36,15 +35,12 @@ TEST_CASE("tool catalog cache supports handshake cache refresh and schema loadin
   std::size_t handshake_calls = 0U;
   std::size_t fetch_calls = 0U;
   wh::tool::tool_catalog_cache cache{wh::tool::tool_catalog_source{
-      .handshake =
-          [&handshake_calls]() -> wh::core::result<void> {
+      .handshake = [&handshake_calls]() -> wh::core::result<void> {
         ++handshake_calls;
         return {};
       },
       .fetch_catalog =
-          [&fetch_calls]()
-              -> wh::core::result<
-                  std::vector<wh::schema::tool_schema_definition>> {
+          [&fetch_calls]() -> wh::core::result<std::vector<wh::schema::tool_schema_definition>> {
         ++fetch_calls;
         wh::schema::tool_schema_definition schema{};
         schema.name = "catalog_tool";
@@ -63,23 +59,19 @@ TEST_CASE("tool catalog cache supports handshake cache refresh and schema loadin
   REQUIRE(handshake_calls == 1U);
   REQUIRE(fetch_calls == 1U);
 
-  auto refreshed =
-      cache.load(wh::tool::tool_catalog_load_options{.refresh = true});
+  auto refreshed = cache.load(wh::tool::tool_catalog_load_options{.refresh = true});
   REQUIRE(refreshed.has_value());
   REQUIRE(handshake_calls == 2U);
   REQUIRE(fetch_calls == 2U);
   REQUIRE(refreshed.value().size() == 1U);
   REQUIRE(refreshed.value().front().name == "catalog_tool");
 
-  auto bound = wh::tool::tool{refreshed.value().front(), sync_tool_invoke_impl{
-                                                           [](const std::string_view input,
-                                                              const wh::tool::tool_options &)
-                                                               -> wh::core::result<std::string> {
-                                                             return std::string{input};
-                                                           }}};
+  auto bound = wh::tool::tool{
+      refreshed.value().front(),
+      sync_tool_invoke_impl{[](const std::string_view input, const wh::tool::tool_options &)
+                                -> wh::core::result<std::string> { return std::string{input}; }}};
   wh::core::run_context callback_context{};
-  auto invoke_result = bound.invoke(
-      wh::tool::tool_request{"bound payload", {}}, callback_context);
+  auto invoke_result = bound.invoke(wh::tool::tool_request{"bound payload", {}}, callback_context);
   REQUIRE(invoke_result.has_value());
   REQUIRE(invoke_result.value() == "bound payload");
 }
@@ -96,30 +88,25 @@ TEST_CASE("tool callbacks include lifecycle payload and schema error context",
   info.parameters.push_back(count);
 
   wh::tool::tool component{
-      info,
-      sync_tool_impl{
-          sync_tool_invoke_impl{[](const std::string_view input,
-                                   const wh::tool::tool_options &)
-                                    -> wh::core::result<std::string> {
-            return std::string{input};
-          }},
-          sync_tool_stream_impl{[](const std::string_view,
-                                   const wh::tool::tool_options &)
-                                    -> wh::core::result<wh::tool::tool_output_stream_reader> {
-            auto [writer, reader] =
-                wh::schema::stream::make_pipe_stream<std::string>(4U);
-            auto write_status = writer.try_write("chunk");
-            if (write_status.has_error()) {
-              return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-                  write_status.error());
-            }
-            auto close_status = writer.close();
-            if (close_status.has_error()) {
-              return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-                  close_status.error());
-            }
-            return wh::tool::tool_output_stream_reader{std::move(reader)};
-          }}}};
+      info, sync_tool_impl{
+                sync_tool_invoke_impl{
+                    [](const std::string_view input, const wh::tool::tool_options &)
+                        -> wh::core::result<std::string> { return std::string{input}; }},
+                sync_tool_stream_impl{[](const std::string_view, const wh::tool::tool_options &)
+                                          -> wh::core::result<wh::tool::tool_output_stream_reader> {
+                  auto [writer, reader] = wh::schema::stream::make_pipe_stream<std::string>(4U);
+                  auto write_status = writer.try_write("chunk");
+                  if (write_status.has_error()) {
+                    return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
+                        write_status.error());
+                  }
+                  auto close_status = writer.close();
+                  if (close_status.has_error()) {
+                    return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
+                        close_status.error());
+                  }
+                  return wh::tool::tool_output_stream_reader{std::move(reader)};
+                }}}};
 
   std::atomic<int> started{0};
   std::atomic<int> ended{0};
@@ -131,10 +118,8 @@ TEST_CASE("tool callbacks include lifecycle payload and schema error context",
   wh::core::run_context callback_context{};
   callback_context.callbacks.emplace();
   auto registered = register_test_callbacks(
-      std::move(callback_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(callback_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::tool::tool_callback_event>();
         REQUIRE(typed != nullptr);
@@ -159,19 +144,19 @@ TEST_CASE("tool callbacks include lifecycle payload and schema error context",
   callback_context = std::move(registered).value();
 
   wh::tool::tool_options options{};
-  auto invalid = component.invoke(
-      wh::tool::tool_request{R"({"count":"bad"})", options}, callback_context);
+  auto invalid =
+      component.invoke(wh::tool::tool_request{R"({"count":"bad"})", options}, callback_context);
   REQUIRE(invalid.has_error());
   REQUIRE(invalid.error() == wh::core::errc::invalid_argument);
   REQUIRE(error_context == "$.count");
 
-  auto valid_invoke = component.invoke(
-      wh::tool::tool_request{R"({"count":1})", options}, callback_context);
+  auto valid_invoke =
+      component.invoke(wh::tool::tool_request{R"({"count":1})", options}, callback_context);
   REQUIRE(valid_invoke.has_value());
   REQUIRE(valid_invoke.value() == R"({"count":1})");
 
-  auto valid_stream = component.stream(
-      wh::tool::tool_request{R"({"count":1})", options}, callback_context);
+  auto valid_stream =
+      component.stream(wh::tool::tool_request{R"({"count":1})", options}, callback_context);
   REQUIRE(valid_stream.has_value());
 
   REQUIRE(started.load(std::memory_order_acquire) == 3);
@@ -181,25 +166,21 @@ TEST_CASE("tool callbacks include lifecycle payload and schema error context",
   REQUIRE(end_payload_hits.load(std::memory_order_acquire) == 2);
 }
 
-TEST_CASE("tool failure policy applies retry skip and timeout label",
-          "[core][tool][functional]") {
+TEST_CASE("tool failure policy applies retry skip and timeout label", "[core][tool][functional]") {
   wh::schema::tool_schema_definition info{};
   info.name = "policy_tool";
 
   std::atomic<int> invoke_attempts{0};
   wh::tool::tool retry_tool{
-      info,
-      sync_tool_impl{sync_tool_invoke_impl{
-          [&](const std::string_view, const wh::tool::tool_options &)
-              -> wh::core::result<std::string> {
-            const int current =
-                invoke_attempts.fetch_add(1, std::memory_order_relaxed);
-            if (current < 2) {
-              return wh::core::result<std::string>::failure(
-                  wh::core::errc::network_error);
-            }
-            return std::string{"ok"};
-          }}}};
+      info, sync_tool_impl{sync_tool_invoke_impl{
+                [&](const std::string_view,
+                    const wh::tool::tool_options &) -> wh::core::result<std::string> {
+                  const int current = invoke_attempts.fetch_add(1, std::memory_order_relaxed);
+                  if (current < 2) {
+                    return wh::core::result<std::string>::failure(wh::core::errc::network_error);
+                  }
+                  return std::string{"ok"};
+                }}}};
 
   wh::tool::tool_options retry_options{};
   wh::tool::tool_common_options retry_common{};
@@ -207,9 +188,7 @@ TEST_CASE("tool failure policy applies retry skip and timeout label",
   retry_common.max_retries = 3U;
   retry_options.set_base(retry_common);
   wh::core::run_context retry_context{};
-  auto retry_status =
-      retry_tool.invoke(wh::tool::tool_request{"{}", retry_options},
-                        retry_context);
+  auto retry_status = retry_tool.invoke(wh::tool::tool_request{"{}", retry_options}, retry_context);
   REQUIRE(retry_status.has_value());
   REQUIRE(retry_status.value() == "ok");
   REQUIRE(invoke_attempts.load(std::memory_order_relaxed) == 3);
@@ -217,20 +196,16 @@ TEST_CASE("tool failure policy applies retry skip and timeout label",
   std::atomic<bool> skipped_end{false};
   std::string skip_error_context{};
   wh::tool::tool skip_tool{
-      info,
-      sync_tool_impl{
-          sync_tool_invoke_impl{[](const std::string_view,
-                                   const wh::tool::tool_options &)
-                                    -> wh::core::result<std::string> {
-            return wh::core::result<std::string>::failure(
-                wh::core::errc::timeout);
-          }},
-          sync_tool_stream_impl{[](const std::string_view,
-                                   const wh::tool::tool_options &)
-                                    -> wh::core::result<wh::tool::tool_output_stream_reader> {
-            return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-                wh::core::errc::timeout);
-          }}}};
+      info, sync_tool_impl{
+                sync_tool_invoke_impl{[](const std::string_view, const wh::tool::tool_options &)
+                                          -> wh::core::result<std::string> {
+                  return wh::core::result<std::string>::failure(wh::core::errc::timeout);
+                }},
+                sync_tool_stream_impl{[](const std::string_view, const wh::tool::tool_options &)
+                                          -> wh::core::result<wh::tool::tool_output_stream_reader> {
+                  return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
+                      wh::core::errc::timeout);
+                }}}};
   wh::tool::tool_options skip_options{};
   wh::tool::tool_common_options skip_common{};
   skip_common.failure_policy = wh::tool::tool_failure_policy::skip;
@@ -240,10 +215,8 @@ TEST_CASE("tool failure policy applies retry skip and timeout label",
   wh::core::run_context callback_context{};
   callback_context.callbacks.emplace();
   auto registered = register_test_callbacks(
-      std::move(callback_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(callback_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::tool::tool_callback_event>();
         if (typed == nullptr) {
@@ -261,17 +234,14 @@ TEST_CASE("tool failure policy applies retry skip and timeout label",
   REQUIRE(registered.has_value());
   callback_context = std::move(registered).value();
 
-  auto skipped =
-      skip_tool.invoke(wh::tool::tool_request{"{}", skip_options},
-                       callback_context);
+  auto skipped = skip_tool.invoke(wh::tool::tool_request{"{}", skip_options}, callback_context);
   REQUIRE(skipped.has_value());
   REQUIRE(skipped.value().empty());
   REQUIRE(skipped_end.load(std::memory_order_acquire));
   REQUIRE(skip_error_context == "budgetA");
 
   auto skipped_stream =
-      skip_tool.stream(wh::tool::tool_request{"{}", skip_options},
-                       callback_context);
+      skip_tool.stream(wh::tool::tool_request{"{}", skip_options}, callback_context);
   REQUIRE(skipped_stream.has_value());
   auto reader = std::move(skipped_stream).value();
   auto first = take_try_chunk(reader);
@@ -283,37 +253,28 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
           "[core][tool][functional]") {
   wh::schema::tool_schema_definition validator_info{};
   validator_info.name = "async-validator";
-  validator_info.parameters = {
-      wh::schema::tool_parameter_schema{
-          .name = "count",
-          .type = wh::schema::tool_parameter_type::integer,
-          .required = true}};
+  validator_info.parameters = {wh::schema::tool_parameter_schema{
+      .name = "count", .type = wh::schema::tool_parameter_type::integer, .required = true}};
 
   wh::tool::tool validator_tool{
       validator_info,
       sender_tool_impl{
-          sender_tool_invoke_impl{[](std::string_view input,
-                                     const wh::tool::tool_options &)
-                                      -> wh::core::result<std::string> {
-            return std::string{input};
-          }},
-          sender_tool_stream_impl{
+          sender_tool_invoke_impl{
               [](std::string_view input, const wh::tool::tool_options &)
-                  -> wh::core::result<wh::tool::tool_output_stream_reader> {
-                auto [writer, reader] =
-                    wh::schema::stream::make_pipe_stream<std::string>(1U);
-                auto wrote = writer.try_write(std::string{input});
-                if (wrote.has_error()) {
-                  return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-                      wrote.error());
-                }
-                auto closed = writer.close();
-                if (closed.has_error()) {
-                  return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-                      closed.error());
-                }
-                return wh::tool::tool_output_stream_reader{std::move(reader)};
-              }}}};
+                  -> wh::core::result<std::string> { return std::string{input}; }},
+          sender_tool_stream_impl{[](std::string_view input, const wh::tool::tool_options &)
+                                      -> wh::core::result<wh::tool::tool_output_stream_reader> {
+            auto [writer, reader] = wh::schema::stream::make_pipe_stream<std::string>(1U);
+            auto wrote = writer.try_write(std::string{input});
+            if (wrote.has_error()) {
+              return wh::core::result<wh::tool::tool_output_stream_reader>::failure(wrote.error());
+            }
+            auto closed = writer.close();
+            if (closed.has_error()) {
+              return wh::core::result<wh::tool::tool_output_stream_reader>::failure(closed.error());
+            }
+            return wh::tool::tool_output_stream_reader{std::move(reader)};
+          }}}};
 
   struct sync_only_tool_async_guard {
     [[nodiscard]] auto invoke(const wh::tool::tool_request &) const
@@ -322,8 +283,7 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
     }
   };
 
-  static_assert(
-      !tool_async_invoke_available<wh::tool::tool<sync_only_tool_async_guard>>);
+  static_assert(!tool_async_invoke_available<wh::tool::tool<sync_only_tool_async_guard>>);
 
   std::atomic<int> validation_started{0};
   std::atomic<int> validation_ended{0};
@@ -332,10 +292,8 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   wh::core::run_context validation_context{};
   validation_context.callbacks.emplace();
   auto registered_validation = register_test_callbacks(
-      std::move(validation_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(validation_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::tool::tool_callback_event>();
         REQUIRE(typed != nullptr);
@@ -356,10 +314,8 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   REQUIRE(registered_validation.has_value());
   validation_context = std::move(registered_validation).value();
 
-  auto invalid_async = wh::testing::helper::wait_value_on_test_thread(
-      validator_tool.async_invoke(
-          wh::tool::tool_request{R"({"count":"bad"})", wh::tool::tool_options{}},
-          validation_context));
+  auto invalid_async = wh::testing::helper::wait_value_on_test_thread(validator_tool.async_invoke(
+      wh::tool::tool_request{R"({"count":"bad"})", wh::tool::tool_options{}}, validation_context));
   REQUIRE(invalid_async.has_error());
   REQUIRE(invalid_async.error() == wh::core::errc::invalid_argument);
   REQUIRE(validation_started.load(std::memory_order_acquire) == 1);
@@ -374,13 +330,11 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   wh::tool::tool retry_tool{
       policy_info,
       sender_tool_impl{sender_tool_invoke_impl{
-          [&](const std::string_view, const wh::tool::tool_options &)
-              -> wh::core::result<std::string> {
-            const auto current =
-                retry_attempts.fetch_add(1, std::memory_order_relaxed);
+          [&](const std::string_view,
+              const wh::tool::tool_options &) -> wh::core::result<std::string> {
+            const auto current = retry_attempts.fetch_add(1, std::memory_order_relaxed);
             if (current < 2) {
-              return wh::core::result<std::string>::failure(
-                  wh::core::errc::network_error);
+              return wh::core::result<std::string>::failure(wh::core::errc::network_error);
             }
             return std::string{"ok"};
           }}}};
@@ -396,10 +350,8 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   wh::core::run_context retry_context{};
   retry_context.callbacks.emplace();
   auto registered_retry = register_test_callbacks(
-      std::move(retry_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(retry_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::tool::tool_callback_event>();
         REQUIRE(typed != nullptr);
@@ -416,8 +368,7 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   retry_context = std::move(registered_retry).value();
 
   auto retry_result = wh::testing::helper::wait_value_on_test_thread(
-      retry_tool.async_invoke(wh::tool::tool_request{"{}", retry_options},
-                              retry_context));
+      retry_tool.async_invoke(wh::tool::tool_request{"{}", retry_options}, retry_context));
   REQUIRE(retry_result.has_value());
   REQUIRE(retry_result.value() == "ok");
   REQUIRE(retry_attempts.load(std::memory_order_relaxed) == 3);
@@ -427,18 +378,15 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   wh::tool::tool skip_tool{
       policy_info,
       sender_tool_impl{
-          sender_tool_invoke_impl{[](const std::string_view,
-                                     const wh::tool::tool_options &)
+          sender_tool_invoke_impl{[](const std::string_view, const wh::tool::tool_options &)
                                       -> wh::core::result<std::string> {
-            return wh::core::result<std::string>::failure(
-                wh::core::errc::timeout);
+            return wh::core::result<std::string>::failure(wh::core::errc::timeout);
           }},
-          sender_tool_stream_impl{
-              [](const std::string_view, const wh::tool::tool_options &)
-                  -> wh::core::result<wh::tool::tool_output_stream_reader> {
-                return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
-                    wh::core::errc::timeout);
-              }}}};
+          sender_tool_stream_impl{[](const std::string_view, const wh::tool::tool_options &)
+                                      -> wh::core::result<wh::tool::tool_output_stream_reader> {
+            return wh::core::result<wh::tool::tool_output_stream_reader>::failure(
+                wh::core::errc::timeout);
+          }}}};
 
   wh::tool::tool_options skip_options{};
   wh::tool::tool_common_options skip_common{};
@@ -452,10 +400,8 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   wh::core::run_context skip_context{};
   skip_context.callbacks.emplace();
   auto registered_skip = register_test_callbacks(
-      std::move(skip_context),
-      [](const wh::core::callback_stage) noexcept { return true; },
-      [&](const wh::core::callback_stage stage,
-          const wh::core::callback_event_view event,
+      std::move(skip_context), [](const wh::core::callback_stage) noexcept { return true; },
+      [&](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
           const wh::core::callback_run_info &) {
         const auto *typed = event.get_if<wh::tool::tool_callback_event>();
         REQUIRE(typed != nullptr);
@@ -473,14 +419,12 @@ TEST_CASE("tool async path preserves validation retry and skip semantics",
   skip_context = std::move(registered_skip).value();
 
   auto skipped_invoke = wh::testing::helper::wait_value_on_test_thread(
-      skip_tool.async_invoke(wh::tool::tool_request{"{}", skip_options},
-                             skip_context));
+      skip_tool.async_invoke(wh::tool::tool_request{"{}", skip_options}, skip_context));
   REQUIRE(skipped_invoke.has_value());
   REQUIRE(skipped_invoke.value().empty());
 
   auto skipped_stream = wh::testing::helper::wait_value_on_test_thread(
-      skip_tool.async_stream(wh::tool::tool_request{"{}", skip_options},
-                             skip_context));
+      skip_tool.async_stream(wh::tool::tool_request{"{}", skip_options}, skip_context));
   REQUIRE(skipped_stream.has_value());
   auto skipped_reader = std::move(skipped_stream).value();
   auto skipped_chunk = take_try_chunk(skipped_reader);
@@ -498,12 +442,10 @@ TEST_CASE("tool wrapper can restore caller completion when configured",
     std::shared_ptr<std::thread::id> worker_thread{};
 
     [[nodiscard]] auto invoke_sender(const wh::tool::tool_request &) const {
-      return stdexec::starts_on(
-          worker_scheduler, stdexec::just() |
-                                stdexec::then([worker_thread = worker_thread]() {
+      return stdexec::starts_on(worker_scheduler,
+                                stdexec::just() | stdexec::then([worker_thread = worker_thread]() {
                                   *worker_thread = std::this_thread::get_id();
-                                  return wh::core::result<std::string>{
-                                      std::string{"ok"}};
+                                  return wh::core::result<std::string>{std::string{"ok"}};
                                 }));
     }
   };
@@ -514,32 +456,30 @@ TEST_CASE("tool wrapper can restore caller completion when configured",
 
   wh::schema::tool_schema_definition schema{};
   schema.name = "restore-tool";
-  wh::tool::tool<restoring_tool_impl, wh::core::resume_mode::restore>
-      component{schema,
-                restoring_tool_impl{worker_pool.get_scheduler(), worker_thread}};
+  wh::tool::tool<restoring_tool_impl, wh::core::resume_mode::restore> component{
+      schema, restoring_tool_impl{worker_pool.get_scheduler(), worker_thread}};
 
   std::thread::id caller_scheduler_thread{};
-  auto caller_ready = stdexec::sync_wait(
-      stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
-        caller_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto caller_ready =
+      stdexec::sync_wait(stdexec::schedule(caller_pool.get_scheduler()) | stdexec::then([&]() {
+                           caller_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(caller_ready.has_value());
 
   std::thread::id worker_scheduler_thread{};
-  auto worker_ready = stdexec::sync_wait(
-      stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
-        worker_scheduler_thread = std::this_thread::get_id();
-        return 0;
-      }));
+  auto worker_ready =
+      stdexec::sync_wait(stdexec::schedule(worker_pool.get_scheduler()) | stdexec::then([&]() {
+                           worker_scheduler_thread = std::this_thread::get_id();
+                           return 0;
+                         }));
   REQUIRE(worker_ready.has_value());
 
   wh::core::run_context context{};
   std::thread::id completion_thread{};
   auto waited = stdexec::sync_wait(
-      stdexec::starts_on(
-          caller_pool.get_scheduler(),
-          component.async_invoke(wh::tool::tool_request{"{}", {}}, context)) |
+      stdexec::starts_on(caller_pool.get_scheduler(),
+                         component.async_invoke(wh::tool::tool_request{"{}", {}}, context)) |
       stdexec::then([&](wh::core::result<std::string> status) {
         completion_thread = std::this_thread::get_id();
         return status;
@@ -577,9 +517,8 @@ TEST_CASE("tool interrupt utilities support resume target and root cause",
   REQUIRE(aggregated.value().root_cause.has_value());
   REQUIRE(*aggregated.value().root_cause == wh::core::errc::network_error);
 
-  std::array<wh::core::error_code, 2U> causes{
-      wh::core::make_error(wh::core::errc::ok),
-      wh::core::make_error(wh::core::errc::timeout)};
+  std::array<wh::core::error_code, 2U> causes{wh::core::make_error(wh::core::errc::ok),
+                                              wh::core::make_error(wh::core::errc::timeout)};
   auto root_cause = wh::tool::infer_root_cause(causes);
   REQUIRE(root_cause.has_value());
   REQUIRE(*root_cause == wh::core::errc::timeout);

@@ -22,9 +22,7 @@ public:
     scripted_results_.push_back(result_t::failure(code));
   }
 
-  auto set_default_error(const wh::core::errc code) -> void {
-    default_error_ = code;
-  }
+  auto set_default_error(const wh::core::errc code) -> void { default_error_ = code; }
 
   [[nodiscard]] auto next() -> result_t {
     if (scripted_results_.empty()) {
@@ -36,9 +34,7 @@ public:
     return next_result;
   }
 
-  [[nodiscard]] auto pending() const noexcept -> std::size_t {
-    return scripted_results_.size();
-  }
+  [[nodiscard]] auto pending() const noexcept -> std::size_t { return scripted_results_.size(); }
 
   auto clear() -> void { scripted_results_.clear(); }
 
@@ -57,9 +53,7 @@ public:
     scripted_results_.push_back(result_t::failure(code));
   }
 
-  auto set_default_error(const wh::core::errc code) -> void {
-    default_error_ = code;
-  }
+  auto set_default_error(const wh::core::errc code) -> void { default_error_ = code; }
 
   [[nodiscard]] auto next() -> result_t {
     if (scripted_results_.empty()) {
@@ -71,9 +65,7 @@ public:
     return next_result;
   }
 
-  [[nodiscard]] auto pending() const noexcept -> std::size_t {
-    return scripted_results_.size();
-  }
+  [[nodiscard]] auto pending() const noexcept -> std::size_t { return scripted_results_.size(); }
 
   auto clear() -> void { scripted_results_.clear(); }
 

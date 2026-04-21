@@ -1,14 +1,15 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/schema/document/types.hpp"
 
-TEST_CASE("document types expose reserved keys metadata accessors and typed result branches",
-          "[UT][wh/schema/document/types.hpp][document::set_metadata][condition][branch][boundary]") {
+TEST_CASE(
+    "document types expose reserved keys metadata accessors and typed result branches",
+    "[UT][wh/schema/document/types.hpp][document::set_metadata][condition][branch][boundary]") {
   REQUIRE(wh::schema::document_metadata_keys::score == "_score");
   REQUIRE(wh::schema::document_metadata_keys::sub_index == "_sub_index");
   REQUIRE(wh::schema::document_metadata_keys::dsl == "_dsl");
@@ -41,14 +42,12 @@ TEST_CASE("document types expose reserved keys metadata accessors and typed resu
 
   REQUIRE(doc.metadata_or<bool>("flag", false));
   REQUIRE(doc.metadata_or<std::string>("missing", "fallback") == "fallback");
-  REQUIRE(doc.metadata_or<std::int64_t>(
-              wh::schema::document_metadata_keys::sub_index, 9) == 9);
+  REQUIRE(doc.metadata_or<std::int64_t>(wh::schema::document_metadata_keys::sub_index, 9) == 9);
   REQUIRE(doc.metadata_ptr<bool>("flag") != nullptr);
   REQUIRE(*doc.metadata_ptr<bool>("flag"));
   REQUIRE(doc.metadata_ptr<double>("flag") == nullptr);
 
-  auto ok_ref =
-      doc.metadata_cref<std::string>(wh::schema::document_metadata_keys::sub_index);
+  auto ok_ref = doc.metadata_cref<std::string>(wh::schema::document_metadata_keys::sub_index);
   REQUIRE(ok_ref.has_value());
   REQUIRE(ok_ref.value().get() == "segment-1");
 
@@ -65,10 +64,10 @@ TEST_CASE("document types expose reserved keys metadata accessors and typed resu
   REQUIRE(doc.content() == "updated");
 }
 
-TEST_CASE("document type aliases expose expected metadata container surface",
-          "[UT][wh/schema/document/types.hpp][document_metadata_map][condition][branch][boundary]") {
-  STATIC_REQUIRE(std::same_as<wh::schema::sparse_vector_item,
-                              std::pair<std::uint32_t, double>>);
+TEST_CASE(
+    "document type aliases expose expected metadata container surface",
+    "[UT][wh/schema/document/types.hpp][document_metadata_map][condition][branch][boundary]") {
+  STATIC_REQUIRE(std::same_as<wh::schema::sparse_vector_item, std::pair<std::uint32_t, double>>);
 
   wh::schema::document_metadata_map metadata{};
   metadata.insert_or_assign("names", std::vector<std::string>{"a", "b"});

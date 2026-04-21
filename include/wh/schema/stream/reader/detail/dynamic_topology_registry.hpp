@@ -34,8 +34,7 @@ public:
   using lane_list = wh::core::small_vector<std::size_t, 8U>;
   using sync_waiter_type = topology_sync_waiter;
   using async_waiter_type = topology_async_waiter;
-  using topology_sync_ready_buffer =
-      wh::core::small_vector<sync_waiter_type *, 8U>;
+  using topology_sync_ready_buffer = wh::core::small_vector<sync_waiter_type *, 8U>;
   using topology_async_ready_list = waiter_ready_list<async_waiter_type>;
 
   struct round_plan {
@@ -54,17 +53,14 @@ public:
 
   explicit dynamic_topology_registry(std::vector<lane_type> &&readers)
       : lanes_(build_lanes(std::move(readers))),
-        mode_(lanes_.size() <= 5U ? topology_poll_mode::fixed
-                                  : topology_poll_mode::dynamic),
-        attached_lanes_(count_attached_lanes(lanes_)),
-        pending_lanes_(count_pending_lanes(lanes_)) {
+        mode_(lanes_.size() <= 5U ? topology_poll_mode::fixed : topology_poll_mode::dynamic),
+        attached_lanes_(count_attached_lanes(lanes_)), pending_lanes_(count_pending_lanes(lanes_)) {
     seed_attached_lanes();
   }
 
   explicit dynamic_topology_registry(std::vector<lane_source_type> &&sources)
       : lanes_(build_pending_lanes(std::move(sources))),
-        mode_(lanes_.size() <= 5U ? topology_poll_mode::fixed
-                                  : topology_poll_mode::dynamic),
+        mode_(lanes_.size() <= 5U ? topology_poll_mode::fixed : topology_poll_mode::dynamic),
         pending_lanes_(lanes_.size()) {}
 
   [[nodiscard]] auto uses_fixed_poll_path() const noexcept -> bool {
@@ -84,9 +80,8 @@ public:
       return status_type{chunk_type::make_eof()};
     }
     if (attached_lanes_ == 0U) {
-      return pending_lanes_ > 0U
-                 ? try_status_type{stream_pending}
-                 : try_status_type{status_type{chunk_type::make_eof()}};
+      return pending_lanes_ > 0U ? try_status_type{stream_pending}
+                                 : try_status_type{status_type{chunk_type::make_eof()}};
     }
 
     while (const auto lane_index = pop_ready_lane_locked()) {
@@ -108,8 +103,7 @@ public:
     }
     if (read_in_flight_) {
       return round_plan{
-          .immediate_status =
-              status_type::failure(wh::core::errc::unavailable),
+          .immediate_status = status_type::failure(wh::core::errc::unavailable),
       };
     }
     if (lanes_.empty()) {
@@ -134,8 +128,7 @@ public:
         };
       }
       return round_plan{
-          .immediate_status =
-              status_type::failure(wh::core::errc::internal_error),
+          .immediate_status = status_type::failure(wh::core::errc::internal_error),
       };
     }
 
@@ -151,8 +144,7 @@ public:
   }
 
   [[nodiscard]] auto complete_round_winner(const lane_list &round_lanes,
-                                           const std::size_t winner_position,
-                                           status_type status)
+                                           const std::size_t winner_position, status_type status)
       -> round_resolution {
     std::optional<std::size_t> close_lane{};
     status_type resolved{};
@@ -204,8 +196,7 @@ public:
     complete_round_lanes_locked(round_lanes, std::nullopt);
   }
 
-  auto close_lane_if_needed(const std::optional<std::size_t> lane_index)
-      -> void {
+  auto close_lane_if_needed(const std::optional<std::size_t> lane_index) -> void {
     if (!lane_index.has_value()) {
       return;
     }
@@ -227,8 +218,7 @@ public:
       for (auto &lane : lanes_) {
         if (lane.status == lane_phase::attached && lane.reader.has_value()) {
           auto closed = lane.reader->close();
-          if (closed.has_error() &&
-              closed.error() != wh::core::errc::channel_closed &&
+          if (closed.has_error() && closed.error() != wh::core::errc::channel_closed &&
               !close_status.has_error()) {
             close_status = closed;
           }
@@ -279,8 +269,7 @@ public:
       if (!lane.reader.has_value()) {
         continue;
       }
-      if constexpr (requires(reader_t &value,
-                             const auto_close_options &value_options) {
+      if constexpr (requires(reader_t &value, const auto_close_options &value_options) {
                       value.set_automatic_close(value_options);
                     }) {
         lane.reader->set_automatic_close(options);
@@ -288,8 +277,7 @@ public:
     }
   }
 
-  auto attach(std::string_view source, reader_t reader)
-      -> wh::core::result<void> {
+  auto attach(std::string_view source, reader_t reader) -> wh::core::result<void> {
     topology_sync_ready_buffer sync_ready{};
     topology_async_ready_list async_ready{};
     {
@@ -302,11 +290,9 @@ public:
         return wh::core::result<void>::failure(wh::core::errc::not_found);
       }
       if (lane->status != lane_phase::pending) {
-        return wh::core::result<void>::failure(
-            wh::core::errc::invalid_argument);
+        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       }
-      if constexpr (requires(reader_t &value,
-                             const auto_close_options &value_options) {
+      if constexpr (requires(reader_t &value, const auto_close_options &value_options) {
                       value.set_automatic_close(value_options);
                     }) {
         reader.set_automatic_close(auto_close_options{automatic_close_});
@@ -335,13 +321,11 @@ public:
       if (lane == nullptr) {
         return wh::core::result<void>::failure(wh::core::errc::not_found);
       }
-      if (lane->status == lane_phase::disabled ||
-          lane->status == lane_phase::finished) {
+      if (lane->status == lane_phase::disabled || lane->status == lane_phase::finished) {
         return {};
       }
       if (lane->status == lane_phase::attached) {
-        return wh::core::result<void>::failure(
-            wh::core::errc::invalid_argument);
+        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
       }
       lane->status = lane_phase::disabled;
       lane->ready_queued = false;
@@ -357,8 +341,8 @@ public:
     return {};
   }
 
-  [[nodiscard]] auto register_sync_topology_waiter(
-      sync_waiter_type *waiter, const std::uint64_t expected_epoch) -> bool {
+  [[nodiscard]] auto register_sync_topology_waiter(sync_waiter_type *waiter,
+                                                   const std::uint64_t expected_epoch) -> bool {
     std::scoped_lock lock(lock_);
     if (closed_ || topology_epoch_ != expected_epoch || attached_lanes_ > 0U ||
         pending_lanes_ == 0U) {
@@ -369,8 +353,8 @@ public:
     return true;
   }
 
-  [[nodiscard]] auto register_async_topology_waiter(
-      async_waiter_type *waiter, const std::uint64_t expected_epoch) -> bool {
+  [[nodiscard]] auto register_async_topology_waiter(async_waiter_type *waiter,
+                                                    const std::uint64_t expected_epoch) -> bool {
     std::scoped_lock lock(lock_);
     if (closed_ || topology_epoch_ != expected_epoch || attached_lanes_ > 0U ||
         pending_lanes_ == 0U) {
@@ -380,8 +364,7 @@ public:
     return true;
   }
 
-  [[nodiscard]] auto remove_async_topology_waiter(async_waiter_type *waiter)
-      -> bool {
+  [[nodiscard]] auto remove_async_topology_waiter(async_waiter_type *waiter) -> bool {
     std::scoped_lock lock(lock_);
     return async_topology_waiters_.try_remove(waiter);
   }
@@ -422,27 +405,23 @@ private:
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
     static_cast<void>(validate_indexed_capacity<>(
-        readers.size(),
-        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
+        readers.size(), "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(readers.size());
     for (auto &reader : readers) {
       lanes.push_back(lane_state{
           .source = std::move(reader.source),
           .reader = std::move(reader.reader),
-          .status = reader.finished ? lane_phase::finished
-                                    : lane_phase::attached,
+          .status = reader.finished ? lane_phase::finished : lane_phase::attached,
       });
     }
     return lanes;
   }
 
-  [[nodiscard]] static auto
-  build_pending_lanes(const std::vector<lane_source_type> &sources)
+  [[nodiscard]] static auto build_pending_lanes(const std::vector<lane_source_type> &sources)
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
     static_cast<void>(validate_indexed_capacity<>(
-        sources.size(),
-        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
+        sources.size(), "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(sources.size());
     for (const auto &source : sources) {
       lanes.push_back(lane_state{
@@ -454,13 +433,11 @@ private:
     return lanes;
   }
 
-  [[nodiscard]] static auto
-  build_pending_lanes(std::vector<lane_source_type> &&sources)
+  [[nodiscard]] static auto build_pending_lanes(std::vector<lane_source_type> &&sources)
       -> std::vector<lane_state> {
     std::vector<lane_state> lanes{};
     static_cast<void>(validate_indexed_capacity<>(
-        sources.size(),
-        "merge_stream_reader lane count exceeds uint32_t slot capacity"));
+        sources.size(), "merge_stream_reader lane count exceeds uint32_t slot capacity"));
     lanes.reserve(sources.size());
     for (auto &source : sources) {
       lanes.push_back(lane_state{
@@ -472,20 +449,16 @@ private:
     return lanes;
   }
 
-  [[nodiscard]] static auto
-  count_attached_lanes(const std::vector<lane_state> &lanes) -> std::size_t {
+  [[nodiscard]] static auto count_attached_lanes(const std::vector<lane_state> &lanes)
+      -> std::size_t {
     return static_cast<std::size_t>(std::ranges::count_if(
-        lanes, [](const lane_state &lane) -> bool {
-          return lane.status == lane_phase::attached;
-        }));
+        lanes, [](const lane_state &lane) -> bool { return lane.status == lane_phase::attached; }));
   }
 
-  [[nodiscard]] static auto
-  count_pending_lanes(const std::vector<lane_state> &lanes) -> std::size_t {
+  [[nodiscard]] static auto count_pending_lanes(const std::vector<lane_state> &lanes)
+      -> std::size_t {
     return static_cast<std::size_t>(std::ranges::count_if(
-        lanes, [](const lane_state &lane) -> bool {
-          return lane.status == lane_phase::pending;
-        }));
+        lanes, [](const lane_state &lane) -> bool { return lane.status == lane_phase::pending; }));
   }
 
   auto seed_attached_lanes() -> void {
@@ -496,8 +469,7 @@ private:
     }
   }
 
-  auto compact_queue_locked(std::vector<std::size_t> &queue, std::size_t &head)
-      -> void {
+  auto compact_queue_locked(std::vector<std::size_t> &queue, std::size_t &head) -> void {
     if (head == 0U) {
       return;
     }
@@ -509,15 +481,13 @@ private:
     if (head < 64U && head * 2U < queue.size()) {
       return;
     }
-    queue.erase(queue.begin(),
-                queue.begin() + static_cast<std::ptrdiff_t>(head));
+    queue.erase(queue.begin(), queue.begin() + static_cast<std::ptrdiff_t>(head));
     head = 0U;
   }
 
   auto enqueue_ready_locked(const std::size_t index) -> void {
     auto &lane = lanes_[index];
-    if (lane.status != lane_phase::attached || lane.in_round ||
-        lane.ready_queued) {
+    if (lane.status != lane_phase::attached || lane.in_round || lane.ready_queued) {
       return;
     }
     lane.ready_queued = true;
@@ -527,8 +497,8 @@ private:
 
   auto enqueue_probe_locked(const std::size_t index) -> void {
     auto &lane = lanes_[index];
-    if (lane.status != lane_phase::attached || lane.in_round ||
-        lane.ready_queued || lane.probe_queued) {
+    if (lane.status != lane_phase::attached || lane.in_round || lane.ready_queued ||
+        lane.probe_queued) {
       return;
     }
     lane.probe_queued = true;
@@ -539,8 +509,7 @@ private:
     while (ready_head_ < ready_queue_.size()) {
       const auto index = ready_queue_[ready_head_++];
       auto &lane = lanes_[index];
-      if (!lane.ready_queued || lane.status != lane_phase::attached ||
-          lane.in_round) {
+      if (!lane.ready_queued || lane.status != lane_phase::attached || lane.in_round) {
         continue;
       }
       lane.ready_queued = false;
@@ -556,8 +525,8 @@ private:
     while (probe_head_ < probe_queue_.size()) {
       const auto index = probe_queue_[probe_head_++];
       auto &lane = lanes_[index];
-      if (!lane.probe_queued || lane.status != lane_phase::attached ||
-          lane.in_round || lane.ready_queued) {
+      if (!lane.probe_queued || lane.status != lane_phase::attached || lane.in_round ||
+          lane.ready_queued) {
         continue;
       }
       lane.probe_queued = false;
@@ -573,8 +542,7 @@ private:
     while (ready_head_ < ready_queue_.size()) {
       const auto index = ready_queue_[ready_head_++];
       auto &lane = lanes_[index];
-      if (!lane.ready_queued || lane.status != lane_phase::attached ||
-          lane.in_round) {
+      if (!lane.ready_queued || lane.status != lane_phase::attached || lane.in_round) {
         continue;
       }
       lane.ready_queued = false;
@@ -611,9 +579,8 @@ private:
     }
   }
 
-  auto complete_round_lanes_locked(
-      const lane_list &round_lanes,
-      const std::optional<std::size_t> winner_position) -> void {
+  auto complete_round_lanes_locked(const lane_list &round_lanes,
+                                   const std::optional<std::size_t> winner_position) -> void {
     for (std::size_t position = 0U; position < round_lanes.size(); ++position) {
       const auto lane_index = round_lanes[position];
       auto &lane = lanes_[lane_index];
@@ -625,8 +592,7 @@ private:
     }
   }
 
-  auto poll_ready_lane_locked(const std::size_t index, status_type &output)
-      -> bool {
+  auto poll_ready_lane_locked(const std::size_t index, status_type &output) -> bool {
     auto &lane = lanes_[index];
     if (lane.status != lane_phase::attached || !lane.reader.has_value()) {
       return false;
@@ -662,17 +628,14 @@ private:
     return true;
   }
 
-  [[nodiscard]] auto find_lane_locked(const std::string_view source) noexcept
-      -> lane_state * {
-    auto iter = std::ranges::find_if(lanes_, [&](const lane_state &lane) {
-      return lane.source == source;
-    });
+  [[nodiscard]] auto find_lane_locked(const std::string_view source) noexcept -> lane_state * {
+    auto iter =
+        std::ranges::find_if(lanes_, [&](const lane_state &lane) { return lane.source == source; });
     return iter == lanes_.end() ? nullptr : std::addressof(*iter);
   }
 
   auto detach_topology_waiters_locked(topology_sync_ready_buffer &sync_ready,
-                                      topology_async_ready_list &async_ready)
-      -> void {
+                                      topology_async_ready_list &async_ready) -> void {
     while (auto *waiter = sync_topology_waiters_.try_pop_front()) {
       sync_ready.push_back(waiter);
     }
@@ -681,9 +644,8 @@ private:
     }
   }
 
-  static auto notify_topology_waiters(
-      const topology_sync_ready_buffer &sync_ready,
-      topology_async_ready_list &async_ready) -> void {
+  static auto notify_topology_waiters(const topology_sync_ready_buffer &sync_ready,
+                                      topology_async_ready_list &async_ready) -> void {
     for (auto *waiter : sync_ready) {
       waiter->notify();
     }

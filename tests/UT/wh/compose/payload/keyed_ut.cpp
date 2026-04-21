@@ -14,8 +14,7 @@ TEST_CASE("keyed payload helpers pack unpack and project keyed inputs",
   REQUIRE(projected.has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&projected.value()) == "hello");
 
-  auto moved_projected =
-      wh::compose::keyed_input(std::move(output), "text");
+  auto moved_projected = wh::compose::keyed_input(std::move(output), "text");
   REQUIRE(moved_projected.has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&moved_projected.value()) == "hello");
 
@@ -31,8 +30,7 @@ TEST_CASE("keyed payload helpers pack unpack and project keyed inputs",
 TEST_CASE("keyed payload helpers preserve movable payloads across map wrappers",
           "[UT][wh/compose/payload/keyed.hpp][keyed_output][condition][branch][boundary]") {
   auto packed =
-      wh::compose::pack_keyed_payload("unique",
-                                      wh::compose::graph_value{std::string{"only"}});
+      wh::compose::pack_keyed_payload("unique", wh::compose::graph_value{std::string{"only"}});
   auto unpacked = wh::compose::unpack_keyed_payload(std::move(packed), "unique");
   REQUIRE(unpacked.has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&unpacked.value()) == "only");

@@ -71,19 +71,15 @@ public:
   }
 
   /// Returns baseline tool options.
-  [[nodiscard]] auto base() const noexcept -> const tool_common_options & {
-    return base_;
-  }
+  [[nodiscard]] auto base() const noexcept -> const tool_common_options & { return base_; }
 
   /// Returns optional per-call override options.
-  [[nodiscard]] auto call_override() const noexcept
-      -> const std::optional<tool_common_options> & {
+  [[nodiscard]] auto call_override() const noexcept -> const std::optional<tool_common_options> & {
     return override_;
   }
 
   /// Resolves effective options into a borrowed view without deep copies.
-  [[nodiscard]] auto resolve_view() const noexcept
-      -> resolved_tool_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept -> resolved_tool_options_view {
     resolved_tool_options_view view{};
     view.failure_policy = base_.failure_policy;
     view.max_retries = base_.max_retries;
@@ -129,14 +125,12 @@ public:
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept
-      -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
     return component_options_;
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() const noexcept
-      -> const wh::core::component_options & {
+  [[nodiscard]] auto component_options() const noexcept -> const wh::core::component_options & {
     return component_options_;
   }
 

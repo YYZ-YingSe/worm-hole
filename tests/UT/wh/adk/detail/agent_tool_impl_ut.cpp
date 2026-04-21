@@ -78,8 +78,7 @@ TEST_CASE(
   REQUIRE(move_only_owned.has_error());
 
   std::string borrowed_text = "borrowed";
-  auto borrowed_owned =
-      wh::adk::detail::into_owned_bridge_state(wh::core::any::ref(borrowed_text));
+  auto borrowed_owned = wh::adk::detail::into_owned_bridge_state(wh::core::any::ref(borrowed_text));
   REQUIRE(borrowed_owned.has_value());
   auto *owned_text = wh::core::any_cast<std::string>(&borrowed_owned.value());
   REQUIRE(owned_text != nullptr);

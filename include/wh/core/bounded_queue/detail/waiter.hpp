@@ -97,33 +97,21 @@ template <typename value_t> struct push_waiter_base {
     return state == state_type::source_move;
   }
 
-  [[nodiscard]] auto source_value() const noexcept -> const value_t & {
-    return *payload.value_ptr;
-  }
+  [[nodiscard]] auto source_value() const noexcept -> const value_t & { return *payload.value_ptr; }
 
   [[nodiscard]] auto movable_source_value() const noexcept -> value_t & {
     return *const_cast<value_t *>(payload.value_ptr);
   }
 
-  [[nodiscard]] auto is_success() const noexcept -> bool {
-    return state == state_type::success;
-  }
+  [[nodiscard]] auto is_success() const noexcept -> bool { return state == state_type::success; }
 
-  [[nodiscard]] auto is_closed() const noexcept -> bool {
-    return state == state_type::closed;
-  }
+  [[nodiscard]] auto is_closed() const noexcept -> bool { return state == state_type::closed; }
 
-  [[nodiscard]] auto is_error() const noexcept -> bool {
-    return state == state_type::error;
-  }
+  [[nodiscard]] auto is_error() const noexcept -> bool { return state == state_type::error; }
 
-  [[nodiscard]] auto is_stopped() const noexcept -> bool {
-    return state == state_type::stopped;
-  }
+  [[nodiscard]] auto is_stopped() const noexcept -> bool { return state == state_type::stopped; }
 
-  [[nodiscard]] auto error() const noexcept -> const std::exception_ptr & {
-    return payload.error;
-  }
+  [[nodiscard]] auto error() const noexcept -> const std::exception_ptr & { return payload.error; }
 
 private:
   auto destroy_active_payload() noexcept -> void {
@@ -173,8 +161,7 @@ template <typename value_t> struct pop_waiter_base {
     requires std::constructible_from<value_t, args_t &&...>
   auto emplace_value(args_t &&...args) -> void {
     destroy_active_payload();
-    std::construct_at(std::addressof(payload.value),
-                      std::forward<args_t>(args)...);
+    std::construct_at(std::addressof(payload.value), std::forward<args_t>(args)...);
     state = state_type::value;
   }
 
@@ -199,30 +186,18 @@ template <typename value_t> struct pop_waiter_base {
     state = state_type::error;
   }
 
-  [[nodiscard]] auto has_value() const noexcept -> bool {
-    return state == state_type::value;
-  }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return state == state_type::value; }
 
-  [[nodiscard]] auto is_closed() const noexcept -> bool {
-    return state == state_type::closed;
-  }
+  [[nodiscard]] auto is_closed() const noexcept -> bool { return state == state_type::closed; }
 
-  [[nodiscard]] auto is_error() const noexcept -> bool {
-    return state == state_type::error;
-  }
+  [[nodiscard]] auto is_error() const noexcept -> bool { return state == state_type::error; }
 
-  [[nodiscard]] auto is_stopped() const noexcept -> bool {
-    return state == state_type::stopped;
-  }
+  [[nodiscard]] auto is_stopped() const noexcept -> bool { return state == state_type::stopped; }
 
   [[nodiscard]] auto value() noexcept -> value_t & { return payload.value; }
-  [[nodiscard]] auto value() const noexcept -> const value_t & {
-    return payload.value;
-  }
+  [[nodiscard]] auto value() const noexcept -> const value_t & { return payload.value; }
 
-  [[nodiscard]] auto error() const noexcept -> const std::exception_ptr & {
-    return payload.error;
-  }
+  [[nodiscard]] auto error() const noexcept -> const std::exception_ptr & { return payload.error; }
 
 private:
   auto destroy_active_payload() noexcept -> void {

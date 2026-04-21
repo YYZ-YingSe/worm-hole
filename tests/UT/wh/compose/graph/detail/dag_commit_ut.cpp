@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_runtime_support.hpp"
@@ -10,14 +9,15 @@
 #include "wh/compose/runtime/interrupt.hpp"
 
 TEST_CASE("dag commit path preserves successful node output through full graph run",
-          "[UT][wh/compose/graph/detail/dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][boundary]") {
   auto graph = wh::testing::helper::make_runtime_identity_graph(
       wh::compose::graph_runtime_mode::dag, "dag_commit");
   REQUIRE(graph.has_value());
 
   wh::core::run_context context{};
-  auto waited = stdexec::sync_wait(wh::compose::detail::invoke_runtime::start_dag_run(
-      wh::testing::helper::make_invoke_session(
+  auto waited = stdexec::sync_wait(
+      wh::compose::detail::invoke_runtime::start_dag_run(wh::testing::helper::make_invoke_session(
           graph.value(), wh::compose::graph_value{23}, context)));
   REQUIRE(waited.has_value());
   REQUIRE(std::get<0>(*waited).has_value());
@@ -25,7 +25,8 @@ TEST_CASE("dag commit path preserves successful node output through full graph r
 }
 
 TEST_CASE("dag commit path preserves stream output through full graph run",
-          "[UT][wh/compose/graph/detail/dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][stream]") {
+          "[UT][wh/compose/graph/detail/"
+          "dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][stream]") {
   auto graph = wh::testing::helper::make_runtime_stream_identity_graph(
       wh::compose::graph_runtime_mode::dag, "dag_commit_stream");
   REQUIRE(graph.has_value());
@@ -34,8 +35,8 @@ TEST_CASE("dag commit path preserves stream output through full graph run",
   REQUIRE(input.has_value());
 
   wh::core::run_context context{};
-  auto waited = stdexec::sync_wait(wh::compose::detail::invoke_runtime::start_dag_run(
-      wh::testing::helper::make_invoke_session(
+  auto waited = stdexec::sync_wait(
+      wh::compose::detail::invoke_runtime::start_dag_run(wh::testing::helper::make_invoke_session(
           graph.value(), wh::compose::graph_value{std::move(input).value()}, context)));
   REQUIRE(waited.has_value());
   REQUIRE(std::get<0>(*waited).has_value());
@@ -53,7 +54,8 @@ TEST_CASE("dag commit path preserves stream output through full graph run",
 }
 
 TEST_CASE("dag commit path surfaces canceled when post-node interrupt hook fires",
-          "[UT][wh/compose/graph/detail/dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][error]") {
+          "[UT][wh/compose/graph/detail/"
+          "dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][error]") {
   auto graph = wh::testing::helper::make_runtime_identity_graph(
       wh::compose::graph_runtime_mode::dag, "dag_commit_interrupt");
   REQUIRE(graph.has_value());
@@ -62,13 +64,11 @@ TEST_CASE("dag commit path surfaces canceled when post-node interrupt hook fires
   request.input = wh::compose::graph_input::value(23);
   request.controls.interrupt.post_hook =
       [](std::string_view node_key, const wh::compose::graph_value &,
-         wh::core::run_context &) -> wh::core::result<
-             std::optional<wh::core::interrupt_signal>> {
+         wh::core::run_context &) -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
     return std::optional<wh::core::interrupt_signal>{
-        wh::compose::make_interrupt_signal(
-            std::string{"interrupt-"} + std::string{node_key},
-            wh::core::make_address({"graph", "interrupt"}))};
-      };
+        wh::compose::make_interrupt_signal(std::string{"interrupt-"} + std::string{node_key},
+                                           wh::core::make_address({"graph", "interrupt"}))};
+  };
 
   wh::core::run_context context{};
   auto waited = stdexec::sync_wait(graph->invoke(context, std::move(request)));
@@ -81,7 +81,8 @@ TEST_CASE("dag commit path surfaces canceled when post-node interrupt hook fires
 }
 
 TEST_CASE("dag commit path propagates post-node interrupt hook failure",
-          "[UT][wh/compose/graph/detail/dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][boundary][error]") {
+          "[UT][wh/compose/graph/detail/"
+          "dag_commit.hpp][dag_runtime::commit_node_output][condition][branch][boundary][error]") {
   auto graph = wh::testing::helper::make_runtime_identity_graph(
       wh::compose::graph_runtime_mode::dag, "dag_commit_hook_error");
   REQUIRE(graph.has_value());
@@ -90,8 +91,7 @@ TEST_CASE("dag commit path propagates post-node interrupt hook failure",
   request.input = wh::compose::graph_input::value(23);
   request.controls.interrupt.post_hook =
       [](std::string_view, const wh::compose::graph_value &,
-         wh::core::run_context &)
-          -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
+         wh::core::run_context &) -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
     return wh::core::result<std::optional<wh::core::interrupt_signal>>::failure(
         wh::core::errc::timeout);
   };

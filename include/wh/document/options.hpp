@@ -89,8 +89,7 @@ public:
   }
 
   /// Sets per-call option overrides merged on top of the baseline options.
-  auto set_call_override(const loader_common_options &options)
-      -> loader_options & {
+  auto set_call_override(const loader_common_options &options) -> loader_options & {
     override_ = options;
     return *this;
   }
@@ -102,8 +101,7 @@ public:
   }
 
   /// Resolves effective options into a borrowed view.
-  [[nodiscard]] auto resolve_view() const noexcept
-      -> resolved_loader_options_view {
+  [[nodiscard]] auto resolve_view() const noexcept -> resolved_loader_options_view {
     resolved_loader_options_view view{};
     view.base_parser = &base_.parser;
     view.override_parser = nullptr;
@@ -136,14 +134,12 @@ public:
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() noexcept
-      -> wh::core::component_options & {
+  [[nodiscard]] auto component_options() noexcept -> wh::core::component_options & {
     return component_options_;
   }
 
   /// Returns component-level common metadata plus provider-specific extensions.
-  [[nodiscard]] auto component_options() const noexcept
-      -> const wh::core::component_options & {
+  [[nodiscard]] auto component_options() const noexcept -> const wh::core::component_options & {
     return component_options_;
   }
 

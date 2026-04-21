@@ -89,10 +89,8 @@ struct graph_core {
     std::vector<std::uint32_t> end_nodes_sorted{};
     graph_value_branch_selector_ids selector_ids{nullptr};
 
-    [[nodiscard]] auto contains(const std::uint32_t node_id) const noexcept
-        -> bool {
-      return std::binary_search(end_nodes_sorted.begin(), end_nodes_sorted.end(),
-                                node_id);
+    [[nodiscard]] auto contains(const std::uint32_t node_id) const noexcept -> bool {
+      return std::binary_search(end_nodes_sorted.begin(), end_nodes_sorted.end(), node_id);
     }
   };
 
@@ -100,10 +98,8 @@ struct graph_core {
     std::vector<std::uint32_t> end_nodes_sorted{};
     graph_stream_branch_selector_ids selector_ids{nullptr};
 
-    [[nodiscard]] auto contains(const std::uint32_t node_id) const noexcept
-        -> bool {
-      return std::binary_search(end_nodes_sorted.begin(), end_nodes_sorted.end(),
-                                node_id);
+    [[nodiscard]] auto contains(const std::uint32_t node_id) const noexcept -> bool {
+      return std::binary_search(end_nodes_sorted.begin(), end_nodes_sorted.end(), node_id);
     }
   };
 
@@ -118,17 +114,14 @@ struct graph_core {
       }
       const auto begin = offsets[node_id];
       const auto end = offsets[node_id + 1U];
-      return std::span<const std::uint32_t>{edge_ids.data() + begin,
-                                            end - begin};
+      return std::span<const std::uint32_t>{edge_ids.data() + begin, end - begin};
     }
   };
 
   struct graph_index {
-    static constexpr std::uint32_t no_branch_index =
-        std::numeric_limits<std::uint32_t>::max();
+    static constexpr std::uint32_t no_branch_index = std::numeric_limits<std::uint32_t>::max();
 
-    std::unordered_map<std::string, std::uint32_t,
-                       wh::core::transparent_string_hash,
+    std::unordered_map<std::string, std::uint32_t, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>
         key_to_id{};
     std::vector<std::string> id_to_key{};
@@ -169,31 +162,27 @@ struct graph_core {
       return outgoing_control_edges.edge_ids_for(node_id);
     }
 
-    [[nodiscard]] auto value_branch_for_source(
-        const std::uint32_t source_id) const
+    [[nodiscard]] auto value_branch_for_source(const std::uint32_t source_id) const
         -> const indexed_value_branch_definition * {
       if (source_id >= has_value_branch_by_source.size() ||
           has_value_branch_by_source[source_id] == 0U) {
         return nullptr;
       }
       const auto branch_index = value_branch_index_by_source[source_id];
-      if (branch_index == no_branch_index ||
-          branch_index >= value_branch_defs.size()) {
+      if (branch_index == no_branch_index || branch_index >= value_branch_defs.size()) {
         return nullptr;
       }
       return &value_branch_defs[branch_index];
     }
 
-    [[nodiscard]] auto stream_branch_for_source(
-        const std::uint32_t source_id) const
+    [[nodiscard]] auto stream_branch_for_source(const std::uint32_t source_id) const
         -> const indexed_stream_branch_definition * {
       if (source_id >= has_stream_branch_by_source.size() ||
           has_stream_branch_by_source[source_id] == 0U) {
         return nullptr;
       }
       const auto branch_index = stream_branch_index_by_source[source_id];
-      if (branch_index == no_branch_index ||
-          branch_index >= stream_branch_defs.size()) {
+      if (branch_index == no_branch_index || branch_index >= stream_branch_defs.size()) {
         return nullptr;
       }
       return &stream_branch_defs[branch_index];
@@ -221,8 +210,7 @@ struct graph_core {
   };
 
   struct control_graph_index {
-    std::unordered_map<std::string, std::uint32_t,
-                       wh::core::transparent_string_hash,
+    std::unordered_map<std::string, std::uint32_t, wh::core::transparent_string_hash,
                        wh::core::transparent_string_equal>
         key_to_id{};
     std::vector<std::uint32_t> control_out_offsets{};
@@ -235,8 +223,7 @@ struct graph_core {
         -> std::span<const std::uint32_t> {
       const auto begin = control_out_offsets[node_id];
       const auto end = control_out_offsets[node_id + 1U];
-      return std::span<const std::uint32_t>{control_out_nodes.data() + begin,
-                                            end - begin};
+      return std::span<const std::uint32_t>{control_out_nodes.data() + begin, end - begin};
     }
   };
 
@@ -251,23 +238,19 @@ struct graph_core {
   };
 
   graph_compile_options options_{};
-  std::unordered_map<std::string, authored_node,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, authored_node, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       nodes_{};
   std::vector<compiled_node> compiled_nodes_{};
   std::vector<std::string> node_insertion_order_{};
-  std::unordered_map<std::string, std::uint32_t,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, std::uint32_t, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       node_id_index_{};
   std::vector<graph_edge> edges_{};
-  std::unordered_map<std::string, value_branch_definition,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, value_branch_definition, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       value_branches_{};
-  std::unordered_map<std::string, stream_branch_definition,
-                     wh::core::transparent_string_hash,
+  std::unordered_map<std::string, stream_branch_definition, wh::core::transparent_string_hash,
                      wh::core::transparent_string_equal>
       stream_branches_{};
   std::vector<graph_diagnostic> diagnostics_{};

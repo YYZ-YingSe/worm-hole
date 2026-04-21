@@ -1,9 +1,3 @@
-#include <benchmark/benchmark.h>
-
-#include <exec/static_thread_pool.hpp>
-#include <exec/task.hpp>
-#include <stdexec/execution.hpp>
-
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -13,6 +7,10 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <exec/static_thread_pool.hpp>
+#include <exec/task.hpp>
+#include <stdexec/execution.hpp>
 
 #include "wh/compose/graph.hpp"
 #include "wh/core/stdexec/concurrent_sender_vector.hpp"
@@ -26,15 +24,16 @@
 #include "wh/schema/stream.hpp"
 #include "wh/tool/tool.hpp"
 
+#include <benchmark/benchmark.h>
+
 namespace {
 
 using invoke_status = wh::core::result<wh::compose::graph_invoke_result>;
 using pool_scheduler = decltype(std::declval<exec::static_thread_pool &>().get_scheduler());
 
-[[nodiscard]] auto inline_sync_options()
-    -> wh::compose::graph_add_node_options {
-  return wh::compose::graph_add_node_options{
-      .dispatch = wh::compose::sync_dispatch::inline_control};
+[[nodiscard]] auto inline_sync_options() -> wh::compose::graph_add_node_options {
+  return wh::compose::graph_add_node_options{.dispatch =
+                                                 wh::compose::sync_dispatch::inline_control};
 }
 
 struct bench_profile {
@@ -50,26 +49,23 @@ struct bench_case {
   bench_profile profile{};
 };
 
-[[nodiscard]] auto effective_stream_items(const bench_profile &profile) noexcept
-    -> std::size_t {
+[[nodiscard]] auto effective_stream_items(const bench_profile &profile) noexcept -> std::size_t {
   return std::max<std::size_t>(profile.stream_items, 1U);
 }
 
-[[nodiscard]] auto effective_tool_calls(const bench_profile &profile) noexcept
-    -> std::size_t {
+[[nodiscard]] auto effective_tool_calls(const bench_profile &profile) noexcept -> std::size_t {
   return std::max<std::size_t>(profile.tool_calls, 1U);
 }
 
-[[nodiscard]] auto error_text(const std::string_view prefix,
-                              const wh::core::error_code code) -> std::string {
+[[nodiscard]] auto error_text(const std::string_view prefix, const wh::core::error_code code)
+    -> std::string {
   std::string text{prefix};
   text += ": ";
   text += code.message();
   return text;
 }
 
-[[nodiscard]] auto report_text(const wh::compose::graph_run_report &report)
-    -> std::string {
+[[nodiscard]] auto report_text(const wh::compose::graph_run_report &report) -> std::string {
   auto completed_suffix = [&report]() -> std::string {
     if (report.completed_node_keys.empty()) {
       return {};
@@ -86,22 +82,20 @@ struct bench_case {
     return text;
   };
   if (report.node_run_error.has_value()) {
-    return "node=" + report.node_run_error->node + ";message=" +
-           report.node_run_error->message + ";raw=" +
-           report.node_run_error->raw_error.message() + completed_suffix();
+    return "node=" + report.node_run_error->node + ";message=" + report.node_run_error->message +
+           ";raw=" + report.node_run_error->raw_error.message() + completed_suffix();
   }
   if (report.graph_run_error.has_value()) {
-    return "node=" + report.graph_run_error->node + ";message=" +
-           report.graph_run_error->message +
+    return "node=" + report.graph_run_error->node + ";message=" + report.graph_run_error->message +
            (report.graph_run_error->raw_error.has_value()
                 ? ";raw=" + report.graph_run_error->raw_error->message()
                 : std::string{}) +
            completed_suffix();
   }
   if (report.stream_read_error.has_value()) {
-    return "node=" + report.stream_read_error->node + ";message=" +
-           report.stream_read_error->message + ";raw=" +
-           report.stream_read_error->raw_error.message() + completed_suffix();
+    return "node=" + report.stream_read_error->node +
+           ";message=" + report.stream_read_error->message +
+           ";raw=" + report.stream_read_error->raw_error.message() + completed_suffix();
   }
   return {};
 }
@@ -117,11 +111,9 @@ template <typename value_t>
   return std::cref(*typed);
 }
 
-[[nodiscard]] auto first_text_part(const wh::schema::message &message)
-    -> std::string_view {
+[[nodiscard]] auto first_text_part(const wh::schema::message &message) -> std::string_view {
   for (const auto &part : message.parts) {
-    if (const auto *text = std::get_if<wh::schema::text_part>(&part);
-        text != nullptr) {
+    if (const auto *text = std::get_if<wh::schema::text_part>(&part); text != nullptr) {
       return text->text;
     }
   }
@@ -129,8 +121,7 @@ template <typename value_t>
 }
 
 [[nodiscard]] auto read_named_int(const wh::compose::graph_value_map &values,
-                                  const std::string_view key)
-    -> wh::core::result<std::int64_t> {
+                                  const std::string_view key) -> wh::core::result<std::int64_t> {
   const auto iter = values.find(key);
   if (iter == values.end()) {
     return wh::core::result<std::int64_t>::failure(wh::core::errc::not_found);
@@ -143,8 +134,7 @@ template <typename value_t>
 }
 
 template <typename mapper_t>
-[[nodiscard]] auto sum_graph_stream(wh::compose::graph_stream_reader reader,
-                                    mapper_t mapper)
+[[nodiscard]] auto sum_graph_stream(wh::compose::graph_stream_reader reader, mapper_t mapper)
     -> wh::core::result<std::int64_t> {
   std::int64_t total = 0;
   while (true) {
@@ -159,8 +149,7 @@ template <typename mapper_t>
       return total;
     }
     if (!next.value().value.has_value()) {
-      return wh::core::result<std::int64_t>::failure(
-          wh::core::errc::type_mismatch);
+      return wh::core::result<std::int64_t>::failure(wh::core::errc::type_mismatch);
     }
 
     auto mapped = mapper(*next.value().value);
@@ -171,8 +160,7 @@ template <typename mapper_t>
   }
 }
 
-[[nodiscard]] auto make_user_message(const std::string_view text)
-    -> wh::schema::message {
+[[nodiscard]] auto make_user_message(const std::string_view text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
   message.parts.emplace_back(wh::schema::text_part{std::string{text}});
@@ -187,16 +175,14 @@ public:
   [[nodiscard]] auto invoke(const wh::model::chat_request &request) const
       -> wh::core::result<wh::model::chat_response> {
     if (request.messages.empty()) {
-      return wh::core::result<wh::model::chat_response>::failure(
-          wh::core::errc::invalid_argument);
+      return wh::core::result<wh::model::chat_response>::failure(wh::core::errc::invalid_argument);
     }
 
     wh::schema::message response{};
     response.role = wh::schema::message_role::assistant;
     response.parts.emplace_back(
         wh::schema::text_part{std::string{first_text_part(request.messages.back())}});
-    response.meta.usage.prompt_tokens =
-        static_cast<std::int64_t>(request.messages.size());
+    response.meta.usage.prompt_tokens = static_cast<std::int64_t>(request.messages.size());
     response.meta.usage.completion_tokens = 1;
     response.meta.usage.total_tokens =
         response.meta.usage.prompt_tokens + response.meta.usage.completion_tokens;
@@ -205,30 +191,29 @@ public:
 
   [[nodiscard]] auto stream_sender(wh::model::chat_request request) const {
     return stdexec::starts_on(
-        scheduler_, stdexec::just(std::move(request)) |
-                        stdexec::then([profile = profile_](wh::model::chat_request moved_request)
-                                           -> wh::core::result<wh::model::chat_message_stream_reader> {
-                          if (moved_request.messages.empty()) {
-                            return wh::core::result<wh::model::chat_message_stream_reader>::failure(
-                                wh::core::errc::invalid_argument);
-                          }
+        scheduler_,
+        stdexec::just(std::move(request)) |
+            stdexec::then([profile = profile_](wh::model::chat_request moved_request)
+                              -> wh::core::result<wh::model::chat_message_stream_reader> {
+              if (moved_request.messages.empty()) {
+                return wh::core::result<wh::model::chat_message_stream_reader>::failure(
+                    wh::core::errc::invalid_argument);
+              }
 
-                          const auto count = effective_stream_items(profile);
-                          std::vector<wh::schema::message> chunks{};
-                          chunks.reserve(count);
-                          const auto prompt = std::string{
-                              first_text_part(moved_request.messages.back())};
-                          for (std::size_t index = 0U; index < count; ++index) {
-                            wh::schema::message chunk{};
-                            chunk.role = wh::schema::message_role::assistant;
-                            chunk.parts.emplace_back(wh::schema::text_part{
-                                prompt + "#" + std::to_string(index)});
-                            chunks.push_back(std::move(chunk));
-                          }
-                          return wh::model::chat_message_stream_reader{
-                              wh::schema::stream::make_values_stream_reader(
-                                  std::move(chunks))};
-                        }));
+              const auto count = effective_stream_items(profile);
+              std::vector<wh::schema::message> chunks{};
+              chunks.reserve(count);
+              const auto prompt = std::string{first_text_part(moved_request.messages.back())};
+              for (std::size_t index = 0U; index < count; ++index) {
+                wh::schema::message chunk{};
+                chunk.role = wh::schema::message_role::assistant;
+                chunk.parts.emplace_back(
+                    wh::schema::text_part{prompt + "#" + std::to_string(index)});
+                chunks.push_back(std::move(chunk));
+              }
+              return wh::model::chat_message_stream_reader{
+                  wh::schema::stream::make_values_stream_reader(std::move(chunks))};
+            }));
   }
 
 private:
@@ -246,8 +231,7 @@ public:
     wh::document::document_batch output{};
     output.reserve(profile_.documents);
     for (std::size_t index = 0U; index < profile_.documents; ++index) {
-      wh::schema::document document{
-          request.source + ":doc:" + std::to_string(index)};
+      wh::schema::document document{request.source + ":doc:" + std::to_string(index)};
       document.with_score(1.0 + static_cast<double>(index));
       document.with_sub_index("bench");
       output.push_back(std::move(document));
@@ -266,19 +250,19 @@ public:
 
   [[nodiscard]] auto embed_sender(wh::embedding::embedding_request request) const {
     return stdexec::starts_on(
-        scheduler_, stdexec::just(std::move(request)) |
-                        stdexec::then([profile = profile_](wh::embedding::embedding_request moved_request)
-                                           -> wh::core::result<wh::embedding::embedding_response> {
-                          wh::embedding::embedding_response output{};
-                          output.reserve(moved_request.inputs.size());
-                          for (const auto &input : moved_request.inputs) {
-                            output.push_back(std::vector<double>{
-                                static_cast<double>(input.size()),
-                                static_cast<double>(profile.documents),
-                                static_cast<double>(profile.stream_items)});
-                          }
-                          return output;
-                        }));
+        scheduler_,
+        stdexec::just(std::move(request)) |
+            stdexec::then([profile = profile_](wh::embedding::embedding_request moved_request)
+                              -> wh::core::result<wh::embedding::embedding_response> {
+              wh::embedding::embedding_response output{};
+              output.reserve(moved_request.inputs.size());
+              for (const auto &input : moved_request.inputs) {
+                output.push_back(std::vector<double>{static_cast<double>(input.size()),
+                                                     static_cast<double>(profile.documents),
+                                                     static_cast<double>(profile.stream_items)});
+              }
+              return output;
+            }));
   }
 
 private:
@@ -295,8 +279,7 @@ public:
     wh::retriever::retriever_response output{};
     output.reserve(profile_.documents);
     for (std::size_t index = 0U; index < profile_.documents; ++index) {
-      wh::schema::document document{
-          "hit:" + request.query + ":" + std::to_string(index)};
+      wh::schema::document document{"hit:" + request.query + ":" + std::to_string(index)};
       document.with_score(10.0 - static_cast<double>(index));
       document.with_sub_index(request.sub_index.empty() ? "bench" : request.sub_index);
       output.push_back(std::move(document));
@@ -354,23 +337,18 @@ private:
   wh::compose::tool_registry registry{};
   registry.emplace(
       "bench.echo",
-      wh::compose::tool_entry{
-          .invoke =
-              [](const wh::compose::tool_call &call, wh::tool::call_scope)
-                  -> wh::core::result<wh::compose::graph_value> {
-            return wh::compose::graph_value{
-                call.tool_name + ":" + call.arguments};
-          }});
+      wh::compose::tool_entry{.invoke = [](const wh::compose::tool_call &call, wh::tool::call_scope)
+                                  -> wh::core::result<wh::compose::graph_value> {
+        return wh::compose::graph_value{call.tool_name + ":" + call.arguments};
+      }});
   registry.emplace(
       "bench.reverse",
-      wh::compose::tool_entry{
-          .invoke =
-              [](const wh::compose::tool_call &call, wh::tool::call_scope)
-                  -> wh::core::result<wh::compose::graph_value> {
-            auto reversed = call.arguments;
-            std::reverse(reversed.begin(), reversed.end());
-            return wh::compose::graph_value{std::move(reversed)};
-          }});
+      wh::compose::tool_entry{.invoke = [](const wh::compose::tool_call &call, wh::tool::call_scope)
+                                  -> wh::core::result<wh::compose::graph_value> {
+        auto reversed = call.arguments;
+        std::reverse(reversed.begin(), reversed.end());
+        return wh::compose::graph_value{std::move(reversed)};
+      }});
   return registry;
 }
 
@@ -380,74 +358,60 @@ private:
   wh::compose::tool_registry registry{};
   registry.emplace(
       "bench.echo",
-      wh::compose::tool_entry{
-          .async_stream =
-              [scheduler, profile](wh::compose::tool_call call, wh::tool::call_scope)
-                  -> wh::compose::tools_stream_sender {
-            return wh::compose::tools_stream_sender{
-                stdexec::starts_on(
-                    scheduler,
-                    stdexec::just(std::move(call)) |
-                        stdexec::then([profile](wh::compose::tool_call moved_call)
-                                           -> wh::core::result<wh::compose::graph_stream_reader> {
-                          std::vector<wh::compose::graph_value> values{};
-                          values.reserve(effective_stream_items(profile));
-                          for (std::size_t index = 0U;
-                               index < effective_stream_items(profile); ++index) {
-                            values.emplace_back(moved_call.arguments + ":async:" +
-                                                std::to_string(index));
-                          }
-                          auto reader =
-                              wh::compose::make_values_stream_reader(std::move(values));
-                          if (reader.has_error()) {
-                            return wh::core::result<
-                                wh::compose::graph_stream_reader>::failure(
-                                reader.error());
-                          }
-                          return std::move(reader).value();
-                        }))};
-          }});
+      wh::compose::tool_entry{.async_stream = [scheduler, profile](wh::compose::tool_call call,
+                                                                   wh::tool::call_scope)
+                                  -> wh::compose::tools_stream_sender {
+        return wh::compose::tools_stream_sender{stdexec::starts_on(
+            scheduler,
+            stdexec::just(std::move(call)) |
+                stdexec::then([profile](wh::compose::tool_call moved_call)
+                                  -> wh::core::result<wh::compose::graph_stream_reader> {
+                  std::vector<wh::compose::graph_value> values{};
+                  values.reserve(effective_stream_items(profile));
+                  for (std::size_t index = 0U; index < effective_stream_items(profile); ++index) {
+                    values.emplace_back(moved_call.arguments + ":async:" + std::to_string(index));
+                  }
+                  auto reader = wh::compose::make_values_stream_reader(std::move(values));
+                  if (reader.has_error()) {
+                    return wh::core::result<wh::compose::graph_stream_reader>::failure(
+                        reader.error());
+                  }
+                  return std::move(reader).value();
+                }))};
+      }});
   registry.emplace(
       "bench.reverse",
-      wh::compose::tool_entry{
-          .async_stream =
-              [scheduler, profile](wh::compose::tool_call call, wh::tool::call_scope)
-                  -> wh::compose::tools_stream_sender {
-            return wh::compose::tools_stream_sender{
-                stdexec::starts_on(
-                    scheduler,
-                    stdexec::just(std::move(call)) |
-                        stdexec::then([profile](wh::compose::tool_call moved_call)
-                                           -> wh::core::result<wh::compose::graph_stream_reader> {
-                          auto reversed = moved_call.arguments;
-                          std::reverse(reversed.begin(), reversed.end());
-                          std::vector<wh::compose::graph_value> values{};
-                          values.reserve(effective_stream_items(profile));
-                          for (std::size_t index = 0U;
-                               index < effective_stream_items(profile); ++index) {
-                            values.emplace_back(reversed + ":async:" +
-                                                std::to_string(index));
-                          }
-                          auto reader =
-                              wh::compose::make_values_stream_reader(std::move(values));
-                          if (reader.has_error()) {
-                            return wh::core::result<
-                                wh::compose::graph_stream_reader>::failure(
-                                reader.error());
-                          }
-                          return std::move(reader).value();
-                        }))};
-          }});
+      wh::compose::tool_entry{.async_stream = [scheduler, profile](wh::compose::tool_call call,
+                                                                   wh::tool::call_scope)
+                                  -> wh::compose::tools_stream_sender {
+        return wh::compose::tools_stream_sender{stdexec::starts_on(
+            scheduler,
+            stdexec::just(std::move(call)) |
+                stdexec::then([profile](wh::compose::tool_call moved_call)
+                                  -> wh::core::result<wh::compose::graph_stream_reader> {
+                  auto reversed = moved_call.arguments;
+                  std::reverse(reversed.begin(), reversed.end());
+                  std::vector<wh::compose::graph_value> values{};
+                  values.reserve(effective_stream_items(profile));
+                  for (std::size_t index = 0U; index < effective_stream_items(profile); ++index) {
+                    values.emplace_back(reversed + ":async:" + std::to_string(index));
+                  }
+                  auto reader = wh::compose::make_values_stream_reader(std::move(values));
+                  if (reader.has_error()) {
+                    return wh::core::result<wh::compose::graph_stream_reader>::failure(
+                        reader.error());
+                  }
+                  return std::move(reader).value();
+                }))};
+      }});
   return registry;
 }
 
-[[nodiscard]] auto make_tool_batch(const std::string_view seed,
-                                   const bench_profile profile)
+[[nodiscard]] auto make_tool_batch(const std::string_view seed, const bench_profile profile)
     -> wh::compose::tool_batch {
   wh::compose::tool_batch batch{};
   batch.calls.reserve(effective_tool_calls(profile));
-  static constexpr std::array<std::string_view, 2U> names{
-      "bench.echo", "bench.reverse"};
+  static constexpr std::array<std::string_view, 2U> names{"bench.echo", "bench.reverse"};
   for (std::size_t index = 0U; index < effective_tool_calls(profile); ++index) {
     batch.calls.push_back(wh::compose::tool_call{
         .call_id = "call-" + std::to_string(index),
@@ -458,8 +422,7 @@ private:
   return batch;
 }
 
-[[nodiscard]] auto make_compile_options(const std::string_view name,
-                                        const bench_case &config)
+[[nodiscard]] auto make_compile_options(const std::string_view name, const bench_case &config)
     -> wh::compose::graph_compile_options {
   wh::compose::graph_compile_options options{};
   options.name = std::string{name};
@@ -473,20 +436,17 @@ private:
   return options;
 }
 
-[[nodiscard]] auto build_child_graph(const bench_case &config,
-                                     const pool_scheduler &scheduler)
+[[nodiscard]] auto build_child_graph(const bench_case &config, const pool_scheduler &scheduler)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph child{make_compile_options("compose-real-bench-child", config)};
 
   auto added = child.add_lambda(
       "inner_value",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto value = any_cref<std::int64_t>(input);
         if (value.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              value.error());
+          return wh::core::result<wh::compose::graph_value>::failure(value.error());
         }
         return wh::compose::graph_value{value.value().get() * 2};
       },
@@ -495,8 +455,7 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = child.add_lambda<wh::compose::node_contract::value,
-                           wh::compose::node_contract::value,
+  added = child.add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
                            wh::compose::node_exec_mode::async>(
       "inner_async",
       [scheduler, profile = config.profile](
@@ -504,21 +463,15 @@ private:
           const wh::compose::graph_call_scope &) -> wh::compose::graph_sender {
         auto base = any_cref<std::int64_t>(input);
         if (base.has_error()) {
-          return wh::compose::graph_sender{
-              wh::core::detail::ready_sender(
-                  wh::core::result<wh::compose::graph_value>::failure(
-                      base.error()))};
+          return wh::compose::graph_sender{wh::core::detail::ready_sender(
+              wh::core::result<wh::compose::graph_value>::failure(base.error()))};
         }
-        const auto lifted = base.value().get() +
-                            static_cast<std::int64_t>(profile.stream_items);
-        return wh::compose::graph_sender{
-            stdexec::starts_on(
-                scheduler,
-                stdexec::just() |
-                    stdexec::then(
-                        [lifted]() -> wh::core::result<wh::compose::graph_value> {
-                          return wh::compose::graph_value{lifted};
-                        }))};
+        const auto lifted = base.value().get() + static_cast<std::int64_t>(profile.stream_items);
+        return wh::compose::graph_sender{stdexec::starts_on(
+            scheduler, stdexec::just() |
+                           stdexec::then([lifted]() -> wh::core::result<wh::compose::graph_value> {
+                             return wh::compose::graph_value{lifted};
+                           }))};
       });
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
@@ -540,24 +493,20 @@ private:
   return child;
 }
 
-[[nodiscard]] auto build_real_graph(const bench_case &config,
-                                    const pool_scheduler &scheduler)
+[[nodiscard]] auto build_real_graph(const bench_case &config, const pool_scheduler &scheduler)
     -> wh::core::result<wh::compose::graph> {
   wh::compose::graph graph{make_compile_options("compose-real-bench", config)};
 
-  wh::prompt::simple_chat_template prompt{
-      std::vector<wh::prompt::prompt_message_template>{
-          {wh::schema::message_role::system, "system: {{topic}}", "system"},
-          {wh::schema::message_role::user, "user: {{topic}}", "user"}}};
+  wh::prompt::simple_chat_template prompt{std::vector<wh::prompt::prompt_message_template>{
+      {wh::schema::message_role::system, "system: {{topic}}", "system"},
+      {wh::schema::message_role::user, "user: {{topic}}", "user"}}};
   auto model = wh::model::chat_model{bench_chat_model_impl{scheduler, config.profile}};
   auto document = wh::document::document{bench_document_impl{config.profile}};
-  auto embedding = wh::embedding::embedding{
-      bench_embedding_impl{scheduler, config.profile}};
+  auto embedding = wh::embedding::embedding{bench_embedding_impl{scheduler, config.profile}};
   auto retriever = wh::retriever::retriever{bench_retriever_impl{config.profile}};
   auto indexer = wh::indexer::indexer{bench_indexer_impl{}};
-  auto tool_component = wh::tool::tool{
-      make_tool_schema("bench_component_stream"),
-      bench_tool_component_impl{config.profile}};
+  auto tool_component = wh::tool::tool{make_tool_schema("bench_component_stream"),
+                                       bench_tool_component_impl{config.profile}};
   auto child = build_child_graph(config, scheduler);
   if (child.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(child.error());
@@ -566,8 +515,7 @@ private:
   auto added = graph.add_lambda(
       "prompt_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto seed = any_cref<std::string>(input);
         if (seed.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(seed.error());
@@ -581,10 +529,9 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::prompt,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::value>("prompt",
-                                                                  prompt);
+  added =
+      graph.add_component<wh::compose::component_kind::prompt, wh::compose::node_contract::value,
+                          wh::compose::node_contract::value>("prompt", prompt);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -592,12 +539,10 @@ private:
   added = graph.add_lambda(
       "model_invoke_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto messages = any_cref<std::vector<wh::schema::message>>(input);
         if (messages.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              messages.error());
+          return wh::core::result<wh::compose::graph_value>::failure(messages.error());
         }
         wh::model::chat_request request{};
         request.messages = messages.value().get();
@@ -608,10 +553,8 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::model,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::value>("model_invoke",
-                                                                  model);
+  added = graph.add_component<wh::compose::component_kind::model, wh::compose::node_contract::value,
+                              wh::compose::node_contract::value>("model_invoke", model);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -619,15 +562,13 @@ private:
   added = graph.add_lambda(
       "invoke_summary",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto response = any_cref<wh::model::chat_response>(input);
         if (response.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              response.error());
+          return wh::core::result<wh::compose::graph_value>::failure(response.error());
         }
-        return wh::compose::graph_value{static_cast<std::int64_t>(
-            first_text_part(response.value().get().message).size())};
+        return wh::compose::graph_value{
+            static_cast<std::int64_t>(first_text_part(response.value().get().message).size())};
       },
       inline_sync_options());
   if (added.has_error()) {
@@ -637,8 +578,7 @@ private:
   added = graph.add_lambda(
       "model_stream_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto seed = any_cref<std::string>(input);
         if (seed.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(seed.error());
@@ -652,11 +592,10 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::model,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::stream,
-                              wh::compose::node_exec_mode::async>("model_stream",
-                                                                   model);
+  added =
+      graph.add_component<wh::compose::component_kind::model, wh::compose::node_contract::value,
+                          wh::compose::node_contract::stream, wh::compose::node_exec_mode::async>(
+          "model_stream", model);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -666,25 +605,21 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_lambda<wh::compose::node_contract::stream,
-                           wh::compose::node_contract::value>(
+  added = graph.add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
       "stream_collect",
       [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto total = sum_graph_stream(
-            std::move(input), [](const wh::compose::graph_value &value)
-                                  -> wh::core::result<std::int64_t> {
+            std::move(input),
+            [](const wh::compose::graph_value &value) -> wh::core::result<std::int64_t> {
               auto message = any_cref<wh::schema::message>(value);
               if (message.has_error()) {
                 return wh::core::result<std::int64_t>::failure(message.error());
               }
-              return static_cast<std::int64_t>(
-                  first_text_part(message.value().get()).size());
+              return static_cast<std::int64_t>(first_text_part(message.value().get()).size());
             });
         if (total.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              total.error());
+          return wh::core::result<wh::compose::graph_value>::failure(total.error());
         }
         return wh::compose::graph_value{total.value()};
       });
@@ -700,8 +635,7 @@ private:
   added = graph.add_lambda(
       "document_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto seed = any_cref<std::string>(input);
         if (seed.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(seed.error());
@@ -725,10 +659,9 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::document,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::value>("document",
-                                                                  document);
+  added =
+      graph.add_component<wh::compose::component_kind::document, wh::compose::node_contract::value,
+                          wh::compose::node_contract::value>("document", document);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -745,12 +678,10 @@ private:
   added = graph.add_lambda(
       "embedding_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto documents = any_cref<wh::document::document_batch>(input);
         if (documents.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              documents.error());
+          return wh::core::result<wh::compose::graph_value>::failure(documents.error());
         }
         wh::embedding::embedding_request request{};
         request.inputs.reserve(documents.value().get().size());
@@ -773,11 +704,10 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::embedding,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_exec_mode::async>("embedding",
-                                                                   embedding);
+  added =
+      graph.add_component<wh::compose::component_kind::embedding, wh::compose::node_contract::value,
+                          wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
+          "embedding", embedding);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -785,15 +715,12 @@ private:
   added = graph.add_lambda(
       "embedding_summary",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto embeddings = any_cref<wh::embedding::embedding_response>(input);
         if (embeddings.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              embeddings.error());
+          return wh::core::result<wh::compose::graph_value>::failure(embeddings.error());
         }
-        return wh::compose::graph_value{static_cast<std::int64_t>(
-            embeddings.value().get().size())};
+        return wh::compose::graph_value{static_cast<std::int64_t>(embeddings.value().get().size())};
       },
       inline_sync_options());
   if (added.has_error()) {
@@ -803,8 +730,7 @@ private:
   added = graph.add_lambda(
       "retriever_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto seed = any_cref<std::string>(input);
         if (seed.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(seed.error());
@@ -820,10 +746,9 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::retriever,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::value>("retriever",
-                                                                  retriever);
+  added =
+      graph.add_component<wh::compose::component_kind::retriever, wh::compose::node_contract::value,
+                          wh::compose::node_contract::value>("retriever", retriever);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -831,12 +756,10 @@ private:
   added = graph.add_lambda(
       "indexer_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto documents = any_cref<wh::retriever::retriever_response>(input);
         if (documents.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              documents.error());
+          return wh::core::result<wh::compose::graph_value>::failure(documents.error());
         }
         wh::indexer::indexer_request request{};
         request.documents = documents.value().get();
@@ -848,10 +771,9 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::indexer,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::value>("indexer",
-                                                                  indexer);
+  added =
+      graph.add_component<wh::compose::component_kind::indexer, wh::compose::node_contract::value,
+                          wh::compose::node_contract::value>("indexer", indexer);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -859,15 +781,13 @@ private:
   added = graph.add_lambda(
       "indexer_summary",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto response = any_cref<wh::indexer::indexer_response>(input);
         if (response.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              response.error());
+          return wh::core::result<wh::compose::graph_value>::failure(response.error());
         }
-        return wh::compose::graph_value{static_cast<std::int64_t>(
-            response.value().get().success_count)};
+        return wh::compose::graph_value{
+            static_cast<std::int64_t>(response.value().get().success_count)};
       },
       inline_sync_options());
   if (added.has_error()) {
@@ -877,37 +797,31 @@ private:
   added = graph.add_lambda(
       "tool_component_request",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto seed = any_cref<std::string>(input);
         if (seed.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(seed.error());
         }
-        return wh::compose::graph_value{
-            wh::tool::tool_request{.input_json = seed.value().get()}};
+        return wh::compose::graph_value{wh::tool::tool_request{.input_json = seed.value().get()}};
       },
       inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_component<wh::compose::component_kind::tool,
-                              wh::compose::node_contract::value,
-                              wh::compose::node_contract::stream>("tool_component",
-                                                                   tool_component);
+  added = graph.add_component<wh::compose::component_kind::tool, wh::compose::node_contract::value,
+                              wh::compose::node_contract::stream>("tool_component", tool_component);
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_lambda<wh::compose::node_contract::stream,
-                           wh::compose::node_contract::value>(
+  added = graph.add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
       "tool_component_collect",
       [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto total = sum_graph_stream(
-            std::move(input), [](const wh::compose::graph_value &value)
-                                  -> wh::core::result<std::int64_t> {
+            std::move(input),
+            [](const wh::compose::graph_value &value) -> wh::core::result<std::int64_t> {
               auto text = any_cref<std::string>(value);
               if (text.has_error()) {
                 return wh::core::result<std::int64_t>::failure(text.error());
@@ -915,8 +829,7 @@ private:
               return static_cast<std::int64_t>(text.value().get().size());
             });
         if (total.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              total.error());
+          return wh::core::result<wh::compose::graph_value>::failure(total.error());
         }
         return wh::compose::graph_value{total.value()};
       });
@@ -926,25 +839,22 @@ private:
 
   added = graph.add_lambda(
       "tools_request",
-      [profile = config.profile](wh::compose::graph_value &input,
-                                 wh::core::run_context &,
-                                 const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+      [profile = config.profile](
+          wh::compose::graph_value &input, wh::core::run_context &,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto seed = any_cref<std::string>(input);
         if (seed.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(seed.error());
         }
-        return wh::compose::graph_value{
-            make_tool_batch(seed.value().get(), profile)};
+        return wh::compose::graph_value{make_tool_batch(seed.value().get(), profile)};
       },
       inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_tools<wh::compose::node_contract::value,
-                          wh::compose::node_contract::value>("tools_sync",
-                                                              make_tools_sync_registry());
+  added = graph.add_tools<wh::compose::node_contract::value, wh::compose::node_contract::value>(
+      "tools_sync", make_tools_sync_registry());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
@@ -952,19 +862,16 @@ private:
   added = graph.add_lambda(
       "tools_sync_summary",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto results = any_cref<std::vector<wh::compose::tool_result>>(input);
         if (results.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              results.error());
+          return wh::core::result<wh::compose::graph_value>::failure(results.error());
         }
         std::int64_t total = 0;
         for (const auto &entry : results.value().get()) {
           auto text = any_cref<std::string>(entry.value);
           if (text.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                text.error());
+            return wh::core::result<wh::compose::graph_value>::failure(text.error());
           }
           total += static_cast<std::int64_t>(text.value().get().size());
         }
@@ -975,8 +882,7 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_tools<wh::compose::node_contract::value,
-                          wh::compose::node_contract::stream,
+  added = graph.add_tools<wh::compose::node_contract::value, wh::compose::node_contract::stream,
                           wh::compose::node_exec_mode::async>(
       "tools_async", make_tools_async_registry(scheduler, config.profile), {},
       wh::compose::tools_options{.sequential = false});
@@ -984,15 +890,13 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_lambda<wh::compose::node_contract::stream,
-                           wh::compose::node_contract::value>(
+  added = graph.add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
       "tools_async_collect",
       [](wh::compose::graph_stream_reader input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto total = sum_graph_stream(
-            std::move(input), [](const wh::compose::graph_value &value)
-                                  -> wh::core::result<std::int64_t> {
+            std::move(input),
+            [](const wh::compose::graph_value &value) -> wh::core::result<std::int64_t> {
               auto event = any_cref<wh::compose::tool_event>(value);
               if (event.has_error()) {
                 return wh::core::result<std::int64_t>::failure(event.error());
@@ -1004,8 +908,7 @@ private:
               return static_cast<std::int64_t>(text.value().get().size());
             });
         if (total.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              total.error());
+          return wh::core::result<wh::compose::graph_value>::failure(total.error());
         }
         return wh::compose::graph_value{total.value()};
       });
@@ -1013,8 +916,7 @@ private:
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  added = graph.add_lambda<wh::compose::node_contract::value,
-                           wh::compose::node_contract::value,
+  added = graph.add_lambda<wh::compose::node_contract::value, wh::compose::node_contract::value,
                            wh::compose::node_exec_mode::async>(
       "async_lambda",
       [scheduler, profile = config.profile](
@@ -1022,21 +924,16 @@ private:
           const wh::compose::graph_call_scope &) -> wh::compose::graph_sender {
         auto seed = any_cref<std::string>(input);
         if (seed.has_error()) {
-          return wh::compose::graph_sender{
-              wh::core::detail::ready_sender(
-                  wh::core::result<wh::compose::graph_value>::failure(
-                      seed.error()))};
+          return wh::compose::graph_sender{wh::core::detail::ready_sender(
+              wh::core::result<wh::compose::graph_value>::failure(seed.error()))};
         }
-        const auto value = static_cast<std::int64_t>(seed.value().get().size() +
-                                                     profile.stream_items);
-        return wh::compose::graph_sender{
-            stdexec::starts_on(
-                scheduler,
-                stdexec::just() |
-                    stdexec::then(
-                        [value]() -> wh::core::result<wh::compose::graph_value> {
-                          return wh::compose::graph_value{value};
-                        }))};
+        const auto value =
+            static_cast<std::int64_t>(seed.value().get().size() + profile.stream_items);
+        return wh::compose::graph_sender{stdexec::starts_on(
+            scheduler, stdexec::just() |
+                           stdexec::then([value]() -> wh::core::result<wh::compose::graph_value> {
+                             return wh::compose::graph_value{value};
+                           }))};
       });
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
@@ -1063,70 +960,58 @@ private:
   added = graph.add_lambda(
       "finalize",
       [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &)
-          -> wh::core::result<wh::compose::graph_value> {
+         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
         auto values = any_cref<wh::compose::graph_value_map>(input);
         if (values.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              values.error());
+          return wh::core::result<wh::compose::graph_value>::failure(values.error());
         }
         const auto &map = values.value().get();
         auto aligned_subgraph = read_named_int(map, "subgraph_pad_3");
         if (aligned_subgraph.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              aligned_subgraph.error());
+          return wh::core::result<wh::compose::graph_value>::failure(aligned_subgraph.error());
         }
         auto invoke = read_named_int(map, "invoke_summary");
         if (invoke.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              invoke.error());
+          return wh::core::result<wh::compose::graph_value>::failure(invoke.error());
         }
         auto stream = read_named_int(map, "stream_collect_pad");
         if (stream.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              stream.error());
+          return wh::core::result<wh::compose::graph_value>::failure(stream.error());
         }
         auto embedding_summary = read_named_int(map, "embedding_summary");
         if (embedding_summary.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              embedding_summary.error());
+          return wh::core::result<wh::compose::graph_value>::failure(embedding_summary.error());
         }
         auto indexer_summary = read_named_int(map, "indexer_summary");
         if (indexer_summary.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              indexer_summary.error());
+          return wh::core::result<wh::compose::graph_value>::failure(indexer_summary.error());
         }
-        auto tool_component_summary =
-            read_named_int(map, "tool_component_pad_2");
+        auto tool_component_summary = read_named_int(map, "tool_component_pad_2");
         if (tool_component_summary.has_error()) {
           return wh::core::result<wh::compose::graph_value>::failure(
               tool_component_summary.error());
         }
         auto tools_sync = read_named_int(map, "tools_sync_pad_2");
         if (tools_sync.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              tools_sync.error());
+          return wh::core::result<wh::compose::graph_value>::failure(tools_sync.error());
         }
         auto tools_async = read_named_int(map, "tools_async_pad_2");
         if (tools_async.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(
-              tools_async.error());
+          return wh::core::result<wh::compose::graph_value>::failure(tools_async.error());
         }
-        return wh::compose::graph_value{
-            aligned_subgraph.value() + invoke.value() + stream.value() +
-            embedding_summary.value() + indexer_summary.value() +
-            tool_component_summary.value() +
-            tools_sync.value() + tools_async.value()};
+        return wh::compose::graph_value{aligned_subgraph.value() + invoke.value() + stream.value() +
+                                        embedding_summary.value() + indexer_summary.value() +
+                                        tool_component_summary.value() + tools_sync.value() +
+                                        tools_async.value()};
       },
       inline_sync_options());
   if (added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(added.error());
   }
 
-  for (const auto *entry_target : {"prompt_request", "model_stream_request",
-                                   "document_request", "retriever_request",
-                                   "tool_component_request", "tools_request",
-                                   "async_lambda"}) {
+  for (const auto *entry_target :
+       {"prompt_request", "model_stream_request", "document_request", "retriever_request",
+        "tool_component_request", "tools_request", "async_lambda"}) {
     auto linked = graph.add_entry_edge(entry_target);
     if (linked.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(linked.error());
@@ -1189,8 +1074,8 @@ private:
   return graph;
 }
 
-auto invoke_once(const wh::compose::graph &graph, const pool_scheduler &scheduler,
-                 std::string seed) -> exec::task<invoke_status> {
+auto invoke_once(const wh::compose::graph &graph, const pool_scheduler &scheduler, std::string seed)
+    -> exec::task<invoke_status> {
   co_await stdexec::schedule(scheduler);
   wh::core::run_context context{};
   wh::compose::graph_invoke_request request{};
@@ -1198,20 +1083,16 @@ auto invoke_once(const wh::compose::graph &graph, const pool_scheduler &schedule
   co_return co_await graph.invoke(context, std::move(request));
 }
 
-auto invoke_once(const wh::compose::graph &graph,
-                 const pool_scheduler &launch_scheduler,
-                 const pool_scheduler &control_scheduler,
-                 const pool_scheduler &work_scheduler, std::string seed)
-    -> exec::task<invoke_status> {
+auto invoke_once(const wh::compose::graph &graph, const pool_scheduler &launch_scheduler,
+                 const pool_scheduler &control_scheduler, const pool_scheduler &work_scheduler,
+                 std::string seed) -> exec::task<invoke_status> {
   co_await stdexec::schedule(launch_scheduler);
   wh::core::run_context context{};
   wh::compose::graph_invoke_request request{};
   request.input = wh::compose::graph_input::value(std::move(seed));
   wh::compose::graph_invoke_schedulers schedulers{};
-  schedulers.set_control_scheduler(control_scheduler)
-      .set_work_scheduler(work_scheduler);
-  co_return co_await graph.invoke(context, std::move(request),
-                                  std::move(schedulers));
+  schedulers.set_control_scheduler(control_scheduler).set_work_scheduler(work_scheduler);
+  co_return co_await graph.invoke(context, std::move(request), std::move(schedulers));
 }
 
 auto invoke_many(const wh::compose::graph &graph, const pool_scheduler &scheduler,
@@ -1220,34 +1101,28 @@ auto invoke_many(const wh::compose::graph &graph, const pool_scheduler &schedule
   std::vector<exec::task<invoke_status>> senders{};
   senders.reserve(request_count);
   for (std::size_t index = 0U; index < request_count; ++index) {
-    senders.push_back(
-        invoke_once(graph, scheduler, "seed-" + std::to_string(index)));
+    senders.push_back(invoke_once(graph, scheduler, "seed-" + std::to_string(index)));
   }
   co_return co_await wh::core::detail::make_concurrent_sender_vector<invoke_status>(
       std::move(senders), inflight);
 }
 
-auto invoke_many(const wh::compose::graph &graph,
-                 const pool_scheduler &launch_scheduler,
-                 const pool_scheduler &control_scheduler,
-                 const pool_scheduler &work_scheduler,
+auto invoke_many(const wh::compose::graph &graph, const pool_scheduler &launch_scheduler,
+                 const pool_scheduler &control_scheduler, const pool_scheduler &work_scheduler,
                  const std::size_t request_count, const std::size_t inflight)
     -> exec::task<std::vector<invoke_status>> {
   std::vector<exec::task<invoke_status>> senders{};
   senders.reserve(request_count);
   for (std::size_t index = 0U; index < request_count; ++index) {
-    senders.push_back(invoke_once(graph, launch_scheduler, control_scheduler,
-                                  work_scheduler,
+    senders.push_back(invoke_once(graph, launch_scheduler, control_scheduler, work_scheduler,
                                   "seed-" + std::to_string(index)));
   }
   co_return co_await wh::core::detail::make_concurrent_sender_vector<invoke_status>(
       std::move(senders), inflight);
 }
 
-[[nodiscard]] auto parse_mode(const std::int64_t raw)
-    -> wh::compose::graph_runtime_mode {
-  return raw == 0 ? wh::compose::graph_runtime_mode::dag
-                  : wh::compose::graph_runtime_mode::pregel;
+[[nodiscard]] auto parse_mode(const std::int64_t raw) -> wh::compose::graph_runtime_mode {
+  return raw == 0 ? wh::compose::graph_runtime_mode::dag : wh::compose::graph_runtime_mode::pregel;
 }
 
 [[nodiscard]] auto make_compile_case(const benchmark::State &state) -> bench_case {
@@ -1264,12 +1139,9 @@ auto invoke_many(const wh::compose::graph &graph,
 [[nodiscard]] auto make_invoke_case(const benchmark::State &state) -> bench_case {
   bench_case config{};
   config.mode = parse_mode(state.range(0));
-  config.worker_threads =
-      static_cast<std::size_t>(std::max<std::int64_t>(state.range(1), 2));
-  config.inflight =
-      static_cast<std::size_t>(std::max<std::int64_t>(state.range(2), 1));
-  config.profile.stream_items =
-      static_cast<std::size_t>(std::max<std::int64_t>(state.range(3), 1));
+  config.worker_threads = static_cast<std::size_t>(std::max<std::int64_t>(state.range(1), 2));
+  config.inflight = static_cast<std::size_t>(std::max<std::int64_t>(state.range(2), 1));
+  config.profile.stream_items = static_cast<std::size_t>(std::max<std::int64_t>(state.range(3), 1));
   config.profile.documents = std::max<std::size_t>(config.profile.stream_items / 2U, 4U);
   config.profile.tool_calls = std::max<std::size_t>(config.profile.stream_items / 4U, 2U);
   return config;
@@ -1329,9 +1201,8 @@ auto BM_compose_real_graph_invoke(benchmark::State &state) -> void {
   state.SetLabel(case_label(config));
 
   for (auto _ : state) {
-    auto waited =
-        stdexec::sync_wait(invoke_many(graph.value(), pool.get_scheduler(),
-                                       request_count, config.inflight));
+    auto waited = stdexec::sync_wait(
+        invoke_many(graph.value(), pool.get_scheduler(), request_count, config.inflight));
     if (!waited.has_value()) {
       state.SkipWithError("invoke_many stopped");
       return;
@@ -1345,8 +1216,7 @@ auto BM_compose_real_graph_invoke(benchmark::State &state) -> void {
         return;
       }
       if (status.value().output_status.has_error()) {
-        std::string detail =
-            error_text("graph.output", status.value().output_status.error());
+        std::string detail = error_text("graph.output", status.value().output_status.error());
         const auto report_detail = report_text(status.value().report);
         if (!report_detail.empty()) {
           detail += " ";
@@ -1375,8 +1245,7 @@ auto BM_compose_real_graph_invoke(benchmark::State &state) -> void {
                           static_cast<int64_t>(request_count));
 }
 
-auto BM_compose_real_graph_invoke_fixed_budget_split(benchmark::State &state)
-    -> void {
+auto BM_compose_real_graph_invoke_fixed_budget_split(benchmark::State &state) -> void {
   const auto detected_threads = std::thread::hardware_concurrency();
   if (detected_threads == 0U) {
     state.SkipWithError("std::thread::hardware_concurrency returned 0");
@@ -1386,14 +1255,10 @@ auto BM_compose_real_graph_invoke_fixed_budget_split(benchmark::State &state)
   bench_case config{};
   config.mode = parse_mode(state.range(0));
   config.worker_threads = static_cast<std::size_t>(detected_threads);
-  config.inflight = static_cast<std::size_t>(
-      std::max<std::int64_t>(state.range(1), 1));
-  config.profile.stream_items = static_cast<std::size_t>(
-      std::max<std::int64_t>(state.range(2), 1));
-  config.profile.documents =
-      std::max<std::size_t>(config.profile.stream_items / 2U, 4U);
-  config.profile.tool_calls =
-      std::max<std::size_t>(config.profile.stream_items / 4U, 2U);
+  config.inflight = static_cast<std::size_t>(std::max<std::int64_t>(state.range(1), 1));
+  config.profile.stream_items = static_cast<std::size_t>(std::max<std::int64_t>(state.range(2), 1));
+  config.profile.documents = std::max<std::size_t>(config.profile.stream_items / 2U, 4U);
+  config.profile.tool_calls = std::max<std::size_t>(config.profile.stream_items / 4U, 2U);
 
   const auto total_threads = config.worker_threads;
   const auto capped_control_threads = std::max<std::size_t>(1U, total_threads / 2U);
@@ -1409,10 +1274,8 @@ auto BM_compose_real_graph_invoke_fixed_budget_split(benchmark::State &state)
 
   const auto request_count = std::max<std::size_t>(config.inflight * 2U, 1U);
 
-  exec::static_thread_pool control_pool{
-      static_cast<std::uint32_t>(capped_control_threads)};
-  exec::static_thread_pool work_pool{
-      static_cast<std::uint32_t>(work_threads)};
+  exec::static_thread_pool control_pool{static_cast<std::uint32_t>(capped_control_threads)};
+  exec::static_thread_pool work_pool{static_cast<std::uint32_t>(work_threads)};
   auto graph = build_real_graph(config, work_pool.get_scheduler());
   if (graph.has_error()) {
     state.SkipWithError(error_text("build_real_graph", graph.error()).c_str());
@@ -1425,9 +1288,9 @@ auto BM_compose_real_graph_invoke_fixed_budget_split(benchmark::State &state)
   }
 
   for (auto _ : state) {
-    auto waited = stdexec::sync_wait(invoke_many(
-        graph.value(), control_pool.get_scheduler(), control_pool.get_scheduler(),
-        work_pool.get_scheduler(), request_count, config.inflight));
+    auto waited = stdexec::sync_wait(
+        invoke_many(graph.value(), control_pool.get_scheduler(), control_pool.get_scheduler(),
+                    work_pool.get_scheduler(), request_count, config.inflight));
     if (!waited.has_value()) {
       state.SkipWithError("invoke_many stopped");
       return;
@@ -1441,8 +1304,7 @@ auto BM_compose_real_graph_invoke_fixed_budget_split(benchmark::State &state)
         return;
       }
       if (status.value().output_status.has_error()) {
-        std::string detail =
-            error_text("graph.output", status.value().output_status.error());
+        std::string detail = error_text("graph.output", status.value().output_status.error());
         const auto report_detail = report_text(status.value().report);
         if (!report_detail.empty()) {
           detail += " ";
@@ -1478,13 +1340,11 @@ auto apply_compile_cases(benchmark::Benchmark *bench) -> void {
 
 auto apply_invoke_cases(benchmark::Benchmark *bench) -> void {
   std::vector<int> workers_list{2, 4};
-  if (const auto detected_threads = max_worker_threads_hint();
-      detected_threads > 0) {
+  if (const auto detected_threads = max_worker_threads_hint(); detected_threads > 0) {
     workers_list.push_back(detected_threads);
   }
   std::sort(workers_list.begin(), workers_list.end());
-  workers_list.erase(std::unique(workers_list.begin(), workers_list.end()),
-                     workers_list.end());
+  workers_list.erase(std::unique(workers_list.begin(), workers_list.end()), workers_list.end());
 
   for (const int mode : {0, 1}) {
     for (const int workers : workers_list) {
@@ -1507,9 +1367,7 @@ auto apply_fixed_budget_split_cases(benchmark::Benchmark *bench) -> void {
 
 BENCHMARK(BM_compose_real_graph_compile)->Apply(apply_compile_cases);
 
-BENCHMARK(BM_compose_real_graph_invoke)
-    ->Apply(apply_invoke_cases)
-    ->UseRealTime();
+BENCHMARK(BM_compose_real_graph_invoke)->Apply(apply_invoke_cases)->UseRealTime();
 
 BENCHMARK(BM_compose_real_graph_invoke_fixed_budget_split)
     ->Apply(apply_fixed_budget_split_cases)

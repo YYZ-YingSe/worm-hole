@@ -43,32 +43,26 @@ struct pregel_delivery_store {
     next_enqueued.reset(node_count, false);
   }
 
-  auto stage_current_control(const std::uint32_t node_id,
-                             const std::uint32_t edge_id) -> void {
+  auto stage_current_control(const std::uint32_t node_id, const std::uint32_t edge_id) -> void {
     mark_current(node_id);
     current[node_id].control_edges.push_back(edge_id);
   }
 
-  auto stage_current_node(const std::uint32_t node_id) -> void {
-    mark_current(node_id);
-  }
+  auto stage_current_node(const std::uint32_t node_id) -> void { mark_current(node_id); }
 
-  auto stage_current_data(const std::uint32_t node_id,
-                          const std::uint32_t edge_id) -> void {
+  auto stage_current_data(const std::uint32_t node_id, const std::uint32_t edge_id) -> void {
     mark_current(node_id);
     current[node_id].data_edges.push_back(edge_id);
   }
 
-  auto stage_next_control(const std::uint32_t node_id,
-                          const std::uint32_t edge_id) -> void {
+  auto stage_next_control(const std::uint32_t node_id, const std::uint32_t edge_id) -> void {
     mark_next(node_id);
     next[node_id].control_edges.push_back(edge_id);
   }
 
   auto stage_next_node(const std::uint32_t node_id) -> void { mark_next(node_id); }
 
-  auto stage_next_data(const std::uint32_t node_id,
-                       const std::uint32_t edge_id) -> void {
+  auto stage_next_data(const std::uint32_t node_id, const std::uint32_t edge_id) -> void {
     mark_next(node_id);
     next[node_id].data_edges.push_back(edge_id);
   }
@@ -91,8 +85,7 @@ struct pregel_delivery_store {
     return current_nodes;
   }
 
-  auto restore(const std::size_t node_count,
-               std::vector<pregel_node_inputs> current_values,
+  auto restore(const std::size_t node_count, std::vector<pregel_node_inputs> current_values,
                std::vector<pregel_node_inputs> next_values,
                std::vector<std::uint32_t> current_frontier,
                std::vector<std::uint32_t> next_frontier) -> void {

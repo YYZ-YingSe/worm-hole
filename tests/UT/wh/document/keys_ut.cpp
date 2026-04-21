@@ -12,6 +12,5 @@ TEST_CASE("document sub id metadata key stays distinct from parent id key",
           "[UT][wh/document/keys.hpp][sub_id_metadata_key][condition][branch][boundary]") {
   REQUIRE(wh::document::sub_id_metadata_key == "__sub_id__");
   REQUIRE_FALSE(wh::document::sub_id_metadata_key.empty());
-  REQUIRE(wh::document::parent_id_metadata_key !=
-          wh::document::sub_id_metadata_key);
+  REQUIRE(wh::document::parent_id_metadata_key != wh::document::sub_id_metadata_key);
 }

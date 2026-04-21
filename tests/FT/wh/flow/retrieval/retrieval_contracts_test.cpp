@@ -1,11 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <functional>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph.hpp"
@@ -20,20 +19,18 @@ namespace {
 template <typename fn_t> struct sync_retriever_impl {
   fn_t fn;
 
-  [[nodiscard]] auto retrieve(
-      const wh::retriever::retriever_request &request) const
+  [[nodiscard]] auto retrieve(const wh::retriever::retriever_request &request) const
       -> decltype(std::invoke(fn, request)) {
     return std::invoke(fn, request);
   }
 };
 
-template <typename fn_t>
-sync_retriever_impl(fn_t) -> sync_retriever_impl<fn_t>;
+template <typename fn_t> sync_retriever_impl(fn_t) -> sync_retriever_impl<fn_t>;
 
 [[nodiscard]] auto make_retriever(const std::string &prefix) {
-  return wh::retriever::retriever{sync_retriever_impl{
-      [prefix](const wh::retriever::retriever_request &request)
-          -> wh::core::result<wh::retriever::retriever_response> {
+  return wh::retriever::retriever{
+      sync_retriever_impl{[prefix](const wh::retriever::retriever_request &request)
+                              -> wh::core::result<wh::retriever::retriever_response> {
         wh::schema::document document{prefix + request.query};
         document.set_metadata(std::string{wh::document::parent_id_metadata_key},
                               prefix + "_parent");
@@ -43,8 +40,7 @@ sync_retriever_impl(fn_t) -> sync_retriever_impl<fn_t>;
 
 } // namespace
 
-TEST_CASE("flow retrieval assemblers freeze under flow namespace",
-          "[core][flow][retrieval]") {
+TEST_CASE("flow retrieval assemblers freeze under flow namespace", "[core][flow][retrieval]") {
   using retriever_t = decltype(make_retriever(std::string{}));
 
   auto router = wh::flow::retrieval::router<retriever_t>{};
@@ -54,18 +50,16 @@ TEST_CASE("flow retrieval assemblers freeze under flow namespace",
   REQUIRE(router.frozen());
   REQUIRE(router.descriptor().kind == wh::core::component_kind::retriever);
 
-  auto multi_query =
-      wh::flow::retrieval::multi_query{make_retriever("mq:")};
+  auto multi_query = wh::flow::retrieval::multi_query{make_retriever("mq:")};
   REQUIRE(multi_query.set_max_queries(3U).has_value());
   REQUIRE(multi_query.freeze().has_value());
   REQUIRE(multi_query.frozen());
-  REQUIRE(multi_query.descriptor().kind ==
-          wh::core::component_kind::retriever);
+  REQUIRE(multi_query.descriptor().kind == wh::core::component_kind::retriever);
 
   auto parent = wh::flow::retrieval::parent{
       make_retriever("child:"),
-      [](const std::vector<std::string> &parent_ids, wh::core::run_context &)
-          -> wh::core::result<std::vector<wh::schema::document>> {
+      [](const std::vector<std::string> &parent_ids,
+         wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::document>> {
         std::vector<wh::schema::document> documents{};
         for (const auto &parent_id : parent_ids) {
           documents.emplace_back("parent:" + parent_id);
@@ -77,8 +71,7 @@ TEST_CASE("flow retrieval assemblers freeze under flow namespace",
   REQUIRE(parent.descriptor().kind == wh::core::component_kind::retriever);
 }
 
-TEST_CASE("flow retrieval assemblers execute under flow namespace",
-          "[core][flow][retrieval]") {
+TEST_CASE("flow retrieval assemblers execute under flow namespace", "[core][flow][retrieval]") {
   using retriever_t = decltype(make_retriever(std::string{}));
 
   wh::core::run_context context{};
@@ -101,8 +94,7 @@ TEST_CASE("flow retrieval assemblers execute under flow namespace",
   REQUIRE(router_contents.contains("left:hello"));
   REQUIRE(router_contents.contains("right:hello"));
 
-  auto multi_query =
-      wh::flow::retrieval::multi_query{make_retriever("mq:")};
+  auto multi_query = wh::flow::retrieval::multi_query{make_retriever("mq:")};
   REQUIRE(multi_query.set_max_queries(3U).has_value());
   REQUIRE(multi_query.freeze().has_value());
   auto multi_waited = stdexec::sync_wait(multi_query.retrieve(request, context));
@@ -117,13 +109,12 @@ TEST_CASE("flow retrieval assemblers execute under flow namespace",
 
   auto parent = wh::flow::retrieval::parent{
       make_retriever("child:"),
-      [](const std::vector<std::string> &parent_ids, wh::core::run_context &)
-          -> wh::core::result<std::vector<wh::schema::document>> {
+      [](const std::vector<std::string> &parent_ids,
+         wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::document>> {
         std::vector<wh::schema::document> documents{};
         for (const auto &parent_id : parent_ids) {
           wh::schema::document document{"parent:" + parent_id};
-          document.set_metadata(std::string{wh::document::parent_id_metadata_key},
-                                parent_id);
+          document.set_metadata(std::string{wh::document::parent_id_metadata_key}, parent_id);
           documents.push_back(std::move(document));
         }
         return documents;
@@ -147,13 +138,12 @@ TEST_CASE("flow router can be used as one async retriever component node",
   REQUIRE(router.freeze().has_value());
 
   wh::compose::graph graph{};
-  REQUIRE(graph
-              .add_component<wh::compose::component_kind::retriever,
-                             wh::compose::node_contract::value,
-                             wh::compose::node_contract::value,
-                             wh::compose::node_exec_mode::async>(
-                  "router", std::move(router))
-              .has_value());
+  REQUIRE(
+      graph
+          .add_component<wh::compose::component_kind::retriever, wh::compose::node_contract::value,
+                         wh::compose::node_contract::value, wh::compose::node_exec_mode::async>(
+              "router", std::move(router))
+          .has_value());
   REQUIRE(graph.add_entry_edge("router").has_value());
   REQUIRE(graph.add_exit_edge("router").has_value());
   REQUIRE(graph.compile().has_value());
@@ -163,8 +153,7 @@ TEST_CASE("flow router can be used as one async retriever component node",
   wh::core::run_context context{};
   auto awaited = stdexec::sync_wait(
       graph.invoke(context, wh::compose::graph_invoke_request{
-                                .input = wh::compose::graph_input::value(
-                                    wh::core::any(request))}));
+                                .input = wh::compose::graph_input::value(wh::core::any(request))}));
   REQUIRE(awaited.has_value());
   REQUIRE(std::get<0>(*awaited).has_value());
   REQUIRE(std::get<0>(*awaited).value().output_status.has_value());
@@ -181,27 +170,23 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
   wh::core::run_context context{};
 
   {
-    auto multi_query =
-        wh::flow::retrieval::multi_query{make_retriever("mq:")};
+    auto multi_query = wh::flow::retrieval::multi_query{make_retriever("mq:")};
     REQUIRE(multi_query.set_max_queries(2U).has_value());
     REQUIRE(multi_query.freeze().has_value());
 
     wh::compose::graph graph{};
     REQUIRE(graph
                 .add_component<wh::compose::component_kind::retriever,
-                               wh::compose::node_contract::value,
-                               wh::compose::node_contract::value,
-                               wh::compose::node_exec_mode::async>(
-                    "multi_query", multi_query)
+                               wh::compose::node_contract::value, wh::compose::node_contract::value,
+                               wh::compose::node_exec_mode::async>("multi_query", multi_query)
                 .has_value());
     REQUIRE(graph.add_entry_edge("multi_query").has_value());
     REQUIRE(graph.add_exit_edge("multi_query").has_value());
     REQUIRE(graph.compile().has_value());
 
-    auto awaited = stdexec::sync_wait(
-        graph.invoke(context, wh::compose::graph_invoke_request{
-                                  .input = wh::compose::graph_input::value(
-                                      wh::core::any(request))}));
+    auto awaited = stdexec::sync_wait(graph.invoke(
+        context, wh::compose::graph_invoke_request{
+                     .input = wh::compose::graph_input::value(wh::core::any(request))}));
     REQUIRE(awaited.has_value());
     REQUIRE(std::get<0>(*awaited).has_value());
     auto *documents = wh::core::any_cast<wh::retriever::retriever_response>(
@@ -213,13 +198,12 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
   {
     auto parent = wh::flow::retrieval::parent{
         make_retriever("child:"),
-        [](const std::vector<std::string> &parent_ids, wh::core::run_context &)
-            -> wh::core::result<std::vector<wh::schema::document>> {
+        [](const std::vector<std::string> &parent_ids,
+           wh::core::run_context &) -> wh::core::result<std::vector<wh::schema::document>> {
           std::vector<wh::schema::document> documents{};
           for (const auto &parent_id : parent_ids) {
             wh::schema::document document{"parent:" + parent_id};
-            document.set_metadata(
-                std::string{wh::document::parent_id_metadata_key}, parent_id);
+            document.set_metadata(std::string{wh::document::parent_id_metadata_key}, parent_id);
             documents.push_back(std::move(document));
           }
           return documents;
@@ -229,19 +213,16 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
     wh::compose::graph graph{};
     REQUIRE(graph
                 .add_component<wh::compose::component_kind::retriever,
-                               wh::compose::node_contract::value,
-                               wh::compose::node_contract::value,
-                               wh::compose::node_exec_mode::async>(
-                    "parent", parent)
+                               wh::compose::node_contract::value, wh::compose::node_contract::value,
+                               wh::compose::node_exec_mode::async>("parent", parent)
                 .has_value());
     REQUIRE(graph.add_entry_edge("parent").has_value());
     REQUIRE(graph.add_exit_edge("parent").has_value());
     REQUIRE(graph.compile().has_value());
 
-    auto awaited = stdexec::sync_wait(
-        graph.invoke(context, wh::compose::graph_invoke_request{
-                                  .input = wh::compose::graph_input::value(
-                                      wh::core::any(request))}));
+    auto awaited = stdexec::sync_wait(graph.invoke(
+        context, wh::compose::graph_invoke_request{
+                     .input = wh::compose::graph_input::value(wh::core::any(request))}));
     REQUIRE(awaited.has_value());
     REQUIRE(std::get<0>(*awaited).has_value());
     auto *documents = wh::core::any_cast<wh::retriever::retriever_response>(
@@ -254,9 +235,9 @@ TEST_CASE("flow retrieval primitives can be used as async component nodes",
 TEST_CASE("flow router executes custom route and fusion policies under flow namespace",
           "[core][flow][retrieval]") {
   using retriever_t = decltype(make_retriever(std::string{}));
-  const auto route_policy = [](const wh::retriever::retriever_request &,
-                               const std::vector<std::string> &)
-      -> wh::core::result<std::vector<std::string>> {
+  const auto route_policy =
+      [](const wh::retriever::retriever_request &,
+         const std::vector<std::string> &) -> wh::core::result<std::vector<std::string>> {
     return std::vector<std::string>{"right"};
   };
   const auto fusion_policy =
@@ -273,8 +254,7 @@ TEST_CASE("flow router executes custom route and fusion policies under flow name
   using fusion_t = decltype(fusion_policy);
 
   auto router =
-      wh::flow::retrieval::router<retriever_t, route_t, fusion_t>{route_policy,
-                                                                   fusion_policy};
+      wh::flow::retrieval::router<retriever_t, route_t, fusion_t>{route_policy, fusion_policy};
   REQUIRE(router.add_retriever("left", make_retriever("left:")).has_value());
   REQUIRE(router.add_retriever("right", make_retriever("right:")).has_value());
   REQUIRE(router.freeze().has_value());
@@ -295,14 +275,11 @@ TEST_CASE("flow multi-query applies query clipping deduplication and custom fusi
           "[core][flow][retrieval]") {
   using retriever_t = decltype(make_retriever(std::string{}));
   const auto rewriter = [](const wh::retriever::retriever_request &,
-                           wh::core::run_context &)
-      -> wh::core::result<std::vector<std::string>> {
-    return std::vector<std::string>{"hello", "hello-alt", "hello-alt",
-                                    "hello-2", "hello-3", "hello-4",
-                                    "hello-5", "hello-6"};
+                           wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
+    return std::vector<std::string>{"hello",   "hello-alt", "hello-alt", "hello-2",
+                                    "hello-3", "hello-4",   "hello-5",   "hello-6"};
   };
-  const auto fusion =
-      [](const std::vector<wh::flow::retrieval::query_retrieval> &results)
+  const auto fusion = [](const std::vector<wh::flow::retrieval::query_retrieval> &results)
       -> wh::core::result<wh::retriever::retriever_response> {
     wh::retriever::retriever_response fused{};
     for (const auto &result : results) {
@@ -313,8 +290,7 @@ TEST_CASE("flow multi-query applies query clipping deduplication and custom fusi
   using rewriter_t = decltype(rewriter);
   using fusion_t = decltype(fusion);
 
-  auto multi_query = wh::flow::retrieval::multi_query<retriever_t, rewriter_t,
-                                                      fusion_t>{
+  auto multi_query = wh::flow::retrieval::multi_query<retriever_t, rewriter_t, fusion_t>{
       make_retriever("mq:"), rewriter, fusion};
   REQUIRE(multi_query.set_max_queries(0U).has_value());
   REQUIRE(multi_query.freeze().has_value());
@@ -333,7 +309,6 @@ TEST_CASE("flow multi-query applies query clipping deduplication and custom fusi
   for (const auto &document : status.value()) {
     contents.push_back(document.content());
   }
-  REQUIRE(contents == std::vector<std::string>{"mq:hello", "mq:hello-alt",
-                                               "mq:hello-2", "mq:hello-3",
-                                               "mq:hello-4"});
+  REQUIRE(contents == std::vector<std::string>{"mq:hello", "mq:hello-alt", "mq:hello-2",
+                                               "mq:hello-3", "mq:hello-4"});
 }

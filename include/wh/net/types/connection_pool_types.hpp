@@ -50,8 +50,7 @@ struct connection_release {
 };
 
 /// Result returned by connection acquisition.
-using connection_acquire_result =
-    wh::core::result<connection_lease, transport_error>;
+using connection_acquire_result = wh::core::result<connection_lease, transport_error>;
 
 /// Result returned by connection release.
 using connection_release_result = wh::core::result<void, transport_error>;

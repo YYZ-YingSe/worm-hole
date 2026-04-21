@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/authored/chain.hpp"
 #include "wh/compose/graph/like.hpp"
@@ -10,17 +10,13 @@ namespace {
 struct graph_view_holder {
   wh::compose::graph inner{};
 
-  [[nodiscard]] auto graph_view() const noexcept -> const wh::compose::graph & {
-    return inner;
-  }
+  [[nodiscard]] auto graph_view() const noexcept -> const wh::compose::graph & { return inner; }
 };
 
 struct graph_owner_holder {
   wh::compose::graph inner{};
 
-  [[nodiscard]] auto release_graph() && noexcept -> wh::compose::graph {
-    return std::move(inner);
-  }
+  [[nodiscard]] auto release_graph() && noexcept -> wh::compose::graph { return std::move(inner); }
 };
 
 } // namespace

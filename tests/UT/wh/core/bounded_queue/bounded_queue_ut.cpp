@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <stdexcept>
 #include <stop_token>
 #include <tuple>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/manual_scheduler.hpp"
@@ -34,14 +33,12 @@ struct throwing_scheduler {
     throwing_scheduler_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
     auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
       ++state->connect_calls;
-      if (state->fail_on_connect.has_value() &&
-          state->connect_calls == *state->fail_on_connect) {
+      if (state->fail_on_connect.has_value() && state->connect_calls == *state->fail_on_connect) {
         throw std::runtime_error("bounded_queue handoff connect failed");
       }
       return schedule_op<receiver_t>{std::move(receiver)};
@@ -52,12 +49,9 @@ struct throwing_scheduler {
 
   throwing_scheduler_state *state{nullptr};
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return schedule_sender{state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return schedule_sender{state}; }
 
-  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept
-      -> bool = default;
+  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept -> bool = default;
 };
 
 struct throwing_stop_token {
@@ -76,7 +70,8 @@ struct throwing_stop_token {
 } // namespace
 
 TEST_CASE("bounded queue sync api covers full empty closed and zero-capacity boundaries",
-          "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::try_push][condition][branch][boundary]") {
+          "[UT][wh/core/bounded_queue/"
+          "bounded_queue.hpp][bounded_queue::try_push][condition][branch][boundary]") {
   wh::core::bounded_queue<int> queue{2U};
 
   REQUIRE(queue.capacity() == 2U);
@@ -111,11 +106,10 @@ TEST_CASE("bounded queue sync api covers full empty closed and zero-capacity bou
 }
 
 TEST_CASE("bounded queue async api wakes waiting push and pop via scheduler env",
-          "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_pop][branch][concurrency]") {
-  using scheduler_t =
-      wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
-  using env_t = wh::testing::helper::scheduler_env<
-      scheduler_t, wh::testing::helper::stop_token>;
+          "[UT][wh/core/bounded_queue/"
+          "bounded_queue.hpp][bounded_queue::async_pop][branch][concurrency]") {
+  using scheduler_t = wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
+  using env_t = wh::testing::helper::scheduler_env<scheduler_t, wh::testing::helper::stop_token>;
 
   wh::testing::helper::manual_scheduler_state scheduler_state{};
   scheduler_t scheduler{&scheduler_state};
@@ -127,8 +121,7 @@ TEST_CASE("bounded queue async api wakes waiting push and pop via scheduler env"
   wh::testing::helper::sender_capture<void> push_capture{};
   auto push_operation = stdexec::connect(
       queue.async_push(2),
-      wh::testing::helper::sender_capture_receiver<void, env_t>{&push_capture,
-                                                                env});
+      wh::testing::helper::sender_capture_receiver<void, env_t>{&push_capture, env});
   stdexec::start(push_operation);
   REQUIRE_FALSE(push_capture.ready.try_acquire());
 
@@ -137,13 +130,12 @@ TEST_CASE("bounded queue async api wakes waiting push and pop via scheduler env"
   REQUIRE(first.value() == 1);
   REQUIRE(scheduler_state.run_one());
   REQUIRE(push_capture.ready.try_acquire());
-  REQUIRE(push_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(push_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
 
   wh::testing::helper::sender_capture<int> pop_capture{};
-  auto pop_operation = stdexec::connect(
-      queue.async_pop(),
-      wh::testing::helper::sender_capture_receiver<int, env_t>{&pop_capture, env});
+  auto pop_operation =
+      stdexec::connect(queue.async_pop(),
+                       wh::testing::helper::sender_capture_receiver<int, env_t>{&pop_capture, env});
   stdexec::start(pop_operation);
   if (!pop_capture.ready.try_acquire()) {
     REQUIRE(scheduler_state.run_one());
@@ -162,12 +154,12 @@ TEST_CASE("bounded queue async api wakes waiting push and pop via scheduler env"
   queue.close();
   REQUIRE(scheduler_state.run_one());
   REQUIRE(closed_capture.ready.try_acquire());
-  REQUIRE(closed_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::error);
+  REQUIRE(closed_capture.terminal == wh::testing::helper::sender_terminal_kind::error);
 }
 
-TEST_CASE("bounded queue async push reports handoff construction failure before waiter publication",
-          "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_push][error][scheduler]") {
+TEST_CASE(
+    "bounded queue async push reports handoff construction failure before waiter publication",
+    "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_push][error][scheduler]") {
   using env_t = wh::testing::helper::scheduler_env<throwing_scheduler>;
 
   throwing_scheduler_state scheduler_state{
@@ -182,13 +174,11 @@ TEST_CASE("bounded queue async push reports handoff construction failure before 
   wh::testing::helper::sender_capture<void> push_capture{};
   auto push_operation = stdexec::connect(
       queue.async_push(2),
-      wh::testing::helper::sender_capture_receiver<void, env_t>{&push_capture,
-                                                                env});
+      wh::testing::helper::sender_capture_receiver<void, env_t>{&push_capture, env});
   stdexec::start(push_operation);
 
   REQUIRE(push_capture.ready.try_acquire());
-  REQUIRE(push_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::error);
+  REQUIRE(push_capture.terminal == wh::testing::helper::sender_terminal_kind::error);
   REQUIRE(push_capture.error != nullptr);
   REQUIRE(scheduler_state.connect_calls == 2U);
   REQUIRE_FALSE(push_capture.ready.try_acquire());
@@ -199,8 +189,9 @@ TEST_CASE("bounded queue async push reports handoff construction failure before 
   REQUIRE(queue.try_push(3) == wh::core::bounded_queue_status::success);
 }
 
-TEST_CASE("bounded queue async pop reports handoff construction failure before waiter publication",
-          "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_pop][error][scheduler]") {
+TEST_CASE(
+    "bounded queue async pop reports handoff construction failure before waiter publication",
+    "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_pop][error][scheduler]") {
   using env_t = wh::testing::helper::scheduler_env<throwing_scheduler>;
 
   throwing_scheduler_state scheduler_state{
@@ -212,14 +203,13 @@ TEST_CASE("bounded queue async pop reports handoff construction failure before w
   wh::core::bounded_queue<int> queue{1U};
 
   wh::testing::helper::sender_capture<int> pop_capture{};
-  auto pop_operation = stdexec::connect(
-      queue.async_pop(),
-      wh::testing::helper::sender_capture_receiver<int, env_t>{&pop_capture, env});
+  auto pop_operation =
+      stdexec::connect(queue.async_pop(),
+                       wh::testing::helper::sender_capture_receiver<int, env_t>{&pop_capture, env});
   stdexec::start(pop_operation);
 
   REQUIRE(pop_capture.ready.try_acquire());
-  REQUIRE(pop_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::error);
+  REQUIRE(pop_capture.terminal == wh::testing::helper::sender_terminal_kind::error);
   REQUIRE(pop_capture.error != nullptr);
   REQUIRE(scheduler_state.connect_calls == 2U);
   REQUIRE_FALSE(pop_capture.ready.try_acquire());
@@ -230,11 +220,10 @@ TEST_CASE("bounded queue async pop reports handoff construction failure before w
   REQUIRE(*popped == 7);
 }
 
-TEST_CASE("bounded queue async push reports stop callback construction failure before waiter publication",
-          "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_push][error][stop]") {
-  using env_t =
-      wh::testing::helper::scheduler_env<stdexec::inline_scheduler,
-                                         throwing_stop_token>;
+TEST_CASE(
+    "bounded queue async push reports stop callback construction failure before waiter publication",
+    "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_push][error][stop]") {
+  using env_t = wh::testing::helper::scheduler_env<stdexec::inline_scheduler, throwing_stop_token>;
 
   wh::core::bounded_queue<int> queue{1U};
   REQUIRE(queue.push(1));
@@ -243,13 +232,11 @@ TEST_CASE("bounded queue async push reports stop callback construction failure b
   auto push_operation = stdexec::connect(
       queue.async_push(2),
       wh::testing::helper::sender_capture_receiver<void, env_t>{
-          &push_capture,
-          {.scheduler = stdexec::inline_scheduler{}, .stop_token = {}}});
+          &push_capture, {.scheduler = stdexec::inline_scheduler{}, .stop_token = {}}});
   stdexec::start(push_operation);
 
   REQUIRE(push_capture.ready.try_acquire());
-  REQUIRE(push_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::error);
+  REQUIRE(push_capture.terminal == wh::testing::helper::sender_terminal_kind::error);
   REQUIRE(push_capture.error != nullptr);
   REQUIRE_FALSE(push_capture.ready.try_acquire());
 
@@ -260,11 +247,10 @@ TEST_CASE("bounded queue async push reports stop callback construction failure b
   REQUIRE_FALSE(push_capture.ready.try_acquire());
 }
 
-TEST_CASE("bounded queue async pop reports stop callback construction failure before waiter publication",
-          "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_pop][error][stop]") {
-  using env_t =
-      wh::testing::helper::scheduler_env<stdexec::inline_scheduler,
-                                         throwing_stop_token>;
+TEST_CASE(
+    "bounded queue async pop reports stop callback construction failure before waiter publication",
+    "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_pop][error][stop]") {
+  using env_t = wh::testing::helper::scheduler_env<stdexec::inline_scheduler, throwing_stop_token>;
 
   wh::core::bounded_queue<int> queue{1U};
 
@@ -272,13 +258,11 @@ TEST_CASE("bounded queue async pop reports stop callback construction failure be
   auto pop_operation = stdexec::connect(
       queue.async_pop(),
       wh::testing::helper::sender_capture_receiver<int, env_t>{
-          &pop_capture,
-          {.scheduler = stdexec::inline_scheduler{}, .stop_token = {}}});
+          &pop_capture, {.scheduler = stdexec::inline_scheduler{}, .stop_token = {}}});
   stdexec::start(pop_operation);
 
   REQUIRE(pop_capture.ready.try_acquire());
-  REQUIRE(pop_capture.terminal ==
-          wh::testing::helper::sender_terminal_kind::error);
+  REQUIRE(pop_capture.terminal == wh::testing::helper::sender_terminal_kind::error);
   REQUIRE(pop_capture.error != nullptr);
   REQUIRE_FALSE(pop_capture.ready.try_acquire());
 

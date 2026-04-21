@@ -48,8 +48,7 @@ public:
   class sender {
   public:
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     explicit sender(std::shared_ptr<state> state) : state_(std::move(state)) {}
 
@@ -117,15 +116,13 @@ public:
     };
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
-    auto connect(receiver_t receiver) const
-        -> operation<std::remove_cvref_t<receiver_t>> {
+    auto connect(receiver_t receiver) const -> operation<std::remove_cvref_t<receiver_t>> {
       using operation_t = operation<std::remove_cvref_t<receiver_t>>;
       return operation_t{state_, std::move(receiver)};
     }
 
     template <typename self_t, typename... env_t>
-      requires std::same_as<std::remove_cvref_t<self_t>, sender> &&
-               (sizeof...(env_t) >= 1U)
+      requires std::same_as<std::remove_cvref_t<self_t>, sender> && (sizeof...(env_t) >= 1U)
     static consteval auto get_completion_signatures() {
       return completion_signatures{};
     }
@@ -162,11 +159,9 @@ public:
   class sender {
   public:
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
-    sender(std::shared_ptr<state> state, int key)
-        : state_(std::move(state)), key_(key) {}
+    sender(std::shared_ptr<state> state, int key) : state_(std::move(state)), key_(key) {}
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
     class operation final : private waiter {
@@ -216,9 +211,7 @@ public:
         stdexec::set_value(std::move(receiver_));
       }
 
-      auto clear_registration_locked() noexcept -> void override {
-        registered_ = false;
-      }
+      auto clear_registration_locked() noexcept -> void override { registered_ = false; }
 
       auto detach() noexcept -> void {
         if (completed_.load(std::memory_order_acquire)) {
@@ -228,8 +221,8 @@ public:
         if (!registered_) {
           return;
         }
-        if (auto iter = state_->gates.find(key_); iter != state_->gates.end() &&
-            iter->second.first == static_cast<waiter *>(this)) {
+        if (auto iter = state_->gates.find(key_);
+            iter != state_->gates.end() && iter->second.first == static_cast<waiter *>(this)) {
           state_->gates.erase(iter);
         }
         registered_ = false;
@@ -243,15 +236,13 @@ public:
     };
 
     template <stdexec::receiver_of<completion_signatures> receiver_t>
-    auto connect(receiver_t receiver) const
-        -> operation<std::remove_cvref_t<receiver_t>> {
+    auto connect(receiver_t receiver) const -> operation<std::remove_cvref_t<receiver_t>> {
       using operation_t = operation<std::remove_cvref_t<receiver_t>>;
       return operation_t{state_, key_, std::move(receiver)};
     }
 
     template <typename self_t, typename... env_t>
-      requires std::same_as<std::remove_cvref_t<self_t>, sender> &&
-               (sizeof...(env_t) >= 1U)
+      requires std::same_as<std::remove_cvref_t<self_t>, sender> && (sizeof...(env_t) >= 1U)
     static consteval auto get_completion_signatures() {
       return completion_signatures{};
     }
@@ -261,9 +252,7 @@ public:
     int key_{0};
   };
 
-  [[nodiscard]] auto arrive(const int key) const -> sender {
-    return sender{state_, key};
-  }
+  [[nodiscard]] auto arrive(const int key) const -> sender { return sender{state_, key}; }
 
 private:
   std::shared_ptr<state> state_{};

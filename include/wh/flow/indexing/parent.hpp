@@ -24,10 +24,8 @@
 
 namespace wh::flow::indexing {
 
-inline constexpr std::string_view parent_id_metadata_key =
-    wh::document::parent_id_metadata_key;
-inline constexpr std::string_view sub_id_metadata_key =
-    wh::document::sub_id_metadata_key;
+inline constexpr std::string_view parent_id_metadata_key = wh::document::parent_id_metadata_key;
+inline constexpr std::string_view sub_id_metadata_key = wh::document::sub_id_metadata_key;
 
 namespace detail::indexing {
 
@@ -35,28 +33,29 @@ template <typename indexer_t>
 concept indexer_component =
     requires(const indexer_t &indexer, const wh::indexer::indexer_request &request,
              wh::core::run_context &context) {
-      { indexer.write(request, context) }
-      -> std::same_as<wh::core::result<wh::indexer::indexer_response>>;
+      {
+        indexer.write(request, context)
+      } -> std::same_as<wh::core::result<wh::indexer::indexer_response>>;
     };
 
 template <typename transformer_t>
 concept parent_transformer =
     requires(transformer_t transformer, const wh::schema::document &document,
              wh::core::run_context &context) {
-      { transformer(document, context) }
-      -> std::same_as<wh::core::result<std::vector<wh::schema::document>>>;
+      {
+        transformer(document, context)
+      } -> std::same_as<wh::core::result<std::vector<wh::schema::document>>>;
     };
 
 template <typename generator_t>
-concept sub_id_generator =
-    requires(generator_t generator, const wh::schema::document &document,
-             std::size_t count, wh::core::run_context &context) {
-      { generator(document, count, context) }
-      -> std::same_as<wh::core::result<std::vector<std::string>>>;
-    };
+concept sub_id_generator = requires(generator_t generator, const wh::schema::document &document,
+                                    std::size_t count, wh::core::run_context &context) {
+  {
+    generator(document, count, context)
+  } -> std::same_as<wh::core::result<std::vector<std::string>>>;
+};
 
-[[nodiscard]] inline auto effective_parent_id(const wh::schema::document &document)
-    -> std::string {
+[[nodiscard]] inline auto effective_parent_id(const wh::schema::document &document) -> std::string {
   if (const auto *typed = document.metadata_ptr<std::string>(parent_id_metadata_key);
       typed != nullptr && !typed->empty()) {
     return *typed;
@@ -85,13 +84,10 @@ template <indexer_component indexer_t> struct borrowed_indexer {
   }
 
   template <typename request_t>
-    requires requires(const indexer_t &value, request_t &&request,
-                      wh::core::run_context &context) {
-      { value.async_write(std::forward<request_t>(request), context) }
-      -> stdexec::sender;
+    requires requires(const indexer_t &value, request_t &&request, wh::core::run_context &context) {
+      { value.async_write(std::forward<request_t>(request), context) } -> stdexec::sender;
     }
-  [[nodiscard]] auto async_write(request_t &&request,
-                                 wh::core::run_context &context) const {
+  [[nodiscard]] auto async_write(request_t &&request, wh::core::run_context &context) const {
     return indexer->async_write(std::forward<request_t>(request), context);
   }
 };
@@ -111,8 +107,7 @@ template <typename value_t>
       wh::core::detail::map_result_sender<write_result>(
           std::forward<decltype(sender)>(sender),
           [](wh::compose::graph_value value) -> write_result {
-            return read_graph_value<wh::indexer::indexer_response>(
-                std::move(value));
+            return read_graph_value<wh::indexer::indexer_response>(std::move(value));
           }));
 }
 
@@ -126,8 +121,7 @@ class parent {
   struct authored_state {
     authored_state(indexer_t indexer_value, transformer_t transformer_value,
                    sub_id_generator_t sub_id_generator_value) noexcept
-        : indexer(std::move(indexer_value)),
-          transformer(std::move(transformer_value)),
+        : indexer(std::move(indexer_value)), transformer(std::move(transformer_value)),
           sub_id_generator(std::move(sub_id_generator_value)) {}
 
     indexer_t indexer;
@@ -138,8 +132,7 @@ class parent {
   struct runtime_state {
     runtime_state(indexer_t indexer_value, transformer_t transformer_value,
                   sub_id_generator_t sub_id_generator_value) noexcept
-        : indexer(std::move(indexer_value)),
-          transformer(std::move(transformer_value)),
+        : indexer(std::move(indexer_value)), transformer(std::move(transformer_value)),
           sub_id_generator(std::move(sub_id_generator_value)) {}
 
     indexer_t indexer;
@@ -149,8 +142,7 @@ class parent {
   };
 
 public:
-  parent(indexer_t indexer, transformer_t transformer,
-         sub_id_generator_t sub_id_generator) noexcept
+  parent(indexer_t indexer, transformer_t transformer, sub_id_generator_t sub_id_generator) noexcept
       : authored_(std::in_place, std::move(indexer), std::move(transformer),
                   std::move(sub_id_generator)) {}
 
@@ -177,9 +169,9 @@ public:
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
 
-    auto runtime = std::make_shared<runtime_state>(
-        std::move(authored_->indexer), std::move(authored_->transformer),
-        std::move(authored_->sub_id_generator));
+    auto runtime = std::make_shared<runtime_state>(std::move(authored_->indexer),
+                                                   std::move(authored_->transformer),
+                                                   std::move(authored_->sub_id_generator));
 
     wh::compose::graph_compile_options options{};
     options.name = "indexing_parent";
@@ -187,46 +179,38 @@ public:
 
     auto prepare_added = runtime->runtime_graph.append(wh::compose::make_lambda_node(
         "parent_prepare_sub_documents",
-        [transformer = &runtime->transformer,
-         sub_id_generator = &runtime->sub_id_generator](
+        [transformer = &runtime->transformer, sub_id_generator = &runtime->sub_id_generator](
             const wh::compose::graph_value &input, wh::core::run_context &context,
-            const wh::compose::graph_call_scope &)
-            -> wh::core::result<wh::compose::graph_value> {
-          auto request =
-              detail::indexing::read_graph_value<wh::indexer::indexer_request>(
-                  wh::compose::graph_value{input});
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto request = detail::indexing::read_graph_value<wh::indexer::indexer_request>(
+              wh::compose::graph_value{input});
           if (request.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                request.error());
+            return wh::core::result<wh::compose::graph_value>::failure(request.error());
           }
 
           std::vector<wh::schema::document> sub_documents{};
           for (const auto &parent_document : request.value().documents) {
             auto transformed = (*transformer)(parent_document, context);
             if (transformed.has_error()) {
-              return wh::core::result<wh::compose::graph_value>::failure(
-                  transformed.error());
+              return wh::core::result<wh::compose::graph_value>::failure(transformed.error());
             }
             if (transformed.value().empty()) {
               return wh::core::result<wh::compose::graph_value>::failure(
                   wh::core::errc::invalid_argument);
             }
 
-            const auto parent_id =
-                detail::indexing::effective_parent_id(parent_document);
-            auto sub_ids = (*sub_id_generator)(parent_document,
-                                               transformed.value().size(), context);
+            const auto parent_id = detail::indexing::effective_parent_id(parent_document);
+            auto sub_ids =
+                (*sub_id_generator)(parent_document, transformed.value().size(), context);
             if (sub_ids.has_error()) {
-              return wh::core::result<wh::compose::graph_value>::failure(
-                  sub_ids.error());
+              return wh::core::result<wh::compose::graph_value>::failure(sub_ids.error());
             }
             if (sub_ids.value().size() != transformed.value().size()) {
               return wh::core::result<wh::compose::graph_value>::failure(
                   wh::core::errc::invalid_argument);
             }
 
-            for (std::size_t index = 0U; index < transformed.value().size();
-                 ++index) {
+            for (std::size_t index = 0U; index < transformed.value().size(); ++index) {
               auto document = std::move(transformed.value()[index]);
               document.set_metadata(parent_id_metadata_key, parent_id);
               document.set_metadata(sub_id_metadata_key, sub_ids.value()[index]);
@@ -247,8 +231,7 @@ public:
                                          wh::compose::node_contract::value,
                                          wh::compose::node_contract::value>(
             "parent_write_index",
-            detail::indexing::borrowed_indexer<indexer_t>{
-                .indexer = &runtime->indexer}));
+            detail::indexing::borrowed_indexer<indexer_t>{.indexer = &runtime->indexer}));
     if (index_added.has_error()) {
       return index_added;
     }
@@ -282,32 +265,26 @@ public:
 
 private:
   template <typename request_t>
-    requires std::same_as<std::remove_cvref_t<request_t>,
-                          wh::indexer::indexer_request>
-  [[nodiscard]] auto dispatch_request(request_t &&request,
-                                      wh::core::run_context &context) const {
+    requires std::same_as<std::remove_cvref_t<request_t>, wh::indexer::indexer_request>
+  [[nodiscard]] auto dispatch_request(request_t &&request, wh::core::run_context &context) const {
     using write_result = wh::core::result<wh::indexer::indexer_response>;
-    using failure_sender_t = decltype(
-        wh::core::detail::failure_result_sender<write_result>(
-            wh::core::errc::internal_error));
+    using failure_sender_t = decltype(wh::core::detail::failure_result_sender<write_result>(
+        wh::core::errc::internal_error));
     using mapped_sender_t = decltype(detail::indexing::map_indexer_result_sender(
         std::declval<const wh::compose::chain &>().invoke(
-            context, wh::compose::graph_value{wh::core::any(std::declval<
-                         wh::indexer::indexer_request>())})));
-    using dispatch_sender_t =
-        wh::core::detail::variant_sender<failure_sender_t, mapped_sender_t>;
+            context, wh::compose::graph_value{
+                         wh::core::any(std::declval<wh::indexer::indexer_request>())})));
+    using dispatch_sender_t = wh::core::detail::variant_sender<failure_sender_t, mapped_sender_t>;
 
     if (runtime_ == nullptr) {
-      return dispatch_sender_t{
-          wh::core::detail::failure_result_sender<write_result>(
-              wh::core::errc::contract_violation)};
+      return dispatch_sender_t{wh::core::detail::failure_result_sender<write_result>(
+          wh::core::errc::contract_violation)};
     }
 
-    return dispatch_sender_t{detail::indexing::map_indexer_result_sender(
-        runtime_->runtime_graph.invoke(
+    return dispatch_sender_t{
+        detail::indexing::map_indexer_result_sender(runtime_->runtime_graph.invoke(
             context, wh::compose::graph_value{wh::core::any(
-                         wh::indexer::indexer_request{
-                             std::forward<request_t>(request)})}))};
+                         wh::indexer::indexer_request{std::forward<request_t>(request)})}))};
   }
 
   std::optional<authored_state> authored_{};

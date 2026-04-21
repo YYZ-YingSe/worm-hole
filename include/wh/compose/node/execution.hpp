@@ -51,44 +51,36 @@ struct graph_node_trace {
 using graph_sender = graph_value_sender;
 
 template <typename result_t>
-using typed_result_sender =
-    typename exec::any_receiver_ref<stdexec::completion_signatures<
-        stdexec::set_value_t(result_t),
-        stdexec::set_stopped_t()>>::template any_sender<>;
+using typed_result_sender = typename exec::any_receiver_ref<stdexec::completion_signatures<
+    stdexec::set_value_t(result_t), stdexec::set_stopped_t()>>::template any_sender<>;
 
 namespace detail {
-[[nodiscard]] inline auto failure_graph_sender(const wh::core::error_code code)
-    -> graph_sender;
+[[nodiscard]] inline auto failure_graph_sender(const wh::core::error_code code) -> graph_sender;
 }
 
 /// Type-erased nested-graph bridge used only inside graph runtime.
 struct nested_graph_entry {
-  using start_fn = graph_sender (*)(const void *, const graph &,
-                                    wh::core::run_context &, graph_value &,
-                                    const graph_call_scope *, const node_path *,
-                                    graph_process_state *,
-                                    detail::runtime_state::invoke_outputs *,
+  using start_fn = graph_sender (*)(const void *, const graph &, wh::core::run_context &,
+                                    graph_value &, const graph_call_scope *, const node_path *,
+                                    graph_process_state *, detail::runtime_state::invoke_outputs *,
                                     const graph_node_trace *);
 
   const void *state{nullptr};
   start_fn start{nullptr};
 
-  [[nodiscard]] auto bound() const noexcept -> bool {
-    return state != nullptr && start != nullptr;
-  }
+  [[nodiscard]] auto bound() const noexcept -> bool { return state != nullptr && start != nullptr; }
 
-  [[nodiscard]] auto
-  operator()(const graph &target, wh::core::run_context &context,
-             graph_value &input, const graph_call_scope *call_options,
-             const node_path *path_prefix,
-             graph_process_state *parent_process_state,
-             detail::runtime_state::invoke_outputs *nested_outputs,
-             const graph_node_trace *parent_trace) const -> graph_sender {
+  [[nodiscard]] auto operator()(const graph &target, wh::core::run_context &context,
+                                graph_value &input, const graph_call_scope *call_options,
+                                const node_path *path_prefix,
+                                graph_process_state *parent_process_state,
+                                detail::runtime_state::invoke_outputs *nested_outputs,
+                                const graph_node_trace *parent_trace) const -> graph_sender {
     if (!bound()) {
       return detail::failure_graph_sender(wh::core::errc::contract_violation);
     }
-    return start(state, target, context, input, call_options, path_prefix,
-                 parent_process_state, nested_outputs, parent_trace);
+    return start(state, target, context, input, call_options, path_prefix, parent_process_state,
+                 nested_outputs, parent_trace);
   }
 };
 
@@ -104,13 +96,10 @@ public:
   }
 
   /// Returns the effective parallel budget already resolved for this node run.
-  [[nodiscard]] auto parallel_gate() const noexcept -> std::size_t {
-    return parallel_gate_;
-  }
+  [[nodiscard]] auto parallel_gate() const noexcept -> std::size_t { return parallel_gate_; }
 
   /// Binds the invoke-scoped call options visible to this node run.
-  auto set_call_options(const graph_call_scope *value) noexcept
-      -> node_runtime & {
+  auto set_call_options(const graph_call_scope *value) noexcept -> node_runtime & {
     call_options_ = value;
     return *this;
   }
@@ -127,13 +116,10 @@ public:
   }
 
   /// Returns the resolved runtime path for this node run when present.
-  [[nodiscard]] auto path() const noexcept -> const node_path * {
-    return path_;
-  }
+  [[nodiscard]] auto path() const noexcept -> const node_path * { return path_; }
 
   /// Binds the control scheduler fixed by the enclosing invoke run.
-  auto set_control_scheduler(
-      const wh::core::detail::any_resume_scheduler_t *value) noexcept
+  auto set_control_scheduler(const wh::core::detail::any_resume_scheduler_t *value) noexcept
       -> node_runtime & {
     control_scheduler_ = value;
     return *this;
@@ -146,8 +132,7 @@ public:
   }
 
   /// Binds the work scheduler fixed by the enclosing invoke run.
-  auto set_work_scheduler(
-      const wh::core::detail::any_resume_scheduler_t *value) noexcept
+  auto set_work_scheduler(const wh::core::detail::any_resume_scheduler_t *value) noexcept
       -> node_runtime & {
     work_scheduler_ = value;
     return *this;
@@ -161,8 +146,7 @@ public:
   }
 
   /// Binds the local process-state visible to this node run.
-  auto set_process_state(graph_process_state *value) noexcept
-      -> node_runtime & {
+  auto set_process_state(graph_process_state *value) noexcept -> node_runtime & {
     process_state_ = value;
     return *this;
   }
@@ -173,16 +157,14 @@ public:
   }
 
   /// Binds the resolved callback-observation view for this node run.
-  auto set_observation(const graph_resolved_node_observation *value) noexcept
-      -> node_runtime & {
+  auto set_observation(const graph_resolved_node_observation *value) noexcept -> node_runtime & {
     observation_ = value;
     return *this;
   }
 
   /// Returns the resolved callback-observation view for this node run when
   /// present.
-  [[nodiscard]] auto observation() const noexcept
-      -> const graph_resolved_node_observation * {
+  [[nodiscard]] auto observation() const noexcept -> const graph_resolved_node_observation * {
     return observation_;
   }
 
@@ -193,9 +175,7 @@ public:
   }
 
   /// Returns the runtime trace payload for this node run when present.
-  [[nodiscard]] auto trace() const noexcept -> const graph_node_trace * {
-    return trace_;
-  }
+  [[nodiscard]] auto trace() const noexcept -> const graph_node_trace * { return trace_; }
 
 private:
   std::size_t parallel_gate_{0U};
@@ -213,58 +193,47 @@ private:
 };
 
 /// Type-erased sync callback used by compiled graph runtime.
-using node_sync_factory =
-    wh::core::callback_function<wh::core::result<graph_value>(
-        graph_value &, wh::core::run_context &, const node_runtime &) const>;
+using node_sync_factory = wh::core::callback_function<wh::core::result<graph_value>(
+    graph_value &, wh::core::run_context &, const node_runtime &) const>;
 /// Type-erased async callback used by compiled graph runtime.
 using node_async_factory = wh::core::callback_function<graph_sender(
     graph_value &, wh::core::run_context &, const node_runtime &) const>;
 
-template <typename sender_t, typename result_t>
-struct result_value_signature : std::false_type {};
+template <typename sender_t, typename result_t> struct result_value_signature : std::false_type {};
 
 template <typename result_t, typename... signatures_t>
-struct result_value_signature<result_t,
-                              stdexec::completion_signatures<signatures_t...>>
+struct result_value_signature<result_t, stdexec::completion_signatures<signatures_t...>>
     : std::bool_constant<
-          stdexec::completion_signatures<signatures_t...>::__count(
-              stdexec::set_value) == 1U &&
-          stdexec::completion_signatures<signatures_t...>::template __contains<
-              stdexec::set_value_t(result_t)>()> {};
+          stdexec::completion_signatures<signatures_t...>::__count(stdexec::set_value) == 1U &&
+          stdexec::completion_signatures<signatures_t...>::template __contains<stdexec::set_value_t(
+              result_t)>()> {};
 
 template <typename sender_t, typename result_t>
 concept result_typed_sender =
     stdexec::sender<std::remove_cvref_t<sender_t>> &&
-    result_value_signature<result_t,
-                           stdexec::completion_signatures_of_t<
-                               std::remove_cvref_t<sender_t>,
-                               wh::core::detail::sender_signature_env>>::value;
+    result_value_signature<result_t, stdexec::completion_signatures_of_t<
+                                         std::remove_cvref_t<sender_t>,
+                                         wh::core::detail::sender_signature_env>>::value;
 
 template <typename sender_t>
-concept graph_result_sender =
-    result_typed_sender<sender_t, wh::core::result<graph_value>>;
+concept graph_result_sender = result_typed_sender<sender_t, wh::core::result<graph_value>>;
 template <typename sender_t>
 concept graph_stream_result_sender =
     result_typed_sender<sender_t, wh::core::result<graph_stream_reader>>;
 template <typename sender_t>
-concept graph_map_result_sender =
-    result_typed_sender<sender_t, wh::core::result<graph_value_map>>;
+concept graph_map_result_sender = result_typed_sender<sender_t, wh::core::result<graph_value_map>>;
 
 template <typename run_t>
-concept node_sync_run =
-    requires(run_t run, graph_value &input, wh::core::run_context &context,
-             const node_runtime &runtime) {
-      {
-        run(input, context, runtime)
-      } -> std::same_as<wh::core::result<graph_value>>;
-    };
+concept node_sync_run = requires(run_t run, graph_value &input, wh::core::run_context &context,
+                                 const node_runtime &runtime) {
+  { run(input, context, runtime) } -> std::same_as<wh::core::result<graph_value>>;
+};
 
 template <typename run_t>
-concept node_async_run =
-    requires(run_t run, graph_value &input, wh::core::run_context &context,
-             const node_runtime &runtime) {
-      { run(input, context, runtime) } -> graph_result_sender;
-    };
+concept node_async_run = requires(run_t run, graph_value &input, wh::core::run_context &context,
+                                  const node_runtime &runtime) {
+  { run(input, context, runtime) } -> graph_result_sender;
+};
 
 namespace detail {
 
@@ -278,26 +247,21 @@ template <typename value_t>
   return mutable_capture<std::decay_t<value_t>>{std::forward<value_t>(value)};
 }
 
-[[nodiscard]] inline auto normalize_graph_sender(graph_sender sender)
-    -> graph_sender {
+[[nodiscard]] inline auto normalize_graph_sender(graph_sender sender) -> graph_sender {
   return sender;
 }
 
 template <stdexec::sender sender_t>
 [[nodiscard]] inline auto normalize_graph_sender(sender_t &&sender) {
-  return wh::core::detail::normalize_result_sender<
-      wh::core::result<graph_value>>(std::forward<sender_t>(sender));
+  return wh::core::detail::normalize_result_sender<wh::core::result<graph_value>>(
+      std::forward<sender_t>(sender));
 }
 
-[[nodiscard]] inline auto failure_graph_sender(const wh::core::error_code code)
-    -> graph_sender {
-  return graph_sender{
-      wh::core::detail::failure_result_sender<wh::core::result<graph_value>>(
-          code)};
+[[nodiscard]] inline auto failure_graph_sender(const wh::core::error_code code) -> graph_sender {
+  return graph_sender{wh::core::detail::failure_result_sender<wh::core::result<graph_value>>(code)};
 }
 
-[[nodiscard]] inline auto
-ready_graph_sender(wh::core::result<graph_value> status) -> graph_sender {
+[[nodiscard]] inline auto ready_graph_sender(wh::core::result<graph_value> status) -> graph_sender {
   return graph_sender{wh::core::detail::ready_sender(std::move(status))};
 }
 
@@ -306,79 +270,68 @@ ready_graph_sender(wh::core::result<graph_value> status) -> graph_sender {
 }
 
 [[nodiscard]] inline auto ready_graph_unit_sender() -> graph_sender {
-  return ready_graph_sender(
-      wh::core::result<graph_value>{make_graph_unit_value()});
+  return ready_graph_sender(wh::core::result<graph_value>{make_graph_unit_value()});
 }
 
-[[nodiscard]] inline auto bridge_graph_sender(graph_sender sender)
-    -> graph_sender {
+[[nodiscard]] inline auto bridge_graph_sender(graph_sender sender) -> graph_sender {
   return sender;
 }
 
 template <stdexec::sender sender_t>
-[[nodiscard]] inline auto bridge_graph_sender(sender_t &&sender)
-    -> graph_sender {
+[[nodiscard]] inline auto bridge_graph_sender(sender_t &&sender) -> graph_sender {
   return graph_sender{normalize_graph_sender(std::forward<sender_t>(sender))};
 }
 
 template <stdexec::sender sender_t, typename mapper_t>
-[[nodiscard]] inline auto map_graph_sender(sender_t &&sender, mapper_t &&mapper)
-    -> graph_sender {
-  return bridge_graph_sender(
-      wh::core::detail::map_result_sender<wh::core::result<graph_value>>(
-          std::forward<sender_t>(sender), std::forward<mapper_t>(mapper)));
+[[nodiscard]] inline auto map_graph_sender(sender_t &&sender, mapper_t &&mapper) -> graph_sender {
+  return bridge_graph_sender(wh::core::detail::map_result_sender<wh::core::result<graph_value>>(
+      std::forward<sender_t>(sender), std::forward<mapper_t>(mapper)));
 }
 
 template <node_sync_run run_t>
-[[nodiscard]] inline auto bind_node_sync_factory(run_t &&run)
-    -> node_sync_factory {
+[[nodiscard]] inline auto bind_node_sync_factory(run_t &&run) -> node_sync_factory {
   auto stored = make_mutable_capture(std::forward<run_t>(run));
   return node_sync_factory{
-      [stored = std::move(stored)](
-          graph_value &input, wh::core::run_context &context,
-          const node_runtime &runtime) -> wh::core::result<graph_value> {
+      [stored = std::move(stored)](graph_value &input, wh::core::run_context &context,
+                                   const node_runtime &runtime) -> wh::core::result<graph_value> {
         return stored.value(input, context, runtime);
       }};
 }
 
 template <node_async_run run_t>
-[[nodiscard]] inline auto bind_node_async_factory(run_t &&run)
-    -> node_async_factory {
+[[nodiscard]] inline auto bind_node_async_factory(run_t &&run) -> node_async_factory {
   auto stored = make_mutable_capture(std::forward<run_t>(run));
-  return node_async_factory{[stored = std::move(stored)](
-                                graph_value &input,
-                                wh::core::run_context &context,
-                                const node_runtime &runtime) -> graph_sender {
-    auto sender = stored.value(input, context, runtime);
-    if (runtime.work_scheduler() == nullptr) {
-      return failure_graph_sender(wh::core::errc::contract_violation);
-    }
-    if constexpr (std::same_as<std::remove_cvref_t<decltype(sender)>,
-                               graph_sender>) {
-      return bridge_graph_sender(std::move(sender));
-    }
-    return bridge_graph_sender(wh::core::detail::write_sender_scheduler(
-        std::move(sender), *runtime.work_scheduler()));
-  }};
+  return node_async_factory{
+      [stored = std::move(stored)](graph_value &input, wh::core::run_context &context,
+                                   const node_runtime &runtime) -> graph_sender {
+        auto sender = stored.value(input, context, runtime);
+        if (runtime.work_scheduler() == nullptr) {
+          return failure_graph_sender(wh::core::errc::contract_violation);
+        }
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(sender)>, graph_sender>) {
+          return bridge_graph_sender(std::move(sender));
+        }
+        return bridge_graph_sender(
+            wh::core::detail::write_sender_scheduler(std::move(sender), *runtime.work_scheduler()));
+      }};
 }
 
 template <graph_result_sender sender_t>
-[[nodiscard]] inline auto bind_node_async_factory(sender_t &&sender)
-    -> node_async_factory {
+[[nodiscard]] inline auto bind_node_async_factory(sender_t &&sender) -> node_async_factory {
   using stored_sender_t = std::decay_t<sender_t>;
   static_assert(std::copy_constructible<stored_sender_t>,
                 "direct sender node requires copyable sender; "
                 "use sender-factory lambda for move-only senders");
   auto stored = make_mutable_capture(std::forward<sender_t>(sender));
-  return node_async_factory{[stored = std::move(stored)](
-                                graph_value &, wh::core::run_context &,
-                                const node_runtime &runtime) -> graph_sender {
-    if (runtime.work_scheduler() == nullptr) {
-      return failure_graph_sender(wh::core::errc::contract_violation);
-    }
-    return bridge_graph_sender(wh::core::detail::write_sender_scheduler(
-        stored.value, *runtime.work_scheduler()));
-  }};
+  return node_async_factory{
+      [stored = std::move(stored)](graph_value &, wh::core::run_context &,
+                                   const node_runtime &runtime) -> graph_sender {
+        if (runtime.work_scheduler() == nullptr) {
+          return failure_graph_sender(wh::core::errc::contract_violation);
+        }
+        return bridge_graph_sender(
+            wh::core::detail::write_sender_scheduler(stored.value, *runtime.work_scheduler()));
+      }};
 }
 
 } // namespace detail

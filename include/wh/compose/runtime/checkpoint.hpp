@@ -782,8 +782,7 @@ into_owned_checkpoint_stream_value_payload(checkpoint_stream_value_payload &&val
   };
 }
 
-[[nodiscard]] inline auto
-into_owned_checkpoint_runtime_slot(const checkpoint_runtime_slot &value)
+[[nodiscard]] inline auto into_owned_checkpoint_runtime_slot(const checkpoint_runtime_slot &value)
     -> wh::core::result<checkpoint_runtime_slot> {
   auto owned = wh::core::into_owned(value.value);
   if (owned.has_error()) {
@@ -795,8 +794,7 @@ into_owned_checkpoint_runtime_slot(const checkpoint_runtime_slot &value)
   };
 }
 
-[[nodiscard]] inline auto
-into_owned_checkpoint_runtime_slot(checkpoint_runtime_slot &&value)
+[[nodiscard]] inline auto into_owned_checkpoint_runtime_slot(checkpoint_runtime_slot &&value)
     -> wh::core::result<checkpoint_runtime_slot> {
   auto owned = wh::core::into_owned(std::move(value.value));
   if (owned.has_error()) {
@@ -808,8 +806,7 @@ into_owned_checkpoint_runtime_slot(checkpoint_runtime_slot &&value)
   };
 }
 
-[[nodiscard]] inline auto
-into_owned_checkpoint_node_input(const checkpoint_node_input &value)
+[[nodiscard]] inline auto into_owned_checkpoint_node_input(const checkpoint_node_input &value)
     -> wh::core::result<checkpoint_node_input> {
   auto input = wh::core::into_owned(value.input);
   if (input.has_error()) {
@@ -822,8 +819,7 @@ into_owned_checkpoint_node_input(const checkpoint_node_input &value)
   };
 }
 
-[[nodiscard]] inline auto
-into_owned_checkpoint_node_input(checkpoint_node_input &&value)
+[[nodiscard]] inline auto into_owned_checkpoint_node_input(checkpoint_node_input &&value)
     -> wh::core::result<checkpoint_node_input> {
   auto input = wh::core::into_owned(std::move(value.input));
   if (input.has_error()) {
@@ -836,15 +832,14 @@ into_owned_checkpoint_node_input(checkpoint_node_input &&value)
   };
 }
 
-[[nodiscard]] inline auto into_owned_checkpoint_pending_inputs(
-    const checkpoint_pending_inputs &value)
+[[nodiscard]] inline auto
+into_owned_checkpoint_pending_inputs(const checkpoint_pending_inputs &value)
     -> wh::core::result<checkpoint_pending_inputs> {
   std::optional<graph_value> entry{};
   if (value.entry.has_value()) {
     auto owned = wh::core::into_owned(*value.entry);
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_pending_inputs>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_pending_inputs>::failure(owned.error());
     }
     entry = std::move(owned).value();
   }
@@ -853,8 +848,7 @@ into_owned_checkpoint_node_input(checkpoint_node_input &&value)
   for (const auto &node_input : value.nodes) {
     auto owned = into_owned_checkpoint_node_input(node_input);
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_pending_inputs>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_pending_inputs>::failure(owned.error());
     }
     nodes.push_back(std::move(owned).value());
   }
@@ -864,15 +858,13 @@ into_owned_checkpoint_node_input(checkpoint_node_input &&value)
   };
 }
 
-[[nodiscard]] inline auto
-into_owned_checkpoint_pending_inputs(checkpoint_pending_inputs &&value)
+[[nodiscard]] inline auto into_owned_checkpoint_pending_inputs(checkpoint_pending_inputs &&value)
     -> wh::core::result<checkpoint_pending_inputs> {
   std::optional<graph_value> entry{};
   if (value.entry.has_value()) {
     auto owned = wh::core::into_owned(std::move(*value.entry));
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_pending_inputs>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_pending_inputs>::failure(owned.error());
     }
     entry = std::move(owned).value();
   }
@@ -881,8 +873,7 @@ into_owned_checkpoint_pending_inputs(checkpoint_pending_inputs &&value)
   for (auto &node_input : value.nodes) {
     auto owned = into_owned_checkpoint_node_input(std::move(node_input));
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_pending_inputs>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_pending_inputs>::failure(owned.error());
     }
     nodes.push_back(std::move(owned).value());
   }
@@ -893,59 +884,52 @@ into_owned_checkpoint_pending_inputs(checkpoint_pending_inputs &&value)
 }
 
 template <typename state_t, typename slot_list_t>
-[[nodiscard]] inline auto into_owned_checkpoint_runtime_slots(
-    slot_list_t &&slots) -> wh::core::result<std::vector<checkpoint_runtime_slot>> {
+[[nodiscard]] inline auto into_owned_checkpoint_runtime_slots(slot_list_t &&slots)
+    -> wh::core::result<std::vector<checkpoint_runtime_slot>> {
   std::vector<checkpoint_runtime_slot> owned_slots{};
   owned_slots.reserve(slots.size());
   for (auto &slot : slots) {
     auto owned = into_owned_checkpoint_runtime_slot(std::forward<decltype(slot)>(slot));
     if (owned.has_error()) {
-      return wh::core::result<std::vector<checkpoint_runtime_slot>>::failure(
-          owned.error());
+      return wh::core::result<std::vector<checkpoint_runtime_slot>>::failure(owned.error());
     }
     owned_slots.push_back(std::move(owned).value());
   }
   return owned_slots;
 }
 
-[[nodiscard]] inline auto into_owned_checkpoint_dag_runtime_state(
-    const checkpoint_dag_runtime_state &value)
+[[nodiscard]] inline auto
+into_owned_checkpoint_dag_runtime_state(const checkpoint_dag_runtime_state &value)
     -> wh::core::result<checkpoint_dag_runtime_state> {
   auto pending_inputs = into_owned_checkpoint_pending_inputs(value.pending_inputs);
   if (pending_inputs.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        pending_inputs.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(pending_inputs.error());
   }
-  auto node_outputs = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
-      value.node_outputs);
+  auto node_outputs =
+      into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(value.node_outputs);
   if (node_outputs.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        node_outputs.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(node_outputs.error());
   }
-  auto edge_values = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
-      value.edge_values);
+  auto edge_values =
+      into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(value.edge_values);
   if (edge_values.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        edge_values.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(edge_values.error());
   }
-  auto edge_readers = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
-      value.edge_readers);
+  auto edge_readers =
+      into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(value.edge_readers);
   if (edge_readers.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        edge_readers.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(edge_readers.error());
   }
-  auto merged_readers = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
-      value.merged_readers);
+  auto merged_readers =
+      into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(value.merged_readers);
   if (merged_readers.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        merged_readers.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(merged_readers.error());
   }
   std::optional<graph_value> final_output_reader{};
   if (value.final_output_reader.has_value()) {
     auto owned = wh::core::into_owned(*value.final_output_reader);
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_dag_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_dag_runtime_state>::failure(owned.error());
     }
     final_output_reader = std::move(owned).value();
   }
@@ -965,45 +949,38 @@ template <typename state_t, typename slot_list_t>
   };
 }
 
-[[nodiscard]] inline auto into_owned_checkpoint_dag_runtime_state(
-    checkpoint_dag_runtime_state &&value)
+[[nodiscard]] inline auto
+into_owned_checkpoint_dag_runtime_state(checkpoint_dag_runtime_state &&value)
     -> wh::core::result<checkpoint_dag_runtime_state> {
-  auto pending_inputs =
-      into_owned_checkpoint_pending_inputs(std::move(value.pending_inputs));
+  auto pending_inputs = into_owned_checkpoint_pending_inputs(std::move(value.pending_inputs));
   if (pending_inputs.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        pending_inputs.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(pending_inputs.error());
   }
   auto node_outputs = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
       std::move(value.node_outputs));
   if (node_outputs.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        node_outputs.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(node_outputs.error());
   }
   auto edge_values = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
       std::move(value.edge_values));
   if (edge_values.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        edge_values.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(edge_values.error());
   }
   auto edge_readers = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
       std::move(value.edge_readers));
   if (edge_readers.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        edge_readers.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(edge_readers.error());
   }
   auto merged_readers = into_owned_checkpoint_runtime_slots<checkpoint_dag_runtime_state>(
       std::move(value.merged_readers));
   if (merged_readers.has_error()) {
-    return wh::core::result<checkpoint_dag_runtime_state>::failure(
-        merged_readers.error());
+    return wh::core::result<checkpoint_dag_runtime_state>::failure(merged_readers.error());
   }
   std::optional<graph_value> final_output_reader{};
   if (value.final_output_reader.has_value()) {
     auto owned = wh::core::into_owned(std::move(*value.final_output_reader));
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_dag_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_dag_runtime_state>::failure(owned.error());
     }
     final_output_reader = std::move(owned).value();
   }
@@ -1023,48 +1000,38 @@ template <typename state_t, typename slot_list_t>
   };
 }
 
-[[nodiscard]] inline auto into_owned_checkpoint_pregel_runtime_state(
-    const checkpoint_pregel_runtime_state &value)
+[[nodiscard]] inline auto
+into_owned_checkpoint_pregel_runtime_state(const checkpoint_pregel_runtime_state &value)
     -> wh::core::result<checkpoint_pregel_runtime_state> {
   auto pending_inputs = into_owned_checkpoint_pending_inputs(value.pending_inputs);
   if (pending_inputs.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        pending_inputs.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(pending_inputs.error());
   }
   auto node_outputs =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          value.node_outputs);
+      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(value.node_outputs);
   if (node_outputs.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        node_outputs.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(node_outputs.error());
   }
   auto edge_values =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          value.edge_values);
+      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(value.edge_values);
   if (edge_values.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        edge_values.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(edge_values.error());
   }
   auto edge_readers =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          value.edge_readers);
+      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(value.edge_readers);
   if (edge_readers.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        edge_readers.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(edge_readers.error());
   }
   auto merged_readers =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          value.merged_readers);
+      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(value.merged_readers);
   if (merged_readers.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        merged_readers.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(merged_readers.error());
   }
   std::optional<graph_value> final_output_reader{};
   if (value.final_output_reader.has_value()) {
     auto owned = wh::core::into_owned(*value.final_output_reader);
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_pregel_runtime_state>::failure(owned.error());
     }
     final_output_reader = std::move(owned).value();
   }
@@ -1084,49 +1051,38 @@ template <typename state_t, typename slot_list_t>
   };
 }
 
-[[nodiscard]] inline auto into_owned_checkpoint_pregel_runtime_state(
-    checkpoint_pregel_runtime_state &&value)
+[[nodiscard]] inline auto
+into_owned_checkpoint_pregel_runtime_state(checkpoint_pregel_runtime_state &&value)
     -> wh::core::result<checkpoint_pregel_runtime_state> {
-  auto pending_inputs =
-      into_owned_checkpoint_pending_inputs(std::move(value.pending_inputs));
+  auto pending_inputs = into_owned_checkpoint_pending_inputs(std::move(value.pending_inputs));
   if (pending_inputs.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        pending_inputs.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(pending_inputs.error());
   }
-  auto node_outputs =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          std::move(value.node_outputs));
+  auto node_outputs = into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
+      std::move(value.node_outputs));
   if (node_outputs.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        node_outputs.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(node_outputs.error());
   }
-  auto edge_values =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          std::move(value.edge_values));
+  auto edge_values = into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
+      std::move(value.edge_values));
   if (edge_values.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        edge_values.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(edge_values.error());
   }
-  auto edge_readers =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          std::move(value.edge_readers));
+  auto edge_readers = into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
+      std::move(value.edge_readers));
   if (edge_readers.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        edge_readers.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(edge_readers.error());
   }
-  auto merged_readers =
-      into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
-          std::move(value.merged_readers));
+  auto merged_readers = into_owned_checkpoint_runtime_slots<checkpoint_pregel_runtime_state>(
+      std::move(value.merged_readers));
   if (merged_readers.has_error()) {
-    return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-        merged_readers.error());
+    return wh::core::result<checkpoint_pregel_runtime_state>::failure(merged_readers.error());
   }
   std::optional<graph_value> final_output_reader{};
   if (value.final_output_reader.has_value()) {
     auto owned = wh::core::into_owned(std::move(*value.final_output_reader));
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_pregel_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_pregel_runtime_state>::failure(owned.error());
     }
     final_output_reader = std::move(owned).value();
   }
@@ -1146,15 +1102,13 @@ template <typename state_t, typename slot_list_t>
   };
 }
 
-[[nodiscard]] inline auto into_owned_checkpoint_runtime_state(
-    const checkpoint_runtime_state &value)
+[[nodiscard]] inline auto into_owned_checkpoint_runtime_state(const checkpoint_runtime_state &value)
     -> wh::core::result<checkpoint_runtime_state> {
   std::optional<checkpoint_dag_runtime_state> dag{};
   if (value.dag.has_value()) {
     auto owned = into_owned_checkpoint_dag_runtime_state(*value.dag);
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_runtime_state>::failure(owned.error());
     }
     dag = std::move(owned).value();
   }
@@ -1162,8 +1116,7 @@ template <typename state_t, typename slot_list_t>
   if (value.pregel.has_value()) {
     auto owned = into_owned_checkpoint_pregel_runtime_state(*value.pregel);
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_runtime_state>::failure(owned.error());
     }
     pregel = std::move(owned).value();
   }
@@ -1175,25 +1128,21 @@ template <typename state_t, typename slot_list_t>
   };
 }
 
-[[nodiscard]] inline auto into_owned_checkpoint_runtime_state(
-    checkpoint_runtime_state &&value)
+[[nodiscard]] inline auto into_owned_checkpoint_runtime_state(checkpoint_runtime_state &&value)
     -> wh::core::result<checkpoint_runtime_state> {
   std::optional<checkpoint_dag_runtime_state> dag{};
   if (value.dag.has_value()) {
     auto owned = into_owned_checkpoint_dag_runtime_state(std::move(*value.dag));
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_runtime_state>::failure(owned.error());
     }
     dag = std::move(owned).value();
   }
   std::optional<checkpoint_pregel_runtime_state> pregel{};
   if (value.pregel.has_value()) {
-    auto owned =
-        into_owned_checkpoint_pregel_runtime_state(std::move(*value.pregel));
+    auto owned = into_owned_checkpoint_pregel_runtime_state(std::move(*value.pregel));
     if (owned.has_error()) {
-      return wh::core::result<checkpoint_runtime_state>::failure(
-          owned.error());
+      return wh::core::result<checkpoint_runtime_state>::failure(owned.error());
     }
     pregel = std::move(owned).value();
   }

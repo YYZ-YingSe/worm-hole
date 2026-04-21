@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/cursor_reader/detail/waiter_ready_list.hpp"
 
@@ -26,7 +26,8 @@ auto cursor_ready_complete(cursor_ready_waiter *waiter) noexcept -> void {
 } // namespace
 
 TEST_CASE("cursor waiter ready list completes waiters in insertion order",
-          "[UT][wh/core/cursor_reader/detail/waiter_ready_list.hpp][waiter_ready_list::complete_all][condition][branch]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "waiter_ready_list.hpp][waiter_ready_list::complete_all][condition][branch]") {
   wh::core::cursor_reader_detail::waiter_ready_list<cursor_ready_waiter> list{};
   std::vector<int> trace{};
   constexpr cursor_ready_waiter::ops_t ops{cursor_ready_complete};
@@ -47,16 +48,16 @@ TEST_CASE("cursor waiter ready list completes waiters in insertion order",
 }
 
 TEST_CASE("cursor waiter ready list can be reused after drain",
-          "[UT][wh/core/cursor_reader/detail/waiter_ready_list.hpp][waiter_ready_list::push_back][branch][boundary]") {
+          "[UT][wh/core/cursor_reader/detail/"
+          "waiter_ready_list.hpp][waiter_ready_list::push_back][branch][boundary]") {
   wh::core::cursor_reader_detail::waiter_ready_list<cursor_ready_waiter> list{};
   std::vector<int> trace{};
   constexpr cursor_ready_waiter::ops_t ops{cursor_ready_complete};
-  cursor_ready_waiter waiter{
-      .next = reinterpret_cast<cursor_ready_waiter *>(0x1),
-      .prev = reinterpret_cast<cursor_ready_waiter *>(0x2),
-      .ops = &ops,
-      .id = 7,
-      .trace = &trace};
+  cursor_ready_waiter waiter{.next = reinterpret_cast<cursor_ready_waiter *>(0x1),
+                             .prev = reinterpret_cast<cursor_ready_waiter *>(0x2),
+                             .ops = &ops,
+                             .id = 7,
+                             .trace = &trace};
 
   list.push_back(&waiter);
   REQUIRE(waiter.next == nullptr);

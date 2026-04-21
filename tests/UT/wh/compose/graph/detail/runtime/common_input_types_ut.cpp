@@ -57,8 +57,7 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
       wh::compose::collect_graph_stream_reader(std::move(borrowed_reader).value());
   REQUIRE(borrowed_reader_values.has_value());
   REQUIRE(borrowed_reader_values.value().size() == 1U);
-  auto *borrowed_reader_chunk =
-      wh::core::any_cast<int>(&borrowed_reader_values.value().front());
+  auto *borrowed_reader_chunk = wh::core::any_cast<int>(&borrowed_reader_values.value().front());
   REQUIRE(borrowed_reader_chunk != nullptr);
   REQUIRE(*borrowed_reader_chunk == 21);
 
@@ -66,8 +65,7 @@ TEST_CASE("common input runtime types materialize values keep move ownership and
       wh::compose::collect_graph_stream_reader(std::move(*borrowed_reader_copy));
   REQUIRE(copied_reader_values.has_value());
   REQUIRE(copied_reader_values.value().size() == 1U);
-  auto *copied_reader_chunk =
-      wh::core::any_cast<int>(&copied_reader_values.value().front());
+  auto *copied_reader_chunk = wh::core::any_cast<int>(&copied_reader_values.value().front());
   REQUIRE(copied_reader_chunk != nullptr);
   REQUIRE(*copied_reader_chunk == 21);
 

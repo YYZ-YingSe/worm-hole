@@ -34,8 +34,7 @@ struct tool_event_binding {
   std::optional<wh::core::run_context> context{};
 };
 
-[[nodiscard]] inline auto make_tool_event_value(const tool_call &call,
-                                                graph_value value)
+[[nodiscard]] inline auto make_tool_event_value(const tool_call &call, graph_value value)
     -> graph_value {
   return graph_value{tool_event{
       .call_id = call.call_id,
@@ -45,11 +44,11 @@ struct tool_event_binding {
 }
 
 template <typename resolve_binding_t>
-[[nodiscard]] inline auto map_value(
-    graph_stream_reader &reader,
-    wh::schema::stream::detail::stream_adapter_state &adapter_state,
-    const tool_after_chain_ptr &afters, resolve_binding_t &&resolve_binding,
-    std::string_view source, graph_value value) -> result_t {
+[[nodiscard]] inline auto map_value(graph_stream_reader &reader,
+                                    wh::schema::stream::detail::stream_adapter_state &adapter_state,
+                                    const tool_after_chain_ptr &afters,
+                                    resolve_binding_t &&resolve_binding, std::string_view source,
+                                    graph_value value) -> result_t {
   auto *binding = std::forward<resolve_binding_t>(resolve_binding)(source);
   if (binding == nullptr) {
     adapter_state.terminal = true;
@@ -88,11 +87,11 @@ template <typename resolve_binding_t>
 }
 
 template <typename resolve_binding_t>
-[[nodiscard]] inline auto map_read_owned(
-    graph_stream_reader &reader,
-    wh::schema::stream::detail::stream_adapter_state &adapter_state,
-    const tool_after_chain_ptr &afters, resolve_binding_t &&resolve_binding,
-    result_t next) -> result_t {
+[[nodiscard]] inline auto
+map_read_owned(graph_stream_reader &reader,
+               wh::schema::stream::detail::stream_adapter_state &adapter_state,
+               const tool_after_chain_ptr &afters, resolve_binding_t &&resolve_binding,
+               result_t next) -> result_t {
   if (next.has_error()) {
     adapter_state.terminal = true;
     adapter_state.close_source_if_enabled(reader);
@@ -121,17 +120,16 @@ template <typename resolve_binding_t>
     return result_t::failure(wh::core::errc::protocol_error);
   }
 
-  return map_value(reader, adapter_state, afters,
-                   std::forward<resolve_binding_t>(resolve_binding),
+  return map_value(reader, adapter_state, afters, std::forward<resolve_binding_t>(resolve_binding),
                    input_chunk.source, std::move(*input_chunk.value));
 }
 
 template <typename resolve_binding_t>
-[[nodiscard]] inline auto map_try_owned(
-    graph_stream_reader &reader,
-    wh::schema::stream::detail::stream_adapter_state &adapter_state,
-    const tool_after_chain_ptr &afters, resolve_binding_t &&resolve_binding,
-    try_result_t next) -> try_result_t {
+[[nodiscard]] inline auto
+map_try_owned(graph_stream_reader &reader,
+              wh::schema::stream::detail::stream_adapter_state &adapter_state,
+              const tool_after_chain_ptr &afters, resolve_binding_t &&resolve_binding,
+              try_result_t next) -> try_result_t {
   if (std::holds_alternative<wh::schema::stream::stream_signal>(next)) {
     return wh::schema::stream::stream_pending;
   }
@@ -143,8 +141,7 @@ template <typename resolve_binding_t>
 } // namespace tool_event_reader_detail
 
 class tool_event_stream_reader final
-    : public wh::schema::stream::stream_base<tool_event_stream_reader,
-                                             graph_value> {
+    : public wh::schema::stream::stream_base<tool_event_stream_reader, graph_value> {
 private:
   using result_t = tool_event_reader_detail::result_t;
   using try_result_t = tool_event_reader_detail::try_result_t;
@@ -154,19 +151,15 @@ public:
 
   tool_event_stream_reader() = default;
   tool_event_stream_reader(const tool_event_stream_reader &) = delete;
-  auto operator=(const tool_event_stream_reader &)
-      -> tool_event_stream_reader & = delete;
+  auto operator=(const tool_event_stream_reader &) -> tool_event_stream_reader & = delete;
   tool_event_stream_reader(tool_event_stream_reader &&) noexcept = default;
-  auto operator=(tool_event_stream_reader &&) noexcept
-      -> tool_event_stream_reader & = default;
+  auto operator=(tool_event_stream_reader &&) noexcept -> tool_event_stream_reader & = default;
   ~tool_event_stream_reader() = default;
 
-  tool_event_stream_reader(graph_stream_reader reader, tool_call call,
-                           tool_after_chain_ptr afters,
+  tool_event_stream_reader(graph_stream_reader reader, tool_call call, tool_after_chain_ptr afters,
                            std::optional<wh::core::run_context> context = std::nullopt)
-      : state_(wh::core::detail::make_intrusive<state>(
-            std::move(reader), std::move(call), std::move(afters),
-            std::move(context))) {}
+      : state_(wh::core::detail::make_intrusive<state>(std::move(reader), std::move(call),
+                                                       std::move(afters), std::move(context))) {}
 
   [[nodiscard]] auto read_impl() -> result_t {
     try {
@@ -175,8 +168,7 @@ public:
       state_->adapter_state.terminal = true;
       state_->adapter_state.close_source_if_enabled(state_->reader);
       return result_t{
-          wh::schema::stream::detail::make_error_chunk<
-              tool_event_reader_detail::chunk_type>(
+          wh::schema::stream::detail::make_error_chunk<tool_event_reader_detail::chunk_type>(
               wh::core::map_current_exception())};
     }
   }
@@ -188,20 +180,17 @@ public:
       state_->adapter_state.terminal = true;
       state_->adapter_state.close_source_if_enabled(state_->reader);
       return result_t{
-          wh::schema::stream::detail::make_error_chunk<
-              tool_event_reader_detail::chunk_type>(
+          wh::schema::stream::detail::make_error_chunk<tool_event_reader_detail::chunk_type>(
               wh::core::map_current_exception())};
     }
   }
 
   [[nodiscard]] auto read_async() const {
-    using input_result_t = wh::schema::stream::stream_result<
-        wh::schema::stream::stream_chunk<graph_value>>;
+    using input_result_t =
+        wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<graph_value>>;
     auto shared_state = state_;
     return shared_state->reader.read_async() |
-           stdexec::then([](auto status) {
-             return input_result_t{std::move(status)};
-           }) |
+           stdexec::then([](auto status) { return input_result_t{std::move(status)}; }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);
            }) |
@@ -220,15 +209,12 @@ public:
   }
 
   [[nodiscard]] auto is_source_closed() const noexcept -> bool {
-    return wh::schema::stream::detail::is_source_closed_if_supported(
-        state_->reader);
+    return wh::schema::stream::detail::is_source_closed_if_supported(state_->reader);
   }
 
-  auto set_automatic_close(
-      const wh::schema::stream::auto_close_options &options) -> void {
+  auto set_automatic_close(const wh::schema::stream::auto_close_options &options) -> void {
     state_->adapter_state.automatic_close = options.enabled;
-    wh::schema::stream::detail::set_automatic_close_if_supported(state_->reader,
-                                                                 options);
+    wh::schema::stream::detail::set_automatic_close_if_supported(state_->reader, options);
   }
 
 private:
@@ -240,45 +226,32 @@ private:
 
     state() = default;
 
-    state(graph_stream_reader reader_value, tool_call call_value,
-          tool_after_chain_ptr afters_value,
+    state(graph_stream_reader reader_value, tool_call call_value, tool_after_chain_ptr afters_value,
           std::optional<wh::core::run_context> context_value)
         : reader(std::move(reader_value)),
-          binding{.call = std::move(call_value),
-                  .context = std::move(context_value)},
-          afters(std::move(afters_value)),
-          adapter_state{} {}
+          binding{.call = std::move(call_value), .context = std::move(context_value)},
+          afters(std::move(afters_value)), adapter_state{} {}
   };
 
-  [[nodiscard]] static auto
-  map_read_owned(const wh::core::detail::intrusive_ptr<state> &state,
-                 result_t next) -> result_t {
+  [[nodiscard]] static auto map_read_owned(const wh::core::detail::intrusive_ptr<state> &state,
+                                           result_t next) -> result_t {
     return tool_event_reader_detail::map_read_owned(
         state->reader, state->adapter_state, state->afters,
-        [&](std::string_view) noexcept {
-          return std::addressof(state->binding);
-        },
-        std::move(next));
+        [&](std::string_view) noexcept { return std::addressof(state->binding); }, std::move(next));
   }
 
-  [[nodiscard]] static auto
-  map_try_owned(const wh::core::detail::intrusive_ptr<state> &state,
-                try_result_t next) -> try_result_t {
+  [[nodiscard]] static auto map_try_owned(const wh::core::detail::intrusive_ptr<state> &state,
+                                          try_result_t next) -> try_result_t {
     return tool_event_reader_detail::map_try_owned(
         state->reader, state->adapter_state, state->afters,
-        [&](std::string_view) noexcept {
-          return std::addressof(state->binding);
-        },
-        std::move(next));
+        [&](std::string_view) noexcept { return std::addressof(state->binding); }, std::move(next));
   }
 
-  wh::core::detail::intrusive_ptr<state> state_{
-      wh::core::detail::make_intrusive<state>()};
+  wh::core::detail::intrusive_ptr<state> state_{wh::core::detail::make_intrusive<state>()};
 };
 
 class tools_output_stream_reader final
-    : public wh::schema::stream::stream_base<tools_output_stream_reader,
-                                             graph_value> {
+    : public wh::schema::stream::stream_base<tools_output_stream_reader, graph_value> {
 private:
   using result_t = tool_event_reader_detail::result_t;
   using try_result_t = tool_event_reader_detail::try_result_t;
@@ -289,18 +262,15 @@ public:
 
   tools_output_stream_reader() = default;
   tools_output_stream_reader(const tools_output_stream_reader &) = delete;
-  auto operator=(const tools_output_stream_reader &)
-      -> tools_output_stream_reader & = delete;
+  auto operator=(const tools_output_stream_reader &) -> tools_output_stream_reader & = delete;
   tools_output_stream_reader(tools_output_stream_reader &&) noexcept = default;
-  auto operator=(tools_output_stream_reader &&) noexcept
-      -> tools_output_stream_reader & = default;
+  auto operator=(tools_output_stream_reader &&) noexcept -> tools_output_stream_reader & = default;
   ~tools_output_stream_reader() = default;
 
-  tools_output_stream_reader(graph_stream_reader reader,
-                             tool_after_chain_ptr afters,
+  tools_output_stream_reader(graph_stream_reader reader, tool_after_chain_ptr afters,
                              std::vector<binding_t> bindings)
-      : state_(wh::core::detail::make_intrusive<state>(
-            std::move(reader), std::move(afters), std::move(bindings))) {}
+      : state_(wh::core::detail::make_intrusive<state>(std::move(reader), std::move(afters),
+                                                       std::move(bindings))) {}
 
   [[nodiscard]] auto read_impl() -> result_t {
     try {
@@ -309,8 +279,8 @@ public:
       state_->adapter_state.terminal = true;
       state_->adapter_state.close_source_if_enabled(state_->reader);
       return result_t{
-          wh::schema::stream::detail::make_error_chunk<
-              tool_event_reader_detail::chunk_type>(wh::core::map_current_exception())};
+          wh::schema::stream::detail::make_error_chunk<tool_event_reader_detail::chunk_type>(
+              wh::core::map_current_exception())};
     }
   }
 
@@ -321,19 +291,17 @@ public:
       state_->adapter_state.terminal = true;
       state_->adapter_state.close_source_if_enabled(state_->reader);
       return result_t{
-          wh::schema::stream::detail::make_error_chunk<
-              tool_event_reader_detail::chunk_type>(wh::core::map_current_exception())};
+          wh::schema::stream::detail::make_error_chunk<tool_event_reader_detail::chunk_type>(
+              wh::core::map_current_exception())};
     }
   }
 
   [[nodiscard]] auto read_async() const {
-    using input_result_t = wh::schema::stream::stream_result<
-        wh::schema::stream::stream_chunk<graph_value>>;
+    using input_result_t =
+        wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<graph_value>>;
     auto shared_state = state_;
     return shared_state->reader.read_async() |
-           stdexec::then([](auto status) {
-             return input_result_t{std::move(status)};
-           }) |
+           stdexec::then([](auto status) { return input_result_t{std::move(status)}; }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);
            }) |
@@ -352,15 +320,12 @@ public:
   }
 
   [[nodiscard]] auto is_source_closed() const noexcept -> bool {
-    return wh::schema::stream::detail::is_source_closed_if_supported(
-        state_->reader);
+    return wh::schema::stream::detail::is_source_closed_if_supported(state_->reader);
   }
 
-  auto set_automatic_close(
-      const wh::schema::stream::auto_close_options &options) -> void {
+  auto set_automatic_close(const wh::schema::stream::auto_close_options &options) -> void {
     state_->adapter_state.automatic_close = options.enabled;
-    wh::schema::stream::detail::set_automatic_close_if_supported(state_->reader,
-                                                                 options);
+    wh::schema::stream::detail::set_automatic_close_if_supported(state_->reader, options);
   }
 
 private:
@@ -374,63 +339,48 @@ private:
 
     state(graph_stream_reader reader_value, tool_after_chain_ptr afters_value,
           std::vector<binding_t> bindings_value)
-        : reader(std::move(reader_value)),
-          afters(std::move(afters_value)),
-          bindings(std::move(bindings_value)),
-          adapter_state{} {}
+        : reader(std::move(reader_value)), afters(std::move(afters_value)),
+          bindings(std::move(bindings_value)), adapter_state{} {}
 
-    [[nodiscard]] auto find_binding(const std::string_view source) noexcept
-        -> binding_t * {
-      auto iter = std::ranges::find_if(bindings, [&](binding_t &binding) {
-        return binding.call.call_id == source;
-      });
+    [[nodiscard]] auto find_binding(const std::string_view source) noexcept -> binding_t * {
+      auto iter = std::ranges::find_if(
+          bindings, [&](binding_t &binding) { return binding.call.call_id == source; });
       return iter == bindings.end() ? nullptr : std::addressof(*iter);
     }
   };
 
-  [[nodiscard]] static auto
-  map_read_owned(const wh::core::detail::intrusive_ptr<state> &state,
-                 result_t next) -> result_t {
+  [[nodiscard]] static auto map_read_owned(const wh::core::detail::intrusive_ptr<state> &state,
+                                           result_t next) -> result_t {
     return tool_event_reader_detail::map_read_owned(
         state->reader, state->adapter_state, state->afters,
-        [&](const std::string_view source) noexcept {
-          return state->find_binding(source);
-        },
+        [&](const std::string_view source) noexcept { return state->find_binding(source); },
         std::move(next));
   }
 
-  [[nodiscard]] static auto
-  map_try_owned(const wh::core::detail::intrusive_ptr<state> &state,
-                try_result_t next) -> try_result_t {
+  [[nodiscard]] static auto map_try_owned(const wh::core::detail::intrusive_ptr<state> &state,
+                                          try_result_t next) -> try_result_t {
     return tool_event_reader_detail::map_try_owned(
         state->reader, state->adapter_state, state->afters,
-        [&](const std::string_view source) noexcept {
-          return state->find_binding(source);
-        },
+        [&](const std::string_view source) noexcept { return state->find_binding(source); },
         std::move(next));
   }
 
-  wh::core::detail::intrusive_ptr<state> state_{
-      wh::core::detail::make_intrusive<state>()};
+  wh::core::detail::intrusive_ptr<state> state_{wh::core::detail::make_intrusive<state>()};
 };
 
-[[nodiscard]] inline auto
-make_tool_event_stream_reader(graph_stream_reader reader, tool_call call,
-                              tool_after_chain_ptr afters,
-                              std::optional<wh::core::run_context> context = std::nullopt)
-    -> graph_stream_reader {
-  return graph_stream_reader{tool_event_stream_reader{
-      std::move(reader), std::move(call), std::move(afters),
-      std::move(context)}};
+[[nodiscard]] inline auto make_tool_event_stream_reader(
+    graph_stream_reader reader, tool_call call, tool_after_chain_ptr afters,
+    std::optional<wh::core::run_context> context = std::nullopt) -> graph_stream_reader {
+  return graph_stream_reader{tool_event_stream_reader{std::move(reader), std::move(call),
+                                                      std::move(afters), std::move(context)}};
 }
 
 [[nodiscard]] inline auto
-make_tools_output_stream_reader(
-    graph_stream_reader reader, tool_after_chain_ptr afters,
-    std::vector<tool_event_reader_detail::tool_event_binding> bindings)
+make_tools_output_stream_reader(graph_stream_reader reader, tool_after_chain_ptr afters,
+                                std::vector<tool_event_reader_detail::tool_event_binding> bindings)
     -> graph_stream_reader {
-  return graph_stream_reader{tools_output_stream_reader{
-      std::move(reader), std::move(afters), std::move(bindings)}};
+  return graph_stream_reader{
+      tools_output_stream_reader{std::move(reader), std::move(afters), std::move(bindings)}};
 }
 
 } // namespace detail

@@ -1,5 +1,3 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <concepts>
 #include <limits>
 #include <optional>
@@ -8,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
@@ -38,14 +37,12 @@ struct throwing_scheduler {
     throwing_scheduler_state *state{nullptr};
 
     using sender_concept = stdexec::sender_t;
-    using completion_signatures =
-        stdexec::completion_signatures<stdexec::set_value_t()>;
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <typename receiver_t>
     auto connect(receiver_t receiver) const -> schedule_op<receiver_t> {
       ++state->connect_calls;
-      if (state->fail_on_connect.has_value() &&
-          state->connect_calls == *state->fail_on_connect) {
+      if (state->fail_on_connect.has_value() && state->connect_calls == *state->fail_on_connect) {
         throw std::runtime_error("schedule connect failed");
       }
       return schedule_op<receiver_t>{std::move(receiver)};
@@ -56,12 +53,9 @@ struct throwing_scheduler {
 
   throwing_scheduler_state *state{nullptr};
 
-  [[nodiscard]] auto schedule() const noexcept -> schedule_sender {
-    return schedule_sender{state};
-  }
+  [[nodiscard]] auto schedule() const noexcept -> schedule_sender { return schedule_sender{state}; }
 
-  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept
-      -> bool = default;
+  [[nodiscard]] auto operator==(const throwing_scheduler &) const noexcept -> bool = default;
 };
 
 template <typename value_t, typename env_t> struct single_completion_state {
@@ -93,22 +87,19 @@ template <typename value_t, typename env_t> struct single_completion_receiver {
 
 template <typename merge_t, typename reader_t>
 concept merge_supports_attach = requires(merge_t reader, reader_t lane) {
-  {
-    reader.attach("lane", std::move(lane))
-  } -> std::same_as<wh::core::result<void>>;
+  { reader.attach("lane", std::move(lane)) } -> std::same_as<wh::core::result<void>>;
 };
 
 template <typename merge_t>
 concept merge_supports_disable = requires(merge_t reader) {
-  {
-    reader.disable("lane")
-  } -> std::same_as<wh::core::result<void>>;
+  { reader.disable("lane") } -> std::same_as<wh::core::result<void>>;
 };
 
 } // namespace
 
 TEST_CASE("merge stream reader detail helpers sort and label lanes deterministically",
-          "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][sort_named_stream_readers][branch][boundary]") {
+          "[UT][wh/schema/stream/reader/"
+          "merge_stream_reader.hpp][sort_named_stream_readers][branch][boundary]") {
   using reader_t = wh::schema::stream::pipe_stream_reader<int>;
   auto [writer_z, reader_z] = wh::schema::stream::make_pipe_stream<int>(1U);
   auto [writer_a, reader_a] = wh::schema::stream::make_pipe_stream<int>(1U);
@@ -140,23 +131,20 @@ TEST_CASE("merge stream reader factories select static or dynamic topology surfa
   using reader_t = wh::schema::stream::pipe_stream_reader<int>;
   using static_merge_t = decltype(wh::schema::stream::make_merge_stream_reader(
       std::vector<wh::schema::stream::named_stream_reader<reader_t>>{}));
-  using vector_merge_t = decltype(
-      wh::schema::stream::make_merge_stream_reader(std::vector<reader_t>{}));
-  using dynamic_merge_t = decltype(
-      wh::schema::stream::make_merge_stream_reader<reader_t>(
-          std::vector<std::string>{}));
+  using vector_merge_t =
+      decltype(wh::schema::stream::make_merge_stream_reader(std::vector<reader_t>{}));
+  using dynamic_merge_t =
+      decltype(wh::schema::stream::make_merge_stream_reader<reader_t>(std::vector<std::string>{}));
 
-  STATIC_REQUIRE(std::same_as<
-                 static_merge_t,
-                 wh::schema::stream::merge_stream_reader<
-                     reader_t,
-                     wh::schema::stream::merge_topology_mode::static_attached>>);
+  STATIC_REQUIRE(
+      std::same_as<static_merge_t,
+                   wh::schema::stream::merge_stream_reader<
+                       reader_t, wh::schema::stream::merge_topology_mode::static_attached>>);
   STATIC_REQUIRE(std::same_as<vector_merge_t, static_merge_t>);
-  STATIC_REQUIRE(std::same_as<
-                 dynamic_merge_t,
-                 wh::schema::stream::merge_stream_reader<
-                     reader_t,
-                     wh::schema::stream::merge_topology_mode::dynamic_injection>>);
+  STATIC_REQUIRE(
+      std::same_as<dynamic_merge_t,
+                   wh::schema::stream::merge_stream_reader<
+                       reader_t, wh::schema::stream::merge_topology_mode::dynamic_injection>>);
 
   STATIC_REQUIRE(!std::constructible_from<static_merge_t, std::vector<std::string>>);
   STATIC_REQUIRE(merge_supports_attach<dynamic_merge_t, reader_t>);
@@ -171,26 +159,22 @@ TEST_CASE("merge stream reader detail validates uint32 slot and array capacity l
     std::uint64_t words[2]{};
   };
 
-  const auto indexed_limit =
-      wh::schema::stream::detail::indexed_capacity_limit<>();
+  const auto indexed_limit = wh::schema::stream::detail::indexed_capacity_limit<>();
   REQUIRE(wh::schema::stream::detail::validate_indexed_capacity<>(
-              indexed_limit,
-              "merge_stream_reader lane count exceeds uint32_t slot capacity") ==
+              indexed_limit, "merge_stream_reader lane count exceeds uint32_t slot capacity") ==
           indexed_limit);
   if (indexed_limit < std::numeric_limits<std::size_t>::max()) {
     REQUIRE_THROWS_AS(
         wh::schema::stream::detail::validate_indexed_capacity<>(
-            indexed_limit + 1U,
-            "merge_stream_reader lane count exceeds uint32_t slot capacity"),
+            indexed_limit + 1U, "merge_stream_reader lane count exceeds uint32_t slot capacity"),
         std::length_error);
   }
 
-  const auto slot_limit =
-      wh::schema::stream::detail::slot_array_capacity_limit<probe_slot>();
-  REQUIRE(wh::schema::stream::detail::validate_slot_array_capacity<probe_slot>(
-              slot_limit,
-              "merge_stream_reader round tracker slot count exceeds supported capacity") ==
-          slot_limit);
+  const auto slot_limit = wh::schema::stream::detail::slot_array_capacity_limit<probe_slot>();
+  REQUIRE(
+      wh::schema::stream::detail::validate_slot_array_capacity<probe_slot>(
+          slot_limit, "merge_stream_reader round tracker slot count exceeds supported capacity") ==
+      slot_limit);
   if (slot_limit < std::numeric_limits<std::size_t>::max()) {
     REQUIRE_THROWS_AS(
         wh::schema::stream::detail::validate_slot_array_capacity<probe_slot>(
@@ -201,7 +185,8 @@ TEST_CASE("merge stream reader detail validates uint32 slot and array capacity l
 }
 
 TEST_CASE("merge stream reader covers fixed dynamic attach disable share and source eof branches",
-          "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][merge_stream_reader::attach][condition][branch][concurrency]") {
+          "[UT][wh/schema/stream/reader/"
+          "merge_stream_reader.hpp][merge_stream_reader::attach][condition][branch][concurrency]") {
   {
     std::vector<wh::schema::stream::pipe_stream_reader<int>> readers{};
     std::vector<wh::schema::stream::pipe_stream_writer<int>> writers{};
@@ -244,14 +229,13 @@ TEST_CASE("merge stream reader covers fixed dynamic attach disable share and sou
   auto merged = wh::schema::stream::make_merge_stream_reader(std::move(named));
 
   auto first = merged.try_read();
-  REQUIRE(std::holds_alternative<wh::schema::stream::stream_result<
-              wh::schema::stream::stream_chunk<int>>>(first));
-  auto first_value = std::move(std::get<wh::schema::stream::stream_result<
-      wh::schema::stream::stream_chunk<int>>>(first));
+  REQUIRE(std::holds_alternative<
+          wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(first));
+  auto first_value = std::move(
+      std::get<wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>>(first));
   REQUIRE(first_value.has_value());
   REQUIRE(first_value.value().value.has_value());
-  REQUIRE((first_value.value().source == "B" ||
-           first_value.value().source == "A"));
+  REQUIRE((first_value.value().source == "B" || first_value.value().source == "A"));
 
   auto shared = merged.share();
   REQUIRE(shared.close().has_value());
@@ -259,23 +243,23 @@ TEST_CASE("merge stream reader covers fixed dynamic attach disable share and sou
 }
 
 TEST_CASE("merge stream reader async stop restart and pending attach paths remain usable",
-          "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][merge_stream_reader::read_async][concurrency][branch]") {
+          "[UT][wh/schema/stream/reader/"
+          "merge_stream_reader.hpp][merge_stream_reader::read_async][concurrency][branch]") {
   using reader_t = wh::schema::stream::pipe_stream_reader<int>;
-  auto merged = wh::schema::stream::make_merge_stream_reader<reader_t>(
-      std::vector<std::string>{"A"});
+  auto merged =
+      wh::schema::stream::make_merge_stream_reader<reader_t>(std::vector<std::string>{"A"});
 
-  using result_t =
-      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
-  using env_t = wh::testing::helper::scheduler_env<
-      stdexec::inline_scheduler, stdexec::inplace_stop_token>;
+  using result_t = wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
+  using env_t =
+      wh::testing::helper::scheduler_env<stdexec::inline_scheduler, stdexec::inplace_stop_token>;
 
   wh::testing::helper::sender_capture<result_t> capture{};
   stdexec::inplace_stop_source stop_source{};
   auto operation = stdexec::connect(
       merged.read_async(),
       wh::testing::helper::sender_capture_receiver<result_t, env_t>{
-          &capture, {.scheduler = stdexec::inline_scheduler{},
-                     .stop_token = stop_source.get_token()}});
+          &capture,
+          {.scheduler = stdexec::inline_scheduler{}, .stop_token = stop_source.get_token()}});
   stdexec::start(operation);
   REQUIRE_FALSE(capture.ready.try_acquire());
   stop_source.request_stop();
@@ -294,8 +278,8 @@ TEST_CASE("merge stream reader async stop restart and pending attach paths remai
   REQUIRE(next.value().value == std::optional<int>{33});
   REQUIRE(next.value().source == "A");
 
-  auto live = wh::schema::stream::make_merge_stream_reader<reader_t>(
-      std::vector<std::string>{"A", "B"});
+  auto live =
+      wh::schema::stream::make_merge_stream_reader<reader_t>(std::vector<std::string>{"A", "B"});
   REQUIRE(live.disable("B").has_value());
   auto [writer_a, reader_attached] = wh::schema::stream::make_pipe_stream<int>(2U);
   REQUIRE(live.attach("A", std::move(reader_attached)).has_value());
@@ -317,10 +301,10 @@ TEST_CASE("merge stream reader async stop restart and pending attach paths remai
 }
 
 TEST_CASE("merge stream reader resume scheduling failure delivers one terminal failure",
-          "[UT][wh/schema/stream/reader/merge_stream_reader.hpp][merge_stream_reader::read_async][resume][failure]") {
+          "[UT][wh/schema/stream/reader/"
+          "merge_stream_reader.hpp][merge_stream_reader::read_async][resume][failure]") {
   using reader_t = wh::schema::stream::pipe_stream_reader<int>;
-  using result_t =
-      wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
+  using result_t = wh::schema::stream::stream_result<wh::schema::stream::stream_chunk<int>>;
 
   auto [writer, reader] = wh::schema::stream::make_pipe_stream<int>(2U);
   REQUIRE(writer.try_write(7).has_value());
@@ -332,14 +316,12 @@ TEST_CASE("merge stream reader resume scheduling failure delivers one terminal f
 
   throwing_scheduler_state scheduler_state{};
   scheduler_state.fail_on_connect = 1U;
-  auto env =
-      wh::testing::helper::make_scheduler_env(throwing_scheduler{&scheduler_state});
+  auto env = wh::testing::helper::make_scheduler_env(throwing_scheduler{&scheduler_state});
 
   using env_t = decltype(env);
   single_completion_state<result_t, env_t> state{};
-  auto operation = stdexec::connect(
-      merged.read_async(),
-      single_completion_receiver<result_t, env_t>{&state, env});
+  auto operation = stdexec::connect(merged.read_async(),
+                                    single_completion_receiver<result_t, env_t>{&state, env});
   stdexec::start(operation);
 
   REQUIRE(scheduler_state.connect_calls == 1U);

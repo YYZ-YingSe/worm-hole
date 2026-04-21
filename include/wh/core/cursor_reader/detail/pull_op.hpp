@@ -1,8 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <exception>
-#include <atomic>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -19,15 +19,14 @@
 namespace wh::core::cursor_reader_detail {
 
 template <typename owner_t, typename source_t, typename result_t>
-class pull_op final : public wh::core::detail::intrusive_enable_from_this<
-                          pull_op<owner_t, source_t, result_t>> {
+class pull_op final
+    : public wh::core::detail::intrusive_enable_from_this<pull_op<owner_t, source_t, result_t>> {
 public:
   using self_t = pull_op<owner_t, source_t, result_t>;
   using owner_handle_t = wh::core::detail::intrusive_ptr<owner_t>;
   using scheduler_t = wh::core::detail::any_resume_scheduler_t;
   using sender_t = decltype(wh::core::resume_on(
-      stdexec::starts_on(std::declval<scheduler_t>(),
-                         std::declval<source_t &>().read_async()),
+      stdexec::starts_on(std::declval<scheduler_t>(), std::declval<source_t &>().read_async()),
       exec::trampoline_scheduler{}));
 
   friend owner_t;
@@ -58,15 +57,12 @@ public:
       self->publish_completion(completion_t{std::move(status)});
     }
 
-    template <typename error_t>
-    auto set_error(error_t &&error) noexcept -> void {
-      self->publish_completion(completion_t{
-          failure_state{map_error_code(std::forward<error_t>(error))}});
+    template <typename error_t> auto set_error(error_t &&error) noexcept -> void {
+      self->publish_completion(
+          completion_t{failure_state{map_error_code(std::forward<error_t>(error))}});
     }
 
-    auto set_stopped() noexcept -> void {
-      self->publish_completion(completion_t{stopped_state{}});
-    }
+    auto set_stopped() noexcept -> void { self->publish_completion(completion_t{stopped_state{}}); }
 
     [[nodiscard]] auto get_env() const noexcept -> stop_env {
       return stop_env{self->stop_source_.get_token()};
@@ -83,12 +79,11 @@ public:
     try {
       [[maybe_unused]] auto &child_op =
           child_op_.template construct_with<op_state_t>([&]() -> op_state_t {
-        return stdexec::connect(
-            wh::core::resume_on(
-                stdexec::starts_on(std::move(scheduler), source.read_async()),
-                exec::trampoline_scheduler{}),
-            receiver{this});
-      });
+            return stdexec::connect(
+                wh::core::resume_on(stdexec::starts_on(std::move(scheduler), source.read_async()),
+                                    exec::trampoline_scheduler{}),
+                receiver{this});
+          });
       child_engaged_ = true;
       started_.store(true, std::memory_order_release);
       stdexec::start(child_op_.template get<op_state_t>());
@@ -98,14 +93,12 @@ public:
       }
     } catch (...) {
       start_returned_.store(true, std::memory_order_release);
-      publish_completion(completion_t{
-          failure_state{map_error_code(std::current_exception())}});
+      publish_completion(completion_t{failure_state{map_error_code(std::current_exception())}});
     }
   }
 
   auto request_stop() noexcept -> void {
-    if (!started_.load(std::memory_order_acquire) ||
-        completed_.load(std::memory_order_acquire)) {
+    if (!started_.load(std::memory_order_acquire) || completed_.load(std::memory_order_acquire)) {
       return;
     }
     stop_source_.request_stop();
@@ -142,10 +135,8 @@ private:
 
     if (auto *status = std::get_if<result_t>(&completion); status != nullptr) {
       owner_->finish_source_pull(this, std::move(*status), false);
-    } else if (auto *failure = std::get_if<failure_state>(&completion);
-               failure != nullptr) {
-      owner_->finish_source_pull(this, owner_->async_failure(failure->code),
-                                 true);
+    } else if (auto *failure = std::get_if<failure_state>(&completion); failure != nullptr) {
+      owner_->finish_source_pull(this, owner_->async_failure(failure->code), true);
     } else {
       owner_->finish_source_pull_stopped(this);
     }
@@ -159,13 +150,10 @@ private:
   }
 
   template <typename error_t>
-  [[nodiscard]] static auto map_error_code(error_t &&error) noexcept
-      -> wh::core::error_code {
-    if constexpr (std::same_as<std::remove_cvref_t<error_t>,
-                               wh::core::error_code>) {
+  [[nodiscard]] static auto map_error_code(error_t &&error) noexcept -> wh::core::error_code {
+    if constexpr (std::same_as<std::remove_cvref_t<error_t>, wh::core::error_code>) {
       return std::forward<error_t>(error);
-    } else if constexpr (std::same_as<std::remove_cvref_t<error_t>,
-                                      std::exception_ptr>) {
+    } else if constexpr (std::same_as<std::remove_cvref_t<error_t>, std::exception_ptr>) {
       try {
         std::rethrow_exception(std::forward<error_t>(error));
       } catch (const std::exception &exception) {
@@ -180,8 +168,7 @@ private:
 
   owner_handle_t owner_{};
   stdexec::inplace_stop_source stop_source_{};
-  wh::core::detail::manual_storage<sizeof(op_state_t), alignof(op_state_t)>
-      child_op_{};
+  wh::core::detail::manual_storage<sizeof(op_state_t), alignof(op_state_t)> child_op_{};
   std::optional<completion_t> completion_{};
   bool child_engaged_{false};
   std::atomic<bool> completed_{false};

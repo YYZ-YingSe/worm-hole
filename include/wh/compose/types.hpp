@@ -33,8 +33,7 @@ using graph_stream_reader = wh::schema::stream::any_stream_reader<graph_value>;
 /// Type-erased graph stream writer used across compose graph boundaries.
 using graph_stream_writer = wh::schema::stream::any_stream_writer<graph_value>;
 /// Type-erased async result boundary carrying one graph value.
-using graph_value_sender =
-    wh::core::detail::result_sender<wh::core::result<graph_value>>;
+using graph_value_sender = wh::core::detail::result_sender<wh::core::result<graph_value>>;
 /// Logical contract for node input/output boundaries.
 enum class node_contract : std::uint8_t {
   /// One scalar/object payload.

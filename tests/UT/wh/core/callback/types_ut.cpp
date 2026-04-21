@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/callback/types.hpp"
 
@@ -25,10 +25,8 @@ TEST_CASE("callback stage reversal marks start only",
   REQUIRE(wh::core::is_reverse_callback_stage(callback_stage::start));
   REQUIRE_FALSE(wh::core::is_reverse_callback_stage(callback_stage::end));
   REQUIRE_FALSE(wh::core::is_reverse_callback_stage(callback_stage::error));
-  REQUIRE_FALSE(
-      wh::core::is_reverse_callback_stage(callback_stage::stream_start));
-  REQUIRE_FALSE(
-      wh::core::is_reverse_callback_stage(callback_stage::stream_end));
+  REQUIRE_FALSE(wh::core::is_reverse_callback_stage(callback_stage::stream_start));
+  REQUIRE_FALSE(wh::core::is_reverse_callback_stage(callback_stage::stream_end));
 }
 
 TEST_CASE("callback event helpers expose borrowed and owning typed access",

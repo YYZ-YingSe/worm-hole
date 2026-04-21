@@ -1,8 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <exception>
 #include <stdexcept>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/sender_capture.hpp"
@@ -27,9 +26,8 @@ TEST_CASE("defer sender constructs child lazily and propagates factory exception
   });
 
   wh::testing::helper::sender_capture<void> capture{};
-  auto operation = stdexec::connect(
-      std::move(throwing_sender),
-      wh::testing::helper::sender_capture_receiver<void>{&capture});
+  auto operation = stdexec::connect(std::move(throwing_sender),
+                                    wh::testing::helper::sender_capture_receiver<void>{&capture});
   stdexec::start(operation);
   REQUIRE(capture.ready.try_acquire());
   REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::error);
@@ -40,33 +38,28 @@ TEST_CASE("defer result sender normalizes downstream sender errors into result f
           "[UT][wh/core/stdexec/defer_sender.hpp][defer_result_sender][branch]") {
   using result_t = wh::core::result<int>;
 
-  auto sender = wh::core::detail::defer_result_sender<result_t>([] {
-    return stdexec::just_error(std::make_exception_ptr(std::runtime_error{"boom"}));
-  });
+  auto sender = wh::core::detail::defer_result_sender<result_t>(
+      [] { return stdexec::just_error(std::make_exception_ptr(std::runtime_error{"boom"})); });
 
-  const auto status =
-      wh::testing::helper::wait_value_on_test_thread(std::move(sender));
+  const auto status = wh::testing::helper::wait_value_on_test_thread(std::move(sender));
   REQUIRE(status.has_error());
   REQUIRE(status.error() == wh::core::errc::internal_error);
 }
 
-TEST_CASE("defer result sender preserves already-materialized result payloads",
-          "[UT][wh/core/stdexec/defer_sender.hpp][defer_result_sender][condition][branch][boundary]") {
+TEST_CASE(
+    "defer result sender preserves already-materialized result payloads",
+    "[UT][wh/core/stdexec/defer_sender.hpp][defer_result_sender][condition][branch][boundary]") {
   using result_t = wh::core::result<int>;
 
-  auto success_sender = wh::core::detail::defer_result_sender<result_t>([] {
-    return stdexec::just(result_t{41});
-  });
-  const auto success =
-      wh::testing::helper::wait_value_on_test_thread(std::move(success_sender));
+  auto success_sender =
+      wh::core::detail::defer_result_sender<result_t>([] { return stdexec::just(result_t{41}); });
+  const auto success = wh::testing::helper::wait_value_on_test_thread(std::move(success_sender));
   REQUIRE(success.has_value());
   REQUIRE(success.value() == 41);
 
-  auto failure_sender = wh::core::detail::defer_result_sender<result_t>([] {
-    return stdexec::just(result_t::failure(wh::core::errc::timeout));
-  });
-  const auto failure =
-      wh::testing::helper::wait_value_on_test_thread(std::move(failure_sender));
+  auto failure_sender = wh::core::detail::defer_result_sender<result_t>(
+      [] { return stdexec::just(result_t::failure(wh::core::errc::timeout)); });
+  const auto failure = wh::testing::helper::wait_value_on_test_thread(std::move(failure_sender));
   REQUIRE(failure.has_error());
   REQUIRE(failure.error() == wh::core::errc::timeout);
 }

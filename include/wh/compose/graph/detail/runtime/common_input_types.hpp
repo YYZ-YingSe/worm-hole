@@ -19,12 +19,7 @@ namespace wh::compose::detail::input_runtime {
 
 enum class input_edge_status : std::uint8_t { waiting, active, disabled };
 
-enum class dag_node_phase : std::uint8_t {
-  pending,
-  running,
-  executed,
-  skipped
-};
+enum class dag_node_phase : std::uint8_t { pending, running, executed, skipped };
 
 struct input_lane {
   std::uint32_t edge_id{0U};
@@ -177,12 +172,9 @@ struct runtime_io_storage {
     output_valid.set(node_id);
   }
 
-  auto mark_stream_output(const std::uint32_t node_id) -> void {
-    output_valid.set(node_id);
-  }
+  auto mark_stream_output(const std::uint32_t node_id) -> void { output_valid.set(node_id); }
 
-  auto mark_final_output_reader(const std::uint32_t node_id, graph_stream_reader reader)
-      -> void {
+  auto mark_final_output_reader(const std::uint32_t node_id, graph_stream_reader reader) -> void {
     final_output_reader.emplace(std::move(reader));
     output_valid.set(node_id);
   }

@@ -46,8 +46,7 @@ TEST_CASE("indexer options expose component specific extras",
           "[UT][wh/indexer/options.hpp][indexer_options::component_options][boundary]") {
   wh::indexer::indexer_options options{};
   options.component_options().set_impl_specific(indexer_options_probe{5});
-  const auto *probe =
-      options.component_options().impl_specific_if<indexer_options_probe>();
+  const auto *probe = options.component_options().impl_specific_if<indexer_options_probe>();
   REQUIRE(probe != nullptr);
   REQUIRE(probe->value == 5);
 }

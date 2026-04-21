@@ -106,8 +106,7 @@ struct invoke_outputs {
   /// Optional stream-read error detail captured for this run.
   std::optional<graph_new_stream_read_error_detail> stream_read_error{};
   /// Optional external-interrupt resolution captured for this run.
-  std::optional<graph_external_interrupt_resolution_kind>
-      external_interrupt_resolution{};
+  std::optional<graph_external_interrupt_resolution_kind> external_interrupt_resolution{};
   /// Optional checkpoint error detail captured for this run.
   std::optional<checkpoint_error_detail> checkpoint_error{};
 };
@@ -170,65 +169,51 @@ struct node_scope {
   graph_process_state *local_process_state{nullptr};
 };
 
-inline auto merge_nested_outputs(invoke_outputs &target,
-                                 invoke_outputs &&nested) -> void {
-  target.publish_transition_log =
-      target.publish_transition_log || nested.publish_transition_log;
-  if (target.completed_node_keys.empty() &&
-      !nested.completed_node_keys.empty()) {
+inline auto merge_nested_outputs(invoke_outputs &target, invoke_outputs &&nested) -> void {
+  target.publish_transition_log = target.publish_transition_log || nested.publish_transition_log;
+  if (target.completed_node_keys.empty() && !nested.completed_node_keys.empty()) {
     target.completed_node_keys = std::move(nested.completed_node_keys);
   }
-  target.transition_log.insert(
-      target.transition_log.end(),
-      std::make_move_iterator(nested.transition_log.begin()),
-      std::make_move_iterator(nested.transition_log.end()));
-  target.debug_events.insert(
-      target.debug_events.end(),
-      std::make_move_iterator(nested.debug_events.begin()),
-      std::make_move_iterator(nested.debug_events.end()));
-  target.state_snapshot_events.insert(
-      target.state_snapshot_events.end(),
-      std::make_move_iterator(nested.state_snapshot_events.begin()),
-      std::make_move_iterator(nested.state_snapshot_events.end()));
-  target.state_delta_events.insert(
-      target.state_delta_events.end(),
-      std::make_move_iterator(nested.state_delta_events.begin()),
-      std::make_move_iterator(nested.state_delta_events.end()));
+  target.transition_log.insert(target.transition_log.end(),
+                               std::make_move_iterator(nested.transition_log.begin()),
+                               std::make_move_iterator(nested.transition_log.end()));
+  target.debug_events.insert(target.debug_events.end(),
+                             std::make_move_iterator(nested.debug_events.begin()),
+                             std::make_move_iterator(nested.debug_events.end()));
+  target.state_snapshot_events.insert(target.state_snapshot_events.end(),
+                                      std::make_move_iterator(nested.state_snapshot_events.begin()),
+                                      std::make_move_iterator(nested.state_snapshot_events.end()));
+  target.state_delta_events.insert(target.state_delta_events.end(),
+                                   std::make_move_iterator(nested.state_delta_events.begin()),
+                                   std::make_move_iterator(nested.state_delta_events.end()));
   target.runtime_message_events.insert(
       target.runtime_message_events.end(),
       std::make_move_iterator(nested.runtime_message_events.begin()),
       std::make_move_iterator(nested.runtime_message_events.end()));
-  target.custom_events.insert(
-      target.custom_events.end(),
-      std::make_move_iterator(nested.custom_events.begin()),
-      std::make_move_iterator(nested.custom_events.end()));
+  target.custom_events.insert(target.custom_events.end(),
+                              std::make_move_iterator(nested.custom_events.begin()),
+                              std::make_move_iterator(nested.custom_events.end()));
 
-  if (!target.step_limit_error.has_value() &&
-      nested.step_limit_error.has_value()) {
+  if (!target.step_limit_error.has_value() && nested.step_limit_error.has_value()) {
     target.step_limit_error = std::move(nested.step_limit_error);
   }
-  if (!target.node_timeout_error.has_value() &&
-      nested.node_timeout_error.has_value()) {
+  if (!target.node_timeout_error.has_value() && nested.node_timeout_error.has_value()) {
     target.node_timeout_error = std::move(nested.node_timeout_error);
   }
   if (!target.node_run_error.has_value() && nested.node_run_error.has_value()) {
     target.node_run_error = std::move(nested.node_run_error);
   }
-  if (!target.graph_run_error.has_value() &&
-      nested.graph_run_error.has_value()) {
+  if (!target.graph_run_error.has_value() && nested.graph_run_error.has_value()) {
     target.graph_run_error = std::move(nested.graph_run_error);
   }
-  if (!target.stream_read_error.has_value() &&
-      nested.stream_read_error.has_value()) {
+  if (!target.stream_read_error.has_value() && nested.stream_read_error.has_value()) {
     target.stream_read_error = std::move(nested.stream_read_error);
   }
   if (!target.external_interrupt_resolution.has_value() &&
       nested.external_interrupt_resolution.has_value()) {
-    target.external_interrupt_resolution =
-        std::move(nested.external_interrupt_resolution);
+    target.external_interrupt_resolution = std::move(nested.external_interrupt_resolution);
   }
-  if (!target.checkpoint_error.has_value() &&
-      nested.checkpoint_error.has_value()) {
+  if (!target.checkpoint_error.has_value() && nested.checkpoint_error.has_value()) {
     target.checkpoint_error = std::move(nested.checkpoint_error);
   }
 }

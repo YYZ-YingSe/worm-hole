@@ -14,12 +14,10 @@ namespace detail {
 template <typename type_t> inline constexpr bool stream_always_false_v = false;
 
 template <typename derived_t>
-concept stream_read_impl =
-    requires(derived_t &derived) { derived.read_impl(); };
+concept stream_read_impl = requires(derived_t &derived) { derived.read_impl(); };
 
 template <typename derived_t>
-concept stream_try_read_impl =
-    requires(derived_t &derived) { derived.try_read_impl(); };
+concept stream_try_read_impl = requires(derived_t &derived) { derived.try_read_impl(); };
 
 } // namespace detail
 
@@ -78,15 +76,11 @@ public:
   }
 
   /// Returns closure status from derived stream.
-  [[nodiscard]] auto is_closed() const noexcept -> bool {
-    return derived().is_closed_impl();
-  }
+  [[nodiscard]] auto is_closed() const noexcept -> bool { return derived().is_closed_impl(); }
 
 private:
   /// Downcasts to mutable derived type.
-  [[nodiscard]] auto derived() noexcept -> derived_t & {
-    return static_cast<derived_t &>(*this);
-  }
+  [[nodiscard]] auto derived() noexcept -> derived_t & { return static_cast<derived_t &>(*this); }
 
   /// Downcasts to const derived type.
   [[nodiscard]] auto derived() const noexcept -> const derived_t & {

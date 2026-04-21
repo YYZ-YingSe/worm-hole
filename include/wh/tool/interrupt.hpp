@@ -34,35 +34,30 @@ struct aggregated_interrupts {
     -> wh::core::result<wh::core::interrupt_signal> {
   auto owned_interrupt = wh::core::into_owned(interrupt);
   if (owned_interrupt.has_error()) {
-    return wh::core::result<wh::core::interrupt_signal>::failure(
-        owned_interrupt.error());
+    return wh::core::result<wh::core::interrupt_signal>::failure(owned_interrupt.error());
   }
   auto materialized = std::move(owned_interrupt).value();
   return wh::core::interrupt_signal{std::move(materialized.interrupt_id),
                                     std::move(materialized.location),
-                                    std::move(materialized.payload),
-                                    wh::core::any{}, false};
+                                    std::move(materialized.payload), wh::core::any{}, false};
 }
 
 /// Converts movable tool interrupt to core interrupt signal.
 [[nodiscard]] inline auto to_interrupt_signal(tool_interrupt &&interrupt)
     -> wh::core::interrupt_signal {
   return wh::core::interrupt_signal{std::move(interrupt.interrupt_id),
-                                    std::move(interrupt.location),
-                                    std::move(interrupt.payload),
+                                    std::move(interrupt.location), std::move(interrupt.payload),
                                     wh::core::any{}, false};
 }
 
 /// Converts core interrupt signal back to tool interrupt.
-[[nodiscard]] inline auto
-from_interrupt_signal(const wh::core::interrupt_signal &signal)
+[[nodiscard]] inline auto from_interrupt_signal(const wh::core::interrupt_signal &signal)
     -> wh::core::result<tool_interrupt> {
   auto payload = wh::core::into_owned(signal.state);
   if (payload.has_error()) {
     return wh::core::result<tool_interrupt>::failure(payload.error());
   }
-  return tool_interrupt{signal.interrupt_id, signal.location,
-                        std::move(payload).value()};
+  return tool_interrupt{signal.interrupt_id, signal.location, std::move(payload).value()};
 }
 
 /// Converts movable core interrupt signal back to tool interrupt.
@@ -75,8 +70,7 @@ from_interrupt_signal(const wh::core::interrupt_signal &signal)
 /// Checks whether interrupt location matches current resume target.
 [[nodiscard]] inline auto is_resume_target(const tool_interrupt &interrupt,
                                            const wh::core::resume_state &state,
-                                           const bool exact = false) noexcept
-    -> bool {
+                                           const bool exact = false) noexcept -> bool {
   if (exact) {
     return state.is_exact_resume_target(interrupt.location);
   }
@@ -87,19 +81,17 @@ from_interrupt_signal(const wh::core::interrupt_signal &signal)
 [[nodiscard]] inline auto inject_resume_data(const tool_interrupt &interrupt,
                                              wh::core::resume_state &state)
     -> wh::core::result<void> {
-  return state.upsert(interrupt.interrupt_id, interrupt.location,
-                      interrupt.payload);
+  return state.upsert(interrupt.interrupt_id, interrupt.location, interrupt.payload);
 }
 
 /// Selects first failing cause as root cause.
-[[nodiscard]] inline auto
-infer_root_cause(const std::span<const wh::core::error_code> causes)
+[[nodiscard]] inline auto infer_root_cause(const std::span<const wh::core::error_code> causes)
     -> std::optional<wh::core::error_code> {
   if (causes.empty()) {
     return std::nullopt;
   }
-  const auto first_non_ok = std::ranges::find_if(
-      causes, [](const wh::core::error_code cause) { return cause.failed(); });
+  const auto first_non_ok =
+      std::ranges::find_if(causes, [](const wh::core::error_code cause) { return cause.failed(); });
   if (first_non_ok == causes.end()) {
     return std::nullopt;
   }
@@ -107,13 +99,12 @@ infer_root_cause(const std::span<const wh::core::error_code> causes)
 }
 
 /// Packs interrupts plus optional root-cause into aggregate payload.
-[[nodiscard]] inline auto aggregate_interrupts(
-    const std::span<const tool_interrupt> interrupts,
-    const std::optional<wh::core::error_code> &root_cause = std::nullopt)
+[[nodiscard]] inline auto
+aggregate_interrupts(const std::span<const tool_interrupt> interrupts,
+                     const std::optional<wh::core::error_code> &root_cause = std::nullopt)
     -> wh::core::result<aggregated_interrupts> {
   if (interrupts.empty()) {
-    return wh::core::result<aggregated_interrupts>::failure(
-        wh::core::errc::not_found);
+    return wh::core::result<aggregated_interrupts>::failure(wh::core::errc::not_found);
   }
 
   aggregated_interrupts aggregated{};
@@ -121,8 +112,7 @@ infer_root_cause(const std::span<const wh::core::error_code> causes)
   for (const auto &interrupt : interrupts) {
     auto owned_interrupt = wh::core::into_owned(interrupt);
     if (owned_interrupt.has_error()) {
-      return wh::core::result<aggregated_interrupts>::failure(
-          owned_interrupt.error());
+      return wh::core::result<aggregated_interrupts>::failure(owned_interrupt.error());
     }
     aggregated.interrupts.push_back(std::move(owned_interrupt).value());
   }
@@ -142,8 +132,7 @@ template <> struct any_owned_traits<wh::tool::aggregated_interrupts> {
     for (const auto &interrupt : value.interrupts) {
       auto owned_interrupt = wh::core::into_owned(interrupt);
       if (owned_interrupt.has_error()) {
-        return wh::core::result<wh::tool::aggregated_interrupts>::failure(
-            owned_interrupt.error());
+        return wh::core::result<wh::tool::aggregated_interrupts>::failure(owned_interrupt.error());
       }
       owned.interrupts.push_back(std::move(owned_interrupt).value());
     }
@@ -158,8 +147,7 @@ template <> struct any_owned_traits<wh::tool::aggregated_interrupts> {
     for (auto &interrupt : value.interrupts) {
       auto owned_interrupt = wh::core::into_owned(std::move(interrupt));
       if (owned_interrupt.has_error()) {
-        return wh::core::result<wh::tool::aggregated_interrupts>::failure(
-            owned_interrupt.error());
+        return wh::core::result<wh::tool::aggregated_interrupts>::failure(owned_interrupt.error());
       }
       owned.interrupts.push_back(std::move(owned_interrupt).value());
     }

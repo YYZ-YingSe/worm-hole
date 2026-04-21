@@ -11,14 +11,12 @@ TEST_CASE("graph diff facade rejects uncompiled graphs and diffs compiled snapsh
   REQUIRE(invalid.has_error());
   REQUIRE(invalid.error() == wh::core::errc::contract_violation);
 
-  REQUIRE(baseline.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(baseline.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(baseline.add_entry_edge("worker").has_value());
   REQUIRE(baseline.add_exit_edge("worker").has_value());
   REQUIRE(baseline.compile().has_value());
 
-  REQUIRE(candidate.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(candidate.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(candidate.add_entry_edge("worker").has_value());
   REQUIRE(candidate.add_exit_edge("worker").has_value());
   REQUIRE(candidate.compile().has_value());
@@ -33,14 +31,12 @@ TEST_CASE("graph diff facade reports compile-visible changes between compiled gr
   wh::compose::graph baseline{};
   wh::compose::graph candidate{};
 
-  REQUIRE(baseline.add_passthrough(wh::compose::make_passthrough_node("worker"))
-              .has_value());
+  REQUIRE(baseline.add_passthrough(wh::compose::make_passthrough_node("worker")).has_value());
   REQUIRE(baseline.add_entry_edge("worker").has_value());
   REQUIRE(baseline.add_exit_edge("worker").has_value());
   REQUIRE(baseline.compile().has_value());
 
-  REQUIRE(candidate.add_passthrough(wh::compose::make_passthrough_node("other"))
-              .has_value());
+  REQUIRE(candidate.add_passthrough(wh::compose::make_passthrough_node("other")).has_value());
   REQUIRE(candidate.add_entry_edge("other").has_value());
   REQUIRE(candidate.add_exit_edge("other").has_value());
   REQUIRE(candidate.compile().has_value());

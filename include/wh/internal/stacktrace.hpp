@@ -22,8 +22,8 @@ namespace wh::internal {
 [[nodiscard]] inline auto capture_call_stack() -> std::string {
 #if defined(_WIN32)
   std::array<void *, 64U> frames{};
-  const auto captured = static_cast<std::size_t>(::CaptureStackBackTrace(
-      0U, static_cast<DWORD>(frames.size()), frames.data(), nullptr));
+  const auto captured = static_cast<std::size_t>(
+      ::CaptureStackBackTrace(0U, static_cast<DWORD>(frames.size()), frames.data(), nullptr));
   if (captured == 0U) {
     return "stack-unavailable";
   }
@@ -33,8 +33,8 @@ namespace wh::internal {
     if (index != 0U) {
       stack_stream << '\n';
     }
-    stack_stream << index << ": 0x" << std::hex
-                 << reinterpret_cast<std::uintptr_t>(frames[index]) << std::dec;
+    stack_stream << index << ": 0x" << std::hex << reinterpret_cast<std::uintptr_t>(frames[index])
+                 << std::dec;
   }
   auto stack = stack_stream.str();
   if (stack.empty()) {
@@ -43,8 +43,7 @@ namespace wh::internal {
   return stack;
 #elif defined(__unix__) || defined(__APPLE__)
   std::array<void *, 64U> frames{};
-  const auto captured =
-      ::backtrace(frames.data(), static_cast<int>(frames.size()));
+  const auto captured = ::backtrace(frames.data(), static_cast<int>(frames.size()));
   if (captured <= 0) {
     return "stack-unavailable";
   }

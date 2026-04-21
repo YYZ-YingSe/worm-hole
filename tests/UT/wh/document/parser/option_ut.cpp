@@ -1,14 +1,15 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "wh/document/parser/option.hpp"
 
 TEST_CASE("parse options view iterates base and override metadata entries",
-          "[UT][wh/document/parser/option.hpp][parse_options_view::for_each_extra_meta][branch][boundary]") {
+          "[UT][wh/document/parser/"
+          "option.hpp][parse_options_view::for_each_extra_meta][branch][boundary]") {
   wh::document::parser::parser_string_map base{
       {"lang", "zh"},
       {"tenant", "base"},
@@ -23,9 +24,8 @@ TEST_CASE("parse options view iterates base and override metadata entries",
   view.extra_meta_override = &override;
 
   std::vector<std::pair<std::string, std::string>> seen{};
-  view.for_each_extra_meta([&](const std::string &key, const std::string &value) {
-    seen.emplace_back(key, value);
-  });
+  view.for_each_extra_meta(
+      [&](const std::string &key, const std::string &value) { seen.emplace_back(key, value); });
   std::sort(seen.begin(), seen.end());
 
   REQUIRE(seen == std::vector<std::pair<std::string, std::string>>{
@@ -37,7 +37,8 @@ TEST_CASE("parse options view iterates base and override metadata entries",
 }
 
 TEST_CASE("parse options view iterates format options and tolerates null maps",
-          "[UT][wh/document/parser/option.hpp][parse_options_view::for_each_format_option][branch][boundary]") {
+          "[UT][wh/document/parser/"
+          "option.hpp][parse_options_view::for_each_format_option][branch][boundary]") {
   wh::document::parser::parse_options_view empty{};
   std::size_t empty_count = 0U;
   empty.for_each_format_option([&](const auto &, const auto &) { ++empty_count; });
@@ -56,9 +57,7 @@ TEST_CASE("parse options view iterates format options and tolerates null maps",
 
   std::vector<std::pair<std::string, std::string>> seen{};
   view.for_each_format_option(
-      [&](const std::string &key, const std::string &value) {
-        seen.emplace_back(key, value);
-      });
+      [&](const std::string &key, const std::string &value) { seen.emplace_back(key, value); });
   std::sort(seen.begin(), seen.end());
 
   REQUIRE(seen == std::vector<std::pair<std::string, std::string>>{
@@ -67,9 +66,8 @@ TEST_CASE("parse options view iterates format options and tolerates null maps",
                   });
 }
 
-TEST_CASE(
-    "parse options view supports single-source overlays and preserves plain option fields",
-    "[UT][wh/document/parser/option.hpp][parse_options_view][condition][branch][boundary]") {
+TEST_CASE("parse options view supports single-source overlays and preserves plain option fields",
+          "[UT][wh/document/parser/option.hpp][parse_options_view][condition][branch][boundary]") {
   wh::document::parser::parse_options options{};
   options.uri = "doc://plain";
   options.extra_meta.insert_or_assign("tenant", "alpha");
@@ -85,18 +83,14 @@ TEST_CASE(
   view.format_options_base = &options.format_options;
 
   std::vector<std::pair<std::string, std::string>> extra_seen{};
-  view.for_each_extra_meta(
-      [&](const std::string &key, const std::string &value) {
-        extra_seen.emplace_back(key, value);
-      });
-  REQUIRE(extra_seen == std::vector<std::pair<std::string, std::string>>{
-                            {"tenant", "alpha"}});
+  view.for_each_extra_meta([&](const std::string &key, const std::string &value) {
+    extra_seen.emplace_back(key, value);
+  });
+  REQUIRE(extra_seen == std::vector<std::pair<std::string, std::string>>{{"tenant", "alpha"}});
 
   std::vector<std::pair<std::string, std::string>> format_seen{};
-  view.for_each_format_option(
-      [&](const std::string &key, const std::string &value) {
-        format_seen.emplace_back(key, value);
-      });
-  REQUIRE(format_seen == std::vector<std::pair<std::string, std::string>>{
-                             {"mode", "strict"}});
+  view.for_each_format_option([&](const std::string &key, const std::string &value) {
+    format_seen.emplace_back(key, value);
+  });
+  REQUIRE(format_seen == std::vector<std::pair<std::string, std::string>>{{"mode", "strict"}});
 }

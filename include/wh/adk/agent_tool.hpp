@@ -70,32 +70,27 @@ template <typename value_t> struct agent_tool_runner_box {
 };
 
 template <typename runner_t>
-concept agent_tool_runner_object =
-    requires(runner_t &runner, const wh::adk::run_request &request,
-             wh::core::run_context &context) {
-      { runner.run(request, context) } -> std::same_as<agent_run_result>;
-    };
+concept agent_tool_runner_object = requires(runner_t &runner, const wh::adk::run_request &request,
+                                            wh::core::run_context &context) {
+  { runner.run(request, context) } -> std::same_as<agent_run_result>;
+};
 
 template <typename runner_t>
-concept agent_tool_runner_callable =
-    requires(runner_t &runner, const wh::adk::run_request &request,
-             wh::core::run_context &context) {
-      {
-        std::invoke(runner, request, context)
-      } -> std::same_as<agent_run_result>;
-    };
+concept agent_tool_runner_callable = requires(runner_t &runner, const wh::adk::run_request &request,
+                                              wh::core::run_context &context) {
+  { std::invoke(runner, request, context) } -> std::same_as<agent_run_result>;
+};
 
 template <typename runner_t>
-concept bindable_agent_tool_runner =
-    std::copy_constructible<std::remove_cvref_t<runner_t>> &&
-    (agent_tool_runner_object<std::remove_cvref_t<runner_t>> ||
-     agent_tool_runner_callable<std::remove_cvref_t<runner_t>>);
+concept bindable_agent_tool_runner = std::copy_constructible<std::remove_cvref_t<runner_t>> &&
+                                     (agent_tool_runner_object<std::remove_cvref_t<runner_t>> ||
+                                      agent_tool_runner_callable<std::remove_cvref_t<runner_t>>);
 
 template <typename runner_t>
-[[nodiscard]] inline auto
-dispatch_agent_tool_runner(runner_t &runner,
-                           const wh::adk::run_request &request,
-                           wh::core::run_context &context) -> agent_run_result {
+[[nodiscard]] inline auto dispatch_agent_tool_runner(runner_t &runner,
+                                                     const wh::adk::run_request &request,
+                                                     wh::core::run_context &context)
+    -> agent_run_result {
   if constexpr (agent_tool_runner_object<runner_t>) {
     return runner.run(request, context);
   } else {
@@ -112,8 +107,7 @@ class agent_tool {
 public:
   /// Creates one bridge from one public tool name, description, and bound
   /// agent.
-  agent_tool(std::string name, std::string description,
-             wh::agent::agent agent) noexcept
+  agent_tool(std::string name, std::string description, wh::agent::agent agent) noexcept
       : name_(std::move(name)), description_(std::move(description)),
         bound_agent_(std::move(agent)) {}
 
@@ -127,14 +121,10 @@ public:
   [[nodiscard]] auto name() const noexcept -> std::string_view { return name_; }
 
   /// Returns the human-readable tool description.
-  [[nodiscard]] auto description() const noexcept -> std::string_view {
-    return description_;
-  }
+  [[nodiscard]] auto description() const noexcept -> std::string_view { return description_; }
 
   /// Returns the authored input mode selected for this bridge.
-  [[nodiscard]] auto input_mode() const noexcept -> agent_tool_input_mode {
-    return input_mode_;
-  }
+  [[nodiscard]] auto input_mode() const noexcept -> agent_tool_input_mode { return input_mode_; }
 
   /// Returns true after metadata, schema mode, and agent binding freeze.
   [[nodiscard]] auto frozen() const noexcept -> bool { return runtime_.has_value(); }
@@ -151,8 +141,7 @@ public:
   }
 
   /// Sets the authored input mode before freeze.
-  auto set_input_mode(const agent_tool_input_mode input_mode)
-      -> wh::core::result<void> {
+  auto set_input_mode(const agent_tool_input_mode input_mode) -> wh::core::result<void> {
     auto mutable_result = ensure_mutable();
     if (mutable_result.has_error()) {
       return mutable_result;
@@ -162,8 +151,7 @@ public:
   }
 
   /// Replaces the custom schema payload before freeze.
-  auto set_custom_schema(wh::schema::tool_schema_definition schema)
-      -> wh::core::result<void> {
+  auto set_custom_schema(wh::schema::tool_schema_definition schema) -> wh::core::result<void> {
     auto mutable_result = ensure_mutable();
     if (mutable_result.has_error()) {
       return mutable_result;
@@ -173,8 +161,7 @@ public:
   }
 
   /// Enables or disables authored internal-event forwarding before freeze.
-  auto set_forward_internal_events(const bool enabled)
-      -> wh::core::result<void> {
+  auto set_forward_internal_events(const bool enabled) -> wh::core::result<void> {
     auto mutable_result = ensure_mutable();
     if (mutable_result.has_error()) {
       return mutable_result;
@@ -201,13 +188,10 @@ public:
   auto bind_runner(runner_t &&runner) -> wh::core::result<void> {
     using stored_runner_t = std::remove_cvref_t<runner_t>;
     return bind_runner(detail::agent_tool_runner{
-        [runner_box =
-             detail::agent_tool_runner_box<stored_runner_t>{
-                 stored_runner_t{std::forward<runner_t>(runner)}}](
-            const wh::adk::run_request &request,
-            wh::core::run_context &context) -> agent_run_result {
-          return detail::dispatch_agent_tool_runner(runner_box.value, request,
-                                                    context);
+        [runner_box = detail::agent_tool_runner_box<stored_runner_t>{stored_runner_t{
+             std::forward<runner_t>(runner)}}](const wh::adk::run_request &request,
+                                               wh::core::run_context &context) -> agent_run_result {
+          return detail::dispatch_agent_tool_runner(runner_box.value, request, context);
         }});
   }
 
@@ -215,19 +199,16 @@ public:
   [[nodiscard]] auto tool_schema() const -> wh::schema::tool_schema_definition;
 
   /// Runs one concrete tool call through the frozen child-agent runner.
-  auto run(const wh::compose::tool_call &call,
-           const wh::tool::call_scope &scope) const
+  auto run(const wh::compose::tool_call &call, const wh::tool::call_scope &scope) const
       -> wh::core::result<agent_tool_result>;
 
   /// Runs one concrete tool call on the frozen bridge and exposes the text
   /// stream view projected from the boundary-visible event stream.
-  auto stream(const wh::compose::tool_call &call,
-              const wh::tool::call_scope &scope) const
+  auto stream(const wh::compose::tool_call &call, const wh::tool::call_scope &scope) const
       -> wh::core::result<wh::compose::graph_stream_reader>;
 
   /// Lowers the frozen bridge into one compose tool entry.
-  [[nodiscard]] auto compose_entry() const
-      -> wh::core::result<wh::compose::tool_entry>;
+  [[nodiscard]] auto compose_entry() const -> wh::core::result<wh::compose::tool_entry>;
 
   /// Freezes schema selection, bound agent, and bridge runner.
   auto freeze() -> wh::core::result<void> {
@@ -237,8 +218,7 @@ public:
     if (name_.empty() || description_.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    if (input_mode_ == agent_tool_input_mode::custom_schema &&
-        !custom_schema_.has_value()) {
+    if (input_mode_ == agent_tool_input_mode::custom_schema && !custom_schema_.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
     auto agent_frozen = bound_agent_.freeze();
@@ -262,8 +242,7 @@ private:
   /// Rejects bridge mutation after freeze.
   [[nodiscard]] auto ensure_mutable() const -> wh::core::result<void> {
     if (runtime_.has_value()) {
-      return wh::core::result<void>::failure(
-          wh::core::errc::contract_violation);
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
     }
     return {};
   }

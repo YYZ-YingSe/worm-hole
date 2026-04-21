@@ -48,15 +48,15 @@ TEST_CASE("retriever options expose component specific extras",
           "[UT][wh/retriever/options.hpp][retriever_options::component_options]") {
   wh::retriever::retriever_options options{};
   options.component_options().set_impl_specific(retriever_options_probe{11});
-  const auto *probe =
-      options.component_options().impl_specific_if<retriever_options_probe>();
+  const auto *probe = options.component_options().impl_specific_if<retriever_options_probe>();
   REQUIRE(probe != nullptr);
   REQUIRE(probe->value == 11);
 }
 
 TEST_CASE(
     "retriever options keep base values without override and expose direct impl-specific lookup",
-    "[UT][wh/retriever/options.hpp][retriever_options::set_impl_specific][condition][branch][boundary]") {
+    "[UT][wh/retriever/"
+    "options.hpp][retriever_options::set_impl_specific][condition][branch][boundary]") {
   wh::retriever::retriever_options options{};
   options.set_base(wh::retriever::retriever_common_options{
       .top_k = 8U,
@@ -72,8 +72,7 @@ TEST_CASE(
   REQUIRE(view.score_threshold == 0.25);
   REQUIRE(view.filter == "kind=faq");
   REQUIRE(view.dsl == "support");
-  REQUIRE(view.merge_policy ==
-          wh::retriever::recall_merge_policy::dedupe_by_content);
+  REQUIRE(view.merge_policy == wh::retriever::recall_merge_policy::dedupe_by_content);
   REQUIRE(view.fail_fast_on_route_error);
 
   const auto *probe = options.impl_specific_if<retriever_options_probe>();

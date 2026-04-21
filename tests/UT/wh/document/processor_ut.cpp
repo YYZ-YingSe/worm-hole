@@ -1,19 +1,18 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/document/processor.hpp"
 
 TEST_CASE("document processor runs loader transformer parser pipeline",
           "[UT][wh/document/processor.hpp][document_processor::process][branch][boundary]") {
   wh::document::document_processor processor{};
-  processor.set_loader([](std::string uri, const wh::document::loader_options &)
-                           -> wh::core::result<std::string> {
-    return "loaded:" + uri;
-  });
-  processor.set_transformer([](std::string value) -> wh::core::result<std::string> {
-    return value + ":transformed";
-  });
+  processor.set_loader(
+      [](std::string uri, const wh::document::loader_options &) -> wh::core::result<std::string> {
+        return "loaded:" + uri;
+      });
+  processor.set_transformer(
+      [](std::string value) -> wh::core::result<std::string> { return value + ":transformed"; });
 
   wh::document::document_request request{};
   request.source_kind = wh::document::document_source_kind::uri;
@@ -27,17 +26,16 @@ TEST_CASE("document processor runs loader transformer parser pipeline",
   REQUIRE(result.has_value());
   REQUIRE(result.value().size() == 1U);
   REQUIRE(result.value().front().content() == "loaded:file.txt:transformed");
-  REQUIRE(result.value().front().metadata_or<std::string>("_source") ==
-          "override://parser");
+  REQUIRE(result.value().front().metadata_or<std::string>("_source") == "override://parser");
 }
 
 TEST_CASE("document processor surfaces loader and parser failures",
           "[UT][wh/document/processor.hpp][document_processor::set_loader][branch]") {
   wh::document::document_processor processor{};
-  processor.set_loader([](std::string, const wh::document::loader_options &)
-                           -> wh::core::result<std::string> {
-    return wh::core::result<std::string>::failure(wh::core::errc::canceled);
-  });
+  processor.set_loader(
+      [](std::string, const wh::document::loader_options &) -> wh::core::result<std::string> {
+        return wh::core::result<std::string>::failure(wh::core::errc::canceled);
+      });
 
   wh::document::document_request request{};
   request.source_kind = wh::document::document_source_kind::uri;
@@ -56,16 +54,17 @@ TEST_CASE("document processor surfaces loader and parser failures",
   REQUIRE(parser_failed.error() == wh::core::errc::not_supported);
 }
 
-TEST_CASE("document processor skips loader for content requests and surfaces transformer failures",
-          "[UT][wh/document/processor.hpp][document_processor::set_transformer][condition][branch]") {
+TEST_CASE(
+    "document processor skips loader for content requests and surfaces transformer failures",
+    "[UT][wh/document/processor.hpp][document_processor::set_transformer][condition][branch]") {
   wh::document::document_processor processor{};
   std::size_t loader_calls = 0U;
-  processor.set_loader([&loader_calls](std::string,
-                                       const wh::document::loader_options &)
-                           -> wh::core::result<std::string> {
-    ++loader_calls;
-    return "loaded";
-  });
+  processor.set_loader(
+      [&loader_calls](std::string,
+                      const wh::document::loader_options &) -> wh::core::result<std::string> {
+        ++loader_calls;
+        return "loaded";
+      });
   processor.set_transformer([](std::string) -> wh::core::result<std::string> {
     return wh::core::result<std::string>::failure(wh::core::errc::timeout);
   });

@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <functional>
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/component.hpp"
 
@@ -18,15 +18,13 @@ struct descriptor_probe {
 };
 
 struct invokable_probe {
-  [[nodiscard]] auto invoke(const int &value, wh::core::run_context &)
-      -> wh::core::result<int> {
+  [[nodiscard]] auto invoke(const int &value, wh::core::run_context &) -> wh::core::result<int> {
     return value + 1;
   }
 };
 
 struct streamable_probe {
-  [[nodiscard]] auto stream(const int &value, wh::core::run_context &)
-      -> wh::core::result<long> {
+  [[nodiscard]] auto stream(const int &value, wh::core::run_context &) -> wh::core::result<long> {
     return static_cast<long>(value * 2);
   }
 };

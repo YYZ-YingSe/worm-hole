@@ -1,14 +1,13 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
 #include <memory>
 #include <optional>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
-#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/cursor_reader/detail/shared_state.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 
 namespace {
 
@@ -63,11 +62,9 @@ struct async_probe_waiter : wh::core::cursor_reader_detail::async_waiter_base<re
   bool completed{false};
 
   async_probe_waiter() {
-    static constexpr typename wh::core::cursor_reader_detail::async_waiter_base<
-        result_t>::ops_type waiter_ops{
-        [](auto *base) noexcept {
-          static_cast<async_probe_waiter *>(base)->completed = true;
-        }};
+    static constexpr
+        typename wh::core::cursor_reader_detail::async_waiter_base<result_t>::ops_type waiter_ops{
+            [](auto *base) noexcept { static_cast<async_probe_waiter *>(base)->completed = true; }};
     this->ops = &waiter_ops;
   }
 };
@@ -77,25 +74,19 @@ struct tracked_result_probe {
 
   int value{0};
 
-  tracked_result_probe() noexcept {
-    live_count.fetch_add(1, std::memory_order_relaxed);
-  }
+  tracked_result_probe() noexcept { live_count.fetch_add(1, std::memory_order_relaxed); }
   explicit tracked_result_probe(const int next) noexcept : value(next) {
     live_count.fetch_add(1, std::memory_order_relaxed);
   }
-  tracked_result_probe(const tracked_result_probe &other) noexcept
-      : value(other.value) {
+  tracked_result_probe(const tracked_result_probe &other) noexcept : value(other.value) {
     live_count.fetch_add(1, std::memory_order_relaxed);
   }
-  tracked_result_probe(tracked_result_probe &&other) noexcept
-      : value(other.value) {
+  tracked_result_probe(tracked_result_probe &&other) noexcept : value(other.value) {
     live_count.fetch_add(1, std::memory_order_relaxed);
   }
   auto operator=(const tracked_result_probe &) -> tracked_result_probe & = default;
   auto operator=(tracked_result_probe &&) noexcept -> tracked_result_probe & = default;
-  ~tracked_result_probe() {
-    live_count.fetch_sub(1, std::memory_order_relaxed);
-  }
+  ~tracked_result_probe() { live_count.fetch_sub(1, std::memory_order_relaxed); }
 };
 
 using tracked_result_t = wh::core::result<tracked_result_probe>;
@@ -124,8 +115,7 @@ struct tracked_async_source {
   }
 
   [[nodiscard]] auto read_async() {
-    return stdexec::just(
-        tracked_result_t::failure(wh::core::errc::not_found));
+    return stdexec::just(tracked_result_t::failure(wh::core::errc::not_found));
   }
 
   [[nodiscard]] auto close() -> wh::core::result<void> {
@@ -136,10 +126,11 @@ struct tracked_async_source {
 
 } // namespace
 
-TEST_CASE("shared state reuses published try-read results across readers and closes one reader without affecting others",
-          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::try_read_for][condition][branch]") {
-  using policy_t =
-      wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
+TEST_CASE("shared state reuses published try-read results across readers and closes one reader "
+          "without affecting others",
+          "[UT][wh/core/cursor_reader/detail/"
+          "shared_state.hpp][shared_state::try_read_for][condition][branch]") {
+  using policy_t = wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
   auto stats = std::make_shared<source_stats>();
   stats->try_results = {std::optional<result_t>{result_t{3}}};
 
@@ -164,10 +155,11 @@ TEST_CASE("shared state reuses published try-read results across readers and clo
   REQUIRE(stats->close_calls == 0);
 }
 
-TEST_CASE("shared state register_async_waiter remove_async_waiter and start_async_pull cover async waiter lifecycle",
-          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::register_async_waiter][branch][concurrency]") {
-  using policy_t =
-      wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
+TEST_CASE("shared state register_async_waiter remove_async_waiter and start_async_pull cover async "
+          "waiter lifecycle",
+          "[UT][wh/core/cursor_reader/detail/"
+          "shared_state.hpp][shared_state::register_async_waiter][branch][concurrency]") {
+  using policy_t = wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
   auto stats = std::make_shared<source_stats>();
   stats->try_results = {std::nullopt};
   stats->async_result = result_t{8};
@@ -193,8 +185,7 @@ TEST_CASE("shared state register_async_waiter remove_async_waiter and start_asyn
   REQUIRE(second_ticket.start_pull);
   REQUIRE(second_waiter.waiting_registered());
 
-  state->start_async_pull(
-      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
+  state->start_async_pull(wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
 
   REQUIRE(second_waiter.completed);
   REQUIRE_FALSE(second_waiter.waiting_registered());
@@ -204,9 +195,9 @@ TEST_CASE("shared state register_async_waiter remove_async_waiter and start_asyn
 }
 
 TEST_CASE("shared state async pull remains reusable across consecutive inline completions",
-          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::start_async_pull][lifetime][regression]") {
-  using policy_t =
-      wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
+          "[UT][wh/core/cursor_reader/detail/"
+          "shared_state.hpp][shared_state::start_async_pull][lifetime][regression]") {
+  using policy_t = wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
   auto stats = std::make_shared<source_stats>();
   stats->try_results = {std::nullopt, std::nullopt};
   stats->async_results = {result_t{12}, result_t{34}};
@@ -220,8 +211,7 @@ TEST_CASE("shared state async pull remains reusable across consecutive inline co
   REQUIRE(first_ticket.registered());
   REQUIRE(first_ticket.start_pull);
 
-  state->start_async_pull(
-      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
+  state->start_async_pull(wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
 
   REQUIRE(first_waiter.completed);
   REQUIRE_FALSE(first_waiter.waiting_registered());
@@ -234,8 +224,7 @@ TEST_CASE("shared state async pull remains reusable across consecutive inline co
   REQUIRE(second_ticket.registered());
   REQUIRE(second_ticket.start_pull);
 
-  state->start_async_pull(
-      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
+  state->start_async_pull(wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));
 
   REQUIRE(second_waiter.completed);
   REQUIRE_FALSE(second_waiter.waiting_registered());
@@ -245,9 +234,9 @@ TEST_CASE("shared state async pull remains reusable across consecutive inline co
 }
 
 TEST_CASE("shared state read_for uses blocking leader path and respects automatic close toggle",
-          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::read_for][branch][boundary]") {
-  using policy_t =
-      wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
+          "[UT][wh/core/cursor_reader/detail/"
+          "shared_state.hpp][shared_state::read_for][branch][boundary]") {
+  using policy_t = wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
   auto stats = std::make_shared<source_stats>();
   stats->read_results = {result_t{11}};
 
@@ -275,17 +264,14 @@ TEST_CASE("shared state read_for uses blocking leader path and respects automati
 }
 
 TEST_CASE("shared state preserves lagging readers when retained storage grows after prefix reclaim",
-          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::try_read_for][lifetime][regression]") {
-  using policy_t =
-      wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
+          "[UT][wh/core/cursor_reader/detail/"
+          "shared_state.hpp][shared_state::try_read_for][lifetime][regression]") {
+  using policy_t = wh::core::cursor_reader_detail::default_policy<scripted_async_source>;
   auto stats = std::make_shared<source_stats>();
   stats->try_results = {
-      std::optional<result_t>{result_t{0}},
-      std::optional<result_t>{result_t{1}},
-      std::optional<result_t>{result_t{2}},
-      std::optional<result_t>{result_t{3}},
-      std::optional<result_t>{result_t{4}},
-      std::optional<result_t>{result_t{5}},
+      std::optional<result_t>{result_t{0}}, std::optional<result_t>{result_t{1}},
+      std::optional<result_t>{result_t{2}}, std::optional<result_t>{result_t{3}},
+      std::optional<result_t>{result_t{4}}, std::optional<result_t>{result_t{5}},
   };
 
   auto state = wh::core::detail::make_intrusive<
@@ -325,19 +311,17 @@ TEST_CASE("shared state preserves lagging readers when retained storage grows af
 }
 
 TEST_CASE("shared state destroys retained unread results on scope exit",
-          "[UT][wh/core/cursor_reader/detail/shared_state.hpp][shared_state::~shared_state][lifetime][regression]") {
-  using tracked_policy_t =
-      wh::core::cursor_reader_detail::default_policy<tracked_async_source>;
+          "[UT][wh/core/cursor_reader/detail/"
+          "shared_state.hpp][shared_state::~shared_state][lifetime][regression]") {
+  using tracked_policy_t = wh::core::cursor_reader_detail::default_policy<tracked_async_source>;
   tracked_result_probe::live_count.store(0, std::memory_order_release);
 
   auto stats = std::make_shared<tracked_source_stats>();
-  stats->try_results = {
-      std::optional<tracked_result_t>{tracked_result_t{tracked_result_probe{5}}}};
+  stats->try_results = {std::optional<tracked_result_t>{tracked_result_t{tracked_result_probe{5}}}};
 
   {
     auto state = wh::core::detail::make_intrusive<
-        wh::core::cursor_reader_detail::shared_state<tracked_async_source,
-                                                     tracked_policy_t>>(
+        wh::core::cursor_reader_detail::shared_state<tracked_async_source, tracked_policy_t>>(
         tracked_async_source{stats}, 2U);
 
     {
@@ -347,8 +331,7 @@ TEST_CASE("shared state destroys retained unread results on scope exit",
       REQUIRE(first->value().value == 5);
     }
 
-    REQUIRE(tracked_result_probe::live_count.load(std::memory_order_acquire) >=
-            1);
+    REQUIRE(tracked_result_probe::live_count.load(std::memory_order_acquire) >= 1);
   }
 
   REQUIRE(tracked_result_probe::live_count.load(std::memory_order_acquire) == 0);

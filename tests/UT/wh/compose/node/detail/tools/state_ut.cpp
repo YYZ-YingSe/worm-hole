@@ -1,9 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/node/detail/tools/state.hpp"
 
@@ -11,8 +11,7 @@ namespace {
 
 [[nodiscard]] auto make_tool_batch_value(std::vector<wh::compose::tool_call> calls)
     -> wh::compose::graph_value {
-  return wh::compose::graph_value{
-      wh::compose::tool_batch{.calls = std::move(calls)}};
+  return wh::compose::graph_value{wh::compose::tool_batch{.calls = std::move(calls)}};
 }
 
 [[nodiscard]] auto make_registry(bool alpha_direct, bool beta_direct)
@@ -26,7 +25,8 @@ namespace {
 } // namespace
 
 TEST_CASE("tools state helpers cover batch extraction id shaping overrides and context projection",
-          "[UT][wh/compose/node/detail/tools/state.hpp][resolve_tools_state][condition][branch][boundary]") {
+          "[UT][wh/compose/node/detail/tools/"
+          "state.hpp][resolve_tools_state][condition][branch][boundary]") {
   REQUIRE(wh::compose::detail::resolve_parallel_call_budget(0U, 0U) == 0U);
   REQUIRE(wh::compose::detail::resolve_parallel_call_budget(3U, 0U) == 3U);
   REQUIRE(wh::compose::detail::resolve_parallel_call_budget(5U, 2U) == 2U);
@@ -40,8 +40,7 @@ TEST_CASE("tools state helpers cover batch extraction id shaping overrides and c
   generated_id.tool_name = "beta";
   REQUIRE(wh::compose::detail::resolve_call_id(generated_id, 2U) == "beta#2");
 
-  auto type_mismatch =
-      wh::compose::detail::extract_calls(wh::compose::graph_value{1});
+  auto type_mismatch = wh::compose::detail::extract_calls(wh::compose::graph_value{1});
   REQUIRE(type_mismatch.has_error());
   REQUIRE(type_mismatch.error() == wh::core::errc::type_mismatch);
 
@@ -88,8 +87,8 @@ TEST_CASE("tools state helpers cover batch extraction id shaping overrides and c
       {.call_id = "custom", .tool_name = "beta"},
       {.tool_name = "missing"},
   });
-  auto resolved = wh::compose::detail::resolve_tools_state(
-      resolve_input, base_registry, options, runtime);
+  auto resolved =
+      wh::compose::detail::resolve_tools_state(resolve_input, base_registry, options, runtime);
   REQUIRE(resolved.has_value());
 
   auto state = std::move(resolved).value();
@@ -111,9 +110,7 @@ TEST_CASE("tools state helpers cover batch extraction id shaping overrides and c
   REQUIRE(&state.base_context() == &parent);
 
   REQUIRE(wh::core::set_session_value(parent, "shared", 3).has_value());
-  REQUIRE(wh::core::session_value_ref<int>(state.base_context(), "shared")
-              .value()
-              .get() == 3);
+  REQUIRE(wh::core::session_value_ref<int>(state.base_context(), "shared").value().get() == 3);
 
   auto *alpha = wh::compose::detail::find_tool(state, "alpha");
   REQUIRE(alpha != nullptr);

@@ -27,13 +27,10 @@ public:
     scripted_.enqueue_success(std::forward<chunk_t>(chunk));
   }
 
-  auto enqueue_error(const wh::core::errc code) -> void {
-    scripted_.enqueue_error(code);
-  }
+  auto enqueue_error(const wh::core::errc code) -> void { scripted_.enqueue_error(code); }
 
-  auto set_eof_behavior(
-      const eof_behavior behavior,
-      const wh::core::errc eof_error = wh::core::errc::channel_closed) -> void {
+  auto set_eof_behavior(const eof_behavior behavior,
+                        const wh::core::errc eof_error = wh::core::errc::channel_closed) -> void {
     eof_behavior_ = behavior;
     eof_error_ = eof_error;
   }
@@ -55,13 +52,10 @@ public:
     if (eof_behavior_ == eof_behavior::error) {
       return wh::core::result<std::string>::failure(eof_error_);
     }
-    return wh::core::result<std::string>::failure(
-        wh::core::errc::channel_closed);
+    return wh::core::result<std::string>::failure(wh::core::errc::channel_closed);
   }
 
-  [[nodiscard]] auto pending() const noexcept -> std::size_t {
-    return scripted_.pending();
-  }
+  [[nodiscard]] auto pending() const noexcept -> std::size_t { return scripted_.pending(); }
 
 private:
   detail::scripted_result_queue<std::string> scripted_{};

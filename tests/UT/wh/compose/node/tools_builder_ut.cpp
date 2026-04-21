@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/static_thread_scheduler.hpp"
@@ -13,29 +12,25 @@
 
 namespace {
 
-[[nodiscard]] auto make_tool_batch(
-    std::initializer_list<wh::compose::tool_call> calls) -> wh::compose::tool_batch {
+[[nodiscard]] auto make_tool_batch(std::initializer_list<wh::compose::tool_call> calls)
+    -> wh::compose::tool_batch {
   return wh::compose::tool_batch{
       .calls = std::vector<wh::compose::tool_call>{calls},
   };
 }
 
 [[nodiscard]] auto collect_tool_results(const wh::compose::graph_value &value)
-    -> wh::core::result<std::reference_wrapper<
-        const std::vector<wh::compose::tool_result>>> {
-  if (const auto *typed =
-          wh::core::any_cast<std::vector<wh::compose::tool_result>>(&value);
+    -> wh::core::result<std::reference_wrapper<const std::vector<wh::compose::tool_result>>> {
+  if (const auto *typed = wh::core::any_cast<std::vector<wh::compose::tool_result>>(&value);
       typed != nullptr) {
     return std::cref(*typed);
   }
-  return wh::core::result<
-      std::reference_wrapper<const std::vector<wh::compose::tool_result>>>::
+  return wh::core::result<std::reference_wrapper<const std::vector<wh::compose::tool_result>>>::
       failure(wh::core::errc::type_mismatch);
 }
 
 template <typename value_t>
-[[nodiscard]] auto read_any(wh::compose::graph_value &&value)
-    -> wh::core::result<value_t> {
+[[nodiscard]] auto read_any(wh::compose::graph_value &&value) -> wh::core::result<value_t> {
   if (auto *typed = wh::core::any_cast<value_t>(&value); typed != nullptr) {
     return std::move(*typed);
   }
@@ -46,8 +41,7 @@ template <typename value_t>
     -> wh::core::result<std::vector<wh::compose::tool_event>> {
   auto chunks = wh::compose::collect_graph_stream_reader(std::move(reader));
   if (chunks.has_error()) {
-    return wh::core::result<std::vector<wh::compose::tool_event>>::failure(
-        chunks.error());
+    return wh::core::result<std::vector<wh::compose::tool_event>>::failure(chunks.error());
   }
   std::vector<wh::compose::tool_event> events{};
   for (auto &chunk : chunks.value()) {
@@ -77,30 +71,27 @@ template <typename value_t>
 TEST_CASE("tools node builders expose metadata and dispatch sync value endpoints",
           "[UT][wh/compose/node/tools_builder.hpp][make_tools_node][branch][boundary]") {
   wh::compose::tool_registry registry{};
-  registry.emplace("echo", wh::compose::tool_entry{
-                               .invoke =
-                                   [](const wh::compose::tool_call &call,
-                                      wh::tool::call_scope)
-                                       -> wh::core::result<wh::compose::graph_value> {
-                                     return wh::compose::graph_value{call.arguments};
-                                   },
-                           });
+  registry.emplace(
+      "echo", wh::compose::tool_entry{
+                  .invoke = [](const wh::compose::tool_call &call,
+                               wh::tool::call_scope) -> wh::core::result<wh::compose::graph_value> {
+                    return wh::compose::graph_value{call.arguments};
+                  },
+              });
   wh::compose::tools_options runtime_options{};
   runtime_options.missing = wh::compose::tool_entry{
-      .invoke = [](const wh::compose::tool_call &, wh::tool::call_scope)
-          -> wh::core::result<wh::compose::graph_value> {
+      .invoke = [](const wh::compose::tool_call &,
+                   wh::tool::call_scope) -> wh::core::result<wh::compose::graph_value> {
         return wh::compose::graph_value{std::string{"fallback"}};
       }};
 
-  auto node = wh::compose::make_tools_node("tools", registry,
-                                           wh::compose::graph_add_node_options{},
+  auto node = wh::compose::make_tools_node("tools", registry, wh::compose::graph_add_node_options{},
                                            runtime_options);
   REQUIRE(node.key() == "tools");
   REQUIRE(node.input_contract() == wh::compose::node_contract::value);
   REQUIRE(node.output_contract() == wh::compose::node_contract::value);
   REQUIRE(node.input_gate().kind == wh::compose::input_gate_kind::value_exact);
-  REQUIRE(node.output_gate().kind ==
-          wh::compose::output_gate_kind::value_exact);
+  REQUIRE(node.output_gate().kind == wh::compose::output_gate_kind::value_exact);
   REQUIRE(node.exec_mode() == wh::compose::node_exec_mode::sync);
   REQUIRE(node.exec_origin() == wh::compose::node_exec_origin::authored);
   REQUIRE(node.options().type == "tools_node");
@@ -125,8 +116,7 @@ TEST_CASE("tools node builders expose metadata and dispatch sync value endpoints
   REQUIRE(results.value().get().size() == 1U);
   REQUIRE(results.value().get().front().call_id == "call-1");
   REQUIRE(results.value().get().front().tool_name == "echo");
-  REQUIRE(*wh::core::any_cast<std::string>(
-              &results.value().get().front().value) == "payload");
+  REQUIRE(*wh::core::any_cast<std::string>(&results.value().get().front().value) == "payload");
 
   auto missing = invoke_single_node_graph(
       graph, wh::compose::graph_value{make_tool_batch({wh::compose::tool_call{
@@ -136,39 +126,33 @@ TEST_CASE("tools node builders expose metadata and dispatch sync value endpoints
   REQUIRE(missing.has_value());
   auto fallback = collect_tool_results(missing.value().output_status.value());
   REQUIRE(fallback.has_value());
-  REQUIRE(*wh::core::any_cast<std::string>(
-              &fallback.value().get().front().value) == "fallback");
+  REQUIRE(*wh::core::any_cast<std::string>(&fallback.value().get().front().value) == "fallback");
 
   auto wrong_input = invoke_single_node_graph(graph, wh::compose::graph_value{7});
   REQUIRE(wrong_input.has_value());
   REQUIRE(wrong_input.value().output_status.has_error());
-  REQUIRE(wrong_input.value().output_status.error() ==
-          wh::core::errc::type_mismatch);
+  REQUIRE(wrong_input.value().output_status.error() == wh::core::errc::type_mismatch);
 }
 
 TEST_CASE("tools node builders dispatch sync stream endpoints into tool events",
           "[UT][wh/compose/node/tools_builder.hpp][tools_node::compile][branch]") {
   wh::compose::tool_registry registry{};
-  registry.emplace("stream", wh::compose::tool_entry{
-                                 .stream =
-                                     [](const wh::compose::tool_call &call,
-                                        wh::tool::call_scope)
-                                         -> wh::core::result<
-                                             wh::compose::graph_stream_reader> {
-                                       return wh::compose::make_values_stream_reader(
-                                           std::vector<wh::compose::graph_value>{
-                                               wh::compose::graph_value{
-                                                   call.arguments},
-                                           });
-                                     },
-                             });
+  registry.emplace(
+      "stream",
+      wh::compose::tool_entry{
+          .stream = [](const wh::compose::tool_call &call,
+                       wh::tool::call_scope) -> wh::core::result<wh::compose::graph_stream_reader> {
+            return wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
+                wh::compose::graph_value{call.arguments},
+            });
+          },
+      });
 
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_tools(wh::compose::make_tools_node<
-                         wh::compose::node_contract::value,
-                         wh::compose::node_contract::stream>("tools",
-                                                             std::move(registry)))
+              .add_tools(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                      wh::compose::node_contract::stream>(
+                  "tools", std::move(registry)))
               .has_value());
   REQUIRE(graph.add_entry_edge("tools").has_value());
   REQUIRE(graph.add_exit_edge("tools").has_value());
@@ -183,8 +167,8 @@ TEST_CASE("tools node builders dispatch sync stream endpoints into tool events",
       .arguments = "chunk",
   }});
   wh::core::run_context context{};
-  auto status = wh::compose::run_compiled_sync_node(
-      compiled.value().get(), input, context, wh::compose::node_runtime{});
+  auto status = wh::compose::run_compiled_sync_node(compiled.value().get(), input, context,
+                                                    wh::compose::node_runtime{});
   REQUIRE(status.has_value());
 
   auto reader = read_any<wh::compose::graph_stream_reader>(std::move(status).value());
@@ -201,31 +185,27 @@ TEST_CASE("tools node builders dispatch sync stream endpoints into tool events",
 TEST_CASE("async stream tools node returns graph stream reader payload",
           "[UT][wh/compose/node/tools_builder.hpp][tools_node::compile][branch][async]") {
   wh::compose::tool_registry registry{};
-  registry.emplace("stream", wh::compose::tool_entry{
-                                 .async_stream =
-                                     [](wh::compose::tool_call call,
-                                        wh::tool::call_scope)
-                                         -> wh::compose::tools_stream_sender {
-                                       auto reader = wh::compose::make_values_stream_reader(
-                                           std::vector<wh::compose::graph_value>{
-                                               wh::compose::graph_value{
-                                                   call.arguments},
-                                           });
-                                       REQUIRE(reader.has_value());
-                                       return stdexec::just(
-                                           wh::core::result<
-                                               wh::compose::graph_stream_reader>{
-                                               std::move(reader).value()});
-                                     },
-                             });
+  registry.emplace(
+      "stream",
+      wh::compose::tool_entry{
+          .async_stream = [](wh::compose::tool_call call,
+                             wh::tool::call_scope) -> wh::compose::tools_stream_sender {
+            auto reader =
+                wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
+                    wh::compose::graph_value{call.arguments},
+                });
+            REQUIRE(reader.has_value());
+            return stdexec::just(
+                wh::core::result<wh::compose::graph_stream_reader>{std::move(reader).value()});
+          },
+      });
 
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_tools(wh::compose::make_tools_node<
-                         wh::compose::node_contract::value,
-                         wh::compose::node_contract::stream,
-                         wh::compose::node_exec_mode::async>("tools",
-                                                             std::move(registry)))
+              .add_tools(wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                                      wh::compose::node_contract::stream,
+                                                      wh::compose::node_exec_mode::async>(
+                  "tools", std::move(registry)))
               .has_value());
   REQUIRE(graph.add_entry_edge("tools").has_value());
   REQUIRE(graph.add_exit_edge("tools").has_value());
@@ -235,8 +215,7 @@ TEST_CASE("async stream tools node returns graph stream reader payload",
   REQUIRE(compiled.has_value());
 
   wh::testing::helper::static_thread_scheduler_helper scheduler_helper{1U};
-  auto scheduler =
-      wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
+  auto scheduler = wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
   wh::compose::node_runtime runtime{};
   runtime.set_control_scheduler(&scheduler);
 
@@ -246,8 +225,8 @@ TEST_CASE("async stream tools node returns graph stream reader payload",
       .arguments = "chunk",
   }});
   wh::core::run_context context{};
-  auto waited = stdexec::sync_wait(wh::compose::run_compiled_async_node(
-      compiled.value().get(), input, context, runtime));
+  auto waited = stdexec::sync_wait(
+      wh::compose::run_compiled_async_node(compiled.value().get(), input, context, runtime));
   REQUIRE(waited.has_value());
   auto status = std::get<0>(std::move(*waited));
   REQUIRE(status.has_value());
@@ -259,23 +238,19 @@ TEST_CASE("async stream tools node returns graph stream reader payload",
 TEST_CASE("tools node builders also compile async value endpoints and preserve labels",
           "[UT][wh/compose/node/tools_builder.hpp][make_tools_node][condition][branch][boundary]") {
   wh::compose::tool_registry registry{};
-  registry.emplace("echo", wh::compose::tool_entry{
-                               .async_invoke =
-                                   [](wh::compose::tool_call call,
-                                      wh::tool::call_scope)
-                                       -> wh::compose::tools_invoke_sender {
-                                     return stdexec::just(
-                                         wh::core::result<wh::compose::graph_value>{
-                                             wh::compose::graph_value{
-                                                 std::string{"async:"} +
-                                                 call.arguments}});
-                                   },
-                           });
+  registry.emplace(
+      "echo", wh::compose::tool_entry{
+                  .async_invoke = [](wh::compose::tool_call call,
+                                     wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
+                    return stdexec::just(wh::core::result<wh::compose::graph_value>{
+                        wh::compose::graph_value{std::string{"async:"} + call.arguments}});
+                  },
+              });
 
-  auto node = wh::compose::make_tools_node<
-      wh::compose::node_contract::value,
-      wh::compose::node_contract::value,
-      wh::compose::node_exec_mode::async>("tools_async_value", registry);
+  auto node = wh::compose::make_tools_node<wh::compose::node_contract::value,
+                                           wh::compose::node_contract::value,
+                                           wh::compose::node_exec_mode::async>("tools_async_value",
+                                                                               registry);
   REQUIRE(node.options().type == "tools_node");
   REQUIRE(node.options().label == "tools_node");
 
@@ -289,8 +264,7 @@ TEST_CASE("tools node builders also compile async value endpoints and preserve l
   REQUIRE(compiled.has_value());
 
   wh::testing::helper::static_thread_scheduler_helper scheduler_helper{1U};
-  auto scheduler =
-      wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
+  auto scheduler = wh::core::detail::erase_resume_scheduler(scheduler_helper.scheduler());
   wh::compose::node_runtime runtime{};
   runtime.set_control_scheduler(&scheduler);
 
@@ -302,17 +276,14 @@ TEST_CASE("tools node builders also compile async value endpoints and preserve l
           .arguments = "payload",
       },
   });
-  auto waited = stdexec::sync_wait(wh::compose::run_compiled_async_node(
-      compiled.value().get(), input,
-      context, runtime));
+  auto waited = stdexec::sync_wait(
+      wh::compose::run_compiled_async_node(compiled.value().get(), input, context, runtime));
   REQUIRE(waited.has_value());
   auto status = std::get<0>(std::move(*waited));
   REQUIRE(status.has_value());
 
-  auto results = read_any<std::vector<wh::compose::tool_result>>(
-      std::move(status).value());
+  auto results = read_any<std::vector<wh::compose::tool_result>>(std::move(status).value());
   REQUIRE(results.has_value());
   REQUIRE(results.value().size() == 1U);
-  REQUIRE(*wh::core::any_cast<std::string>(&results.value().front().value) ==
-          "async:payload");
+  REQUIRE(*wh::core::any_cast<std::string>(&results.value().front().value) == "async:payload");
 }

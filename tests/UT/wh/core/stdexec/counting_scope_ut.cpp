@@ -1,8 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <future>
 #include <thread>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/core/stdexec/counting_scope.hpp"

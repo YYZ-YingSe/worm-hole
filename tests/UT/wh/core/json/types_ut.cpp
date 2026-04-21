@@ -22,11 +22,9 @@ TEST_CASE("json type aliases expose document value allocator and stable kind def
           "[UT][wh/core/json/types.hpp][json_value_kind][condition][boundary]") {
   STATIC_REQUIRE(std::same_as<wh::core::json_document, rapidjson::Document>);
   STATIC_REQUIRE(std::same_as<wh::core::json_value, rapidjson::Value>);
-  STATIC_REQUIRE(std::same_as<wh::core::json_allocator,
-                              rapidjson::Document::AllocatorType>);
+  STATIC_REQUIRE(std::same_as<wh::core::json_allocator, rapidjson::Document::AllocatorType>);
 
   const wh::core::json_value_kind null_kind = wh::core::json_value_kind::null_value;
-  const wh::core::json_value_kind object_kind =
-      wh::core::json_value_kind::object_value;
+  const wh::core::json_value_kind object_kind = wh::core::json_value_kind::object_value;
   REQUIRE(null_kind != object_kind);
 }

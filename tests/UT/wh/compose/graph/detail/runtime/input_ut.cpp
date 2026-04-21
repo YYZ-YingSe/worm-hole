@@ -1,12 +1,13 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <type_traits>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/graph/detail/runtime/input.hpp"
 
 TEST_CASE("runtime input umbrella re-exports the shared dag and runtime aliases",
-          "[UT][wh/compose/graph/detail/runtime/input.hpp][input_runtime::dag_node_phase][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/runtime/"
+          "input.hpp][input_runtime::dag_node_phase][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   static_assert(std::same_as<dag_node_phase, dag_node_phase>);
@@ -26,8 +27,10 @@ TEST_CASE("runtime input umbrella re-exports the shared dag and runtime aliases"
   REQUIRE(schedule.branch_states[1U].decided);
 }
 
-TEST_CASE("runtime input umbrella also exposes pregel delivery and value input helpers through one include",
-          "[UT][wh/compose/graph/detail/runtime/input.hpp][input_runtime::pregel_delivery_store][condition][branch][boundary]") {
+TEST_CASE("runtime input umbrella also exposes pregel delivery and value input helpers through one "
+          "include",
+          "[UT][wh/compose/graph/detail/runtime/"
+          "input.hpp][input_runtime::pregel_delivery_store][condition][branch][boundary]") {
   using namespace wh::compose::detail::input_runtime;
 
   pregel_delivery_store delivery{};

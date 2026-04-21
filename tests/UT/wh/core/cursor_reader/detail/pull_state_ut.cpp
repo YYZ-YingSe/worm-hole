@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 #include <type_traits>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/cursor_reader/detail/pull_state.hpp"
 

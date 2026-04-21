@@ -1,9 +1,8 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <memory>
 #include <tuple>
 #include <vector>
 
+#include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/detail/child_pump.hpp"
@@ -24,16 +23,14 @@ struct counting_child_pump_policy {
     if (next == 0) {
       ++next;
       return wh::compose::detail::child_pump_step<child_sender_type>::launch(
-          wh::compose::detail::bridge_graph_sender(
-              stdexec::just(wh::core::result<wh::compose::graph_value>{
-                  wh::compose::graph_value{1}})));
+          wh::compose::detail::bridge_graph_sender(stdexec::just(
+              wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{1}})));
     }
     if (next == 1) {
       ++next;
       return wh::compose::detail::child_pump_step<child_sender_type>::launch(
-          wh::compose::detail::bridge_graph_sender(
-              stdexec::just(wh::core::result<wh::compose::graph_value>{
-                  wh::compose::graph_value{2}})));
+          wh::compose::detail::bridge_graph_sender(stdexec::just(
+              wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{2}})));
     }
     return wh::compose::detail::child_pump_step<child_sender_type>::finish_with(
         wh::compose::graph_value{static_cast<int>(seen->size())});
@@ -42,8 +39,7 @@ struct counting_child_pump_policy {
   [[nodiscard]] auto handle_completion(completion_type current)
       -> std::optional<wh::core::result<wh::compose::graph_value>> {
     if (current.has_error()) {
-      return wh::core::result<wh::compose::graph_value>::failure(
-          current.error());
+      return wh::core::result<wh::compose::graph_value>::failure(current.error());
     }
     auto *typed = wh::core::any_cast<int>(&current.value());
     REQUIRE(typed != nullptr);
@@ -75,8 +71,7 @@ struct failing_child_pump_policy {
   [[nodiscard]] auto handle_completion(completion_type current)
       -> std::optional<wh::core::result<wh::compose::graph_value>> {
     if (current.has_error()) {
-      return wh::core::result<wh::compose::graph_value>::failure(
-          current.error());
+      return wh::core::result<wh::compose::graph_value>::failure(current.error());
     }
     return std::nullopt;
   }
@@ -85,7 +80,8 @@ struct failing_child_pump_policy {
 } // namespace
 
 TEST_CASE("child pump sender serializes child completions and runs cleanup on finish",
-          "[UT][wh/compose/graph/detail/child_pump.hpp][make_child_pump_sender][condition][branch][boundary]") {
+          "[UT][wh/compose/graph/detail/"
+          "child_pump.hpp][make_child_pump_sender][condition][branch][boundary]") {
   auto seen = std::make_shared<std::vector<int>>();
   auto cleaned = std::make_shared<bool>(false);
 
@@ -103,8 +99,9 @@ TEST_CASE("child pump sender serializes child completions and runs cleanup on fi
   REQUIRE(*seen == std::vector<int>{1, 2});
 }
 
-TEST_CASE("child pump sender propagates child terminal failures",
-          "[UT][wh/compose/graph/detail/child_pump.hpp][child_pump_sender::connect][branch][error]") {
+TEST_CASE(
+    "child pump sender propagates child terminal failures",
+    "[UT][wh/compose/graph/detail/child_pump.hpp][child_pump_sender::connect][branch][error]") {
   auto sender = wh::compose::detail::make_child_pump_sender(
       failing_child_pump_policy{},
       wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}));

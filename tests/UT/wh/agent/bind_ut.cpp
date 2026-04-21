@@ -32,19 +32,15 @@ TEST_CASE("agent bind make_agent lowers plan-execute self-refine and reviewer-ex
   REQUIRE(plan->freeze().has_value());
   expect_bound_agent(std::move(plan).value().into_agent(), "plan");
 
-  auto self_refine =
-      wh::testing::helper::make_configured_self_refine("self-refine");
+  auto self_refine = wh::testing::helper::make_configured_self_refine("self-refine");
   REQUIRE(self_refine.has_value());
   REQUIRE(self_refine->freeze().has_value());
-  expect_bound_agent(std::move(self_refine).value().into_agent(),
-                     "self-refine");
+  expect_bound_agent(std::move(self_refine).value().into_agent(), "self-refine");
 
-  auto reviewer =
-      wh::testing::helper::make_configured_reviewer_executor("reviewer");
+  auto reviewer = wh::testing::helper::make_configured_reviewer_executor("reviewer");
   REQUIRE(reviewer.has_value());
   REQUIRE(reviewer->freeze().has_value());
-  expect_bound_agent(std::move(reviewer).value().into_agent(),
-                     "reviewer");
+  expect_bound_agent(std::move(reviewer).value().into_agent(), "reviewer");
 }
 
 TEST_CASE("agent bind make_agent lowers reflexion supervisor swarm and research shells",
@@ -52,15 +48,12 @@ TEST_CASE("agent bind make_agent lowers reflexion supervisor swarm and research 
   auto reflexion = wh::testing::helper::make_configured_reflexion("reflexion");
   REQUIRE(reflexion.has_value());
   REQUIRE(reflexion->freeze().has_value());
-  expect_bound_agent(std::move(reflexion).value().into_agent(),
-                     "reflexion");
+  expect_bound_agent(std::move(reflexion).value().into_agent(), "reflexion");
 
-  auto supervisor =
-      wh::testing::helper::make_configured_supervisor("supervisor");
+  auto supervisor = wh::testing::helper::make_configured_supervisor("supervisor");
   REQUIRE(supervisor.has_value());
   REQUIRE(supervisor->freeze().has_value());
-  expect_bound_agent(std::move(supervisor).value().into_agent(),
-                     "supervisor");
+  expect_bound_agent(std::move(supervisor).value().into_agent(), "supervisor");
 
   auto swarm = wh::testing::helper::make_configured_swarm("swarm");
   REQUIRE(swarm.has_value());
@@ -70,6 +63,5 @@ TEST_CASE("agent bind make_agent lowers reflexion supervisor swarm and research 
   auto research = wh::testing::helper::make_configured_research("research");
   REQUIRE(research.has_value());
   REQUIRE(research->freeze().has_value());
-  expect_bound_agent(std::move(research).value().into_agent(),
-                     "research");
+  expect_bound_agent(std::move(research).value().into_agent(), "research");
 }

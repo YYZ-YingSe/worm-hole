@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/core/small_vector/vector.hpp"
 
@@ -30,9 +30,7 @@ TEST_CASE("small_vector vector supports inline growth erase and std round-trip",
 
   const auto removed_equal = wh::core::erase(values, 2);
   REQUIRE(removed_equal == 1U);
-  const auto removed_if = wh::core::erase_if(values, [](int value) {
-    return (value % 2) != 0;
-  });
+  const auto removed_if = wh::core::erase_if(values, [](int value) { return (value % 2) != 0; });
   REQUIRE(removed_if == 3U);
   REQUIRE(values.empty());
 

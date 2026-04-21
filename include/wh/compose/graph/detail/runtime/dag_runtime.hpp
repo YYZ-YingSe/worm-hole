@@ -8,32 +8,26 @@ namespace wh::compose::detail::invoke_runtime {
 class dag_runtime final {
 public:
   explicit dag_runtime(invoke_session session) : session_(std::move(session)) {
-    dag_node_phases_.resize(session_.node_count(),
-                            input_runtime::dag_node_phase::pending);
+    dag_node_phases_.resize(session_.node_count(), input_runtime::dag_node_phase::pending);
     dag_schedule_.reset(session_.node_count());
     frontier_.reset(session_.node_count());
     suspended_.reset(session_.node_count(), false);
   }
 
-  [[nodiscard]] auto capture_checkpoint_state()
-      -> wh::core::result<checkpoint_state>;
+  [[nodiscard]] auto capture_checkpoint_state() -> wh::core::result<checkpoint_state>;
   [[nodiscard]] auto capture_checkpoint_runtime(checkpoint_runtime_state &runtime)
       -> wh::core::result<void>;
 
   auto initialize_entry() -> void;
-  [[nodiscard]] auto restore_entry(
-      detail::checkpoint_runtime::prepared_restore &prepared)
+  [[nodiscard]] auto restore_entry(detail::checkpoint_runtime::prepared_restore &prepared)
       -> wh::core::result<void>;
   [[nodiscard]] auto start_entry(graph_value input) -> wh::core::result<void>;
 
   [[nodiscard]] auto make_input_sender(attempt_id attempt) -> graph_sender;
-  [[nodiscard]] auto make_input_attempt(const std::uint32_t node_id,
-                                        std::size_t step)
+  [[nodiscard]] auto make_input_attempt(const std::uint32_t node_id, std::size_t step)
       -> wh::core::result<attempt_id>;
-  [[nodiscard]] auto begin_state_pre(attempt_id attempt)
-      -> wh::core::result<state_step>;
-  auto commit_terminal_input(attempt_id attempt, graph_value input)
-      -> wh::core::result<void>;
+  [[nodiscard]] auto begin_state_pre(attempt_id attempt) -> wh::core::result<state_step>;
+  auto commit_terminal_input(attempt_id attempt, graph_value input) -> wh::core::result<void>;
 
   [[nodiscard]] auto finish() -> wh::core::result<graph_value>;
 
@@ -44,21 +38,16 @@ public:
   [[nodiscard]] auto capture_pending_inputs() -> graph_sender;
 
   template <typename enqueue_fn_t>
-  auto commit_node_output(attempt_id attempt, graph_value node_output,
-                          enqueue_fn_t &&enqueue_fn)
+  auto commit_node_output(attempt_id attempt, graph_value node_output, enqueue_fn_t &&enqueue_fn)
       -> wh::core::result<void>;
 
   [[nodiscard]] auto take_ready_action() -> ready_action;
 
-  auto rebind_moved_runtime_storage() noexcept -> void {
-    session_.rebind_moved_runtime_storage();
-  }
+  auto rebind_moved_runtime_storage() noexcept -> void { session_.rebind_moved_runtime_storage(); }
 
   [[nodiscard]] auto session() noexcept -> invoke_session & { return session_; }
 
-  [[nodiscard]] auto session() const noexcept -> const invoke_session & {
-    return session_;
-  }
+  [[nodiscard]] auto session() const noexcept -> const invoke_session & { return session_; }
 
   auto dag_node_phases() -> std::vector<input_runtime::dag_node_phase> & {
     return dag_node_phases_;
@@ -71,11 +60,10 @@ public:
 
   auto try_persist_checkpoint() -> void;
 
-  auto make_freeze_sender(graph_sender capture_sender,
-                          const bool external_interrupt) -> graph_sender {
-    return session_.make_freeze_sender(
-        std::move(capture_sender), external_interrupt,
-        [this]() { try_persist_checkpoint(); });
+  auto make_freeze_sender(graph_sender capture_sender, const bool external_interrupt)
+      -> graph_sender {
+    return session_.make_freeze_sender(std::move(capture_sender), external_interrupt,
+                                       [this]() { try_persist_checkpoint(); });
   }
 
   auto mark_suspended(const std::uint32_t node_id) -> void {
@@ -84,8 +72,7 @@ public:
     }
   }
 
-  [[nodiscard]] auto capture_suspended_nodes() const
-      -> std::vector<std::uint32_t> {
+  [[nodiscard]] auto capture_suspended_nodes() const -> std::vector<std::uint32_t> {
     std::vector<std::uint32_t> captured{};
     captured.reserve(suspended_nodes_.size());
     for (const auto node_id : suspended_nodes_) {
@@ -98,8 +85,7 @@ public:
     return captured;
   }
 
-  auto restore_suspended_nodes(std::vector<std::uint32_t> suspended_nodes)
-      -> void {
+  auto restore_suspended_nodes(std::vector<std::uint32_t> suspended_nodes) -> void {
     suspended_nodes_ = std::move(suspended_nodes);
     suspended_.reset(session_.node_count(), false);
     for (const auto node_id : suspended_nodes_) {

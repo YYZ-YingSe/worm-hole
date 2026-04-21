@@ -1,11 +1,11 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_runtime_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
@@ -15,10 +15,8 @@
 namespace {
 
 template <typename value_t>
-[[nodiscard]] auto read_any(const wh::core::any &value)
-    -> wh::core::result<value_t> {
-  if (const auto *typed = wh::core::any_cast<value_t>(&value);
-      typed != nullptr) {
+[[nodiscard]] auto read_any(const wh::core::any &value) -> wh::core::result<value_t> {
+  if (const auto *typed = wh::core::any_cast<value_t>(&value); typed != nullptr) {
     if constexpr (std::copy_constructible<value_t>) {
       return *typed;
     } else {
@@ -29,8 +27,7 @@ template <typename value_t>
 }
 
 template <typename value_t>
-[[nodiscard]] auto read_any(wh::core::any &&value)
-    -> wh::core::result<value_t> {
+[[nodiscard]] auto read_any(wh::core::any &&value) -> wh::core::result<value_t> {
   if (auto *typed = wh::core::any_cast<value_t>(&value); typed != nullptr) {
     return std::move(*typed);
   }
@@ -38,13 +35,12 @@ template <typename value_t>
 }
 
 template <typename value_t>
-[[nodiscard]] auto any_get(const wh::core::any &value) noexcept
-    -> const value_t * {
+[[nodiscard]] auto any_get(const wh::core::any &value) noexcept -> const value_t * {
   return wh::core::any_cast<value_t>(&value);
 }
 
-using wh::testing::helper::checkpoint_entry_input;
 using wh::testing::helper::capture_exact_checkpoint;
+using wh::testing::helper::checkpoint_entry_input;
 using wh::testing::helper::find_checkpoint_entry_input;
 using wh::testing::helper::invoke_graph_sync;
 using wh::testing::helper::invoke_value_sync;
@@ -66,17 +62,17 @@ struct nested_increment_graphs {
   child_options.name = "child_graph";
   wh::compose::graph child{std::move(child_options)};
   REQUIRE(child
-              .add_lambda("leaf", [](const wh::compose::graph_value &input,
-                                      wh::core::run_context &,
-                                      const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+              .add_lambda("leaf",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(child.add_entry_edge("leaf").has_value());
   REQUIRE(child.add_exit_edge("leaf").has_value());
@@ -85,9 +81,7 @@ struct nested_increment_graphs {
   wh::compose::graph_compile_options parent_options{};
   parent_options.name = "parent_graph";
   wh::compose::graph parent{std::move(parent_options)};
-  REQUIRE(parent
-              .add_subgraph(wh::compose::make_subgraph_node("child", child))
-              .has_value());
+  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("child", child)).has_value());
   REQUIRE(parent.add_entry_edge("child").has_value());
   REQUIRE(parent.add_exit_edge("child").has_value());
   REQUIRE(parent.compile().has_value());
@@ -112,23 +106,21 @@ struct deep_nested_increment_graphs {
   std::string parent_name{};
 };
 
-[[nodiscard]] auto make_deep_nested_increment_graphs()
-    -> deep_nested_increment_graphs {
+[[nodiscard]] auto make_deep_nested_increment_graphs() -> deep_nested_increment_graphs {
   wh::compose::graph_compile_options leaf_options{};
   leaf_options.name = "leaf_graph";
   wh::compose::graph leaf{std::move(leaf_options)};
-  REQUIRE(leaf
-              .add_lambda("inc", [](const wh::compose::graph_value &input,
-                                     wh::core::run_context &,
-                                     const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+  REQUIRE(leaf.add_lambda("inc",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(leaf.add_entry_edge("inc").has_value());
   REQUIRE(leaf.add_exit_edge("inc").has_value());
@@ -137,9 +129,7 @@ struct deep_nested_increment_graphs {
   wh::compose::graph_compile_options middle_options{};
   middle_options.name = "middle_graph";
   wh::compose::graph middle{std::move(middle_options)};
-  REQUIRE(middle
-              .add_subgraph(wh::compose::make_subgraph_node("leaf", leaf))
-              .has_value());
+  REQUIRE(middle.add_subgraph(wh::compose::make_subgraph_node("leaf", leaf)).has_value());
   REQUIRE(middle.add_entry_edge("leaf").has_value());
   REQUIRE(middle.add_exit_edge("leaf").has_value());
   REQUIRE(middle.compile().has_value());
@@ -147,9 +137,7 @@ struct deep_nested_increment_graphs {
   wh::compose::graph_compile_options parent_options{};
   parent_options.name = "parent_graph";
   wh::compose::graph parent{std::move(parent_options)};
-  REQUIRE(parent
-              .add_subgraph(wh::compose::make_subgraph_node("middle", middle))
-              .has_value());
+  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("middle", middle)).has_value());
   REQUIRE(parent.add_entry_edge("middle").has_value());
   REQUIRE(parent.add_exit_edge("middle").has_value());
   REQUIRE(parent.compile().has_value());
@@ -369,29 +357,26 @@ TEST_CASE("compose graph runtime supports pluggable checkpoint backend callbacks
   std::size_t save_calls = 0U;
   std::optional<int> saved_start_input{};
   wh::compose::checkpoint_backend backend{};
-  backend.prepare_restore =
-      wh::compose::checkpoint_backend_prepare_restore{
-          [&graph, &prepare_calls](const wh::compose::checkpoint_load_options &,
-                                   wh::core::run_context &)
-              -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-            ++prepare_calls;
-            wh::core::run_context capture_context{};
-            auto checkpoint =
-                capture_exact_checkpoint(graph, wh::core::any(5), capture_context);
-            if (checkpoint.has_error()) {
-              return wh::core::result<wh::compose::checkpoint_restore_plan>::failure(
-                  checkpoint.error());
-            }
-            return wh::compose::checkpoint_restore_plan{
-                .restore_from_checkpoint = true,
-                .checkpoint = std::move(checkpoint).value(),
-            };
-          }};
+  backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+      [&graph, &prepare_calls](
+          const wh::compose::checkpoint_load_options &,
+          wh::core::run_context &) -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+        ++prepare_calls;
+        wh::core::run_context capture_context{};
+        auto checkpoint = capture_exact_checkpoint(graph, wh::core::any(5), capture_context);
+        if (checkpoint.has_error()) {
+          return wh::core::result<wh::compose::checkpoint_restore_plan>::failure(
+              checkpoint.error());
+        }
+        return wh::compose::checkpoint_restore_plan{
+            .restore_from_checkpoint = true,
+            .checkpoint = std::move(checkpoint).value(),
+        };
+      }};
   backend.save = wh::compose::checkpoint_backend_save{
       [&save_calls, &saved_start_input](wh::compose::checkpoint_state &&checkpoint,
                                         wh::compose::checkpoint_save_options &&,
-                                        wh::core::run_context &)
-          -> wh::core::result<void> {
+                                        wh::core::run_context &) -> wh::core::result<void> {
         ++save_calls;
         auto typed = checkpoint_entry_input(checkpoint);
         if (typed.has_value()) {
@@ -407,9 +392,8 @@ TEST_CASE("compose graph runtime supports pluggable checkpoint backend callbacks
   write_options.checkpoint_id = "backend-id";
   controls.checkpoint.save = write_options;
   wh::core::run_context context{};
-  auto invoked =
-      invoke_graph_sync(graph, wh::core::any(std::monostate{}), context, controls,
-                        std::addressof(services));
+  auto invoked = invoke_graph_sync(graph, wh::core::any(std::monostate{}), context, controls,
+                                   std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
@@ -427,12 +411,9 @@ TEST_CASE("compose graph checkpoint serializer falls back to default and support
   REQUIRE(graph
               .add_lambda(
                   "worker",
-                  [](wh::compose::graph_value &input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_value> {
-                    return std::move(input);
-                  })
+                      -> wh::core::result<wh::compose::graph_value> { return std::move(input); })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -449,13 +430,12 @@ TEST_CASE("compose graph checkpoint serializer falls back to default and support
     controls.checkpoint.save = write_options;
     wh::core::run_context context{};
     auto invoked =
-        invoke_graph_sync(graph, wh::core::any(4), context, controls,
-                          std::addressof(services));
+        invoke_graph_sync(graph, wh::core::any(4), context, controls, std::addressof(services));
     REQUIRE(invoked.has_value());
     REQUIRE(invoked.value().output_status.has_value());
 
-    auto persisted = store.load(wh::compose::checkpoint_load_options{
-        .checkpoint_id = std::string{"serializer-default"}});
+    auto persisted = store.load(
+        wh::compose::checkpoint_load_options{.checkpoint_id = std::string{"serializer-default"}});
     REQUIRE(persisted.has_value());
     auto start_input = checkpoint_entry_input(persisted.value());
     REQUIRE(start_input.has_value());
@@ -472,8 +452,7 @@ TEST_CASE("compose graph checkpoint serializer falls back to default and support
     const wh::compose::checkpoint_serializer serializer{
         .encode =
             wh::compose::checkpoint_serializer_encode{
-                [&encode_called](wh::compose::checkpoint_state &&state,
-                                 wh::core::run_context &)
+                [&encode_called](wh::compose::checkpoint_state &&state, wh::core::run_context &)
                     -> wh::core::result<wh::compose::graph_value> {
                   encode_called = true;
                   set_checkpoint_entry_input(state, 77);
@@ -481,12 +460,10 @@ TEST_CASE("compose graph checkpoint serializer falls back to default and support
                 }},
         .decode =
             wh::compose::checkpoint_serializer_decode{
-                [&decode_called](wh::compose::graph_value &&payload,
-                                 wh::core::run_context &)
+                [&decode_called](wh::compose::graph_value &&payload, wh::core::run_context &)
                     -> wh::core::result<wh::compose::checkpoint_state> {
                   decode_called = true;
-                  return read_any<wh::compose::checkpoint_state>(
-                      std::move(payload));
+                  return read_any<wh::compose::checkpoint_state>(std::move(payload));
                 }},
     };
     wh::compose::graph_runtime_services services{};
@@ -496,15 +473,14 @@ TEST_CASE("compose graph checkpoint serializer falls back to default and support
     controls.checkpoint.save = write_options;
     wh::core::run_context context{};
     auto invoked =
-        invoke_graph_sync(graph, wh::core::any(6), context, controls,
-                          std::addressof(services));
+        invoke_graph_sync(graph, wh::core::any(6), context, controls, std::addressof(services));
     REQUIRE(invoked.has_value());
     REQUIRE(invoked.value().output_status.has_value());
     REQUIRE(encode_called);
     REQUIRE(decode_called);
 
-    auto persisted = store.load(wh::compose::checkpoint_load_options{
-        .checkpoint_id = std::string{"serializer-custom"}});
+    auto persisted = store.load(
+        wh::compose::checkpoint_load_options{.checkpoint_id = std::string{"serializer-custom"}});
     REQUIRE(persisted.has_value());
     auto persisted_start = checkpoint_entry_input(persisted.value());
     REQUIRE(persisted_start.has_value());
@@ -516,12 +492,11 @@ TEST_CASE("compose graph checkpoint serializer validates session payload shape",
           "[core][compose][checkpoint][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda("worker", [](wh::compose::graph_value &input,
-                                       wh::core::run_context &,
-                                       const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                return std::move(input);
-              })
+              .add_lambda(
+                  "worker",
+                  [](wh::compose::graph_value &input, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> { return std::move(input); })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -534,46 +509,39 @@ TEST_CASE("compose graph checkpoint serializer validates session payload shape",
   seed.checkpoint_id = "serializer-error";
   seed.restore_shape = graph.restore_shape();
   set_checkpoint_entry_input(seed, 5);
-  REQUIRE(store.save(wh::compose::checkpoint_state{seed},
-                     wh::compose::checkpoint_save_options{write_options})
+  REQUIRE(store
+              .save(wh::compose::checkpoint_state{seed},
+                    wh::compose::checkpoint_save_options{write_options})
               .has_value());
 
   SECTION("type mismatch serializer payload fails restore") {
     const wh::compose::checkpoint_serializer serializer{
         .encode =
             wh::compose::checkpoint_serializer_encode{
-                [](wh::compose::checkpoint_state &&,
-                   wh::core::run_context &)
-                    -> wh::core::result<wh::compose::graph_value> {
-                  return wh::core::any(7);
-                }},
+                [](wh::compose::checkpoint_state &&, wh::core::run_context &)
+                    -> wh::core::result<wh::compose::graph_value> { return wh::core::any(7); }},
         .decode =
             wh::compose::checkpoint_serializer_decode{
                 [](wh::compose::graph_value &&payload,
-                   wh::core::run_context &)
-                    -> wh::core::result<wh::compose::checkpoint_state> {
-                  return read_any<wh::compose::checkpoint_state>(
-                      std::move(payload));
+                   wh::core::run_context &) -> wh::core::result<wh::compose::checkpoint_state> {
+                  return read_any<wh::compose::checkpoint_state>(std::move(payload));
                 }},
     };
     wh::compose::graph_runtime_services services{};
     services.checkpoint.store = std::addressof(store);
     services.checkpoint.serializer = std::addressof(serializer);
     wh::compose::graph_invoke_controls controls{};
-    controls.checkpoint.load = wh::compose::checkpoint_load_options{
-        .checkpoint_id = std::string{"serializer-error"}};
+    controls.checkpoint.load =
+        wh::compose::checkpoint_load_options{.checkpoint_id = std::string{"serializer-error"}};
     wh::core::run_context context{};
-    auto invoked = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                                     context, controls, std::addressof(services));
+    auto invoked = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), context,
+                                     controls, std::addressof(services));
     REQUIRE(invoked.has_value());
     REQUIRE(invoked.value().output_status.has_error());
-    REQUIRE(invoked.value().output_status.error() ==
-            wh::core::errc::type_mismatch);
+    REQUIRE(invoked.value().output_status.error() == wh::core::errc::type_mismatch);
     REQUIRE(invoked.value().report.checkpoint_error.has_value());
-    REQUIRE(invoked.value().report.checkpoint_error->code ==
-            wh::core::errc::type_mismatch);
-    REQUIRE(invoked.value().report.checkpoint_error->operation ==
-            "restore_serializer_roundtrip");
+    REQUIRE(invoked.value().report.checkpoint_error->code == wh::core::errc::type_mismatch);
+    REQUIRE(invoked.value().report.checkpoint_error->operation == "restore_serializer_roundtrip");
   }
 
   SECTION("incomplete serializer callbacks fail restore") {
@@ -581,8 +549,7 @@ TEST_CASE("compose graph checkpoint serializer validates session payload shape",
         .encode =
             wh::compose::checkpoint_serializer_encode{
                 [](wh::compose::checkpoint_state &&state,
-                   wh::core::run_context &)
-                    -> wh::core::result<wh::compose::graph_value> {
+                   wh::core::run_context &) -> wh::core::result<wh::compose::graph_value> {
                   return wh::core::any(std::move(state));
                 }},
         .decode = wh::compose::checkpoint_serializer_decode{nullptr},
@@ -591,38 +558,30 @@ TEST_CASE("compose graph checkpoint serializer validates session payload shape",
     services.checkpoint.store = std::addressof(store);
     services.checkpoint.serializer = std::addressof(serializer);
     wh::compose::graph_invoke_controls controls{};
-    controls.checkpoint.load = wh::compose::checkpoint_load_options{
-        .checkpoint_id = std::string{"serializer-error"}};
+    controls.checkpoint.load =
+        wh::compose::checkpoint_load_options{.checkpoint_id = std::string{"serializer-error"}};
     wh::core::run_context context{};
-    auto invoked = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                                     context, controls, std::addressof(services));
+    auto invoked = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), context,
+                                     controls, std::addressof(services));
     REQUIRE(invoked.has_value());
     REQUIRE(invoked.value().output_status.has_error());
-    REQUIRE(invoked.value().output_status.error() ==
-            wh::core::errc::invalid_argument);
+    REQUIRE(invoked.value().output_status.error() == wh::core::errc::invalid_argument);
     REQUIRE(invoked.value().report.checkpoint_error.has_value());
-    REQUIRE(invoked.value().report.checkpoint_error->code ==
-            wh::core::errc::invalid_argument);
-    REQUIRE(invoked.value().report.checkpoint_error->operation ==
-            "validate_runtime_config");
+    REQUIRE(invoked.value().report.checkpoint_error->code == wh::core::errc::invalid_argument);
+    REQUIRE(invoked.value().report.checkpoint_error->operation == "validate_runtime_config");
   }
 }
 
 TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips pending input",
           "[core][compose][checkpoint][condition]") {
-  wh::compose::graph graph{
-      wh::compose::graph_boundary{.input = wh::compose::node_contract::stream,
-                                  .output = wh::compose::node_contract::stream}};
+  wh::compose::graph graph{wh::compose::graph_boundary{
+      .input = wh::compose::node_contract::stream, .output = wh::compose::node_contract::stream}};
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::stream>(
                   "worker",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                    return input;
-                  })
+                      -> wh::core::result<wh::compose::graph_stream_reader> { return input; })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -633,97 +592,93 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
   write_options.checkpoint_id = "stream-cp";
 
   wh::compose::checkpoint_stream_codec converter_pair{
-      .to_value = wh::compose::checkpoint_stream_save{
-          [](wh::compose::graph_stream_reader &&reader, wh::core::run_context &)
-              -> wh::core::result<wh::compose::graph_value> {
-            int sum = 0;
-            for (;;) {
-              auto chunk = reader.read();
-              if (chunk.has_error()) {
-                return wh::core::result<wh::compose::graph_value>::failure(
-                    chunk.error());
-              }
-              if (chunk.value().eof) {
-                break;
-              }
-              if (!chunk.value().value.has_value()) {
-                continue;
-              }
-              auto typed = read_any<int>(*chunk.value().value);
-              if (typed.has_error()) {
-                return wh::core::result<wh::compose::graph_value>::failure(
-                    typed.error());
-              }
-              sum += typed.value();
-            }
-            return wh::core::any(sum);
-          }},
-      .to_stream = wh::compose::checkpoint_stream_load{
-          [](const wh::compose::graph_value &value,
-             wh::core::run_context &)
-              -> wh::core::result<wh::compose::graph_stream_reader> {
-            auto typed = read_any<int>(value);
-            if (typed.has_error()) {
-              return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                  typed.error());
-            }
-            auto single = wh::compose::make_single_value_stream_reader(typed.value());
-            if (single.has_error()) {
-              return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                  single.error());
-            }
-            return std::move(single).value();
-          }},
+      .to_value =
+          wh::compose::checkpoint_stream_save{
+              [](wh::compose::graph_stream_reader &&reader,
+                 wh::core::run_context &) -> wh::core::result<wh::compose::graph_value> {
+                int sum = 0;
+                for (;;) {
+                  auto chunk = reader.read();
+                  if (chunk.has_error()) {
+                    return wh::core::result<wh::compose::graph_value>::failure(chunk.error());
+                  }
+                  if (chunk.value().eof) {
+                    break;
+                  }
+                  if (!chunk.value().value.has_value()) {
+                    continue;
+                  }
+                  auto typed = read_any<int>(*chunk.value().value);
+                  if (typed.has_error()) {
+                    return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+                  }
+                  sum += typed.value();
+                }
+                return wh::core::any(sum);
+              }},
+      .to_stream =
+          wh::compose::checkpoint_stream_load{
+              [](const wh::compose::graph_value &value,
+                 wh::core::run_context &) -> wh::core::result<wh::compose::graph_stream_reader> {
+                auto typed = read_any<int>(value);
+                if (typed.has_error()) {
+                  return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
+                }
+                auto single = wh::compose::make_single_value_stream_reader(typed.value());
+                if (single.has_error()) {
+                  return wh::core::result<wh::compose::graph_stream_reader>::failure(
+                      single.error());
+                }
+                return std::move(single).value();
+              }},
   };
   wh::compose::checkpoint_stream_codecs registry{};
   registry.emplace(std::string{wh::compose::graph_start_node_key}, converter_pair);
   registry.emplace(std::string{"worker"}, std::move(converter_pair));
-  registry.emplace(std::string{wh::compose::graph_end_node_key},
-                   wh::compose::checkpoint_stream_codec{
-                       .to_value = wh::compose::checkpoint_stream_save{
-                           [](wh::compose::graph_stream_reader &&reader,
-                              wh::core::run_context &)
-                               -> wh::core::result<wh::compose::graph_value> {
-                             int sum = 0;
-                             for (;;) {
-                               auto chunk = reader.read();
-                               if (chunk.has_error()) {
-                                 return wh::core::result<wh::compose::graph_value>::failure(
-                                     chunk.error());
-                               }
-                               if (chunk.value().eof) {
-                                 break;
-                               }
-                               if (!chunk.value().value.has_value()) {
-                                 continue;
-                               }
-                               auto typed = read_any<int>(*chunk.value().value);
-                               if (typed.has_error()) {
-                                 return wh::core::result<wh::compose::graph_value>::failure(
-                                     typed.error());
-                               }
-                               sum += typed.value();
-                             }
-                             return wh::core::any(sum);
-                           }},
-                       .to_stream = wh::compose::checkpoint_stream_load{
-                           [](const wh::compose::graph_value &value,
-                              wh::core::run_context &)
-                               -> wh::core::result<wh::compose::graph_stream_reader> {
-                             auto typed = read_any<int>(value);
-                             if (typed.has_error()) {
-                               return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                                   typed.error());
-                             }
-                             auto single = wh::compose::make_single_value_stream_reader(
-                                 typed.value());
-                             if (single.has_error()) {
-                               return wh::core::result<wh::compose::graph_stream_reader>::failure(
-                                   single.error());
-                             }
-                             return std::move(single).value();
-                           }},
-                   });
+  registry.emplace(
+      std::string{wh::compose::graph_end_node_key},
+      wh::compose::checkpoint_stream_codec{
+          .to_value =
+              wh::compose::checkpoint_stream_save{
+                  [](wh::compose::graph_stream_reader &&reader,
+                     wh::core::run_context &) -> wh::core::result<wh::compose::graph_value> {
+                    int sum = 0;
+                    for (;;) {
+                      auto chunk = reader.read();
+                      if (chunk.has_error()) {
+                        return wh::core::result<wh::compose::graph_value>::failure(chunk.error());
+                      }
+                      if (chunk.value().eof) {
+                        break;
+                      }
+                      if (!chunk.value().value.has_value()) {
+                        continue;
+                      }
+                      auto typed = read_any<int>(*chunk.value().value);
+                      if (typed.has_error()) {
+                        return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+                      }
+                      sum += typed.value();
+                    }
+                    return wh::core::any(sum);
+                  }},
+          .to_stream =
+              wh::compose::checkpoint_stream_load{
+                  [](const wh::compose::graph_value &value, wh::core::run_context &)
+                      -> wh::core::result<wh::compose::graph_stream_reader> {
+                    auto typed = read_any<int>(value);
+                    if (typed.has_error()) {
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
+                          typed.error());
+                    }
+                    auto single = wh::compose::make_single_value_stream_reader(typed.value());
+                    if (single.has_error()) {
+                      return wh::core::result<wh::compose::graph_stream_reader>::failure(
+                          single.error());
+                    }
+                    return std::move(single).value();
+                  }},
+      });
 
   wh::compose::graph_runtime_services first_services{};
   first_services.checkpoint.store = std::addressof(store);
@@ -736,9 +691,8 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
   REQUIRE(writer.try_write(wh::core::any(2)).has_value());
   REQUIRE(writer.try_write(wh::core::any(3)).has_value());
   REQUIRE(writer.close().has_value());
-  auto first = invoke_graph_sync(graph, wh::core::any(std::move(reader)),
-                                 first_context, first_controls,
-                                 std::addressof(first_services));
+  auto first = invoke_graph_sync(graph, wh::core::any(std::move(reader)), first_context,
+                                 first_controls, std::addressof(first_services));
   REQUIRE(first.has_value());
   REQUIRE(first.value().output_status.has_value());
 
@@ -749,8 +703,7 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
   const auto *entry_payload = find_checkpoint_entry_input(persisted.value());
   REQUIRE(entry_payload != nullptr);
   const auto *stream_payload =
-      any_get<wh::compose::checkpoint_stream_value_payload>(
-          *entry_payload);
+      any_get<wh::compose::checkpoint_stream_value_payload>(*entry_payload);
   REQUIRE(stream_payload != nullptr);
   auto persisted_sum = read_any<int>(stream_payload->value);
   REQUIRE(persisted_sum.has_value());
@@ -763,13 +716,13 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
   wh::compose::graph_invoke_controls second_controls{};
   second_controls.checkpoint.forwarded_once = std::move(forwarded);
   wh::core::run_context second_context{};
-  auto resumed = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                                   second_context, second_controls,
-                                   std::addressof(second_services));
+  auto resumed =
+      invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), second_context,
+                        second_controls, std::addressof(second_services));
   REQUIRE(resumed.has_value());
   REQUIRE(resumed.value().output_status.has_value());
-  auto resumed_stream = read_any<wh::compose::graph_stream_reader>(
-      std::move(resumed).value().output_status.value());
+  auto resumed_stream =
+      read_any<wh::compose::graph_stream_reader>(std::move(resumed).value().output_status.value());
   REQUIRE(resumed_stream.has_value());
   auto first_chunk = resumed_stream.value().read();
   REQUIRE(first_chunk.has_value());
@@ -781,19 +734,14 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
 
 TEST_CASE("compose graph runtime records stream-converter missing pair as structured error",
           "[core][compose][checkpoint][branch]") {
-  wh::compose::graph graph{
-      wh::compose::graph_boundary{.input = wh::compose::node_contract::stream,
-                                  .output = wh::compose::node_contract::stream}};
+  wh::compose::graph graph{wh::compose::graph_boundary{
+      .input = wh::compose::node_contract::stream, .output = wh::compose::node_contract::stream}};
   REQUIRE(graph
-              .add_lambda<wh::compose::node_contract::stream,
-                          wh::compose::node_contract::stream>(
+              .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::stream>(
                   "worker",
-                  [](wh::compose::graph_stream_reader input,
-                     wh::core::run_context &,
+                  [](wh::compose::graph_stream_reader input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
-                      -> wh::core::result<wh::compose::graph_stream_reader> {
-                    return input;
-                  })
+                      -> wh::core::result<wh::compose::graph_stream_reader> { return input; })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -812,16 +760,13 @@ TEST_CASE("compose graph runtime records stream-converter missing pair as struct
   auto [writer, reader] = wh::compose::make_graph_stream();
   REQUIRE(writer.try_write(wh::core::any(1)).has_value());
   REQUIRE(writer.close().has_value());
-  auto invoked =
-      invoke_graph_sync(graph, wh::core::any(std::move(reader)), context, controls,
-                        std::addressof(services));
+  auto invoked = invoke_graph_sync(graph, wh::core::any(std::move(reader)), context, controls,
+                                   std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   REQUIRE(invoked.value().report.checkpoint_error.has_value());
-  REQUIRE(invoked.value().report.checkpoint_error->code ==
-          wh::core::errc::not_supported);
-  REQUIRE(invoked.value().report.checkpoint_error->operation ==
-          "persist_stream_convert");
+  REQUIRE(invoked.value().report.checkpoint_error->code == wh::core::errc::not_supported);
+  REQUIRE(invoked.value().report.checkpoint_error->operation == "persist_stream_convert");
 }
 
 TEST_CASE("compose graph runtime applies checkpoint NodePath state modifiers",
@@ -840,30 +785,29 @@ TEST_CASE("compose graph runtime applies checkpoint NodePath state modifiers",
   services.checkpoint.store = std::addressof(store);
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.save = write_options;
-  controls.checkpoint.before_save_nodes = wh::compose::checkpoint_node_hooks{
-      wh::compose::checkpoint_node_hook{
+  controls.checkpoint.before_save_nodes =
+      wh::compose::checkpoint_node_hooks{wh::compose::checkpoint_node_hook{
           .path = wh::compose::make_node_path({"worker"}),
           .include_descendants = false,
-          .modifier = wh::compose::checkpoint_node_modifier{
-              [](wh::compose::graph_node_state &state, wh::core::run_context &)
-                  -> wh::core::result<void> {
-                state.attempts = 42U;
-                return {};
-              }},
+          .modifier =
+              wh::compose::checkpoint_node_modifier{
+                  [](wh::compose::graph_node_state &state,
+                     wh::core::run_context &) -> wh::core::result<void> {
+                    state.attempts = 42U;
+                    return {};
+                  }},
       }};
   wh::core::run_context context{};
 
   auto invoked =
-      invoke_graph_sync(graph, wh::core::any(3), context, controls,
-                        std::addressof(services));
+      invoke_graph_sync(graph, wh::core::any(3), context, controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
-  auto persisted = store.load(wh::compose::checkpoint_load_options{
-      .checkpoint_id = std::string{"path-mod"}});
+  auto persisted =
+      store.load(wh::compose::checkpoint_load_options{.checkpoint_id = std::string{"path-mod"}});
   REQUIRE(persisted.has_value());
   const auto iter = std::find_if(
-      persisted.value().runtime.lifecycle.begin(),
-      persisted.value().runtime.lifecycle.end(),
+      persisted.value().runtime.lifecycle.begin(), persisted.value().runtime.lifecycle.end(),
       [](const wh::compose::graph_node_state &state) { return state.key == "worker"; });
   REQUIRE(iter != persisted.value().runtime.lifecycle.end());
   REQUIRE(iter->attempts == 42U);
@@ -896,27 +840,23 @@ TEST_CASE("compose graph runtime applies resume-data state overrides before invo
   overridden.attempts = 7U;
   overridden.last_error = wh::core::errc::unavailable;
   REQUIRE(context.resume_info
-              ->upsert("override-worker",
-                       wh::core::make_address({"graph", "worker"}),
+              ->upsert("override-worker", wh::core::make_address({"graph", "worker"}),
                        wh::core::any{overridden})
               .has_value());
 
   wh::compose::graph_call_options invalid_call_options{};
   invalid_call_options.pregel_max_steps = static_cast<std::size_t>(1U);
-  auto invoked =
-      invoke_graph_sync(graph, wh::core::any(1), context, invalid_call_options,
-                        std::addressof(services), controls);
+  auto invoked = invoke_graph_sync(graph, wh::core::any(1), context, invalid_call_options,
+                                   std::addressof(services), controls);
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_error());
-  REQUIRE(invoked.value().output_status.error() ==
-          wh::core::errc::contract_violation);
+  REQUIRE(invoked.value().output_status.error() == wh::core::errc::contract_violation);
 
-  auto persisted = store.load(wh::compose::checkpoint_load_options{
-      .checkpoint_id = std::string{"resume-override"}});
+  auto persisted = store.load(
+      wh::compose::checkpoint_load_options{.checkpoint_id = std::string{"resume-override"}});
   REQUIRE(persisted.has_value());
   const auto iter = std::find_if(
-      persisted.value().runtime.lifecycle.begin(),
-      persisted.value().runtime.lifecycle.end(),
+      persisted.value().runtime.lifecycle.begin(), persisted.value().runtime.lifecycle.end(),
       [](const wh::compose::graph_node_state &state) { return state.key == "worker"; });
   REQUIRE(iter != persisted.value().runtime.lifecycle.end());
   REQUIRE(iter->attempts == 7U);
@@ -927,17 +867,17 @@ TEST_CASE("compose graph runtime checkpoint restore reloads pending input",
           "[core][compose][checkpoint][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda("inc", [](const wh::compose::graph_value &input,
-                                    wh::core::run_context &,
-                                    const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+              .add_lambda("inc",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(graph.add_entry_edge("inc").has_value());
   REQUIRE(graph.add_exit_edge("inc").has_value());
@@ -947,8 +887,7 @@ TEST_CASE("compose graph runtime checkpoint restore reloads pending input",
   wh::compose::checkpoint_save_options write_options{};
   write_options.checkpoint_id = "runtime-cp";
   wh::core::run_context capture_context{};
-  auto checkpoint =
-      capture_exact_checkpoint(graph, wh::core::any(10), capture_context);
+  auto checkpoint = capture_exact_checkpoint(graph, wh::core::any(10), capture_context);
   REQUIRE(checkpoint.has_value());
   checkpoint->checkpoint_id = "runtime-cp";
   REQUIRE(store.save(std::move(checkpoint).value(), write_options).has_value());
@@ -962,8 +901,7 @@ TEST_CASE("compose graph runtime checkpoint restore reloads pending input",
   resume_controls.checkpoint.save = write_options;
   wh::core::run_context resume_context{};
   auto resumed = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                                   resume_context, resume_controls,
-                                   std::addressof(services));
+                                   resume_context, resume_controls, std::addressof(services));
   REQUIRE(resumed.has_value());
   REQUIRE(resumed.value().output_status.has_value());
   auto resumed_typed = read_any<int>(resumed.value().output_status.value());
@@ -975,17 +913,17 @@ TEST_CASE("compose graph checkpoint restore can skip state pre-handlers for rest
           "[core][compose][checkpoint][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda("worker", [](const wh::compose::graph_value &input,
-                                       wh::core::run_context &,
-                                       const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+              .add_lambda("worker",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -993,22 +931,19 @@ TEST_CASE("compose graph checkpoint restore can skip state pre-handlers for rest
 
   auto make_handlers = [] {
     wh::compose::graph_state_handler_registry handlers{};
-    handlers.emplace("worker", wh::compose::graph_node_state_handlers{
-                                   .pre =
-                                       [](const wh::compose::graph_state_cause &,
-                                          wh::compose::graph_process_state &,
-                                          wh::compose::graph_value &input,
-                                          wh::core::run_context &)
-                                           -> wh::core::result<void> {
-                                         auto typed = read_any<int>(input);
-                                         if (typed.has_error()) {
-                                           return wh::core::result<void>::failure(
-                                               typed.error());
-                                         }
-                                         input = wh::core::any(typed.value() + 10);
-                                         return {};
-                                       },
-                               });
+    handlers.emplace(
+        "worker", wh::compose::graph_node_state_handlers{
+                      .pre = [](const wh::compose::graph_state_cause &,
+                                wh::compose::graph_process_state &, wh::compose::graph_value &input,
+                                wh::core::run_context &) -> wh::core::result<void> {
+                        auto typed = read_any<int>(input);
+                        if (typed.has_error()) {
+                          return wh::core::result<void>::failure(typed.error());
+                        }
+                        input = wh::core::any(typed.value() + 10);
+                        return {};
+                      },
+                  });
     return handlers;
   };
 
@@ -1016,8 +951,7 @@ TEST_CASE("compose graph checkpoint restore can skip state pre-handlers for rest
   wh::compose::checkpoint_save_options write_options{};
   write_options.checkpoint_id = "skip-pre";
   wh::core::run_context checkpoint_context{};
-  auto checkpoint =
-      capture_exact_checkpoint(graph, wh::core::any(1), checkpoint_context);
+  auto checkpoint = capture_exact_checkpoint(graph, wh::core::any(1), checkpoint_context);
   REQUIRE(checkpoint.has_value());
   checkpoint->checkpoint_id = "skip-pre";
   REQUIRE(store.save(std::move(checkpoint).value(), write_options).has_value());
@@ -1037,8 +971,7 @@ TEST_CASE("compose graph checkpoint restore can skip state pre-handlers for rest
                         no_skip_controls, std::addressof(no_skip_services));
   REQUIRE(resumed_no_skip.has_value());
   REQUIRE(resumed_no_skip.value().output_status.has_value());
-  auto resumed_no_skip_typed =
-      read_any<int>(resumed_no_skip.value().output_status.value());
+  auto resumed_no_skip_typed = read_any<int>(resumed_no_skip.value().output_status.value());
   REQUIRE(resumed_no_skip_typed.has_value());
   REQUIRE(resumed_no_skip_typed.value() == 12);
 
@@ -1052,13 +985,11 @@ TEST_CASE("compose graph checkpoint restore can skip state pre-handlers for rest
   wh::compose::graph_invoke_controls skip_controls{};
   skip_controls.checkpoint.load = skip;
   wh::core::run_context skip_context{};
-  auto resumed_skip =
-      invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), skip_context,
-                        skip_controls, std::addressof(skip_services));
+  auto resumed_skip = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
+                                        skip_context, skip_controls, std::addressof(skip_services));
   REQUIRE(resumed_skip.has_value());
   REQUIRE(resumed_skip.value().output_status.has_value());
-  auto resumed_skip_typed =
-      read_any<int>(resumed_skip.value().output_status.value());
+  auto resumed_skip_typed = read_any<int>(resumed_skip.value().output_status.value());
   REQUIRE(resumed_skip_typed.has_value());
   REQUIRE(resumed_skip_typed.value() == 2);
 }
@@ -1067,17 +998,17 @@ TEST_CASE("compose graph runtime consumes forwarded checkpoint before store and 
           "[core][compose][checkpoint][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda("inc", [](const wh::compose::graph_value &input,
-                                    wh::core::run_context &,
-                                    const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+              .add_lambda("inc",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(graph.add_entry_edge("inc").has_value());
   REQUIRE(graph.add_exit_edge("inc").has_value());
@@ -1091,12 +1022,11 @@ TEST_CASE("compose graph runtime consumes forwarded checkpoint before store and 
   stored_checkpoint->checkpoint_id = "store-precedence";
   wh::compose::checkpoint_save_options write_options{};
   write_options.checkpoint_id = "store-precedence";
-  REQUIRE(store.save(std::move(stored_checkpoint).value(), write_options)
-              .has_value());
+  REQUIRE(store.save(std::move(stored_checkpoint).value(), write_options).has_value());
 
   wh::core::run_context forwarded_capture_context{};
-  auto forwarded_checkpoint = capture_exact_checkpoint(
-      graph, wh::core::any(4), forwarded_capture_context);
+  auto forwarded_checkpoint =
+      capture_exact_checkpoint(graph, wh::core::any(4), forwarded_capture_context);
   REQUIRE(forwarded_checkpoint.has_value());
   forwarded_checkpoint->checkpoint_id = "forwarded-precedence";
   wh::compose::forwarded_checkpoint_map forwarded{};
@@ -1111,9 +1041,8 @@ TEST_CASE("compose graph runtime consumes forwarded checkpoint before store and 
   controls.checkpoint.load = load_options;
   controls.checkpoint.forwarded_once = std::move(forwarded);
 
-  auto first =
-      invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), context,
-                        std::move(controls), std::addressof(services));
+  auto first = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), context,
+                                 std::move(controls), std::addressof(services));
   REQUIRE(first.has_value());
   REQUIRE(first.value().output_status.has_value());
   auto first_typed = read_any<int>(first.value().output_status.value());
@@ -1123,9 +1052,8 @@ TEST_CASE("compose graph runtime consumes forwarded checkpoint before store and 
 
   wh::compose::graph_invoke_controls second_controls{};
   second_controls.checkpoint.load = load_options;
-  auto second =
-      invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), context,
-                        std::move(second_controls), std::addressof(services));
+  auto second = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), context,
+                                  std::move(second_controls), std::addressof(services));
   REQUIRE(second.has_value());
   REQUIRE(second.value().output_status.has_value());
   auto second_typed = read_any<int>(second.value().output_status.value());
@@ -1152,25 +1080,22 @@ TEST_CASE("compose nested subgraph restore consumes forwarded child checkpoint o
 
   std::size_t prepare_calls = 0U;
   wh::compose::checkpoint_backend backend{};
-  backend.prepare_restore =
-      wh::compose::checkpoint_backend_prepare_restore{
-          [&prepare_calls](const wh::compose::checkpoint_load_options &,
-                           wh::core::run_context &)
-              -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-            ++prepare_calls;
-            return wh::compose::checkpoint_restore_plan{
-                .restore_from_checkpoint = false,
-                .checkpoint = std::nullopt,
-            };
-          }};
+  backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+      [&prepare_calls](const wh::compose::checkpoint_load_options &, wh::core::run_context &)
+          -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+        ++prepare_calls;
+        return wh::compose::checkpoint_restore_plan{
+            .restore_from_checkpoint = false,
+            .checkpoint = std::nullopt,
+        };
+      }};
   backend.save = wh::compose::checkpoint_backend_save{
-      [](wh::compose::checkpoint_state &&,
-         wh::compose::checkpoint_save_options &&,
+      [](wh::compose::checkpoint_state &&, wh::compose::checkpoint_save_options &&,
          wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
   wh::core::run_context child_capture_context{};
-  auto child_checkpoint = capture_exact_checkpoint(
-      graphs.child, wh::core::any(7), child_capture_context);
+  auto child_checkpoint =
+      capture_exact_checkpoint(graphs.child, wh::core::any(7), child_capture_context);
   REQUIRE(child_checkpoint.has_value());
   child_checkpoint->checkpoint_id = "child-forwarded";
 
@@ -1182,9 +1107,8 @@ TEST_CASE("compose nested subgraph restore consumes forwarded child checkpoint o
   services.checkpoint.backend = std::addressof(backend);
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.forwarded_once = std::move(forwarded);
-  auto invoked =
-      invoke_graph_sync(graphs.parent, wh::compose::graph_input::restore_checkpoint(), context,
-                        controls, std::addressof(services));
+  auto invoked = invoke_graph_sync(graphs.parent, wh::compose::graph_input::restore_checkpoint(),
+                                   context, controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
@@ -1194,27 +1118,24 @@ TEST_CASE("compose nested subgraph restore consumes forwarded child checkpoint o
   REQUIRE(invoked.value().report.remaining_forwarded_checkpoint_keys.empty());
 }
 
-TEST_CASE(
-    "compose nested subgraph restore does not fall back to backend without forwarded child checkpoint",
-    "[core][compose][checkpoint][subgraph]") {
+TEST_CASE("compose nested subgraph restore does not fall back to backend without forwarded child "
+          "checkpoint",
+          "[core][compose][checkpoint][subgraph]") {
   auto graphs = make_nested_increment_graphs();
 
   std::size_t prepare_calls = 0U;
   wh::compose::checkpoint_backend backend{};
-  backend.prepare_restore =
-      wh::compose::checkpoint_backend_prepare_restore{
-          [&prepare_calls](const wh::compose::checkpoint_load_options &,
-                           wh::core::run_context &)
-              -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-            ++prepare_calls;
-            return wh::compose::checkpoint_restore_plan{
-                .restore_from_checkpoint = false,
-                .checkpoint = std::nullopt,
-            };
-          }};
+  backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+      [&prepare_calls](const wh::compose::checkpoint_load_options &, wh::core::run_context &)
+          -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+        ++prepare_calls;
+        return wh::compose::checkpoint_restore_plan{
+            .restore_from_checkpoint = false,
+            .checkpoint = std::nullopt,
+        };
+      }};
   backend.save = wh::compose::checkpoint_backend_save{
-      [](wh::compose::checkpoint_state &&,
-         wh::compose::checkpoint_save_options &&,
+      [](wh::compose::checkpoint_state &&, wh::compose::checkpoint_save_options &&,
          wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
   wh::core::run_context context{};
@@ -1222,8 +1143,8 @@ TEST_CASE(
   services.checkpoint.backend = std::addressof(backend);
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.forwarded_once = wh::compose::forwarded_checkpoint_map{};
-  auto invoked = invoke_graph_sync(graphs.parent, wh::core::any(1), context,
-                                   controls, std::addressof(services));
+  auto invoked = invoke_graph_sync(graphs.parent, wh::core::any(1), context, controls,
+                                   std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
@@ -1239,20 +1160,17 @@ TEST_CASE("compose nested subgraph force-new-run bypasses backend and forwarded 
 
   std::size_t prepare_calls = 0U;
   wh::compose::checkpoint_backend backend{};
-  backend.prepare_restore =
-      wh::compose::checkpoint_backend_prepare_restore{
-          [&prepare_calls](const wh::compose::checkpoint_load_options &,
-                           wh::core::run_context &)
-              -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-            ++prepare_calls;
-            return wh::compose::checkpoint_restore_plan{
-                .restore_from_checkpoint = false,
-                .checkpoint = std::nullopt,
-            };
-          }};
+  backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+      [&prepare_calls](const wh::compose::checkpoint_load_options &, wh::core::run_context &)
+          -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+        ++prepare_calls;
+        return wh::compose::checkpoint_restore_plan{
+            .restore_from_checkpoint = false,
+            .checkpoint = std::nullopt,
+        };
+      }};
   backend.save = wh::compose::checkpoint_backend_save{
-      [](wh::compose::checkpoint_state &&,
-         wh::compose::checkpoint_save_options &&,
+      [](wh::compose::checkpoint_state &&, wh::compose::checkpoint_save_options &&,
          wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
   wh::compose::checkpoint_state child_checkpoint{};
@@ -1271,47 +1189,42 @@ TEST_CASE("compose nested subgraph force-new-run bypasses backend and forwarded 
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.load = load_options;
   controls.checkpoint.forwarded_once = std::move(forwarded);
-  auto invoked = invoke_graph_sync(graphs.parent, wh::core::any(1), context,
-                                   controls, std::addressof(services));
+  auto invoked = invoke_graph_sync(graphs.parent, wh::core::any(1), context, controls,
+                                   std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
   REQUIRE(typed.has_value());
   REQUIRE(typed.value() == 2);
   REQUIRE(prepare_calls == 0U);
-  REQUIRE(std::find(
-              invoked.value().report.remaining_forwarded_checkpoint_keys.begin(),
-              invoked.value().report.remaining_forwarded_checkpoint_keys.end(),
-              graphs.child_path_key) !=
+  REQUIRE(std::find(invoked.value().report.remaining_forwarded_checkpoint_keys.begin(),
+                    invoked.value().report.remaining_forwarded_checkpoint_keys.end(),
+                    graphs.child_path_key) !=
           invoked.value().report.remaining_forwarded_checkpoint_keys.end());
 }
 
-TEST_CASE(
-    "compose deeply nested subgraph restore consumes only matching descendant checkpoints",
-    "[core][compose][checkpoint][subgraph]") {
+TEST_CASE("compose deeply nested subgraph restore consumes only matching descendant checkpoints",
+          "[core][compose][checkpoint][subgraph]") {
   auto graphs = make_deep_nested_increment_graphs();
 
   std::size_t prepare_calls = 0U;
   wh::compose::checkpoint_backend backend{};
-  backend.prepare_restore =
-      wh::compose::checkpoint_backend_prepare_restore{
-          [&prepare_calls](const wh::compose::checkpoint_load_options &,
-                           wh::core::run_context &)
-              -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-            ++prepare_calls;
-            return wh::compose::checkpoint_restore_plan{
-                .restore_from_checkpoint = false,
-                .checkpoint = std::nullopt,
-            };
-          }};
+  backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+      [&prepare_calls](const wh::compose::checkpoint_load_options &, wh::core::run_context &)
+          -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+        ++prepare_calls;
+        return wh::compose::checkpoint_restore_plan{
+            .restore_from_checkpoint = false,
+            .checkpoint = std::nullopt,
+        };
+      }};
   backend.save = wh::compose::checkpoint_backend_save{
-      [](wh::compose::checkpoint_state &&,
-         wh::compose::checkpoint_save_options &&,
+      [](wh::compose::checkpoint_state &&, wh::compose::checkpoint_save_options &&,
          wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
   wh::core::run_context middle_capture_context{};
-  auto middle_checkpoint = capture_exact_checkpoint(
-      graphs.middle, wh::core::any(7), middle_capture_context);
+  auto middle_checkpoint =
+      capture_exact_checkpoint(graphs.middle, wh::core::any(7), middle_capture_context);
   REQUIRE(middle_checkpoint.has_value());
   middle_checkpoint->checkpoint_id = "middle-forwarded";
 
@@ -1322,8 +1235,8 @@ TEST_CASE(
   leaf_checkpoint->checkpoint_id = "leaf-forwarded";
 
   wh::core::run_context ghost_capture_context{};
-  auto ghost_checkpoint = capture_exact_checkpoint(
-      graphs.leaf, wh::core::any(100), ghost_capture_context);
+  auto ghost_checkpoint =
+      capture_exact_checkpoint(graphs.leaf, wh::core::any(100), ghost_capture_context);
   REQUIRE(ghost_checkpoint.has_value());
   ghost_checkpoint->checkpoint_id = "ghost-forwarded";
 
@@ -1337,9 +1250,8 @@ TEST_CASE(
   services.checkpoint.backend = std::addressof(backend);
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.forwarded_once = std::move(forwarded);
-  auto invoked =
-      invoke_graph_sync(graphs.parent, wh::compose::graph_input::restore_checkpoint(), context,
-                        controls, std::addressof(services));
+  auto invoked = invoke_graph_sync(graphs.parent, wh::compose::graph_input::restore_checkpoint(),
+                                   context, controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
@@ -1347,41 +1259,35 @@ TEST_CASE(
   REQUIRE(typed.value() == 8);
   REQUIRE(prepare_calls == 1U);
   const auto &remaining = invoked.value().report.remaining_forwarded_checkpoint_keys;
-  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.middle_path_key) ==
-          remaining.end());
-  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.leaf_path_key) ==
-          remaining.end());
+  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.middle_path_key) == remaining.end());
+  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.leaf_path_key) == remaining.end());
   REQUIRE(std::find(remaining.begin(), remaining.end(), std::string{"ghost_graph"}) !=
           remaining.end());
   REQUIRE(remaining.size() == 1U);
 }
 
-TEST_CASE(
-    "compose deeply nested subgraph force-new-run bypasses descendant forwarded checkpoints",
-    "[core][compose][checkpoint][subgraph]") {
+TEST_CASE("compose deeply nested subgraph force-new-run bypasses descendant forwarded checkpoints",
+          "[core][compose][checkpoint][subgraph]") {
   auto graphs = make_deep_nested_increment_graphs();
 
   std::size_t prepare_calls = 0U;
   wh::compose::checkpoint_backend backend{};
-  backend.prepare_restore =
-      wh::compose::checkpoint_backend_prepare_restore{
-          [&prepare_calls](const wh::compose::checkpoint_load_options &,
-                           wh::core::run_context &)
-              -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-            ++prepare_calls;
-            return wh::compose::checkpoint_restore_plan{
-                .restore_from_checkpoint = false,
-                .checkpoint = std::nullopt,
-            };
-          }};
+  backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+      [&prepare_calls](const wh::compose::checkpoint_load_options &, wh::core::run_context &)
+          -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+        ++prepare_calls;
+        return wh::compose::checkpoint_restore_plan{
+            .restore_from_checkpoint = false,
+            .checkpoint = std::nullopt,
+        };
+      }};
   backend.save = wh::compose::checkpoint_backend_save{
-      [](wh::compose::checkpoint_state &&,
-         wh::compose::checkpoint_save_options &&,
+      [](wh::compose::checkpoint_state &&, wh::compose::checkpoint_save_options &&,
          wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
   wh::core::run_context middle_capture_context{};
-  auto middle_checkpoint = capture_exact_checkpoint(
-      graphs.middle, wh::core::any(7), middle_capture_context);
+  auto middle_checkpoint =
+      capture_exact_checkpoint(graphs.middle, wh::core::any(7), middle_capture_context);
   REQUIRE(middle_checkpoint.has_value());
   middle_checkpoint->checkpoint_id = "middle-force-new-run";
 
@@ -1403,8 +1309,8 @@ TEST_CASE(
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.load = load_options;
   controls.checkpoint.forwarded_once = std::move(forwarded);
-  auto invoked = invoke_graph_sync(graphs.parent, wh::core::any(1), context,
-                                   controls, std::addressof(services));
+  auto invoked = invoke_graph_sync(graphs.parent, wh::core::any(1), context, controls,
+                                   std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
@@ -1412,31 +1318,29 @@ TEST_CASE(
   REQUIRE(typed.value() == 2);
   REQUIRE(prepare_calls == 0U);
   const auto &remaining = invoked.value().report.remaining_forwarded_checkpoint_keys;
-  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.middle_path_key) !=
-          remaining.end());
-  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.leaf_path_key) !=
-          remaining.end());
+  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.middle_path_key) != remaining.end());
+  REQUIRE(std::find(remaining.begin(), remaining.end(), graphs.leaf_path_key) != remaining.end());
   REQUIRE(remaining.size() == 2U);
 }
 
-TEST_CASE(
-    "compose nested subgraph restore keys forwarded checkpoints by runtime path instead of graph name",
-    "[core][compose][checkpoint][subgraph]") {
+TEST_CASE("compose nested subgraph restore keys forwarded checkpoints by runtime path instead of "
+          "graph name",
+          "[core][compose][checkpoint][subgraph]") {
   wh::compose::graph_compile_options child_options{};
   child_options.name = "shared_child";
   wh::compose::graph child{std::move(child_options)};
   REQUIRE(child
-              .add_lambda("inc", [](const wh::compose::graph_value &input,
-                                    wh::core::run_context &,
-                                    const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+              .add_lambda("inc",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(child.add_entry_edge("inc").has_value());
   REQUIRE(child.add_exit_edge("inc").has_value());
@@ -1445,12 +1349,8 @@ TEST_CASE(
   wh::compose::graph_compile_options parent_options{};
   parent_options.name = "parent_graph";
   wh::compose::graph parent{std::move(parent_options)};
-  REQUIRE(parent
-              .add_subgraph(wh::compose::make_subgraph_node("left", child))
-              .has_value());
-  REQUIRE(parent
-              .add_subgraph(wh::compose::make_subgraph_node("right", child))
-              .has_value());
+  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("left", child)).has_value());
+  REQUIRE(parent.add_subgraph(wh::compose::make_subgraph_node("right", child)).has_value());
   REQUIRE(parent.add_entry_edge("left").has_value());
   REQUIRE(parent.add_entry_edge("right").has_value());
   REQUIRE(parent.add_exit_edge("right").has_value());
@@ -1459,31 +1359,26 @@ TEST_CASE(
 
   std::size_t prepare_calls = 0U;
   wh::compose::checkpoint_backend backend{};
-  backend.prepare_restore =
-      wh::compose::checkpoint_backend_prepare_restore{
-          [&prepare_calls](const wh::compose::checkpoint_load_options &,
-                           wh::core::run_context &)
-              -> wh::core::result<wh::compose::checkpoint_restore_plan> {
-            ++prepare_calls;
-            return wh::compose::checkpoint_restore_plan{
-                .restore_from_checkpoint = false,
-                .checkpoint = std::nullopt,
-            };
-          }};
+  backend.prepare_restore = wh::compose::checkpoint_backend_prepare_restore{
+      [&prepare_calls](const wh::compose::checkpoint_load_options &, wh::core::run_context &)
+          -> wh::core::result<wh::compose::checkpoint_restore_plan> {
+        ++prepare_calls;
+        return wh::compose::checkpoint_restore_plan{
+            .restore_from_checkpoint = false,
+            .checkpoint = std::nullopt,
+        };
+      }};
   backend.save = wh::compose::checkpoint_backend_save{
-      [](wh::compose::checkpoint_state &&,
-         wh::compose::checkpoint_save_options &&,
+      [](wh::compose::checkpoint_state &&, wh::compose::checkpoint_save_options &&,
          wh::core::run_context &) -> wh::core::result<void> { return {}; }};
 
   wh::core::run_context left_capture_context{};
-  auto left_checkpoint =
-      capture_exact_checkpoint(child, wh::core::any(1), left_capture_context);
+  auto left_checkpoint = capture_exact_checkpoint(child, wh::core::any(1), left_capture_context);
   REQUIRE(left_checkpoint.has_value());
   left_checkpoint->checkpoint_id = "left-forwarded";
 
   wh::core::run_context right_capture_context{};
-  auto right_checkpoint =
-      capture_exact_checkpoint(child, wh::core::any(7), right_capture_context);
+  auto right_checkpoint = capture_exact_checkpoint(child, wh::core::any(7), right_capture_context);
   REQUIRE(right_checkpoint.has_value());
   right_checkpoint->checkpoint_id = "right-forwarded";
 
@@ -1496,13 +1391,11 @@ TEST_CASE(
   services.checkpoint.backend = std::addressof(backend);
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.forwarded_once = std::move(forwarded);
-  auto invoked =
-      invoke_graph_sync(parent, wh::compose::graph_input::restore_checkpoint(), context,
-                        controls, std::addressof(services));
+  auto invoked = invoke_graph_sync(parent, wh::compose::graph_input::restore_checkpoint(), context,
+                                   controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
-  auto typed =
-      read_any<wh::compose::graph_value_map>(invoked.value().output_status.value());
+  auto typed = read_any<wh::compose::graph_value_map>(invoked.value().output_status.value());
   REQUIRE(typed.has_value());
   REQUIRE(typed.value().size() == 2U);
   const auto left_iter = typed.value().find("left");
@@ -1519,17 +1412,17 @@ TEST_CASE("compose graph runtime force-new-run bypasses forwarded and store rest
           "[core][compose][checkpoint][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda("inc", [](const wh::compose::graph_value &input,
-                                    wh::core::run_context &,
-                                    const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+              .add_lambda("inc",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(graph.add_entry_edge("inc").has_value());
   REQUIRE(graph.add_exit_edge("inc").has_value());
@@ -1560,17 +1453,16 @@ TEST_CASE("compose graph runtime force-new-run bypasses forwarded and store rest
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.load = load_options;
   controls.checkpoint.forwarded_once = std::move(forwarded);
-  auto invoked = invoke_graph_sync(graph, wh::core::any(1), context, controls,
-                                   std::addressof(services));
+  auto invoked =
+      invoke_graph_sync(graph, wh::core::any(1), context, controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
   REQUIRE(typed.has_value());
   REQUIRE(typed.value() == 2);
-  REQUIRE(std::find(
-              invoked.value().report.remaining_forwarded_checkpoint_keys.begin(),
-              invoked.value().report.remaining_forwarded_checkpoint_keys.end(),
-              std::string{"graph"}) !=
+  REQUIRE(std::find(invoked.value().report.remaining_forwarded_checkpoint_keys.begin(),
+                    invoked.value().report.remaining_forwarded_checkpoint_keys.end(),
+                    std::string{"graph"}) !=
           invoked.value().report.remaining_forwarded_checkpoint_keys.end());
 }
 
@@ -1578,17 +1470,17 @@ TEST_CASE("compose graph runtime missing pending input falls back to contract de
           "[core][compose][checkpoint][condition]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda("inc", [](const wh::compose::graph_value &input,
-                                    wh::core::run_context &,
-                                    const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                auto typed = read_any<int>(input);
-                if (typed.has_error()) {
-                  return wh::core::result<wh::compose::graph_value>::failure(
-                      typed.error());
-                }
-                return wh::core::any(typed.value() + 1);
-              })
+              .add_lambda("inc",
+                          [](const wh::compose::graph_value &input, wh::core::run_context &,
+                             const wh::compose::graph_call_scope &)
+                              -> wh::core::result<wh::compose::graph_value> {
+                            auto typed = read_any<int>(input);
+                            if (typed.has_error()) {
+                              return wh::core::result<wh::compose::graph_value>::failure(
+                                  typed.error());
+                            }
+                            return wh::core::any(typed.value() + 1);
+                          })
               .has_value());
   REQUIRE(graph.add_entry_edge("inc").has_value());
   REQUIRE(graph.add_exit_edge("inc").has_value());
@@ -1609,12 +1501,11 @@ TEST_CASE("compose graph runtime missing pending input falls back to contract de
   services.checkpoint.store = std::addressof(store);
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.load = load_options;
-  auto invoked = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(),
-                                   context, controls, std::addressof(services));
+  auto invoked = invoke_graph_sync(graph, wh::compose::graph_input::restore_checkpoint(), context,
+                                   controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_error());
-  REQUIRE(invoked.value().output_status.error() ==
-          wh::core::errc::contract_violation);
+  REQUIRE(invoked.value().output_status.error() == wh::core::errc::contract_violation);
 }
 
 TEST_CASE("compose graph runtime fills missing pending input by stream contract",
@@ -1624,24 +1515,20 @@ TEST_CASE("compose graph runtime fills missing pending input by stream contract"
   REQUIRE(graph.add_passthrough(wh::compose::make_passthrough_node("source")).has_value());
   REQUIRE(
       graph
-          .add_lambda<wh::compose::node_contract::stream,
-                      wh::compose::node_contract::value>(
+          .add_lambda<wh::compose::node_contract::stream, wh::compose::node_contract::value>(
               "recover",
-              [&stream_chunk_count](wh::compose::graph_stream_reader input,
-                                    wh::core::run_context &,
+              [&stream_chunk_count](wh::compose::graph_stream_reader input, wh::core::run_context &,
                                     const wh::compose::graph_call_scope &)
                   -> wh::core::result<wh::compose::graph_value> {
                 std::size_t chunks = 0U;
                 while (true) {
                   auto chunk = input.read();
                   if (chunk.has_error()) {
-                    return wh::core::result<wh::compose::graph_value>::failure(
-                        chunk.error());
+                    return wh::core::result<wh::compose::graph_value>::failure(chunk.error());
                   }
                   auto item = std::move(chunk).value();
                   if (item.error != wh::core::errc::ok) {
-                    return wh::core::result<wh::compose::graph_value>::failure(
-                        item.error);
+                    return wh::core::result<wh::compose::graph_value>::failure(item.error);
                   }
                   if (item.eof) {
                     break;
@@ -1659,15 +1546,13 @@ TEST_CASE("compose graph runtime fills missing pending input by stream contract"
           .has_value());
   auto recover_options = make_auto_contract_edge_options();
   recover_options.no_control = true;
-  REQUIRE(graph.add_edge("source", "recover", std::move(recover_options))
-              .has_value());
+  REQUIRE(graph.add_edge("source", "recover", std::move(recover_options)).has_value());
   REQUIRE(graph.add_exit_edge("recover").has_value());
   REQUIRE(graph.compile().has_value());
 
   wh::core::run_context context{};
   context.resume_info.emplace();
-  auto invoked =
-      invoke_value_sync(graph, wh::core::any(std::monostate{}), context);
+  auto invoked = invoke_value_sync(graph, wh::core::any(std::monostate{}), context);
   REQUIRE(invoked.has_value());
   auto typed = read_any<int>(invoked.value());
   REQUIRE(typed.has_value());
@@ -1681,8 +1566,7 @@ TEST_CASE("compose graph runtime validates checkpoint store configuration",
   int run_count = 0;
   REQUIRE(graph
               .add_lambda("worker",
-                          [&run_count](wh::compose::graph_value &input,
-                                       wh::core::run_context &,
+                          [&run_count](wh::compose::graph_value &input, wh::core::run_context &,
                                        const wh::compose::graph_call_scope &)
                               -> wh::core::result<wh::compose::graph_value> {
                             ++run_count;
@@ -1702,16 +1586,12 @@ TEST_CASE("compose graph runtime validates checkpoint store configuration",
     auto invoked = invoke_graph_sync(graph, wh::core::any(1), context, controls);
     REQUIRE(invoked.has_value());
     REQUIRE(invoked.value().output_status.has_error());
-    REQUIRE(invoked.value().output_status.error() ==
-            wh::core::errc::contract_violation);
+    REQUIRE(invoked.value().output_status.error() == wh::core::errc::contract_violation);
     REQUIRE(run_count == 0);
     REQUIRE(invoked.value().report.checkpoint_error.has_value());
-    REQUIRE(invoked.value().report.checkpoint_error->code ==
-            wh::core::errc::contract_violation);
-    REQUIRE(invoked.value().report.checkpoint_error->checkpoint_id ==
-            "checkpoint-A");
-    REQUIRE(invoked.value().report.checkpoint_error->operation ==
-            "validate_runtime_config");
+    REQUIRE(invoked.value().report.checkpoint_error->code == wh::core::errc::contract_violation);
+    REQUIRE(invoked.value().report.checkpoint_error->checkpoint_id == "checkpoint-A");
+    REQUIRE(invoked.value().report.checkpoint_error->operation == "validate_runtime_config");
   }
 
   SECTION("explicit write checkpoint-id without store fails at startup") {
@@ -1723,16 +1603,12 @@ TEST_CASE("compose graph runtime validates checkpoint store configuration",
     auto invoked = invoke_graph_sync(graph, wh::core::any(1), context, controls);
     REQUIRE(invoked.has_value());
     REQUIRE(invoked.value().output_status.has_error());
-    REQUIRE(invoked.value().output_status.error() ==
-            wh::core::errc::contract_violation);
+    REQUIRE(invoked.value().output_status.error() == wh::core::errc::contract_violation);
     REQUIRE(run_count == 0);
     REQUIRE(invoked.value().report.checkpoint_error.has_value());
-    REQUIRE(invoked.value().report.checkpoint_error->code ==
-            wh::core::errc::contract_violation);
-    REQUIRE(invoked.value().report.checkpoint_error->checkpoint_id ==
-            "checkpoint-B");
-    REQUIRE(invoked.value().report.checkpoint_error->operation ==
-            "validate_runtime_config");
+    REQUIRE(invoked.value().report.checkpoint_error->code == wh::core::errc::contract_violation);
+    REQUIRE(invoked.value().report.checkpoint_error->checkpoint_id == "checkpoint-B");
+    REQUIRE(invoked.value().report.checkpoint_error->operation == "validate_runtime_config");
   }
 }
 
@@ -1740,12 +1616,11 @@ TEST_CASE("compose graph runtime records checkpoint persist failures as structur
           "[core][compose][checkpoint][branch]") {
   wh::compose::graph graph{};
   REQUIRE(graph
-              .add_lambda("worker", [](wh::compose::graph_value &input,
-                                       wh::core::run_context &,
-                                       const wh::compose::graph_call_scope &)
-                            -> wh::core::result<wh::compose::graph_value> {
-                return std::move(input);
-              })
+              .add_lambda(
+                  "worker",
+                  [](wh::compose::graph_value &input, wh::core::run_context &,
+                     const wh::compose::graph_call_scope &)
+                      -> wh::core::result<wh::compose::graph_value> { return std::move(input); })
               .has_value());
   REQUIRE(graph.add_entry_edge("worker").has_value());
   REQUIRE(graph.add_exit_edge("worker").has_value());
@@ -1756,22 +1631,19 @@ TEST_CASE("compose graph runtime records checkpoint persist failures as structur
   services.checkpoint.store = std::addressof(store);
   wh::compose::graph_invoke_controls controls{};
   controls.checkpoint.before_save = wh::compose::checkpoint_state_modifier{
-      [](wh::compose::checkpoint_state &,
-         wh::core::run_context &) -> wh::core::result<void> {
+      [](wh::compose::checkpoint_state &, wh::core::run_context &) -> wh::core::result<void> {
         return wh::core::result<void>::failure(wh::core::errc::not_supported);
       }};
   wh::core::run_context context{};
-  auto invoked = invoke_graph_sync(graph, wh::core::any(8), context, controls,
-                                   std::addressof(services));
+  auto invoked =
+      invoke_graph_sync(graph, wh::core::any(8), context, controls, std::addressof(services));
   REQUIRE(invoked.has_value());
   REQUIRE(invoked.value().output_status.has_value());
   auto typed = read_any<int>(invoked.value().output_status.value());
   REQUIRE(typed.has_value());
   REQUIRE(typed.value() == 8);
   REQUIRE(invoked.value().report.checkpoint_error.has_value());
-  REQUIRE(invoked.value().report.checkpoint_error->code ==
-          wh::core::errc::not_supported);
+  REQUIRE(invoked.value().report.checkpoint_error->code == wh::core::errc::not_supported);
   REQUIRE(invoked.value().report.checkpoint_error->checkpoint_id == "graph");
-  REQUIRE(invoked.value().report.checkpoint_error->operation ==
-          "pre_save_modifier");
+  REQUIRE(invoked.value().report.checkpoint_error->operation == "pre_save_modifier");
 }

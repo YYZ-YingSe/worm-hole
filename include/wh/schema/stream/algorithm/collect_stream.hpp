@@ -15,8 +15,7 @@ namespace wh::schema::stream {
 namespace detail {
 
 template <stream_reader reader_t, typename on_value_t>
-inline auto drain_stream(reader_t &reader, on_value_t &&on_value)
-    -> wh::core::result<void> {
+inline auto drain_stream(reader_t &reader, on_value_t &&on_value) -> wh::core::result<void> {
   while (true) {
     auto next = reader.read();
     if (next.has_error()) {
@@ -46,8 +45,7 @@ inline auto drain_stream(reader_t &reader, on_value_t &&on_value)
 
 template <stream_reader reader_t>
 [[nodiscard]] inline auto collect_stream_reader(reader_t &&reader)
-    -> wh::core::result<
-        std::vector<typename std::remove_cvref_t<reader_t>::value_type>> {
+    -> wh::core::result<std::vector<typename std::remove_cvref_t<reader_t>::value_type>> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;
   using value_t = typename stored_reader_t::value_type;
 
@@ -68,18 +66,16 @@ template <stream_reader reader_t>
 }
 
 template <stream_reader reader_t>
-  requires std::same_as<typename std::remove_cvref_t<reader_t>::value_type,
-                        std::string>
+  requires std::same_as<typename std::remove_cvref_t<reader_t>::value_type, std::string>
 [[nodiscard]] inline auto collect_text_stream_reader(reader_t &&reader)
     -> wh::core::result<std::string> {
   using stored_reader_t = std::remove_cvref_t<reader_t>;
   stored_reader_t owned_reader{std::forward<reader_t>(reader)};
   std::string output{};
-  auto drained =
-      detail::drain_stream(owned_reader, [&output](std::string value) {
-        output.append(value);
-        return wh::core::result<void>{};
-      });
+  auto drained = detail::drain_stream(owned_reader, [&output](std::string value) {
+    output.append(value);
+    return wh::core::result<void>{};
+  });
   if (drained.has_error()) {
     return wh::core::result<std::string>::failure(drained.error());
   }

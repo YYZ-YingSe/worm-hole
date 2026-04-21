@@ -8,22 +8,17 @@ namespace wh::compose {
 
 namespace detail {
 
-[[nodiscard]] inline auto
-default_boundary_input_gate(const graph_boundary &boundary) noexcept
+[[nodiscard]] inline auto default_boundary_input_gate(const graph_boundary &boundary) noexcept
     -> input_gate {
-  return boundary.input == node_contract::stream ? input_gate::reader()
-                                                 : input_gate::open();
+  return boundary.input == node_contract::stream ? input_gate::reader() : input_gate::open();
 }
 
-[[nodiscard]] inline auto
-default_boundary_output_gate(const graph_boundary &boundary) noexcept
+[[nodiscard]] inline auto default_boundary_output_gate(const graph_boundary &boundary) noexcept
     -> output_gate {
-  return boundary.output == node_contract::stream ? output_gate::reader()
-                                                  : output_gate::dynamic();
+  return boundary.output == node_contract::stream ? output_gate::reader() : output_gate::dynamic();
 }
 
-[[nodiscard]] inline auto
-to_snapshot_compile_options(const graph_compile_options &options)
+[[nodiscard]] inline auto to_snapshot_compile_options(const graph_compile_options &options)
     -> graph_snapshot_compile_options {
   return graph_snapshot_compile_options{
       .name = options.name,
@@ -43,43 +38,38 @@ to_snapshot_compile_options(const graph_compile_options &options)
   };
 }
 
-[[nodiscard]] inline auto
-edge_snapshot_less(const graph_snapshot_edge &lhs,
-                   const graph_snapshot_edge &rhs) noexcept -> bool {
+[[nodiscard]] inline auto edge_snapshot_less(const graph_snapshot_edge &lhs,
+                                             const graph_snapshot_edge &rhs) noexcept -> bool {
   return std::tie(lhs.from, lhs.to) < std::tie(rhs.from, rhs.to);
 }
 
-[[nodiscard]] inline auto
-branch_snapshot_less(const graph_snapshot_branch &lhs,
-                     const graph_snapshot_branch &rhs) noexcept -> bool {
+[[nodiscard]] inline auto branch_snapshot_less(const graph_snapshot_branch &lhs,
+                                               const graph_snapshot_branch &rhs) noexcept -> bool {
   return lhs.from < rhs.from;
 }
 
-[[nodiscard]] inline auto
-node_snapshot_less(const graph_snapshot_node &lhs,
-                   const graph_snapshot_node &rhs) noexcept -> bool {
+[[nodiscard]] inline auto node_snapshot_less(const graph_snapshot_node &lhs,
+                                             const graph_snapshot_node &rhs) noexcept -> bool {
   return lhs.key < rhs.key;
 }
 
-[[nodiscard]] inline auto resolve_edge_lowering_kind(
-    const node_contract source_output, const node_contract target_input,
-    const edge_adapter &adapter) noexcept -> edge_lowering_kind {
+[[nodiscard]] inline auto resolve_edge_lowering_kind(const node_contract source_output,
+                                                     const node_contract target_input,
+                                                     const edge_adapter &adapter) noexcept
+    -> edge_lowering_kind {
   if (adapter.kind == edge_adapter_kind::custom) {
     return edge_lowering_kind::custom;
   }
-  if (source_output == node_contract::value &&
-      target_input == node_contract::stream) {
+  if (source_output == node_contract::value && target_input == node_contract::stream) {
     return edge_lowering_kind::value_to_stream;
   }
-  if (source_output == node_contract::stream &&
-      target_input == node_contract::value) {
+  if (source_output == node_contract::stream && target_input == node_contract::value) {
     return edge_lowering_kind::stream_to_value;
   }
   return edge_lowering_kind::none;
 }
 
-[[nodiscard]] inline auto
-has_custom_edge_lowering(const edge_adapter &adapter) noexcept -> bool {
+[[nodiscard]] inline auto has_custom_edge_lowering(const edge_adapter &adapter) noexcept -> bool {
   return adapter.kind == edge_adapter_kind::custom;
 }
 
@@ -92,8 +82,8 @@ has_custom_edge_lowering(const edge_adapter &adapter) noexcept -> bool {
       .to = edge.to,
       .no_control = edge.options.no_control,
       .no_data = edge.options.no_data,
-      .lowering_kind = resolve_edge_lowering_kind(source_output, target_input,
-                                                  edge.options.adapter),
+      .lowering_kind =
+          resolve_edge_lowering_kind(source_output, target_input, edge.options.adapter),
       .has_custom_lowering = has_custom_edge_lowering(edge.options.adapter),
       .limits = edge.options.limits,
   };
@@ -102,59 +92,45 @@ has_custom_edge_lowering(const edge_adapter &adapter) noexcept -> bool {
 } // namespace detail
 
 inline graph::graph() {
-  core().boundary_input_gate_ =
-      detail::default_boundary_input_gate(core().options_.boundary);
-  core().boundary_output_gate_ =
-      detail::default_boundary_output_gate(core().options_.boundary);
+  core().boundary_input_gate_ = detail::default_boundary_input_gate(core().options_.boundary);
+  core().boundary_output_gate_ = detail::default_boundary_output_gate(core().options_.boundary);
   init_reserved_nodes();
 }
 
 inline graph::graph(const graph_boundary boundary) {
   core().options_.boundary = boundary;
-  core().boundary_input_gate_ =
-      detail::default_boundary_input_gate(core().options_.boundary);
-  core().boundary_output_gate_ =
-      detail::default_boundary_output_gate(core().options_.boundary);
+  core().boundary_input_gate_ = detail::default_boundary_input_gate(core().options_.boundary);
+  core().boundary_output_gate_ = detail::default_boundary_output_gate(core().options_.boundary);
   init_reserved_nodes();
 }
 
 inline graph::graph(const graph_compile_options &options) {
   core().options_ = options;
-  core().boundary_input_gate_ =
-      detail::default_boundary_input_gate(core().options_.boundary);
-  core().boundary_output_gate_ =
-      detail::default_boundary_output_gate(core().options_.boundary);
+  core().boundary_input_gate_ = detail::default_boundary_input_gate(core().options_.boundary);
+  core().boundary_output_gate_ = detail::default_boundary_output_gate(core().options_.boundary);
   init_reserved_nodes();
 }
 
 inline graph::graph(graph_compile_options &&options) {
   core().options_ = std::move(options);
-  core().boundary_input_gate_ =
-      detail::default_boundary_input_gate(core().options_.boundary);
-  core().boundary_output_gate_ =
-      detail::default_boundary_output_gate(core().options_.boundary);
+  core().boundary_input_gate_ = detail::default_boundary_input_gate(core().options_.boundary);
+  core().boundary_output_gate_ = detail::default_boundary_output_gate(core().options_.boundary);
   init_reserved_nodes();
 }
 
-inline graph::graph(const graph_boundary boundary,
-                    const graph_compile_options &options) {
+inline graph::graph(const graph_boundary boundary, const graph_compile_options &options) {
   core().options_ = options;
   core().options_.boundary = boundary;
-  core().boundary_input_gate_ =
-      detail::default_boundary_input_gate(core().options_.boundary);
-  core().boundary_output_gate_ =
-      detail::default_boundary_output_gate(core().options_.boundary);
+  core().boundary_input_gate_ = detail::default_boundary_input_gate(core().options_.boundary);
+  core().boundary_output_gate_ = detail::default_boundary_output_gate(core().options_.boundary);
   init_reserved_nodes();
 }
 
-inline graph::graph(const graph_boundary boundary,
-                    graph_compile_options &&options) {
+inline graph::graph(const graph_boundary boundary, graph_compile_options &&options) {
   core().options_ = std::move(options);
   core().options_.boundary = boundary;
-  core().boundary_input_gate_ =
-      detail::default_boundary_input_gate(core().options_.boundary);
-  core().boundary_output_gate_ =
-      detail::default_boundary_output_gate(core().options_.boundary);
+  core().boundary_input_gate_ = detail::default_boundary_input_gate(core().options_.boundary);
+  core().boundary_output_gate_ = detail::default_boundary_output_gate(core().options_.boundary);
   init_reserved_nodes();
 }
 
@@ -206,9 +182,7 @@ inline auto graph::compile_options_snapshot() const -> graph_compile_options {
   return core().options_;
 }
 
-inline auto graph::compiled() const noexcept -> bool {
-  return core().compiled_;
-}
+inline auto graph::compiled() const noexcept -> bool { return core().compiled_; }
 
 inline auto graph::snapshot() const -> graph_snapshot {
   if (!core().compiled_) {
@@ -226,28 +200,22 @@ inline auto graph::snapshot_view() const -> const graph_snapshot & {
   return *core().snapshot_cache_;
 }
 
-inline auto graph::restore_shape() const noexcept
-    -> const graph_restore_shape & {
+inline auto graph::restore_shape() const noexcept -> const graph_restore_shape & {
   return core().restore_shape_;
 }
 
-inline auto graph::diagnostics() const noexcept
-    -> const std::vector<graph_diagnostic> & {
+inline auto graph::diagnostics() const noexcept -> const std::vector<graph_diagnostic> & {
   return core().diagnostics_;
 }
 
-inline auto graph::compile_order() const noexcept
-    -> const std::vector<std::string> & {
+inline auto graph::compile_order() const noexcept -> const std::vector<std::string> & {
   return core().compile_order_;
 }
 
-inline auto graph::node_id(const std::string_view key) const
-    -> wh::core::result<std::uint32_t> {
+inline auto graph::node_id(const std::string_view key) const -> wh::core::result<std::uint32_t> {
   if (!core().compiled_execution_index_.index.key_to_id.empty()) {
-    const auto runtime_iter =
-        core().compiled_execution_index_.index.key_to_id.find(key);
-    if (runtime_iter !=
-        core().compiled_execution_index_.index.key_to_id.end()) {
+    const auto runtime_iter = core().compiled_execution_index_.index.key_to_id.find(key);
+    if (runtime_iter != core().compiled_execution_index_.index.key_to_id.end()) {
       return runtime_iter->second;
     }
   }
@@ -261,22 +229,21 @@ inline auto graph::node_id(const std::string_view key) const
 inline auto graph::compiled_node_by_key(const std::string_view key) const
     -> wh::core::result<std::reference_wrapper<const compiled_node>> {
   if (!core().compiled_) {
-    return wh::core::result<std::reference_wrapper<const compiled_node>>::
-        failure(wh::core::errc::contract_violation);
+    return wh::core::result<std::reference_wrapper<const compiled_node>>::failure(
+        wh::core::errc::contract_violation);
   }
   const auto iter = core().compiled_execution_index_.index.key_to_id.find(key);
   if (iter == core().compiled_execution_index_.index.key_to_id.end() ||
       iter->second >= core().compiled_nodes_.size()) {
-    return wh::core::result<std::reference_wrapper<const compiled_node>>::
-        failure(wh::core::errc::not_found);
+    return wh::core::result<std::reference_wrapper<const compiled_node>>::failure(
+        wh::core::errc::not_found);
   }
   return std::cref(core().compiled_nodes_[iter->second]);
 }
 
 inline auto graph::compile() -> wh::core::result<void> {
   if (core().compiled_) {
-    return fail_fast(wh::core::errc::contract_violation,
-                     "graph already compiled");
+    return fail_fast(wh::core::errc::contract_violation, "graph already compiled");
   }
   if (core().first_error_.has_value()) {
     return wh::core::result<void>::failure(*core().first_error_);
@@ -284,13 +251,11 @@ inline auto graph::compile() -> wh::core::result<void> {
 
   core().diagnostics_.push_back(graph_diagnostic{
       .code = wh::core::errc::ok,
-      .message = "compile_options:" +
-                 serialize_graph_compile_options(compile_options_snapshot()),
+      .message = "compile_options:" + serialize_graph_compile_options(compile_options_snapshot()),
   });
 
   if (core().options_.max_steps == 0U) {
-    return fail_fast(wh::core::errc::invalid_argument,
-                     "max_steps must be greater than zero");
+    return fail_fast(wh::core::errc::invalid_argument, "max_steps must be greater than zero");
   }
   if (core().options_.max_parallel_nodes == 0U) {
     return fail_fast(wh::core::errc::invalid_argument,
@@ -302,8 +267,7 @@ inline auto graph::compile() -> wh::core::result<void> {
   }
   if (core().options_.node_timeout.has_value() &&
       core().options_.node_timeout.value() <= std::chrono::milliseconds{0}) {
-    return fail_fast(wh::core::errc::invalid_argument,
-                     "node_timeout must be greater than zero");
+    return fail_fast(wh::core::errc::invalid_argument, "node_timeout must be greater than zero");
   }
 
   auto validated = validate_edges();
@@ -323,8 +287,7 @@ inline auto graph::compile() -> wh::core::result<void> {
     return wh::core::result<void>::failure(control_index.error());
   }
   if (!is_reachable_start_to_end(control_index.value())) {
-    return fail_fast(wh::core::errc::not_found,
-                     "no reachable path from START to END");
+    return fail_fast(wh::core::errc::not_found, "no reachable path from START to END");
   }
   if (!is_cycle_allowed()) {
     auto cycle = find_cycle_path(control_index.value());
@@ -336,8 +299,7 @@ inline auto graph::compile() -> wh::core::result<void> {
         }
         cycle_text += (*cycle)[index];
       }
-      return fail_fast(wh::core::errc::contract_violation,
-                       "cycle detected: " + cycle_text);
+      return fail_fast(wh::core::errc::contract_violation, "cycle detected: " + cycle_text);
     }
   }
 
@@ -359,11 +321,9 @@ inline auto graph::compile() -> wh::core::result<void> {
     return contracts;
   }
   if (static_cast<bool>(core().options_.compile_callback)) {
-    auto compile_callback_status =
-        core().options_.compile_callback(build_compile_info_snapshot());
+    auto compile_callback_status = core().options_.compile_callback(build_compile_info_snapshot());
     if (compile_callback_status.has_error()) {
-      return fail_fast(compile_callback_status.error(),
-                       "compile callback failed");
+      return fail_fast(compile_callback_status.error(), "compile callback failed");
     }
   }
   core().node_id_index_.clear();
@@ -379,24 +339,21 @@ inline auto graph::compile() -> wh::core::result<void> {
 
 inline auto graph::validate_edges() -> wh::core::result<void> {
   for (const auto &edge : core().edges_) {
-    if (!core().nodes_.contains(edge.from) ||
-        !core().nodes_.contains(edge.to)) {
+    if (!core().nodes_.contains(edge.from) || !core().nodes_.contains(edge.to)) {
       return fail_fast(wh::core::errc::not_found,
-                       "edge endpoint not found: " + edge.from + "->" +
-                           edge.to);
+                       "edge endpoint not found: " + edge.from + "->" + edge.to);
     }
     if (edge.options.no_control && edge.options.no_data) {
       return fail_fast(wh::core::errc::invalid_argument,
-                       "edge noControl and noData cannot both be true: " +
-                           edge.from + "->" + edge.to);
+                       "edge noControl and noData cannot both be true: " + edge.from + "->" +
+                           edge.to);
     }
   }
   return {};
 }
 
 inline auto graph::validate_node_output_keys() -> wh::core::result<void> {
-  std::unordered_map<std::string, std::string, detail::string_hash,
-                     detail::string_equal>
+  std::unordered_map<std::string, std::string, detail::string_hash, detail::string_equal>
       output_owner{};
   output_owner.reserve(core().nodes_.size());
   for (const auto &[key, node] : core().nodes_) {
@@ -423,25 +380,20 @@ inline auto graph::validate_node_policy_overrides() -> wh::core::result<void> {
       continue;
     }
     const auto &options = authored_options(node);
-    requires_state_generation =
-        requires_state_generation || options.state.any();
-    if (options.max_parallel_override.has_value() &&
-        *options.max_parallel_override == 0U) {
-      return fail_fast(
-          wh::core::errc::invalid_argument,
-          "node max_parallel_override must be greater than zero: " + key);
+    requires_state_generation = requires_state_generation || options.state.any();
+    if (options.max_parallel_override.has_value() && *options.max_parallel_override == 0U) {
+      return fail_fast(wh::core::errc::invalid_argument,
+                       "node max_parallel_override must be greater than zero: " + key);
     }
     if (options.timeout_override.has_value() &&
         options.timeout_override.value() <= std::chrono::milliseconds{0}) {
       return fail_fast(wh::core::errc::invalid_argument,
-                       "node timeout_override must be greater than zero: " +
-                           key);
+                       "node timeout_override must be greater than zero: " + key);
     }
     if (options.retry_window_override.has_value() &&
         options.retry_window_override.value() <= std::chrono::milliseconds{0}) {
-      return fail_fast(
-          wh::core::errc::invalid_argument,
-          "node retry_window_override must be greater than zero: " + key);
+      return fail_fast(wh::core::errc::invalid_argument,
+                       "node retry_window_override must be greater than zero: " + key);
     }
 
     if (options.retry_window_override.has_value()) {
@@ -449,31 +401,28 @@ inline auto graph::validate_node_policy_overrides() -> wh::core::result<void> {
                                          ? options.timeout_override
                                          : core().options_.node_timeout;
       if (!effective_timeout.has_value()) {
-        return fail_fast(
-            wh::core::errc::invalid_argument,
-            "node retry_window_override requires timeout budget: " + key);
+        return fail_fast(wh::core::errc::invalid_argument,
+                         "node retry_window_override requires timeout budget: " + key);
       }
       if (*effective_timeout >= *options.retry_window_override) {
-        return fail_fast(
-            wh::core::errc::invalid_argument,
-            "node timeout must be smaller than retry_window_override: " + key);
+        return fail_fast(wh::core::errc::invalid_argument,
+                         "node timeout must be smaller than retry_window_override: " + key);
       }
     }
   }
-  if (requires_state_generation &&
-      !core().options_.enable_local_state_generation) {
-    return fail_fast(
-        wh::core::errc::contract_violation,
-        "state handlers require enable_local_state_generation=true");
+  if (requires_state_generation && !core().options_.enable_local_state_generation) {
+    return fail_fast(wh::core::errc::contract_violation,
+                     "state handlers require enable_local_state_generation=true");
   }
   return {};
 }
 
 namespace detail {
 
-inline auto validate_value_state_phase_binding(
-    const graph_node_state_phase_option &phase, const node_contract contract,
-    const value_gate &exact_value) -> wh::core::result<void> {
+inline auto validate_value_state_phase_binding(const graph_node_state_phase_option &phase,
+                                               const node_contract contract,
+                                               const value_gate &exact_value)
+    -> wh::core::result<void> {
   if (!phase.active()) {
     return {};
   }
@@ -501,9 +450,8 @@ inline auto validate_value_state_phase_binding(
   return {};
 }
 
-inline auto
-validate_stream_state_phase_binding(const graph_node_state_phase_option &phase,
-                                    const bool stream_visible_phase)
+inline auto validate_stream_state_phase_binding(const graph_node_state_phase_option &phase,
+                                                const bool stream_visible_phase)
     -> wh::core::result<void> {
   if (!phase.active()) {
     return {};
@@ -511,18 +459,16 @@ validate_stream_state_phase_binding(const graph_node_state_phase_option &phase,
   if (!stream_visible_phase) {
     return wh::core::result<void>::failure(wh::core::errc::contract_violation);
   }
-  if (phase.payload.empty() ||
-      phase.payload.key() == wh::core::any_type_key_v<graph_value>) {
+  if (phase.payload.empty() || phase.payload.key() == wh::core::any_type_key_v<graph_value>) {
     return {};
   }
   return wh::core::result<void>::failure(wh::core::errc::contract_violation);
 }
 
 template <typename index_t>
-[[nodiscard]] inline auto
-has_compile_visible_stream_pre_input(const index_t &index,
-                                     const compiled_node &node,
-                                     const std::uint32_t node_id) noexcept
+[[nodiscard]] inline auto has_compile_visible_stream_pre_input(const index_t &index,
+                                                               const compiled_node &node,
+                                                               const std::uint32_t node_id) noexcept
     -> bool {
   if (node.meta.input_contract == node_contract::stream) {
     return true;
@@ -530,8 +476,7 @@ has_compile_visible_stream_pre_input(const index_t &index,
 
   for (const auto edge_id : index.incoming_data(node_id)) {
     const auto &edge = index.indexed_edges[edge_id];
-    if (edge.source_output == node_contract::stream &&
-        edge.target_input == node_contract::value) {
+    if (edge.source_output == node_contract::stream && edge.target_input == node_contract::value) {
       return true;
     }
   }
@@ -540,8 +485,7 @@ has_compile_visible_stream_pre_input(const index_t &index,
 
 inline auto state_binding_error_text(const std::string_view node_key,
                                      const std::string_view phase_name,
-                                     const std::string_view reason)
-    -> std::string {
+                                     const std::string_view reason) -> std::string {
   return "state binding invalid node=" + std::string{node_key} +
          " phase=" + std::string{phase_name} + " reason=" + std::string{reason};
 }
@@ -550,82 +494,71 @@ inline auto state_binding_error_text(const std::string_view node_key,
 
 inline auto graph::validate_node_state_bindings() -> wh::core::result<void> {
   for (const auto &node : core().compiled_nodes_) {
-    if (node.meta.key == graph_start_node_key ||
-        node.meta.key == graph_end_node_key) {
+    if (node.meta.key == graph_start_node_key || node.meta.key == graph_end_node_key) {
       continue;
     }
-    const auto node_id_iter =
-        core().compiled_execution_index_.index.key_to_id.find(node.meta.key);
-    if (node_id_iter ==
-        core().compiled_execution_index_.index.key_to_id.end()) {
+    const auto node_id_iter = core().compiled_execution_index_.index.key_to_id.find(node.meta.key);
+    if (node_id_iter == core().compiled_execution_index_.index.key_to_id.end()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
 
     const auto &options = node.meta.options;
-    const auto input_gate =
-        node.meta.compiled_input_gate.value_or(input_gate::open());
-    const auto output_gate =
-        node.meta.compiled_output_gate.value_or(output_gate::dynamic());
-    const bool stream_pre_visible =
-        detail::has_compile_visible_stream_pre_input(
-            core().compiled_execution_index_.index, node, node_id_iter->second);
-    const bool stream_post_visible =
-        node.meta.output_contract == node_contract::stream;
+    const auto input_gate = node.meta.compiled_input_gate.value_or(input_gate::open());
+    const auto output_gate = node.meta.compiled_output_gate.value_or(output_gate::dynamic());
+    const bool stream_pre_visible = detail::has_compile_visible_stream_pre_input(
+        core().compiled_execution_index_.index, node, node_id_iter->second);
+    const bool stream_post_visible = node.meta.output_contract == node_contract::stream;
 
     auto pre_status = detail::validate_value_state_phase_binding(
         options.state.pre(), node.meta.input_contract, input_gate.value);
     if (pre_status.has_error()) {
-      return fail_fast(pre_status.error(),
-                       detail::state_binding_error_text(
-                           node.meta.key, "pre",
-                           input_gate.kind == input_gate_kind::value_exact
-                               ? "typed payload mismatch"
-                               : "typed payload requires exact compile-visible "
-                                 "value input"));
+      return fail_fast(pre_status.error(), detail::state_binding_error_text(
+                                               node.meta.key, "pre",
+                                               input_gate.kind == input_gate_kind::value_exact
+                                                   ? "typed payload mismatch"
+                                                   : "typed payload requires exact compile-visible "
+                                                     "value input"));
     }
 
     auto post_status = detail::validate_value_state_phase_binding(
         options.state.post(), node.meta.output_contract, output_gate.value);
     if (post_status.has_error()) {
-      return fail_fast(post_status.error(),
-                       detail::state_binding_error_text(
-                           node.meta.key, "post",
-                           output_gate.kind == output_gate_kind::value_exact
-                               ? "typed payload mismatch"
-                               : "typed payload requires exact compile-visible "
-                                 "value output"));
+      return fail_fast(
+          post_status.error(),
+          detail::state_binding_error_text(node.meta.key, "post",
+                                           output_gate.kind == output_gate_kind::value_exact
+                                               ? "typed payload mismatch"
+                                               : "typed payload requires exact compile-visible "
+                                                 "value output"));
     }
 
-    auto stream_pre_status = detail::validate_stream_state_phase_binding(
-        options.state.stream_pre(), stream_pre_visible);
+    auto stream_pre_status =
+        detail::validate_stream_state_phase_binding(options.state.stream_pre(), stream_pre_visible);
     if (stream_pre_status.has_error()) {
-      return fail_fast(
-          stream_pre_status.error(),
-          detail::state_binding_error_text(
-              node.meta.key, "stream_pre",
-              stream_pre_visible
-                  ? "stream chunk hooks currently accept graph_value only"
-                  : "stream_pre requires a compile-visible stream input path"));
+      return fail_fast(stream_pre_status.error(),
+                       detail::state_binding_error_text(
+                           node.meta.key, "stream_pre",
+                           stream_pre_visible
+                               ? "stream chunk hooks currently accept graph_value only"
+                               : "stream_pre requires a compile-visible stream input path"));
     }
 
     auto stream_post_status = detail::validate_stream_state_phase_binding(
         options.state.stream_post(), stream_post_visible);
     if (stream_post_status.has_error()) {
-      return fail_fast(
-          stream_post_status.error(),
-          detail::state_binding_error_text(
-              node.meta.key, "stream_post",
-              stream_post_visible
-                  ? "stream chunk hooks currently accept graph_value only"
-                  : "stream_post requires stream output contract"));
+      return fail_fast(stream_post_status.error(),
+                       detail::state_binding_error_text(
+                           node.meta.key, "stream_post",
+                           stream_post_visible
+                               ? "stream chunk hooks currently accept graph_value only"
+                               : "stream_post requires stream output contract"));
     }
   }
   return {};
 }
 
-inline auto
-graph::to_compile_node_options_info(const graph_add_node_options &options,
-                                    const node_contract input_contract)
+inline auto graph::to_compile_node_options_info(const graph_add_node_options &options,
+                                                const node_contract input_contract)
     -> graph_compile_node_options_info {
   return graph_compile_node_options_info{
       .name = options.name,
@@ -635,10 +568,8 @@ graph::to_compile_node_options_info(const graph_add_node_options &options,
       .observation =
           graph_compile_node_observation_info{
               .callbacks_enabled = options.observation.callbacks_enabled,
-              .allow_invoke_override =
-                  options.observation.allow_invoke_override,
-              .local_callback_count =
-                  options.observation.local_callbacks.size(),
+              .allow_invoke_override = options.observation.allow_invoke_override,
+              .local_callback_count = options.observation.local_callbacks.size(),
           },
       .label = options.label,
       .input_contract = static_cast<std::uint8_t>(input_contract),
@@ -678,8 +609,7 @@ inline auto graph::build_compile_info_snapshot() const -> graph_compile_info {
   }
 
   info.nodes.reserve(node_insertion_order.size());
-  for (std::size_t node_index = 0U; node_index < node_insertion_order.size();
-       ++node_index) {
+  for (std::size_t node_index = 0U; node_index < node_insertion_order.size(); ++node_index) {
     const auto &node_key = node_insertion_order[node_index];
     const auto node_iter = core().nodes_.find(node_key);
     if (node_iter == core().nodes_.end()) {
@@ -689,22 +619,19 @@ inline auto graph::build_compile_info_snapshot() const -> graph_compile_info {
         .key = node_key,
         .node_id = static_cast<std::uint32_t>(node_index),
         .has_sender = true,
-        .has_subgraph =
-            authored_options(node_iter->second)
-                .subgraph_compile_info.has_value() ||
-            std::holds_alternative<subgraph_node>(node_iter->second),
+        .has_subgraph = authored_options(node_iter->second).subgraph_compile_info.has_value() ||
+                        std::holds_alternative<subgraph_node>(node_iter->second),
         .field_mapping =
             graph_compile_field_mapping_info{
                 .input_key = authored_options(node_iter->second).input_key,
                 .output_key = authored_options(node_iter->second).output_key,
             },
-        .options = to_compile_node_options_info(
-            authored_options(node_iter->second),
-            authored_input_contract(node_iter->second)),
+        .options = to_compile_node_options_info(authored_options(node_iter->second),
+                                                authored_input_contract(node_iter->second)),
     });
     if (authored_options(node_iter->second).subgraph_compile_info.has_value()) {
-      info.subgraphs.insert_or_assign(
-          node_key, *authored_options(node_iter->second).subgraph_compile_info);
+      info.subgraphs.insert_or_assign(node_key,
+                                      *authored_options(node_iter->second).subgraph_compile_info);
     }
   }
 
@@ -731,8 +658,7 @@ inline auto graph::build_compile_info_snapshot() const -> graph_compile_info {
   std::sort(branch_keys.begin(), branch_keys.end());
   info.branches.reserve(branch_keys.size());
   for (const auto &source : branch_keys) {
-    if (const auto branch_iter = value_branches.find(source);
-        branch_iter != value_branches.end()) {
+    if (const auto branch_iter = value_branches.find(source); branch_iter != value_branches.end()) {
       info.branches.push_back(graph_compile_branch_info{
           .from = source,
           .end_nodes = branch_iter->second.end_nodes,
@@ -757,25 +683,20 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
   const auto &value_branches = core().value_branches_;
   const auto &stream_branches = core().stream_branches_;
   graph_snapshot snapshot{};
-  snapshot.compile_options =
-      detail::to_snapshot_compile_options(core().options_);
+  snapshot.compile_options = detail::to_snapshot_compile_options(core().options_);
 
   if (!core().compiled_execution_index_.index.id_to_key.empty() &&
       !core().compiled_nodes_.empty()) {
     snapshot.node_id_to_key = core().compiled_execution_index_.index.id_to_key;
-    snapshot.node_key_to_id.reserve(
-        core().compiled_execution_index_.index.key_to_id.size());
-    for (const auto &[key, node_id] :
-         core().compiled_execution_index_.index.key_to_id) {
+    snapshot.node_key_to_id.reserve(core().compiled_execution_index_.index.key_to_id.size());
+    for (const auto &[key, node_id] : core().compiled_execution_index_.index.key_to_id) {
       snapshot.node_key_to_id.emplace(key, node_id);
     }
 
     snapshot.nodes.reserve(core().compiled_nodes_.size());
-    for (std::size_t node_id = 0U; node_id < core().compiled_nodes_.size();
-         ++node_id) {
+    for (std::size_t node_id = 0U; node_id < core().compiled_nodes_.size(); ++node_id) {
       const auto &node = core().compiled_nodes_[node_id];
-      if (node.meta.key == graph_start_node_key ||
-          node.meta.key == graph_end_node_key) {
+      if (node.meta.key == graph_start_node_key || node.meta.key == graph_end_node_key) {
         continue;
       }
       snapshot.nodes.push_back(graph_snapshot_node{
@@ -786,20 +707,16 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
           .exec_origin = node.meta.exec_origin,
           .input_contract = node.meta.input_contract,
           .output_contract = node.meta.output_contract,
-          .options = to_compile_node_options_info(node.meta.options,
-                                                  node.meta.input_contract),
+          .options = to_compile_node_options_info(node.meta.options, node.meta.input_contract),
       });
       if (node.meta.subgraph_snapshot.has_value()) {
         snapshot.subgraphs.emplace(node.meta.key, *node.meta.subgraph_snapshot);
       }
     }
-    std::sort(snapshot.nodes.begin(), snapshot.nodes.end(),
-              detail::node_snapshot_less);
+    std::sort(snapshot.nodes.begin(), snapshot.nodes.end(), detail::node_snapshot_less);
 
-    snapshot.edges.reserve(
-        core().compiled_execution_index_.index.indexed_edges.size());
-    for (const auto &edge :
-         core().compiled_execution_index_.index.indexed_edges) {
+    snapshot.edges.reserve(core().compiled_execution_index_.index.indexed_edges.size());
+    for (const auto &edge : core().compiled_execution_index_.index.indexed_edges) {
       snapshot.edges.push_back(graph_snapshot_edge{
           .from = core().compiled_execution_index_.index.id_to_key[edge.from],
           .to = core().compiled_execution_index_.index.id_to_key[edge.to],
@@ -810,24 +727,17 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
           .limits = edge.limits,
       });
     }
-    std::sort(snapshot.edges.begin(), snapshot.edges.end(),
-              detail::edge_snapshot_less);
+    std::sort(snapshot.edges.begin(), snapshot.edges.end(), detail::edge_snapshot_less);
 
     snapshot.branches.reserve(
-        core()
-            .compiled_execution_index_.index.has_value_branch_by_source.size() +
-        core()
-            .compiled_execution_index_.index.has_stream_branch_by_source
-            .size());
+        core().compiled_execution_index_.index.has_value_branch_by_source.size() +
+        core().compiled_execution_index_.index.has_stream_branch_by_source.size());
     for (std::uint32_t source_id = 0U;
-         source_id <
-         static_cast<std::uint32_t>(core()
-                                        .compiled_execution_index_.index
-                                        .has_value_branch_by_source.size());
+         source_id < static_cast<std::uint32_t>(
+                         core().compiled_execution_index_.index.has_value_branch_by_source.size());
          ++source_id) {
       const auto *branch =
-          core().compiled_execution_index_.index.value_branch_for_source(
-              source_id);
+          core().compiled_execution_index_.index.value_branch_for_source(source_id);
       if (branch == nullptr) {
         continue;
       }
@@ -839,19 +749,15 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
         branch_snapshot.end_nodes.push_back(
             core().compiled_execution_index_.index.id_to_key[node_id]);
       }
-      std::sort(branch_snapshot.end_nodes.begin(),
-                branch_snapshot.end_nodes.end());
+      std::sort(branch_snapshot.end_nodes.begin(), branch_snapshot.end_nodes.end());
       snapshot.branches.push_back(std::move(branch_snapshot));
     }
     for (std::uint32_t source_id = 0U;
-         source_id <
-         static_cast<std::uint32_t>(core()
-                                        .compiled_execution_index_.index
-                                        .has_stream_branch_by_source.size());
+         source_id < static_cast<std::uint32_t>(
+                         core().compiled_execution_index_.index.has_stream_branch_by_source.size());
          ++source_id) {
       const auto *branch =
-          core().compiled_execution_index_.index.stream_branch_for_source(
-              source_id);
+          core().compiled_execution_index_.index.stream_branch_for_source(source_id);
       if (branch == nullptr) {
         continue;
       }
@@ -863,12 +769,10 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
         branch_snapshot.end_nodes.push_back(
             core().compiled_execution_index_.index.id_to_key[node_id]);
       }
-      std::sort(branch_snapshot.end_nodes.begin(),
-                branch_snapshot.end_nodes.end());
+      std::sort(branch_snapshot.end_nodes.begin(), branch_snapshot.end_nodes.end());
       snapshot.branches.push_back(std::move(branch_snapshot));
     }
-    std::sort(snapshot.branches.begin(), snapshot.branches.end(),
-              detail::branch_snapshot_less);
+    std::sort(snapshot.branches.begin(), snapshot.branches.end(), detail::branch_snapshot_less);
     return snapshot;
   }
 
@@ -879,8 +783,7 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
   }
 
   snapshot.nodes.reserve(core().nodes_.size());
-  for (std::size_t node_index = 0U; node_index < node_insertion_order.size();
-       ++node_index) {
+  for (std::size_t node_index = 0U; node_index < node_insertion_order.size(); ++node_index) {
     const auto &node_key = node_insertion_order[node_index];
     const auto node_iter = core().nodes_.find(node_key);
     if (node_iter == core().nodes_.end() || node_key == graph_start_node_key ||
@@ -891,34 +794,27 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
         .key = node_key,
         .node_id = static_cast<std::uint32_t>(node_index),
         .kind = authored_kind(node_iter->second),
-        .exec_mode = std::visit(
-            [](const auto &value) -> node_exec_mode {
-              return value.exec_mode();
-            },
-            node_iter->second),
-        .exec_origin = std::visit(
-            [](const auto &value) -> node_exec_origin {
-              return value.exec_origin();
-            },
-            node_iter->second),
+        .exec_mode =
+            std::visit([](const auto &value) -> node_exec_mode { return value.exec_mode(); },
+                       node_iter->second),
+        .exec_origin =
+            std::visit([](const auto &value) -> node_exec_origin { return value.exec_origin(); },
+                       node_iter->second),
         .input_contract = authored_input_contract(node_iter->second),
         .output_contract = authored_output_contract(node_iter->second),
-        .options = to_compile_node_options_info(
-            authored_options(node_iter->second),
-            authored_input_contract(node_iter->second)),
+        .options = to_compile_node_options_info(authored_options(node_iter->second),
+                                                authored_input_contract(node_iter->second)),
     });
   }
-  std::sort(snapshot.nodes.begin(), snapshot.nodes.end(),
-            detail::node_snapshot_less);
+  std::sort(snapshot.nodes.begin(), snapshot.nodes.end(), detail::node_snapshot_less);
 
   snapshot.edges.reserve(authored_edges.size());
   for (const auto &edge : authored_edges) {
-    snapshot.edges.push_back(detail::to_snapshot_edge(
-        edge, authored_output_contract(core().nodes_.at(edge.from)),
-        authored_input_contract(core().nodes_.at(edge.to))));
+    snapshot.edges.push_back(
+        detail::to_snapshot_edge(edge, authored_output_contract(core().nodes_.at(edge.from)),
+                                 authored_input_contract(core().nodes_.at(edge.to))));
   }
-  std::sort(snapshot.edges.begin(), snapshot.edges.end(),
-            detail::edge_snapshot_less);
+  std::sort(snapshot.edges.begin(), snapshot.edges.end(), detail::edge_snapshot_less);
 
   snapshot.branches.reserve(value_branches.size() + stream_branches.size());
   for (const auto &[source, branch] : value_branches) {
@@ -926,8 +822,7 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
         .from = source,
         .end_nodes = branch.end_nodes,
     };
-    std::sort(branch_snapshot.end_nodes.begin(),
-              branch_snapshot.end_nodes.end());
+    std::sort(branch_snapshot.end_nodes.begin(), branch_snapshot.end_nodes.end());
     snapshot.branches.push_back(std::move(branch_snapshot));
   }
   for (const auto &[source, branch] : stream_branches) {
@@ -935,12 +830,10 @@ inline auto graph::build_snapshot() const -> graph_snapshot {
         .from = source,
         .end_nodes = branch.end_nodes,
     };
-    std::sort(branch_snapshot.end_nodes.begin(),
-              branch_snapshot.end_nodes.end());
+    std::sort(branch_snapshot.end_nodes.begin(), branch_snapshot.end_nodes.end());
     snapshot.branches.push_back(std::move(branch_snapshot));
   }
-  std::sort(snapshot.branches.begin(), snapshot.branches.end(),
-            detail::branch_snapshot_less);
+  std::sort(snapshot.branches.begin(), snapshot.branches.end(), detail::branch_snapshot_less);
   return snapshot;
 }
 
@@ -961,8 +854,7 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
       !core().compiled_nodes_.empty()) {
     shape.nodes.reserve(core().compiled_nodes_.size());
     for (const auto &node : core().compiled_nodes_) {
-      if (node.meta.key == graph_start_node_key ||
-          node.meta.key == graph_end_node_key) {
+      if (node.meta.key == graph_start_node_key || node.meta.key == graph_end_node_key) {
         continue;
       }
       shape.nodes.push_back(graph_restore_node{
@@ -973,21 +865,16 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
           .allow_no_data = node.meta.options.allow_no_data,
       });
       if (node.meta.subgraph_restore_shape.has_value()) {
-        shape.subgraphs.emplace(node.meta.key,
-                                *node.meta.subgraph_restore_shape);
+        shape.subgraphs.emplace(node.meta.key, *node.meta.subgraph_restore_shape);
       } else if (node.meta.subgraph_snapshot.has_value()) {
-        shape.subgraphs.emplace(
-            node.meta.key,
-            detail::to_restore_shape(*node.meta.subgraph_snapshot));
+        shape.subgraphs.emplace(node.meta.key,
+                                detail::to_restore_shape(*node.meta.subgraph_snapshot));
       }
     }
-    std::sort(shape.nodes.begin(), shape.nodes.end(),
-              detail::restore_node_less);
+    std::sort(shape.nodes.begin(), shape.nodes.end(), detail::restore_node_less);
 
-    shape.edges.reserve(
-        core().compiled_execution_index_.index.indexed_edges.size());
-    for (const auto &edge :
-         core().compiled_execution_index_.index.indexed_edges) {
+    shape.edges.reserve(core().compiled_execution_index_.index.indexed_edges.size());
+    for (const auto &edge : core().compiled_execution_index_.index.indexed_edges) {
       shape.edges.push_back(graph_restore_edge{
           .from = core().compiled_execution_index_.index.id_to_key[edge.from],
           .to = core().compiled_execution_index_.index.id_to_key[edge.to],
@@ -997,24 +884,17 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
           .has_custom_lowering = detail::has_custom_edge_lowering(edge.adapter),
       });
     }
-    std::sort(shape.edges.begin(), shape.edges.end(),
-              detail::restore_edge_less);
+    std::sort(shape.edges.begin(), shape.edges.end(), detail::restore_edge_less);
 
     shape.branches.reserve(
-        core()
-            .compiled_execution_index_.index.has_value_branch_by_source.size() +
-        core()
-            .compiled_execution_index_.index.has_stream_branch_by_source
-            .size());
+        core().compiled_execution_index_.index.has_value_branch_by_source.size() +
+        core().compiled_execution_index_.index.has_stream_branch_by_source.size());
     for (std::uint32_t source_id = 0U;
-         source_id <
-         static_cast<std::uint32_t>(core()
-                                        .compiled_execution_index_.index
-                                        .has_value_branch_by_source.size());
+         source_id < static_cast<std::uint32_t>(
+                         core().compiled_execution_index_.index.has_value_branch_by_source.size());
          ++source_id) {
       const auto *branch =
-          core().compiled_execution_index_.index.value_branch_for_source(
-              source_id);
+          core().compiled_execution_index_.index.value_branch_for_source(source_id);
       if (branch == nullptr) {
         continue;
       }
@@ -1023,21 +903,17 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
       };
       branch_shape.end_nodes.reserve(branch->end_nodes_sorted.size());
       for (const auto node_id : branch->end_nodes_sorted) {
-        branch_shape.end_nodes.push_back(
-            core().compiled_execution_index_.index.id_to_key[node_id]);
+        branch_shape.end_nodes.push_back(core().compiled_execution_index_.index.id_to_key[node_id]);
       }
       std::sort(branch_shape.end_nodes.begin(), branch_shape.end_nodes.end());
       shape.branches.push_back(std::move(branch_shape));
     }
     for (std::uint32_t source_id = 0U;
-         source_id <
-         static_cast<std::uint32_t>(core()
-                                        .compiled_execution_index_.index
-                                        .has_stream_branch_by_source.size());
+         source_id < static_cast<std::uint32_t>(
+                         core().compiled_execution_index_.index.has_stream_branch_by_source.size());
          ++source_id) {
       const auto *branch =
-          core().compiled_execution_index_.index.stream_branch_for_source(
-              source_id);
+          core().compiled_execution_index_.index.stream_branch_for_source(source_id);
       if (branch == nullptr) {
         continue;
       }
@@ -1046,14 +922,12 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
       };
       branch_shape.end_nodes.reserve(branch->end_nodes_sorted.size());
       for (const auto node_id : branch->end_nodes_sorted) {
-        branch_shape.end_nodes.push_back(
-            core().compiled_execution_index_.index.id_to_key[node_id]);
+        branch_shape.end_nodes.push_back(core().compiled_execution_index_.index.id_to_key[node_id]);
       }
       std::sort(branch_shape.end_nodes.begin(), branch_shape.end_nodes.end());
       shape.branches.push_back(std::move(branch_shape));
     }
-    std::sort(shape.branches.begin(), shape.branches.end(),
-              detail::restore_branch_less);
+    std::sort(shape.branches.begin(), shape.branches.end(), detail::restore_branch_less);
     return shape;
   }
 
@@ -1085,10 +959,8 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
         .no_data = edge.options.no_data,
         .lowering_kind = detail::resolve_edge_lowering_kind(
             authored_output_contract(core().nodes_.at(edge.from)),
-            authored_input_contract(core().nodes_.at(edge.to)),
-            edge.options.adapter),
-        .has_custom_lowering =
-            detail::has_custom_edge_lowering(edge.options.adapter),
+            authored_input_contract(core().nodes_.at(edge.to)), edge.options.adapter),
+        .has_custom_lowering = detail::has_custom_edge_lowering(edge.options.adapter),
     });
   }
   std::sort(shape.edges.begin(), shape.edges.end(), detail::restore_edge_less);
@@ -1110,15 +982,13 @@ inline auto graph::build_restore_shape() const -> graph_restore_shape {
     std::sort(branch_shape.end_nodes.begin(), branch_shape.end_nodes.end());
     shape.branches.push_back(std::move(branch_shape));
   }
-  std::sort(shape.branches.begin(), shape.branches.end(),
-            detail::restore_branch_less);
+  std::sort(shape.branches.begin(), shape.branches.end(), detail::restore_branch_less);
   return shape;
 }
 
 inline auto graph::rebind_compiled_execution_index_nodes() noexcept -> void {
   core().compiled_execution_index_.index.nodes_by_id.clear();
-  core().compiled_execution_index_.index.nodes_by_id.reserve(
-      core().compiled_nodes_.size());
+  core().compiled_execution_index_.index.nodes_by_id.reserve(core().compiled_nodes_.size());
   for (auto &node : core().compiled_nodes_) {
     core().compiled_execution_index_.index.nodes_by_id.push_back(&node);
   }
@@ -1133,13 +1003,9 @@ inline auto graph::make_csr_offsets(const std::vector<std::uint32_t> &counts)
   return offsets;
 }
 
-inline auto graph::compile_authored(const authored_node &node)
-    -> wh::core::result<compiled_node> {
+inline auto graph::compile_authored(const authored_node &node) -> wh::core::result<compiled_node> {
   return std::visit(
-      [](const auto &value) -> wh::core::result<compiled_node> {
-        return value.compile();
-      },
-      node);
+      [](const auto &value) -> wh::core::result<compiled_node> { return value.compile(); }, node);
 }
 
 inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
@@ -1156,8 +1022,7 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
   core().compiled_nodes_.clear();
   core().compiled_nodes_.reserve(insertion_order.size());
 
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(insertion_order.size());
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(insertion_order.size());
        ++node_id) {
     const auto &key = insertion_order[node_id];
     index.key_to_id.emplace(key, node_id);
@@ -1166,16 +1031,14 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
 
   const auto start_iter = index.key_to_id.find(graph_start_node_key);
   const auto end_iter = index.key_to_id.find(graph_end_node_key);
-  if (start_iter == index.key_to_id.end() ||
-      end_iter == index.key_to_id.end()) {
+  if (start_iter == index.key_to_id.end() || end_iter == index.key_to_id.end()) {
     return wh::core::result<void>::failure(wh::core::errc::not_found);
   }
   index.start_id = start_iter->second;
   index.end_id = end_iter->second;
 
   index.nodes_by_id.resize(index.id_to_key.size(), nullptr);
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(index.id_to_key.size());
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(index.id_to_key.size());
        ++node_id) {
     const auto node_iter = core().nodes_.find(index.id_to_key[node_id]);
     if (node_iter == core().nodes_.end()) {
@@ -1183,17 +1046,14 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
     }
     auto compiled_node = compile_authored(node_iter->second);
     if (compiled_node.has_error()) {
-      return fail_fast(compiled_node.error(),
-                       "node compile failed: " + index.id_to_key[node_id]);
+      return fail_fast(compiled_node.error(), "node compile failed: " + index.id_to_key[node_id]);
     }
     auto frozen_node = std::move(compiled_node).value();
     if (!frozen_node.meta.compiled_input_gate.has_value()) {
-      frozen_node.meta.compiled_input_gate =
-          detail::authored_input_gate(node_iter->second);
+      frozen_node.meta.compiled_input_gate = detail::authored_input_gate(node_iter->second);
     }
     if (!frozen_node.meta.compiled_output_gate.has_value()) {
-      frozen_node.meta.compiled_output_gate =
-          detail::authored_output_gate(node_iter->second);
+      frozen_node.meta.compiled_output_gate = detail::authored_output_gate(node_iter->second);
     }
     core().compiled_nodes_.push_back(std::move(frozen_node));
     index.nodes_by_id[node_id] = &core().compiled_nodes_.back();
@@ -1203,22 +1063,19 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
   for (const auto &edge : authored_edges) {
     const auto from_id_iter = index.key_to_id.find(edge.from);
     const auto to_id_iter = index.key_to_id.find(edge.to);
-    if (from_id_iter == index.key_to_id.end() ||
-        to_id_iter == index.key_to_id.end()) {
+    if (from_id_iter == index.key_to_id.end() || to_id_iter == index.key_to_id.end()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
-    const auto source_output =
-        authored_output_contract(core().nodes_.at(edge.from));
-    const auto target_input =
-        authored_input_contract(core().nodes_.at(edge.to));
+    const auto source_output = authored_output_contract(core().nodes_.at(edge.from));
+    const auto target_input = authored_input_contract(core().nodes_.at(edge.to));
 
     index.indexed_edges.push_back(indexed_edge{
         .from = from_id_iter->second,
         .to = to_id_iter->second,
         .source_output = source_output,
         .target_input = target_input,
-        .lowering_kind = detail::resolve_edge_lowering_kind(
-            source_output, target_input, edge.options.adapter),
+        .lowering_kind =
+            detail::resolve_edge_lowering_kind(source_output, target_input, edge.options.adapter),
         .no_control = edge.options.no_control,
         .no_data = edge.options.no_data,
         .adapter = edge.options.adapter,
@@ -1253,53 +1110,40 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
       ++outgoing_data_counts[edge.from];
     }
   }
-  index.incoming_control_edges.offsets =
-      make_csr_offsets(incoming_control_counts);
+  index.incoming_control_edges.offsets = make_csr_offsets(incoming_control_counts);
   index.incoming_data_edges.offsets = make_csr_offsets(incoming_data_counts);
   index.outgoing_data_edges.offsets = make_csr_offsets(outgoing_data_counts);
-  index.outgoing_control_edges.offsets =
-      make_csr_offsets(outgoing_control_counts);
-  index.incoming_control_edges.edge_ids.resize(
-      index.incoming_control_edges.offsets.back());
-  index.incoming_data_edges.edge_ids.resize(
-      index.incoming_data_edges.offsets.back());
-  index.outgoing_data_edges.edge_ids.resize(
-      index.outgoing_data_edges.offsets.back());
-  index.outgoing_control_edges.edge_ids.resize(
-      index.outgoing_control_edges.offsets.back());
+  index.outgoing_control_edges.offsets = make_csr_offsets(outgoing_control_counts);
+  index.incoming_control_edges.edge_ids.resize(index.incoming_control_edges.offsets.back());
+  index.incoming_data_edges.edge_ids.resize(index.incoming_data_edges.offsets.back());
+  index.outgoing_data_edges.edge_ids.resize(index.outgoing_data_edges.offsets.back());
+  index.outgoing_control_edges.edge_ids.resize(index.outgoing_control_edges.offsets.back());
 
   auto incoming_control_cursor = index.incoming_control_edges.offsets;
   auto incoming_data_cursor = index.incoming_data_edges.offsets;
   auto outgoing_data_cursor = index.outgoing_data_edges.offsets;
   auto outgoing_control_cursor = index.outgoing_control_edges.offsets;
-  for (std::uint32_t edge_id = 0U;
-       edge_id < static_cast<std::uint32_t>(index.indexed_edges.size());
+  for (std::uint32_t edge_id = 0U; edge_id < static_cast<std::uint32_t>(index.indexed_edges.size());
        ++edge_id) {
     const auto &edge = index.indexed_edges[edge_id];
     if (!edge.no_control) {
-      index.incoming_control_edges
-          .edge_ids[incoming_control_cursor[edge.to]++] = edge_id;
-      index.outgoing_control_edges
-          .edge_ids[outgoing_control_cursor[edge.from]++] = edge_id;
+      index.incoming_control_edges.edge_ids[incoming_control_cursor[edge.to]++] = edge_id;
+      index.outgoing_control_edges.edge_ids[outgoing_control_cursor[edge.from]++] = edge_id;
     }
     if (!edge.no_data) {
-      index.incoming_data_edges.edge_ids[incoming_data_cursor[edge.to]++] =
-          edge_id;
-      index.outgoing_data_edges.edge_ids[outgoing_data_cursor[edge.from]++] =
-          edge_id;
+      index.incoming_data_edges.edge_ids[incoming_data_cursor[edge.to]++] = edge_id;
+      index.outgoing_data_edges.edge_ids[outgoing_data_cursor[edge.from]++] = edge_id;
     }
   }
 
   plan.edges.resize(index.indexed_edges.size(), edge_flow::value_value);
   plan.outputs.resize(node_count);
   plan.inputs.resize(node_count);
-  for (std::uint32_t edge_id = 0U;
-       edge_id < static_cast<std::uint32_t>(index.indexed_edges.size());
+  for (std::uint32_t edge_id = 0U; edge_id < static_cast<std::uint32_t>(index.indexed_edges.size());
        ++edge_id) {
     const auto &edge = index.indexed_edges[edge_id];
     edge_flow flow = edge_flow::value_value;
-    if (edge.source_output == node_contract::value &&
-        edge.target_input == node_contract::stream) {
+    if (edge.source_output == node_contract::value && edge.target_input == node_contract::stream) {
       flow = edge_flow::value_reader;
     } else if (edge.source_output == node_contract::stream &&
                edge.target_input == node_contract::value) {
@@ -1323,8 +1167,7 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
   }
 
   index.has_value_branch_by_source.assign(node_count, 0U);
-  index.value_branch_index_by_source.assign(node_count,
-                                            graph_index::no_branch_index);
+  index.value_branch_index_by_source.assign(node_count, graph_index::no_branch_index);
   index.value_branch_defs.reserve(value_branches.size());
   for (const auto &[source_key, branch] : value_branches) {
     const auto source_id_iter = index.key_to_id.find(source_key);
@@ -1343,9 +1186,9 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
       indexed.end_nodes_sorted.push_back(target_id_iter->second);
     }
     std::sort(indexed.end_nodes_sorted.begin(), indexed.end_nodes_sorted.end());
-    indexed.end_nodes_sorted.erase(std::unique(indexed.end_nodes_sorted.begin(),
-                                               indexed.end_nodes_sorted.end()),
-                                   indexed.end_nodes_sorted.end());
+    indexed.end_nodes_sorted.erase(
+        std::unique(indexed.end_nodes_sorted.begin(), indexed.end_nodes_sorted.end()),
+        indexed.end_nodes_sorted.end());
     index.has_value_branch_by_source[source_id] = 1U;
     index.value_branch_index_by_source[source_id] =
         static_cast<std::uint32_t>(index.value_branch_defs.size());
@@ -1353,8 +1196,7 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
   }
 
   index.has_stream_branch_by_source.assign(node_count, 0U);
-  index.stream_branch_index_by_source.assign(node_count,
-                                             graph_index::no_branch_index);
+  index.stream_branch_index_by_source.assign(node_count, graph_index::no_branch_index);
   index.stream_branch_defs.reserve(stream_branches.size());
   for (const auto &[source_key, branch] : stream_branches) {
     const auto source_id_iter = index.key_to_id.find(source_key);
@@ -1373,9 +1215,9 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
       indexed.end_nodes_sorted.push_back(target_id_iter->second);
     }
     std::sort(indexed.end_nodes_sorted.begin(), indexed.end_nodes_sorted.end());
-    indexed.end_nodes_sorted.erase(std::unique(indexed.end_nodes_sorted.begin(),
-                                               indexed.end_nodes_sorted.end()),
-                                   indexed.end_nodes_sorted.end());
+    indexed.end_nodes_sorted.erase(
+        std::unique(indexed.end_nodes_sorted.begin(), indexed.end_nodes_sorted.end()),
+        indexed.end_nodes_sorted.end());
     index.has_stream_branch_by_source[source_id] = 1U;
     index.stream_branch_index_by_source[source_id] =
         static_cast<std::uint32_t>(index.stream_branch_defs.size());
@@ -1400,8 +1242,8 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
 
   std::vector<bool> root_node_seen(node_count, false);
   auto append_root_node = [&](const std::uint32_t node_id) -> void {
-    if (node_id == index.start_id || node_id == index.end_id ||
-        node_id >= node_count || root_node_seen[node_id]) {
+    if (node_id == index.start_id || node_id == index.end_id || node_id >= node_count ||
+        root_node_seen[node_id]) {
       return;
     }
     root_node_seen[node_id] = true;
@@ -1418,24 +1260,20 @@ inline auto graph::build_compiled_execution_index() -> wh::core::result<void> {
   return {};
 }
 
-inline auto graph::build_control_graph_index() const
-    -> wh::core::result<control_graph_index> {
+inline auto graph::build_control_graph_index() const -> wh::core::result<control_graph_index> {
   const auto &node_insertion_order = core().node_insertion_order_;
   const auto &authored_edges = core().edges_;
   control_graph_index index{};
   const auto node_count = node_insertion_order.size();
   index.key_to_id.reserve(node_count);
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
     index.key_to_id.emplace(node_insertion_order[node_id], node_id);
   }
 
   const auto start_iter = index.key_to_id.find(graph_start_node_key);
   const auto end_iter = index.key_to_id.find(graph_end_node_key);
-  if (start_iter == index.key_to_id.end() ||
-      end_iter == index.key_to_id.end()) {
-    return wh::core::result<control_graph_index>::failure(
-        wh::core::errc::not_found);
+  if (start_iter == index.key_to_id.end() || end_iter == index.key_to_id.end()) {
+    return wh::core::result<control_graph_index>::failure(wh::core::errc::not_found);
   }
   index.start_id = start_iter->second;
   index.end_id = end_iter->second;
@@ -1450,10 +1288,8 @@ inline auto graph::build_control_graph_index() const
     }
     const auto from_iter = index.key_to_id.find(edge.from);
     const auto to_iter = index.key_to_id.find(edge.to);
-    if (from_iter == index.key_to_id.end() ||
-        to_iter == index.key_to_id.end()) {
-      return wh::core::result<control_graph_index>::failure(
-          wh::core::errc::not_found);
+    if (from_iter == index.key_to_id.end() || to_iter == index.key_to_id.end()) {
+      return wh::core::result<control_graph_index>::failure(wh::core::errc::not_found);
     }
     const auto from = from_iter->second;
     const auto to = to_iter->second;
@@ -1479,8 +1315,7 @@ inline auto graph::topo_sort(const control_graph_index &index) const
   auto indegree = index.indegree;
 
   std::deque<std::uint32_t> ready{};
-  for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
+  for (std::uint32_t node_id = 0U; node_id < static_cast<std::uint32_t>(node_count); ++node_id) {
     if (indegree[node_id] == 0U) {
       ready.push_back(node_id);
     }
@@ -1509,8 +1344,7 @@ inline auto graph::topo_sort(const control_graph_index &index) const
     if (is_cycle_allowed()) {
       return topo_sort_by_scc(index);
     }
-    return wh::core::result<std::vector<std::string>>::failure(
-        wh::core::errc::contract_violation);
+    return wh::core::result<std::vector<std::string>>::failure(wh::core::errc::contract_violation);
   }
   return order;
 }
@@ -1518,8 +1352,7 @@ inline auto graph::topo_sort(const control_graph_index &index) const
 inline auto graph::topo_sort_by_scc(const control_graph_index &index) const
     -> wh::core::result<std::vector<std::string>> {
   const auto &node_insertion_order = core().node_insertion_order_;
-  const auto node_count =
-      static_cast<std::uint32_t>(index.control_out_offsets.size() - 1U);
+  const auto node_count = static_cast<std::uint32_t>(index.control_out_offsets.size() - 1U);
   std::vector<int> visit_index(node_count, -1);
   std::vector<int> lowlink(node_count, -1);
   dynamic_bitset on_stack(node_count, false);
@@ -1541,8 +1374,7 @@ inline auto graph::topo_sort_by_scc(const control_graph_index &index) const
     if (visit_index[root] != -1) {
       continue;
     }
-    call_stack.push_back(
-        call_frame{.node = root, .next_neighbor = 0U, .entered = false});
+    call_stack.push_back(call_frame{.node = root, .next_neighbor = 0U, .entered = false});
     while (!call_stack.empty()) {
       auto &frame = call_stack.back();
       if (!frame.entered) {
@@ -1558,13 +1390,11 @@ inline auto graph::topo_sort_by_scc(const control_graph_index &index) const
       if (frame.next_neighbor < neighbors.size()) {
         const auto next = neighbors[frame.next_neighbor++];
         if (visit_index[next] == -1) {
-          call_stack.push_back(
-              call_frame{.node = next, .next_neighbor = 0U, .entered = false});
+          call_stack.push_back(call_frame{.node = next, .next_neighbor = 0U, .entered = false});
           continue;
         }
         if (on_stack.test(next)) {
-          lowlink[frame.node] =
-              std::min(lowlink[frame.node], visit_index[next]);
+          lowlink[frame.node] = std::min(lowlink[frame.node], visit_index[next]);
         }
         continue;
       }
@@ -1602,14 +1432,11 @@ inline auto graph::topo_sort_by_scc(const control_graph_index &index) const
     }
   }
   std::sort(comp_edges.begin(), comp_edges.end());
-  comp_edges.erase(std::unique(comp_edges.begin(), comp_edges.end()),
-                   comp_edges.end());
+  comp_edges.erase(std::unique(comp_edges.begin(), comp_edges.end()), comp_edges.end());
 
   std::vector<std::vector<std::string>> comp_nodes(comp_count);
-  std::vector<std::size_t> comp_first_index(
-      comp_count, std::numeric_limits<std::size_t>::max());
-  for (std::size_t position = 0U; position < node_insertion_order.size();
-       ++position) {
+  std::vector<std::size_t> comp_first_index(comp_count, std::numeric_limits<std::size_t>::max());
+  for (std::size_t position = 0U; position < node_insertion_order.size(); ++position) {
     const auto node_id = index.key_to_id.at(node_insertion_order[position]);
     const auto group = comp_id[node_id];
     comp_nodes[group].push_back(node_insertion_order[position]);
@@ -1630,9 +1457,7 @@ inline auto graph::topo_sort_by_scc(const control_graph_index &index) const
   }
 
   using ready_item = std::pair<std::size_t, std::uint32_t>;
-  std::priority_queue<ready_item, std::vector<ready_item>,
-                      std::greater<ready_item>>
-      ready{};
+  std::priority_queue<ready_item, std::vector<ready_item>, std::greater<ready_item>> ready{};
   for (std::uint32_t group = 0U; group < comp_count; ++group) {
     if (comp_indegree[group] == 0U) {
       ready.emplace(comp_first_index[group], group);
@@ -1650,8 +1475,7 @@ inline auto graph::topo_sort_by_scc(const control_graph_index &index) const
     for (const auto &key : comp_nodes[group]) {
       ordered.push_back(key);
     }
-    for (auto offset = comp_out_offsets[group];
-         offset < comp_out_offsets[group + 1U]; ++offset) {
+    for (auto offset = comp_out_offsets[group]; offset < comp_out_offsets[group + 1U]; ++offset) {
       const auto next_group = comp_out_nodes[offset];
       auto &value = comp_indegree[next_group];
       if (value == 0U) {
@@ -1665,15 +1489,12 @@ inline auto graph::topo_sort_by_scc(const control_graph_index &index) const
   }
 
   if (visited_groups != comp_count || ordered.size() != node_count) {
-    return wh::core::result<std::vector<std::string>>::failure(
-        wh::core::errc::contract_violation);
+    return wh::core::result<std::vector<std::string>>::failure(wh::core::errc::contract_violation);
   }
   return ordered;
 }
 
-inline auto
-graph::is_reachable_start_to_end(const control_graph_index &index) const
-    -> bool {
+inline auto graph::is_reachable_start_to_end(const control_graph_index &index) const -> bool {
   const auto &node_insertion_order = core().node_insertion_order_;
   std::deque<std::uint32_t> queue{};
   dynamic_bitset visited(node_insertion_order.size(), false);
@@ -1685,8 +1506,7 @@ graph::is_reachable_start_to_end(const control_graph_index &index) const
 
   enqueue_root(index.start_id);
   for (std::uint32_t node_id = 0U;
-       node_id < static_cast<std::uint32_t>(node_insertion_order.size());
-       ++node_id) {
+       node_id < static_cast<std::uint32_t>(node_insertion_order.size()); ++node_id) {
     if (node_id == index.start_id || node_id == index.end_id) {
       continue;
     }
@@ -1720,8 +1540,7 @@ inline auto graph::find_cycle_path(const control_graph_index &index) const
     -> std::optional<std::vector<std::string>> {
   const auto &node_insertion_order = core().node_insertion_order_;
   enum class mark : std::uint8_t { white, gray, black };
-  const auto node_count =
-      static_cast<std::uint32_t>(index.control_out_offsets.size() - 1U);
+  const auto node_count = static_cast<std::uint32_t>(index.control_out_offsets.size() - 1U);
   std::vector<mark> marks(node_count, mark::white);
 
   struct dfs_frame {
@@ -1749,8 +1568,7 @@ inline auto graph::find_cycle_path(const control_graph_index &index) const
         const auto next = neighbors[frame.next_neighbor++];
         const auto next_mark = marks[next];
         if (next_mark == mark::gray) {
-          const auto begin =
-              std::find(path_stack.begin(), path_stack.end(), next);
+          const auto begin = std::find(path_stack.begin(), path_stack.end(), next);
           std::vector<std::string> cycle{};
           cycle.reserve(static_cast<std::size_t>(path_stack.end() - begin + 1));
           for (auto iter = begin; iter != path_stack.end(); ++iter) {

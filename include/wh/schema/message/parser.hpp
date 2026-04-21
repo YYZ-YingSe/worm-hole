@@ -67,13 +67,11 @@ namespace detail {
   std::size_t begin = 0U;
   while (begin <= path.size()) {
     const auto end = path.find('.', begin);
-    const auto segment = end == std::string_view::npos
-                             ? path.substr(begin)
-                             : path.substr(begin, end - begin);
+    const auto segment =
+        end == std::string_view::npos ? path.substr(begin) : path.substr(begin, end - begin);
     auto member = wh::core::json_find_member(*current, segment);
     if (member.has_error()) {
-      return wh::core::result<const wh::core::json_value *>::failure(
-          wh::core::errc::not_found);
+      return wh::core::result<const wh::core::json_value *>::failure(wh::core::errc::not_found);
     }
     current = member.value();
     if (end == std::string_view::npos) {
@@ -85,9 +83,8 @@ namespace detail {
 }
 
 /// Parses canonical message fields from a JSON object node.
-[[nodiscard]] inline auto
-parse_message_from_json_value(const wh::core::json_value &input,
-                              const message_parse_config &config)
+[[nodiscard]] inline auto parse_message_from_json_value(const wh::core::json_value &input,
+                                                        const message_parse_config &config)
     -> wh::core::result<message> {
   if (!input.IsObject()) {
     return wh::core::result<message>::failure(wh::core::errc::type_mismatch);
@@ -99,8 +96,8 @@ parse_message_from_json_value(const wh::core::json_value &input,
 
   if (const auto role_member = input.FindMember("role");
       role_member != input.MemberEnd() && role_member->value.IsString()) {
-    auto role = parse_role(std::string_view{
-        role_member->value.GetString(), role_member->value.GetStringLength()});
+    auto role = parse_role(
+        std::string_view{role_member->value.GetString(), role_member->value.GetStringLength()});
     if (role.has_error()) {
       return wh::core::result<message>::failure(role.error());
     }
@@ -108,20 +105,18 @@ parse_message_from_json_value(const wh::core::json_value &input,
   }
   if (const auto name_member = input.FindMember("name");
       name_member != input.MemberEnd() && name_member->value.IsString()) {
-    parsed.name = std::string{name_member->value.GetString(),
-                              name_member->value.GetStringLength()};
+    parsed.name = std::string{name_member->value.GetString(), name_member->value.GetStringLength()};
   }
   if (const auto id_member = input.FindMember("id");
       id_member != input.MemberEnd() && id_member->value.IsString()) {
-    parsed.message_id = std::string{id_member->value.GetString(),
-                                    id_member->value.GetStringLength()};
+    parsed.message_id =
+        std::string{id_member->value.GetString(), id_member->value.GetStringLength()};
   }
 
   if (const auto content_member = input.FindMember("content");
       content_member != input.MemberEnd() && content_member->value.IsString()) {
-    parsed.parts.emplace_back(
-        text_part{std::string{content_member->value.GetString(),
-                              content_member->value.GetStringLength()}});
+    parsed.parts.emplace_back(text_part{
+        std::string{content_member->value.GetString(), content_member->value.GetStringLength()}});
   }
 
   if (const auto tool_calls = input.FindMember("tool_calls");
@@ -136,26 +131,22 @@ parse_message_from_json_value(const wh::core::json_value &input,
 
       if (const auto member = tool_call.FindMember("id");
           member != tool_call.MemberEnd() && member->value.IsString()) {
-        call.id = std::string{member->value.GetString(),
-                              member->value.GetStringLength()};
+        call.id = std::string{member->value.GetString(), member->value.GetStringLength()};
       }
       if (const auto member = tool_call.FindMember("type");
           member != tool_call.MemberEnd() && member->value.IsString()) {
-        call.type = std::string{member->value.GetString(),
-                                member->value.GetStringLength()};
+        call.type = std::string{member->value.GetString(), member->value.GetStringLength()};
       }
 
       if (const auto fn = tool_call.FindMember("function");
           fn != tool_call.MemberEnd() && fn->value.IsObject()) {
         if (const auto member = fn->value.FindMember("name");
             member != fn->value.MemberEnd() && member->value.IsString()) {
-          call.name = std::string{member->value.GetString(),
-                                  member->value.GetStringLength()};
+          call.name = std::string{member->value.GetString(), member->value.GetStringLength()};
         }
         if (const auto member = fn->value.FindMember("arguments");
             member != fn->value.MemberEnd() && member->value.IsString()) {
-          call.arguments = std::string{member->value.GetString(),
-                                       member->value.GetStringLength()};
+          call.arguments = std::string{member->value.GetString(), member->value.GetStringLength()};
         }
       }
 
@@ -221,16 +212,15 @@ parse_message_from_json_value(const wh::core::json_value &input,
       return wh::core::result<message>::failure(wh::core::errc::not_found);
     }
     const auto arguments = function->value.FindMember("arguments");
-    if (arguments == function->value.MemberEnd() ||
-        !arguments->value.IsString()) {
+    if (arguments == function->value.MemberEnd() || !arguments->value.IsString()) {
       return wh::core::result<message>::failure(wh::core::errc::not_found);
     }
 
     message parsed{};
     parsed.role = config.default_role;
     parsed.name = config.default_name;
-    parsed.parts.emplace_back(text_part{std::string{
-        arguments->value.GetString(), arguments->value.GetStringLength()}});
+    parsed.parts.emplace_back(
+        text_part{std::string{arguments->value.GetString(), arguments->value.GetStringLength()}});
     return parsed;
   }
 

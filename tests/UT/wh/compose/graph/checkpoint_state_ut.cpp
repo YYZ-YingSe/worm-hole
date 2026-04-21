@@ -2,8 +2,9 @@
 
 #include "wh/compose/graph/checkpoint_state.hpp"
 
-TEST_CASE("checkpoint state stores restore and runtime payloads",
-          "[UT][wh/compose/graph/checkpoint_state.hpp][checkpoint_state][condition][branch][boundary]") {
+TEST_CASE(
+    "checkpoint state stores restore and runtime payloads",
+    "[UT][wh/compose/graph/checkpoint_state.hpp][checkpoint_state][condition][branch][boundary]") {
   wh::compose::checkpoint_state defaults{};
   REQUIRE(defaults.checkpoint_id.empty());
   REQUIRE(defaults.branch == "main");
@@ -30,18 +31,17 @@ TEST_CASE("checkpoint state stores restore and runtime payloads",
   REQUIRE(state.branch == "feature");
   REQUIRE(state.parent_branch == std::optional<std::string>{"main"});
   REQUIRE(state.runtime.dag.has_value());
-  REQUIRE(*wh::core::any_cast<int>(&*state.runtime.dag->pending_inputs.entry) ==
-          7);
+  REQUIRE(*wh::core::any_cast<int>(&*state.runtime.dag->pending_inputs.entry) == 7);
   REQUIRE(state.runtime.step_count == 5U);
   REQUIRE(state.runtime.dag->pending_inputs.nodes.size() == 1U);
   REQUIRE(state.runtime.dag->pending_inputs.nodes.front().node_id == 3U);
   REQUIRE(state.runtime.dag->pending_inputs.nodes.front().key == "node");
-  REQUIRE(*wh::core::any_cast<int>(
-              &state.runtime.dag->pending_inputs.nodes.front().input) == 9);
+  REQUIRE(*wh::core::any_cast<int>(&state.runtime.dag->pending_inputs.nodes.front().input) == 9);
 }
 
-TEST_CASE("checkpoint state retains runtime and restore payload aggregates",
-          "[UT][wh/compose/graph/checkpoint_state.hpp][checkpoint_state][condition][branch][boundary]") {
+TEST_CASE(
+    "checkpoint state retains runtime and restore payload aggregates",
+    "[UT][wh/compose/graph/checkpoint_state.hpp][checkpoint_state][condition][branch][boundary]") {
   wh::compose::checkpoint_state state{};
   state.restore_shape.nodes.push_back(wh::compose::graph_restore_node{
       .key = "a",
@@ -84,19 +84,18 @@ TEST_CASE("checkpoint state retains runtime and restore payload aggregates",
   REQUIRE(state.runtime.dag->current_frontier_head == 1U);
   REQUIRE(state.runtime.pregel.has_value());
   REQUIRE(state.runtime.pregel->current_frontier == std::vector<std::uint32_t>{4U});
-  REQUIRE(state.runtime.pregel->next_frontier ==
-          std::vector<std::uint32_t>{5U, 6U});
+  REQUIRE(state.runtime.pregel->next_frontier == std::vector<std::uint32_t>{5U, 6U});
   REQUIRE(state.runtime.pregel->current_superstep_active);
 }
 
-TEST_CASE("checkpoint state preserves resume and interrupt snapshots independently of node inputs",
-          "[UT][wh/compose/graph/checkpoint_state.hpp][checkpoint_state][condition][branch][boundary]") {
+TEST_CASE(
+    "checkpoint state preserves resume and interrupt snapshots independently of node inputs",
+    "[UT][wh/compose/graph/checkpoint_state.hpp][checkpoint_state][condition][branch][boundary]") {
   wh::compose::checkpoint_state state{};
-  REQUIRE(state.resume_snapshot
-              .upsert("interrupt-1", wh::core::address{"graph", "worker"}, 7)
+  REQUIRE(state.resume_snapshot.upsert("interrupt-1", wh::core::address{"graph", "worker"}, 7)
               .has_value());
-  state.interrupt_snapshot.interrupt_id_to_address.emplace(
-      "interrupt-1", wh::core::address{"graph", "worker"});
+  state.interrupt_snapshot.interrupt_id_to_address.emplace("interrupt-1",
+                                                           wh::core::address{"graph", "worker"});
   state.runtime.pregel = wh::compose::checkpoint_pregel_runtime_state{};
   state.runtime.pregel->pending_inputs.nodes.push_back(wh::compose::checkpoint_node_input{
       .node_id = 7U,
@@ -109,6 +108,5 @@ TEST_CASE("checkpoint state preserves resume and interrupt snapshots independent
   REQUIRE(resume_value->get() == 7);
   REQUIRE(state.interrupt_snapshot.interrupt_id_to_address.contains("interrupt-1"));
   REQUIRE(state.runtime.pregel.has_value());
-  REQUIRE(*wh::core::any_cast<int>(
-              &state.runtime.pregel->pending_inputs.nodes.front().input) == 9);
+  REQUIRE(*wh::core::any_cast<int>(&state.runtime.pregel->pending_inputs.nodes.front().input) == 9);
 }

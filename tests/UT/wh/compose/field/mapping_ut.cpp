@@ -6,8 +6,7 @@ TEST_CASE("field mapping parser accepts valid paths and rejects malformed ones",
           "[UT][wh/compose/field/mapping.hpp][parse_field_path][condition][branch][boundary]") {
   auto parsed = wh::compose::parse_field_path("input.user.id");
   REQUIRE(parsed.has_value());
-  REQUIRE(parsed.value().segments ==
-          std::vector<std::string>{"input", "user", "id"});
+  REQUIRE(parsed.value().segments == std::vector<std::string>{"input", "user", "id"});
 
   auto empty = wh::compose::parse_field_path("");
   REQUIRE(empty.has_error());
@@ -18,8 +17,9 @@ TEST_CASE("field mapping parser accepts valid paths and rejects malformed ones",
   REQUIRE(malformed.error() == wh::core::errc::invalid_argument);
 }
 
-TEST_CASE("field mapping rule compilation skips source path for static or extractor rules",
-          "[UT][wh/compose/field/mapping.hpp][compile_field_mapping_rule][condition][branch][boundary]") {
+TEST_CASE(
+    "field mapping rule compilation skips source path for static or extractor rules",
+    "[UT][wh/compose/field/mapping.hpp][compile_field_mapping_rule][condition][branch][boundary]") {
   wh::compose::field_mapping_rule static_rule{};
   static_rule.to_path = "output.value";
   static_rule.static_value = wh::compose::graph_value{7};
@@ -31,10 +31,9 @@ TEST_CASE("field mapping rule compilation skips source path for static or extrac
   wh::compose::field_mapping_rule extractor_rule{};
   extractor_rule.to_path = "output.value";
   extractor_rule.extractor =
-      [](const wh::compose::graph_value_map &, wh::core::run_context &)
-          -> wh::core::result<wh::compose::graph_value> { return 9; };
-  auto compiled_extractor =
-      wh::compose::compile_field_mapping_rule(extractor_rule);
+      [](const wh::compose::graph_value_map &,
+         wh::core::run_context &) -> wh::core::result<wh::compose::graph_value> { return 9; };
+  auto compiled_extractor = wh::compose::compile_field_mapping_rule(extractor_rule);
   REQUIRE(compiled_extractor.has_value());
   REQUIRE_FALSE(compiled_extractor.value().from_path.has_value());
 }
@@ -51,16 +50,17 @@ TEST_CASE("field mapping parser rejects control characters and preserves origina
   REQUIRE(invalid.error() == wh::core::errc::invalid_argument);
 }
 
-TEST_CASE("field mapping compilation parses source paths for dynamic rules and rejects invalid destinations",
-          "[UT][wh/compose/field/mapping.hpp][compile_field_mapping_rule][condition][branch][boundary]") {
+TEST_CASE(
+    "field mapping compilation parses source paths for dynamic rules and rejects invalid "
+    "destinations",
+    "[UT][wh/compose/field/mapping.hpp][compile_field_mapping_rule][condition][branch][boundary]") {
   wh::compose::field_mapping_rule dynamic_rule{};
   dynamic_rule.from_path = "input.user.id";
   dynamic_rule.to_path = "output.user_id";
   auto compiled_dynamic = wh::compose::compile_field_mapping_rule(dynamic_rule);
   REQUIRE(compiled_dynamic.has_value());
   REQUIRE(compiled_dynamic->from_path.has_value());
-  REQUIRE(compiled_dynamic->from_path->segments ==
-          std::vector<std::string>{"input", "user", "id"});
+  REQUIRE(compiled_dynamic->from_path->segments == std::vector<std::string>{"input", "user", "id"});
 
   wh::compose::field_mapping_rule invalid_rule{};
   invalid_rule.from_path = "input.user.id";

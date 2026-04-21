@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "wh/model/options.hpp"
 
@@ -38,8 +38,7 @@ TEST_CASE("chat model options resolve base and override layers across lists and 
   override.selection_policy = wh::model::model_selection_policy::cost_first;
   override.tool_choice.mode = wh::schema::tool_call_mode::force;
   override.allowed_tool_names = {"t2", "t3"};
-  override.structured_output.preference =
-      wh::model::structured_output_preference::tool_call_first;
+  override.structured_output.preference = wh::model::structured_output_preference::tool_call_first;
   options.set_call_override(std::move(override));
 
   const auto view = options.resolve_view();
@@ -69,8 +68,7 @@ TEST_CASE("chat model options freeze candidate order and negotiate structured ou
 
   const auto quality = wh::model::freeze_model_candidates(
       options, std::span<const std::string>{std::array<std::string, 2>{"disc", "backup"}});
-  REQUIRE(quality ==
-          std::vector<std::string>{"primary", "disc", "backup", "extra"});
+  REQUIRE(quality == std::vector<std::string>{"primary", "disc", "backup", "extra"});
 
   options.selection_policy = wh::model::model_selection_policy::cost_first;
   const auto cost = wh::model::freeze_model_candidates(
@@ -84,8 +82,7 @@ TEST_CASE("chat model options freeze candidate order and negotiate structured ou
 
   const auto provider_first = wh::model::negotiate_structured_output(
       wh::model::structured_output_policy{
-          .preference =
-              wh::model::structured_output_preference::provider_native_first,
+          .preference = wh::model::structured_output_preference::provider_native_first,
           .allow_tool_fallback = true,
       },
       false, true);
@@ -106,8 +103,7 @@ TEST_CASE("chat model options expose component specific extras",
           "[UT][wh/model/options.hpp][chat_model_options::component_options][boundary]") {
   wh::model::chat_model_options options{};
   options.component_options().set_impl_specific(model_options_probe{13});
-  const auto *probe =
-      options.component_options().impl_specific_if<model_options_probe>();
+  const auto *probe = options.component_options().impl_specific_if<model_options_probe>();
   REQUIRE(probe != nullptr);
   REQUIRE(probe->value == 13);
 }
@@ -132,6 +128,5 @@ TEST_CASE("chat model options preserve base collections when override leaves the
   REQUIRE(view.model_id == "base");
   REQUIRE(view.stop_tokens.size() == 2U);
   REQUIRE(view.allowed_tool_names.size() == 1U);
-  REQUIRE(view.fallback_ref().ordered_candidates ==
-          std::vector<std::string>{"backup"});
+  REQUIRE(view.fallback_ref().ordered_candidates == std::vector<std::string>{"backup"});
 }

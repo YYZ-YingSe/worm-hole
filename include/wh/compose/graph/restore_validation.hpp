@@ -14,14 +14,12 @@ using restore_issue = restore_check::issue;
 using restore_validation_result = restore_check::result;
 
 /// Validates whether the current graph can safely restore `checkpoint`.
-[[nodiscard]] inline auto validate_restore(const graph &current,
-                                           const checkpoint_state &checkpoint)
+[[nodiscard]] inline auto validate_restore(const graph &current, const checkpoint_state &checkpoint)
     -> wh::core::result<restore_validation_result> {
   if (!current.compiled()) {
     restore_validation_result result{};
-    restore_check::append_issue(
-        result, restore_issue_kind::graph_changed, "graph",
-        "current graph must be compiled before restore validation");
+    restore_check::append_issue(result, restore_issue_kind::graph_changed, "graph",
+                                "current graph must be compiled before restore validation");
     return result;
   }
   return restore_check::validate(current.restore_shape(), checkpoint);
