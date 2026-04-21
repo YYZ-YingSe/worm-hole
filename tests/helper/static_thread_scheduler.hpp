@@ -34,9 +34,9 @@ public:
   }
 
   template <typename stop_token_t = stdexec::never_stop_token>
-  [[nodiscard]] auto env(stop_token_t stop_token = {})
+  [[nodiscard]] auto env(stop_token_t stop_token_value = {})
       -> scheduler_env<scheduler_type, stop_token_t> {
-    return make_scheduler_env(scheduler(), std::move(stop_token));
+    return make_scheduler_env(scheduler(), std::move(stop_token_value));
   }
 
 private:

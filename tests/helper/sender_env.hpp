@@ -81,29 +81,29 @@ struct dual_scheduler_env {
 };
 
 template <typename scheduler_t, typename stop_token_t = stdexec::never_stop_token>
-[[nodiscard]] auto make_scheduler_env(scheduler_t scheduler, stop_token_t stop_token = {})
+[[nodiscard]] auto make_scheduler_env(scheduler_t scheduler, stop_token_t stop_token_value = {})
     -> scheduler_env<std::remove_cvref_t<scheduler_t>, stop_token_t> {
-  return {std::move(scheduler), std::move(stop_token)};
+  return {std::move(scheduler), std::move(stop_token_value)};
 }
 
 template <typename scheduler_t, typename stop_token_t = stdexec::never_stop_token>
 [[nodiscard]] auto make_completion_scheduler_env(scheduler_t scheduler,
-                                                 stop_token_t stop_token = {})
+                                                 stop_token_t stop_token_value = {})
     -> completion_scheduler_env<std::remove_cvref_t<scheduler_t>, stop_token_t> {
-  return {std::move(scheduler), std::move(stop_token)};
+  return {std::move(scheduler), std::move(stop_token_value)};
 }
 
 template <typename launch_scheduler_t, typename completion_scheduler_t,
           typename stop_token_t = stdexec::never_stop_token>
 [[nodiscard]] auto make_dual_scheduler_env(launch_scheduler_t launch_scheduler,
                                            completion_scheduler_t completion_scheduler,
-                                           stop_token_t stop_token = {})
+                                           stop_token_t stop_token_value = {})
     -> dual_scheduler_env<std::remove_cvref_t<launch_scheduler_t>,
                           std::remove_cvref_t<completion_scheduler_t>, stop_token_t> {
   return {
       std::move(launch_scheduler),
       std::move(completion_scheduler),
-      std::move(stop_token),
+      std::move(stop_token_value),
   };
 }
 

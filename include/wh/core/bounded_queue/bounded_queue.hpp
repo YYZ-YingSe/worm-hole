@@ -596,8 +596,13 @@ private:
         }
         return;
       }
+      if (is_same_scheduler()) {
+        complete();
+        return;
+      }
       try {
         ensure_completion_handoff();
+        wh_invariant(handoff_op_constructed_);
         handoff_start_returned_.store(false, std::memory_order_release);
         stdexec::start(*handoff_op_ptr());
         handoff_start_returned_.store(true, std::memory_order_release);
@@ -971,8 +976,13 @@ private:
         }
         return;
       }
+      if (is_same_scheduler()) {
+        complete();
+        return;
+      }
       try {
         ensure_completion_handoff();
+        wh_invariant(handoff_op_constructed_);
         handoff_start_returned_.store(false, std::memory_order_release);
         stdexec::start(*handoff_op_ptr());
         handoff_start_returned_.store(true, std::memory_order_release);

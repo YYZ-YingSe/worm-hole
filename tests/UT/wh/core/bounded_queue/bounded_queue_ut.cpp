@@ -1,3 +1,4 @@
+#include <chrono>
 #include <optional>
 #include <stdexcept>
 #include <stop_token>
@@ -271,4 +272,65 @@ TEST_CASE(
   auto popped = queue.try_pop();
   REQUIRE(popped.has_value());
   REQUIRE(*popped == 7);
+}
+
+TEST_CASE("bounded queue same-scheduler async pop delivers stopped inline without handoff state",
+          "[UT][wh/core/bounded_queue/"
+          "bounded_queue.hpp][bounded_queue::async_pop][stop][same_scheduler]") {
+  using scheduler_t = wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
+  using env_t = wh::testing::helper::scheduler_env<scheduler_t, stdexec::inplace_stop_token>;
+
+  wh::testing::helper::manual_scheduler_state scheduler_state{};
+  scheduler_state.same_scheduler = true;
+  scheduler_t scheduler{&scheduler_state};
+  stdexec::inplace_stop_source stop_source{};
+  env_t env{scheduler, stop_source.get_token()};
+
+  wh::core::bounded_queue<int> queue{1U};
+
+  wh::testing::helper::sender_capture<int> pop_capture{};
+  auto pop_operation =
+      stdexec::connect(queue.async_pop(),
+                       wh::testing::helper::sender_capture_receiver<int, env_t>{&pop_capture, env});
+  stdexec::start(pop_operation);
+
+  stop_source.request_stop();
+
+  REQUIRE(pop_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(pop_capture.terminal == wh::testing::helper::sender_terminal_kind::stopped);
+  REQUIRE(scheduler_state.pending_count() == 0U);
+}
+
+TEST_CASE("bounded queue same-scheduler wake completes waiting push inline without scheduling work",
+          "[UT][wh/core/bounded_queue/"
+          "bounded_queue.hpp][bounded_queue::async_push][wake][same_scheduler]") {
+  using scheduler_t = wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
+  using env_t = wh::testing::helper::scheduler_env<scheduler_t>;
+
+  wh::testing::helper::manual_scheduler_state scheduler_state{};
+  scheduler_state.same_scheduler = true;
+  scheduler_t scheduler{&scheduler_state};
+  env_t env{scheduler, {}};
+
+  wh::core::bounded_queue<int> queue{1U};
+  REQUIRE(queue.push(1));
+
+  wh::testing::helper::sender_capture<void> push_capture{};
+  auto push_operation = stdexec::connect(
+      queue.async_push(2),
+      wh::testing::helper::sender_capture_receiver<void, env_t>{&push_capture, env});
+  stdexec::start(push_operation);
+  REQUIRE_FALSE(push_capture.ready.try_acquire());
+
+  auto first = queue.try_pop();
+  REQUIRE(first.has_value());
+  REQUIRE(*first == 1);
+
+  REQUIRE(push_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(push_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(scheduler_state.pending_count() == 0U);
+
+  auto second = queue.try_pop();
+  REQUIRE(second.has_value());
+  REQUIRE(*second == 2);
 }
