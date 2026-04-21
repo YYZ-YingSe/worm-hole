@@ -14,6 +14,7 @@
 #include "wh/core/cursor_reader/detail/source.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/error_domain.hpp"
+#include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/stdexec.hpp"
 #include "wh/core/stdexec/manual_lifetime.hpp"
 namespace wh::core::cursor_reader_detail {
