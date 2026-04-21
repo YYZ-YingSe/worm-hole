@@ -27,7 +27,8 @@ template <typename result_t> struct cursor_read_receiver_state {
 
 template <typename scheduler_t = stdexec::inline_scheduler>
 using cursor_read_receiver_env =
-    wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+    wh::testing::helper::scheduler_env<scheduler_t,
+                                       wh::testing::helper::stop_token>;
 
 template <typename result_t, typename scheduler_t = stdexec::inline_scheduler>
 struct cursor_read_receiver {
@@ -147,7 +148,7 @@ TEST_CASE("cursor reader async read exposes sender surface and supports stop",
                                                        .read_async())>>);
 
   cursor_read_receiver_state<result_t> stopped_state{};
-  std::stop_source stop_source{};
+  wh::testing::helper::stop_source stop_source{};
   auto stopped_operation = stdexec::connect(
       cursors.front().read_async(),
       cursor_read_receiver<result_t>{
@@ -167,7 +168,8 @@ TEST_CASE("cursor reader async read exposes sender surface and supports stop",
   REQUIRE_FALSE(stopped_state.error_called);
 
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
-  std::jthread producer([stream_writer = std::move(writer)]() mutable {
+  wh::testing::helper::joining_thread producer(
+      [stream_writer = std::move(writer)]() mutable {
     std::this_thread::sleep_for(std::chrono::milliseconds{10});
     REQUIRE(stream_writer.try_write(17).has_value());
     REQUIRE(stream_writer.close().has_value());

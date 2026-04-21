@@ -26,6 +26,22 @@ struct tracked_value {
   ~tracked_value() noexcept { ++destroyed; }
 };
 
+struct immovable_pointer_value {
+  int *pointer{nullptr};
+  int marker{0};
+
+  explicit immovable_pointer_value(int *next_pointer,
+                                   const int next_marker = 0) noexcept
+      : pointer(next_pointer), marker(next_marker) {}
+
+  immovable_pointer_value(const immovable_pointer_value &) = delete;
+  auto operator=(const immovable_pointer_value &)
+      -> immovable_pointer_value & = delete;
+  immovable_pointer_value(immovable_pointer_value &&) = delete;
+  auto operator=(immovable_pointer_value &&)
+      -> immovable_pointer_value & = delete;
+};
+
 } // namespace
 
 TEST_CASE("manual_lifetime constructs and destructs values explicitly",
@@ -103,6 +119,24 @@ TEST_CASE("manual_storage construct_with preserves exact value type",
 
   storage.destruct<tracked_value>();
   REQUIRE(tracked_value::destroyed >= 1);
+}
+
+TEST_CASE("manual_storage construct_with preserves pointer fields for "
+          "immovable values",
+          "[UT][wh/core/stdexec/manual_lifetime.hpp][manual_storage::construct_with][boundary]") {
+  int payload = 41;
+
+  wh::core::detail::manual_storage<sizeof(immovable_pointer_value),
+                                   alignof(immovable_pointer_value)>
+      storage{};
+  auto &value = storage.construct_with<immovable_pointer_value>(
+      [&]() noexcept { return immovable_pointer_value{&payload, 77}; });
+
+  REQUIRE(value.pointer == &payload);
+  REQUIRE(*value.pointer == 41);
+  REQUIRE(value.marker == 77);
+
+  storage.destruct<immovable_pointer_value>();
 }
 
 TEST_CASE("manual_lifetime get on rvalue moves out the stored value",

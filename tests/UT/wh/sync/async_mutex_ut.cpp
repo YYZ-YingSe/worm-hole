@@ -25,12 +25,14 @@ using manual_scheduler = wh::testing::helper::manual_scheduler<would_block>;
 
 template <typename scheduler_t>
 using receiver_env_t =
-    wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+    wh::testing::helper::scheduler_env<scheduler_t,
+                                       wh::testing::helper::stop_token>;
 using receiver_env = receiver_env_t<manual_scheduler>;
 
 template <typename scheduler_t>
 using completion_receiver_env_t =
-    wh::testing::helper::completion_scheduler_env<scheduler_t, std::stop_token>;
+    wh::testing::helper::completion_scheduler_env<
+        scheduler_t, wh::testing::helper::stop_token>;
 using completion_receiver_env = completion_receiver_env_t<manual_scheduler>;
 
 struct receiver_state {
@@ -275,7 +277,7 @@ TEST_CASE("async mutex lock honors completion scheduler and stop cancellation",
   completion_state.guard.reset();
 
   receiver_state stopped_state{};
-  std::stop_source stop_source{};
+  wh::testing::helper::stop_source stop_source{};
   stop_source.request_stop();
   manual_scheduler_state stop_sched{};
   auto stopped_op = stdexec::connect(
@@ -336,7 +338,8 @@ TEST_CASE("async mutex preserves FIFO waiter ordering under contention",
 TEST_CASE("async mutex reports handoff construction failure as stopped without leaking ownership",
           "[UT][wh/sync/async_mutex.hpp][async_mutex::lock_sender][error][scheduler]") {
   using env_t =
-      wh::testing::helper::scheduler_env<throwing_scheduler, std::stop_token>;
+      wh::testing::helper::scheduler_env<throwing_scheduler,
+                                         wh::testing::helper::stop_token>;
 
   mutex_t mutex{};
   throwing_scheduler_state scheduler_state{
@@ -361,8 +364,9 @@ TEST_CASE("async mutex reports handoff construction failure as stopped without l
 
 TEST_CASE("async mutex inline handoff does not destroy the handoff op before start returns",
           "[UT][wh/sync/async_mutex.hpp][async_mutex::lock_sender][handoff][lifecycle]") {
-  using env_t = wh::testing::helper::scheduler_env<observing_inline_scheduler,
-                                                   std::stop_token>;
+  using env_t =
+      wh::testing::helper::scheduler_env<observing_inline_scheduler,
+                                         wh::testing::helper::stop_token>;
 
   mutex_t mutex{};
   inline_handoff_observer_state observer{};

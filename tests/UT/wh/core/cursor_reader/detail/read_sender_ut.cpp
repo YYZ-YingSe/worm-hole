@@ -48,7 +48,8 @@ struct sender_async_source {
 };
 
 using scheduler_t = wh::testing::helper::manual_scheduler<void>;
-using env_t = wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+using env_t = wh::testing::helper::scheduler_env<scheduler_t,
+                                                 wh::testing::helper::stop_token>;
 using capture_t = wh::testing::helper::sender_capture<result_t>;
 using receiver_t =
     wh::testing::helper::sender_capture_receiver<result_t, env_t>;
@@ -154,7 +155,7 @@ TEST_CASE("read sender honors pre-requested stop before registering waiter",
           "[UT][wh/core/cursor_reader/detail/read_sender.hpp][read_operation::start][condition][branch]") {
   wh::testing::helper::manual_scheduler_state scheduler_state{};
   scheduler_t scheduler{&scheduler_state};
-  std::stop_source stop_source{};
+  wh::testing::helper::stop_source stop_source{};
   stop_source.request_stop();
   env_t env{scheduler, stop_source.get_token()};
 
@@ -331,7 +332,8 @@ TEST_CASE("read sender inline handoff does not destroy the handoff op before sta
 
   inline_handoff_observer_state observer{};
   using inline_env_t =
-      wh::testing::helper::scheduler_env<observing_inline_scheduler, std::stop_token>;
+      wh::testing::helper::scheduler_env<observing_inline_scheduler,
+                                         wh::testing::helper::stop_token>;
   capture_t capture{};
   auto operation = stdexec::connect(
       sender_t{.state_ = state, .reader_index = 0U, .released = false},

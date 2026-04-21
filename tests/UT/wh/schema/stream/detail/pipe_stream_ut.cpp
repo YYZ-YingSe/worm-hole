@@ -101,3 +101,25 @@ TEST_CASE("pipe stream detail shared closed state normalization and exception fo
           std::make_exception_ptr(std::runtime_error{"boom"})),
       std::runtime_error);
 }
+
+TEST_CASE("pipe stream detail normalization preserves real bounded-queue async read senders",
+          "[UT][wh/schema/stream/detail/pipe_stream.hpp][normalize_pipe_read_sender][concurrency][boundary]") {
+  using state_t = wh::schema::stream::detail::pipe_stream_state<int>;
+
+  auto state = std::make_shared<state_t>(1U);
+  REQUIRE(state->queue.try_push(7) == wh::core::bounded_queue_status::success);
+
+  auto value = wh::testing::helper::wait_value_on_test_thread(
+      wh::schema::stream::detail::normalize_pipe_read_sender<int>(
+          state->queue.async_pop(), state, false, false));
+  REQUIRE(value.has_value());
+  REQUIRE(value.value().value == std::optional<int>{7});
+
+  auto missing = wh::testing::helper::wait_value_on_test_thread(
+      wh::schema::stream::detail::normalize_pipe_read_sender<int>(
+          wh::schema::stream::detail::shared_closed_pipe_state<state_t>()
+              ->queue.async_pop(),
+          std::shared_ptr<state_t>{}, true, false));
+  REQUIRE(missing.has_error());
+  REQUIRE(missing.error() == wh::core::errc::not_found);
+}

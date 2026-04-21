@@ -19,7 +19,8 @@ struct would_block {};
 
 using scheduler_t = wh::testing::helper::manual_scheduler<would_block>;
 using scheduler_env_t =
-    wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+    wh::testing::helper::scheduler_env<scheduler_t,
+                                       wh::testing::helper::stop_token>;
 
 } // namespace
 
@@ -34,7 +35,7 @@ TEST_CASE("bounded queue public facade preserves rendezvous handoff and close ac
   bool first_pop_succeeded{false};
   bool eof_pop_empty{false};
 
-  std::jthread consumer([&] {
+  wh::testing::helper::joining_thread consumer([&] {
     consumer_ready.release();
     auto first = queue.pop();
     first_pop_succeeded = first.has_value();

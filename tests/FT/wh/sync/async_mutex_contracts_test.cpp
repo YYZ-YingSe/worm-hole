@@ -18,7 +18,8 @@ using mutex_t = wh::sync::async_mutex;
 using lock_guard_t = mutex_t::lock_guard;
 using scheduler_t = wh::testing::helper::manual_scheduler<would_block>;
 using scheduler_env_t =
-    wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+    wh::testing::helper::scheduler_env<scheduler_t,
+                                       wh::testing::helper::stop_token>;
 
 } // namespace
 
@@ -84,7 +85,7 @@ TEST_CASE("async mutex public facade stops one pending waiter and keeps the mute
   REQUIRE(holder.has_value());
 
   wh::testing::helper::manual_scheduler_state stop_scheduler{};
-  std::stop_source stop_source{};
+  wh::testing::helper::stop_source stop_source{};
   wh::testing::helper::sender_capture<lock_guard_t> stopped_capture{};
   auto stopped_operation = stdexec::connect(
       mutex.lock(),

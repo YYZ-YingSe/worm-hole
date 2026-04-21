@@ -16,7 +16,8 @@ namespace {
 using write_result_t = wh::core::result<void>;
 using scheduler_t =
     wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
-using env_t = wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+using env_t = wh::testing::helper::scheduler_env<
+    scheduler_t, wh::testing::helper::stop_token>;
 using non_nothrow_value_t = wh::testing::helper::non_nothrow_value;
 
 static_assert(requires(
@@ -128,6 +129,24 @@ TEST_CASE("pipe stream writer accepts copyable and movable values without "
   REQUIRE(moved_chunk.has_value());
   REQUIRE(moved_chunk.value().value ==
           std::optional<non_nothrow_value_t>{non_nothrow_value_t{12}});
+}
+
+TEST_CASE("pipe stream writer write_async snapshots shared state before "
+          "normalization builds the child sender",
+          "[UT][wh/schema/stream/writer/"
+          "pipe_stream_writer.hpp][pipe_stream_writer::write_async][regression]["
+          "lifetime]") {
+  using state_t = wh::schema::stream::detail::pipe_stream_state<int>;
+
+  auto state = std::make_shared<state_t>(1U);
+  wh::schema::stream::pipe_stream_writer<int> writer{state};
+
+  auto status =
+      wh::testing::helper::wait_value_on_test_thread(writer.write_async(23));
+  REQUIRE(status.has_value());
+
+  auto drained = state->queue.pop();
+  REQUIRE(drained == std::optional<int>{23});
 }
 
 TEST_CASE("pipe stream writer write_async covers controlled interleaving with "

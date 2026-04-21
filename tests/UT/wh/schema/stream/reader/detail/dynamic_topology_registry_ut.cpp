@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 
+#include "helper/thread_support.hpp"
 #include "wh/schema/stream/pipe.hpp"
 #include "wh/schema/stream/reader/merge_stream_reader.hpp"
 #include "wh/schema/stream/reader/values_stream_reader.hpp"
@@ -53,7 +54,7 @@ TEST_CASE("dynamic topology registry helper waiters preserve intrusive ordering 
 
   wh::schema::stream::detail::topology_sync_waiter sync_waiter{};
   std::atomic<bool> resumed{false};
-  std::jthread thread([&] {
+  wh::testing::helper::joining_thread thread([&] {
     sync_waiter.wait();
     resumed.store(true, std::memory_order_release);
   });
@@ -88,7 +89,7 @@ TEST_CASE("dynamic topology registry covers pending attach disable immediate rea
       sync_waiter{};
   REQUIRE(pending.register_sync_topology_waiter(&sync_waiter, epoch));
   std::optional<wh::core::result<void>> attach_status{};
-  std::jthread attach_thread([&] {
+  wh::testing::helper::joining_thread attach_thread([&] {
     attach_status.emplace(pending.attach(
         "A", wh::schema::stream::make_values_stream_reader(std::vector<int>{7})));
   });
@@ -195,7 +196,7 @@ TEST_CASE("dynamic topology registry complete_round_winner and async waiters res
   wh::schema::stream::detail::dynamic_topology_registry<reader_t>::sync_waiter_type
       wake_sync{};
   REQUIRE(pending.register_sync_topology_waiter(&wake_sync, epoch));
-  std::jthread attach_thread([&] {
+  wh::testing::helper::joining_thread attach_thread([&] {
     REQUIRE(pending.attach(
                 "A", wh::schema::stream::make_values_stream_reader(std::vector<int>{9}))
                 .has_value());

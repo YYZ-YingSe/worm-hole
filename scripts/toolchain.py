@@ -637,49 +637,64 @@ def run_test_entries(
     default_timeout_seconds: int,
     env: dict[str, str] | None = None,
 ) -> None:
+    for entry in entries:
+        run_test_entry(
+            entry,
+            reporter=reporter,
+            default_timeout_seconds=default_timeout_seconds,
+            env=env,
+        )
+
+    print_step("test-shard", f"PASS {len(entries)} test targets")
+
+
+def run_test_entry(
+    entry: TestEntry,
+    *,
+    reporter: str,
+    default_timeout_seconds: int,
+    env: dict[str, str] | None = None,
+) -> None:
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
 
-    for entry in entries:
-        timeout_seconds = (
-            entry.timeout_seconds if entry.timeout_seconds > 0 else default_timeout_seconds
+    timeout_seconds = (
+        entry.timeout_seconds if entry.timeout_seconds > 0 else default_timeout_seconds
+    )
+    print_step(
+        "test-shard",
+        "RUN "
+        f"{entry.target} ({entry.suite}, weight={entry.weight}, timeout={timeout_seconds}s, "
+        f"labels={','.join(entry.labels)})",
+    )
+    start = time.monotonic()
+    try:
+        completed = subprocess.run(
+            [
+                str(entry.executable),
+                "--reporter",
+                reporter,
+                "--allow-running-no-tests",
+            ],
+            cwd=str(ROOT),
+            env=merged_env,
+            check=False,
+            text=True,
+            timeout=timeout_seconds,
         )
-        print_step(
-            "test-shard",
-            "RUN "
-            f"{entry.target} ({entry.suite}, weight={entry.weight}, timeout={timeout_seconds}s, "
-            f"labels={','.join(entry.labels)})",
-        )
-        start = time.monotonic()
-        try:
-            completed = subprocess.run(
-                [
-                    str(entry.executable),
-                    "--reporter",
-                    reporter,
-                    "--allow-running-no-tests",
-                ],
-                cwd=str(ROOT),
-                env=merged_env,
-                check=False,
-                text=True,
-                timeout=timeout_seconds,
-            )
-        except FileNotFoundError as error:
-            fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
-        except OSError as error:
-            fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
-        except subprocess.TimeoutExpired:
-            fail("test-shard", f"target {entry.target} timed out after {timeout_seconds}s", code=124)
+    except FileNotFoundError as error:
+        fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
+    except OSError as error:
+        fail("test-shard", f"failed to launch {entry.target}: {error}", code=127)
+    except subprocess.TimeoutExpired:
+        fail("test-shard", f"target {entry.target} timed out after {timeout_seconds}s", code=124)
 
-        elapsed = time.monotonic() - start
-        print_step("test-shard", f"DONE {entry.target} elapsed={elapsed:.2f}s")
-        if completed.returncode != 0:
-            print_step("test-shard", f"FAIL {entry.target} exited with {completed.returncode}")
-            raise SystemExit(completed.returncode)
-
-    print_step("test-shard", f"PASS {len(entries)} test targets")
+    elapsed = time.monotonic() - start
+    print_step("test-shard", f"DONE {entry.target} elapsed={elapsed:.2f}s")
+    if completed.returncode != 0:
+        print_step("test-shard", f"FAIL {entry.target} exited with {completed.returncode}")
+        raise SystemExit(completed.returncode)
 
 
 def filter_compile_commands_to_project_scope(
@@ -934,6 +949,133 @@ def export_coverage_summary(
         )
 
 
+def export_coverage_lcov(
+    tag: str,
+    llvm_cov_bin: str,
+    profdata_file: Path,
+    binary: Path,
+    report_file: Path,
+) -> None:
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    export_result = run(
+        [
+            llvm_cov_bin,
+            "export",
+            "--format=lcov",
+            "--instr-profile",
+            str(profdata_file),
+            str(binary),
+        ],
+        check=False,
+        capture_output=True,
+    )
+    report_file.write_text(export_result.stdout or "", encoding="utf-8")
+    if export_result.stderr:
+        sys.stderr.write(export_result.stderr)
+    if export_result.returncode != 0:
+        fail(tag, f"llvm-cov lcov export failed with status {export_result.returncode}")
+    if "mismatched data" in export_result.stderr:
+        fail(
+            tag,
+            f"llvm-cov reported mismatched data for {binary.name}; "
+            "coverage aggregation requires per-binary profile isolation",
+        )
+
+
+def parse_lcov_line_hits(report_file: Path) -> dict[str, dict[int, int]]:
+    merged: dict[str, dict[int, int]] = {}
+    current_file: str | None = None
+
+    for raw_line in report_file.read_text(encoding="utf-8").splitlines():
+        if raw_line.startswith("SF:"):
+            current_file = raw_line[3:]
+            merged.setdefault(current_file, {})
+            continue
+        if current_file is None:
+            continue
+        if raw_line.startswith("DA:"):
+            line_part, count_part = raw_line[3:].split(",", 1)
+            line_number = int(line_part)
+            hit_count = int(count_part.split(",", 1)[0])
+            merged[current_file][line_number] = (
+                merged[current_file].get(line_number, 0) + hit_count
+            )
+            continue
+        if raw_line == "end_of_record":
+            current_file = None
+
+    return merged
+
+
+def merge_lcov_reports(
+    tag: str,
+    report_inputs: Sequence[Path],
+    output_file: Path,
+) -> dict[str, dict[int, int]]:
+    if not report_inputs:
+        fail(tag, "no lcov reports to merge")
+
+    merged: dict[str, dict[int, int]] = {}
+    for report_file in report_inputs:
+        for file_name, line_hits in parse_lcov_line_hits(report_file).items():
+            merged_file = merged.setdefault(file_name, {})
+            for line_number, hit_count in line_hits.items():
+                merged_file[line_number] = merged_file.get(line_number, 0) + hit_count
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as handle:
+        for file_name in sorted(merged):
+            line_hits = merged[file_name]
+            handle.write(f"SF:{file_name}\n")
+            for line_number in sorted(line_hits):
+                handle.write(f"DA:{line_number},{line_hits[line_number]}\n")
+            covered_lines = sum(1 for hit_count in line_hits.values() if hit_count > 0)
+            handle.write(f"LF:{len(line_hits)}\n")
+            handle.write(f"LH:{covered_lines}\n")
+            handle.write("end_of_record\n")
+
+    print_step(tag, f"MERGED lcov={len(report_inputs)} -> {output_file}")
+    return merged
+
+
+def write_lcov_summary_json(
+    tag: str,
+    merged_line_hits: dict[str, dict[int, int]],
+    report_json: Path,
+) -> None:
+    files: list[dict[str, object]] = []
+    for file_name in sorted(merged_line_hits):
+        line_hits = merged_line_hits[file_name]
+        line_count = len(line_hits)
+        covered_lines = sum(1 for hit_count in line_hits.values() if hit_count > 0)
+        files.append(
+            {
+                "filename": file_name,
+                "summary": {
+                    "lines": {
+                        "count": line_count,
+                        "covered": covered_lines,
+                        "percent": (float(covered_lines) * 100.0 / float(line_count))
+                        if line_count
+                        else 0.0,
+                    }
+                },
+            }
+        )
+
+    payload = {
+        "data": [
+            {
+                "files": files,
+                "totals": recompute_coverage_totals(files),
+            }
+        ]
+    }
+    report_json.parent.mkdir(parents=True, exist_ok=True)
+    report_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print_step(tag, f"SUMMARY {report_json}")
+
+
 def check_coverage_gate(tag: str, report_json: Path, minimum_lines: float) -> None:
     payload = filter_coverage_report_to_project_scope(
         report_json,
@@ -976,6 +1118,27 @@ def collect_coverage_binaries(tag: str, binaries_dir: Path) -> list[Path]:
     if not binaries:
         fail(tag, f"no coverage binaries found under {binaries_dir}")
     return binaries
+
+
+def coverage_profile_pattern(entry: TestEntry, profile_dir: Path) -> str:
+    return str(profile_dir / f"{entry.target}-%p.profraw")
+
+
+def collect_entry_coverage_profiles(tag: str, profile_dir: Path, entry: TestEntry) -> list[Path]:
+    profiles = sorted(profile_dir.glob(f"{entry.target}-*.profraw"))
+    if not profiles:
+        fail(tag, f"no coverage profiles found for target {entry.target} under {profile_dir}")
+    return profiles
+
+
+def collect_lcov_reports(tag: str, reports_dir: Path) -> list[Path]:
+    if not reports_dir.exists():
+        fail(tag, f"missing lcov directory: {reports_dir}")
+
+    reports = sorted(path for path in reports_dir.rglob("*.info") if path.is_file())
+    if not reports:
+        fail(tag, f"no lcov reports found under {reports_dir}")
+    return reports
 
 
 def shard_compile_entries(
@@ -1415,33 +1578,58 @@ def ci_coverage(args: argparse.Namespace) -> None:
 
     profile_dir = build_dir / "profiles"
     report_dir = build_dir / "reports"
-    profdata_file = report_dir / "coverage.profdata"
+    profdata_dir = report_dir / "profdata"
+    lcov_dir = report_dir / "lcov"
+    lcov_file = report_dir / "coverage.info"
     report_json = report_dir / "coverage-summary.json"
     profile_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
+    profdata_dir.mkdir(parents=True, exist_ok=True)
+    lcov_dir.mkdir(parents=True, exist_ok=True)
 
     for file in profile_dir.glob("*.profraw"):
         file.unlink()
-    if profdata_file.exists():
-        profdata_file.unlink()
+    for file in profdata_dir.glob("*.profdata"):
+        file.unlink()
+    for file in lcov_dir.glob("*.info"):
+        file.unlink()
+    if lcov_file.exists():
+        lcov_file.unlink()
 
-    run_test_entries(
-        shard,
-        reporter=args.reporter,
-        default_timeout_seconds=args.default_timeout_seconds,
-        env={"LLVM_PROFILE_FILE": str(profile_dir / "%m-%p.profraw")},
-    )
+    for entry in shard:
+        run_test_entry(
+            entry,
+            reporter=args.reporter,
+            default_timeout_seconds=args.default_timeout_seconds,
+            env={"LLVM_PROFILE_FILE": coverage_profile_pattern(entry, profile_dir)},
+        )
 
-    profraw_files = collect_coverage_profiles("coverage", profile_dir)
-    merge_coverage_profiles("coverage", llvm_profdata_bin, profraw_files, profdata_file)
+    lcov_reports: list[Path] = []
+    for entry in shard:
+        target_profdata = profdata_dir / f"{entry.target}.profdata"
+        merge_coverage_profiles(
+            "coverage",
+            llvm_profdata_bin,
+            collect_entry_coverage_profiles("coverage", profile_dir, entry),
+            target_profdata,
+        )
+        target_lcov = lcov_dir / f"{entry.target}.info"
+        export_coverage_lcov(
+            "coverage",
+            llvm_cov_bin,
+            target_profdata,
+            entry.executable,
+            target_lcov,
+        )
+        lcov_reports.append(target_lcov)
 
-    binaries = [str(entry.executable) for entry in shard]
-    export_coverage_summary("coverage", llvm_cov_bin, profdata_file, binaries, report_json)
+    merged_line_hits = merge_lcov_reports("coverage", lcov_reports, lcov_file)
+    write_lcov_summary_json("coverage", merged_line_hits, report_json)
     check_coverage_gate("coverage", report_json, args.coverage_min_lines)
 
 
 def ci_coverage_shard(args: argparse.Namespace) -> None:
-    _, llvm_profdata_bin = coverage_tools()
+    llvm_cov_bin, llvm_profdata_bin = coverage_tools()
     if args.profile_output is None and args.artifact_dir is None:
         fail("coverage-shard", "either --profile-output or --artifact-dir is required", code=2)
 
@@ -1472,57 +1660,77 @@ def ci_coverage_shard(args: argparse.Namespace) -> None:
     print_compiler_cache_stats()
 
     profile_dir = build_dir / "profiles" / f"shard-{args.shard_index}"
+    profdata_dir = build_dir / "reports" / f"coverage-shard-{args.shard_index}-profdata"
+    lcov_dir = build_dir / "reports" / f"coverage-shard-{args.shard_index}-lcov"
     if profile_dir.exists():
         shutil.rmtree(profile_dir)
+    if profdata_dir.exists():
+        shutil.rmtree(profdata_dir)
+    if lcov_dir.exists():
+        shutil.rmtree(lcov_dir)
     profile_dir.mkdir(parents=True, exist_ok=True)
+    profdata_dir.mkdir(parents=True, exist_ok=True)
+    lcov_dir.mkdir(parents=True, exist_ok=True)
 
-    run_test_entries(
-        shard,
-        reporter=args.reporter,
-        default_timeout_seconds=args.default_timeout_seconds,
-        env={"LLVM_PROFILE_FILE": str(profile_dir / "%m-%p.profraw")},
-    )
+    for entry in shard:
+        run_test_entry(
+            entry,
+            reporter=args.reporter,
+            default_timeout_seconds=args.default_timeout_seconds,
+            env={"LLVM_PROFILE_FILE": coverage_profile_pattern(entry, profile_dir)},
+        )
 
-    profile_output = (
-        args.profile_output.resolve()
-        if args.profile_output is not None
-        else (build_dir / "reports" / f"coverage-shard-{args.shard_index}.profdata")
-    )
-    merge_coverage_profiles(
-        "coverage-shard",
-        llvm_profdata_bin,
-        collect_coverage_profiles("coverage-shard", profile_dir),
-        profile_output,
-    )
+    lcov_reports: list[Path] = []
+    for entry in shard:
+        target_profdata = profdata_dir / f"{entry.target}.profdata"
+        merge_coverage_profiles(
+            "coverage-shard",
+            llvm_profdata_bin,
+            collect_entry_coverage_profiles("coverage-shard", profile_dir, entry),
+            target_profdata,
+        )
+        target_lcov = lcov_dir / f"{entry.target}.info"
+        export_coverage_lcov(
+            "coverage-shard",
+            llvm_cov_bin,
+            target_profdata,
+            entry.executable,
+            target_lcov,
+        )
+        lcov_reports.append(target_lcov)
+
+    merged_lcov = build_dir / "reports" / f"coverage-shard-{args.shard_index}.info"
+    merged_line_hits = merge_lcov_reports("coverage-shard", lcov_reports, merged_lcov)
+    summary_output = build_dir / "reports" / f"coverage-shard-{args.shard_index}.json"
+    write_lcov_summary_json("coverage-shard", merged_line_hits, summary_output)
     if args.artifact_dir is not None:
         artifact_dir = args.artifact_dir.resolve()
         if artifact_dir.exists():
             shutil.rmtree(artifact_dir)
-        profiles_dir = artifact_dir / "profiles"
-        binaries_dir = artifact_dir / "binaries"
-        profiles_dir.mkdir(parents=True, exist_ok=True)
-        binaries_dir.mkdir(parents=True, exist_ok=True)
+        reports_dir = artifact_dir / "lcov"
+        reports_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(
-            profile_output,
-            profiles_dir / f"coverage-shard-{args.shard_index}.profdata",
+            merged_lcov,
+            reports_dir / f"coverage-shard-{args.shard_index}.info",
         )
-        for entry in shard:
-            shutil.copy2(entry.executable, binaries_dir / entry.target)
         print_step("coverage-shard", f"ARTIFACT {artifact_dir}")
-    print_step("coverage-shard", f"PASS {profile_output}")
+    elif args.profile_output is not None:
+        shutil.copy2(merged_lcov, args.profile_output.resolve())
+    print_step("coverage-shard", f"PASS {merged_lcov}")
 
 
 def ci_coverage_aggregate(args: argparse.Namespace) -> None:
-    llvm_cov_bin, llvm_profdata_bin = coverage_tools()
     artifact_dir = args.artifact_dir.resolve()
-    profile_inputs = collect_coverage_profiles("coverage", artifact_dir / "profiles")
-    binaries = [str(path) for path in collect_coverage_binaries("coverage", artifact_dir / "binaries")]
     report_dir = artifact_dir / "reports"
-    profdata_file = report_dir / "coverage.profdata"
+    lcov_file = report_dir / "coverage.info"
     report_json = report_dir / "coverage-summary.json"
 
-    merge_coverage_profiles("coverage", llvm_profdata_bin, profile_inputs, profdata_file)
-    export_coverage_summary("coverage", llvm_cov_bin, profdata_file, binaries, report_json)
+    merged_line_hits = merge_lcov_reports(
+        "coverage",
+        collect_lcov_reports("coverage", artifact_dir / "lcov"),
+        lcov_file,
+    )
+    write_lcov_summary_json("coverage", merged_line_hits, report_json)
     check_coverage_gate("coverage", report_json, args.coverage_min_lines)
 
 

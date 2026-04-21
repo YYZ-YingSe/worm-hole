@@ -64,10 +64,14 @@ public:
     requires std::copy_constructible<value_t>
   {
     auto async_state = detail::select_pipe_async_state(state_);
+    // C++ does not guarantee function-argument evaluation order here. Build
+    // the child sender before moving the shared state so no compiler can
+    // dereference a moved-from shared_ptr during normalization.
+    auto state = std::move(async_state.state);
+    auto sender = state->queue.async_push(value);
 
     return detail::normalize_pipe_write_sender(
-        async_state.state->queue.async_push(value),
-        std::move(async_state.state), async_state.state_missing,
+        std::move(sender), std::move(state), async_state.state_missing,
         async_state.reader_closed);
   }
 
@@ -75,10 +79,14 @@ public:
     requires std::move_constructible<value_t>
   {
     auto async_state = detail::select_pipe_async_state(state_);
+    // C++ does not guarantee function-argument evaluation order here. Build
+    // the child sender before moving the shared state so no compiler can
+    // dereference a moved-from shared_ptr during normalization.
+    auto state = std::move(async_state.state);
+    auto sender = state->queue.async_push(std::move(value));
 
     return detail::normalize_pipe_write_sender(
-        async_state.state->queue.async_push(std::move(value)),
-        std::move(async_state.state), async_state.state_missing,
+        std::move(sender), std::move(state), async_state.state_missing,
         async_state.reader_closed);
   }
 

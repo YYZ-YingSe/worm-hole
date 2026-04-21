@@ -17,6 +17,7 @@
 #include "helper/manual_scheduler.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/test_thread_wait.hpp"
+#include "helper/thread_support.hpp"
 #include "wh/core/stdexec/concurrent_sender_vector.hpp"
 #include "wh/core/stdexec/ready_result_sender.hpp"
 
@@ -456,7 +457,7 @@ TEST_CASE("concurrent sender vector propagates outer stop and prevents launching
   }
 
   wh::testing::helper::sender_capture<std::vector<result_t>> capture{};
-  std::stop_source stop_source{};
+  wh::testing::helper::stop_source stop_source{};
   auto operation = stdexec::connect(
       wh::core::detail::make_concurrent_sender_vector<result_t>(
           std::move(senders), 1U),

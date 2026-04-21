@@ -7,6 +7,7 @@
 #include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
+#include "helper/thread_support.hpp"
 #include "wh/schema/stream/pipe.hpp"
 #include "wh/schema/stream/reader/copy_stream_reader.hpp"
 #include "wh/schema/stream/reader/values_stream_reader.hpp"
@@ -65,8 +66,8 @@ TEST_CASE("copy stream readers async waits resume independently after upstream w
   std::optional<wh::core::result<void>> write_status{};
   std::optional<wh::core::result<void>> close_status{};
 
-  std::jthread producer([stream_writer = std::move(writer), &write_status,
-                         &close_status]() mutable {
+  wh::testing::helper::joining_thread producer(
+      [stream_writer = std::move(writer), &write_status, &close_status]() mutable {
     std::this_thread::sleep_for(std::chrono::milliseconds{10});
     write_status.emplace(stream_writer.try_write(11));
     close_status.emplace(stream_writer.close());

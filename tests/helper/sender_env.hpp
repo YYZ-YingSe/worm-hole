@@ -1,10 +1,11 @@
 #pragma once
 
-#include <stop_token>
 #include <type_traits>
 #include <utility>
 
 #include <stdexec/execution.hpp>
+
+#include "helper/thread_support.hpp"
 
 namespace wh::testing::helper {
 

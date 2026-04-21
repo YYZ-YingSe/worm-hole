@@ -58,10 +58,15 @@ public:
 
   [[nodiscard]] auto read_async() const {
     auto async_state = detail::select_pipe_async_state(state_);
+    // C++ does not guarantee function-argument evaluation order here. Build
+    // the child sender before moving the shared state so no compiler can
+    // dereference a moved-from shared_ptr during normalization.
+    auto state = std::move(async_state.state);
+    auto sender = state->queue.async_pop();
 
     return detail::normalize_pipe_read_sender<value_t>(
-        async_state.state->queue.async_pop(), std::move(async_state.state),
-        async_state.state_missing, async_state.reader_closed);
+        std::move(sender), std::move(state), async_state.state_missing,
+        async_state.reader_closed);
   }
 
   auto close_impl() -> wh::core::result<void> {

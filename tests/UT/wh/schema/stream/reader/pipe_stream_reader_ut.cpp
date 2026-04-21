@@ -18,7 +18,8 @@ using int_chunk_t = wh::schema::stream::stream_chunk<int>;
 using int_chunk_result_t = wh::schema::stream::stream_result<int_chunk_t>;
 using scheduler_t =
     wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
-using env_t = wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+using env_t = wh::testing::helper::scheduler_env<
+    scheduler_t, wh::testing::helper::stop_token>;
 using non_nothrow_value_t = wh::testing::helper::non_nothrow_value;
 
 static_assert(wh::schema::stream::detail::async_stream_reader<
@@ -103,6 +104,22 @@ TEST_CASE("pipe stream reader read_async stays available for movable values "
   REQUIRE(next.has_value());
   REQUIRE(next.value().value ==
           std::optional<non_nothrow_value_t>{non_nothrow_value_t{7}});
+}
+
+TEST_CASE("pipe stream reader read_async snapshots shared state before "
+          "normalization builds the child sender",
+          "[UT][wh/schema/stream/reader/"
+          "pipe_stream_reader.hpp][pipe_stream_reader::read_async][regression]["
+          "lifetime]") {
+  using state_t = wh::schema::stream::detail::pipe_stream_state<int>;
+
+  auto state = std::make_shared<state_t>(1U);
+  wh::schema::stream::pipe_stream_reader<int> reader{state};
+  REQUIRE(state->queue.try_push(17) == wh::core::bounded_queue_status::success);
+
+  auto next =
+      wh::testing::helper::wait_value_on_test_thread(reader.read_async());
+  require_value_chunk(next, 17);
 }
 
 TEST_CASE("pipe stream reader close path returns eof on subsequent reads and "

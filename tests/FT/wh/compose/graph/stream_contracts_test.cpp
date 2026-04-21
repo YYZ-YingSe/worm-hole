@@ -262,9 +262,9 @@ TEST_CASE("graph stream explicit copies preserve fanout semantics",
   wh::core::result<std::vector<int>> left{};
   wh::core::result<std::vector<int>> right{};
 
-  std::jthread left_thread(
+  wh::testing::helper::joining_thread left_thread(
       [&]() { left = collect_ints(std::move(left_reader)); });
-  std::jthread right_thread(
+  wh::testing::helper::joining_thread right_thread(
       [&]() { right = collect_ints(std::move(right_reader)); });
 
   left_thread.join();
@@ -288,8 +288,8 @@ TEST_CASE("graph stream async merge forwards merged lane reads",
   auto merged = wh::compose::detail::make_graph_merge_reader(std::move(lanes));
 
   wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
-  std::jthread producer([writer = std::move(right_writer),
-                         left = std::move(left_writer)]() mutable {
+  wh::testing::helper::joining_thread producer(
+      [writer = std::move(right_writer), left = std::move(left_writer)]() mutable {
     std::this_thread::sleep_for(std::chrono::milliseconds{10});
     [[maybe_unused]] const auto write_status =
         writer.try_write(wh::core::any(19));
@@ -392,7 +392,8 @@ TEST_CASE("graph stream blocking merge wakes when pending lane is disabled",
           std::vector<std::string>{"late"});
 
   std::optional<wh::compose::graph_stream_reader::chunk_result_type> result{};
-  std::jthread consumer([&] { result.emplace(merged.read()); });
+  wh::testing::helper::joining_thread consumer(
+      [&] { result.emplace(merged.read()); });
 
   std::this_thread::sleep_for(std::chrono::milliseconds{10});
   REQUIRE(merged.disable("late").has_value());
@@ -441,7 +442,7 @@ TEST_CASE("graph stream async merge pending read resumes when lane attaches",
   std::optional<wh::core::result<void>> write_status{};
   std::optional<wh::core::result<void>> close_status{};
 
-  std::jthread producer([&] {
+  wh::testing::helper::joining_thread producer([&] {
     try {
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
       auto [writer, reader] = wh::compose::make_graph_stream(2U);
@@ -623,10 +624,10 @@ TEST_CASE("graph stream fanout into two live merges keeps blocking readers isola
   std::optional<wh::core::result<void>> left_attach_status{};
   std::optional<wh::core::result<void>> right_attach_status{};
 
-  std::jthread producer([left_merge, right_merge,
-                         &left_attach_status, &right_attach_status,
-                         slow_left = reader_t{std::move(slow_copies[0])},
-                         slow_right = reader_t{std::move(slow_copies[1])}]() mutable {
+  wh::testing::helper::joining_thread producer(
+      [left_merge, right_merge, &left_attach_status, &right_attach_status,
+       slow_left = reader_t{std::move(slow_copies[0])},
+       slow_right = reader_t{std::move(slow_copies[1])}]() mutable {
     try {
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
       left_attach_status.emplace(
@@ -641,7 +642,7 @@ TEST_CASE("graph stream fanout into two live merges keeps blocking readers isola
     }
   });
 
-  std::jthread left_thread([&]() {
+  wh::testing::helper::joining_thread left_thread([&]() {
     try {
       left_values = drain(reader_t{left_merge->share()});
     } catch (...) {
@@ -649,7 +650,7 @@ TEST_CASE("graph stream fanout into two live merges keeps blocking readers isola
           wh::core::result<std::vector<int>>::failure(wh::core::errc::internal_error);
     }
   });
-  std::jthread right_thread([&]() {
+  wh::testing::helper::joining_thread right_thread([&]() {
     try {
       right_values = drain(reader_t{right_merge->share()});
     } catch (...) {

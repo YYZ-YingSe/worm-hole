@@ -56,8 +56,8 @@ TEST_CASE("cursor reader public facade retains one source across fixed readers",
 
 TEST_CASE("cursor reader async public facade supports stop and delayed producer wakeup",
           "[core][cursor_reader][functional][concurrency][boundary]") {
-  using scheduler_env_t = wh::testing::helper::scheduler_env<stdexec::inline_scheduler,
-                                                             std::stop_token>;
+  using scheduler_env_t = wh::testing::helper::scheduler_env<
+      stdexec::inline_scheduler, wh::testing::helper::stop_token>;
 
   {
     auto [writer, source] = wh::schema::stream::make_pipe_stream<int>(1U);
@@ -66,7 +66,7 @@ TEST_CASE("cursor reader async public facade supports stop and delayed producer 
 
     using result_t = decltype(readers.front().read());
     wh::testing::helper::sender_capture<result_t> stopped_capture{};
-    std::stop_source stop_source{};
+    wh::testing::helper::stop_source stop_source{};
     auto stopped_operation = stdexec::connect(
         readers.front().read_async(),
         wh::testing::helper::sender_capture_receiver<result_t, scheduler_env_t>{
@@ -89,7 +89,8 @@ TEST_CASE("cursor reader async public facade supports stop and delayed producer 
     REQUIRE(readers.size() == 1U);
 
     wh::testing::helper::static_thread_scheduler_helper scheduler{1U};
-    std::jthread producer([stream_writer = std::move(writer)]() mutable {
+    wh::testing::helper::joining_thread producer(
+        [stream_writer = std::move(writer)]() mutable {
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
       REQUIRE(stream_writer.try_write(17).has_value());
       REQUIRE(stream_writer.close().has_value());

@@ -114,7 +114,8 @@ TEST_CASE("bounded queue async api wakes waiting push and pop via scheduler env"
           "[UT][wh/core/bounded_queue/bounded_queue.hpp][bounded_queue::async_pop][branch][concurrency]") {
   using scheduler_t =
       wh::testing::helper::manual_scheduler<wh::core::detail::would_block>;
-  using env_t = wh::testing::helper::scheduler_env<scheduler_t, std::stop_token>;
+  using env_t = wh::testing::helper::scheduler_env<
+      scheduler_t, wh::testing::helper::stop_token>;
 
   wh::testing::helper::manual_scheduler_state scheduler_state{};
   scheduler_t scheduler{&scheduler_state};
