@@ -78,6 +78,13 @@ class TestBuildCostModel:
         )
 
 
+@dataclass(frozen=True)
+class TestRunResult:
+    entry: TestEntry
+    returncode: int
+    elapsed_seconds: float
+
+
 def print_step(tag: str, message: str) -> None:
     print(f"[{tag}] {message}", flush=True)
 
@@ -636,14 +643,29 @@ def run_test_entries(
     reporter: str,
     default_timeout_seconds: int,
     env: dict[str, str] | None = None,
+    fail_fast: bool = True,
 ) -> None:
+    failures: list[TestRunResult] = []
     for entry in entries:
-        run_test_entry(
+        result = run_test_entry(
             entry,
             reporter=reporter,
             default_timeout_seconds=default_timeout_seconds,
             env=env,
         )
+        if result.returncode != 0:
+            failures.append(result)
+            if fail_fast:
+                raise SystemExit(result.returncode)
+
+    if failures:
+        print_step("test-shard", f"FAIL {len(failures)}/{len(entries)} test targets failed")
+        for failure in failures:
+            print_step(
+                "test-shard",
+                f"FAILED {failure.entry.target} exited with {failure.returncode}",
+            )
+        raise SystemExit(failures[0].returncode)
 
     print_step("test-shard", f"PASS {len(entries)} test targets")
 
@@ -654,7 +676,7 @@ def run_test_entry(
     reporter: str,
     default_timeout_seconds: int,
     env: dict[str, str] | None = None,
-) -> None:
+) -> TestRunResult:
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
@@ -694,7 +716,11 @@ def run_test_entry(
     print_step("test-shard", f"DONE {entry.target} elapsed={elapsed:.2f}s")
     if completed.returncode != 0:
         print_step("test-shard", f"FAIL {entry.target} exited with {completed.returncode}")
-        raise SystemExit(completed.returncode)
+    return TestRunResult(
+        entry=entry,
+        returncode=completed.returncode,
+        elapsed_seconds=elapsed,
+    )
 
 
 def filter_compile_commands_to_project_scope(
@@ -1218,6 +1244,7 @@ def run_build_test_mode(
     default_timeout_seconds: int,
     reporter: str,
     env: dict[str, str] | None = None,
+    fail_fast_tests: bool = True,
     cache_entries: Sequence[str] = (),
 ) -> None:
     manifest_path = configure_and_validate_manifest(
@@ -1249,6 +1276,7 @@ def run_build_test_mode(
         reporter=reporter,
         default_timeout_seconds=default_timeout_seconds,
         env=env,
+        fail_fast=fail_fast_tests,
     )
     print_step(tag, "PASS")
 
@@ -1344,6 +1372,7 @@ def ci_build_test(args: argparse.Namespace) -> None:
         exclude_labels=args.exclude_label,
         default_timeout_seconds=args.default_timeout_seconds,
         reporter=args.reporter,
+        fail_fast_tests=False,
     )
 
 
@@ -1802,6 +1831,7 @@ def local_test(args: argparse.Namespace) -> None:
         shard,
         reporter=args.reporter,
         default_timeout_seconds=args.default_timeout_seconds,
+        fail_fast=False,
     )
     print_step("test", f"PASS {build_dir_for_preset(args.preset)}")
 
@@ -1820,6 +1850,7 @@ def local_verify(args: argparse.Namespace) -> None:
         exclude_labels=args.exclude_label,
         default_timeout_seconds=args.default_timeout_seconds,
         reporter=args.reporter,
+        fail_fast_tests=False,
         cache_entries=args.define,
     )
 

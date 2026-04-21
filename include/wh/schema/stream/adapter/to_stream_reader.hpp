@@ -72,7 +72,10 @@ public:
   {
     using input_result_t = stream_result<chunk_type>;
     auto shared_state = state_;
-    return shared_state->reader.read_async() |
+    // Build the child sender before moving shared_state into any closure.
+    // Function-argument evaluation order is not guaranteed here.
+    auto sender = shared_state->reader.read_async();
+    return std::move(sender) |
            stdexec::then([](auto status) { return input_result_t{std::move(status)}; }) |
            stdexec::upon_error([](auto &&) noexcept {
              return input_result_t::failure(wh::core::errc::internal_error);

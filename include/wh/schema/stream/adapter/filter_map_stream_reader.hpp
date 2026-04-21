@@ -188,8 +188,11 @@ private:
     requires detail::async_stream_reader<reader_t>
   {
     using input_result_t = stream_result<input_chunk_type>;
+    // Build the child sender before moving state into any closure.
+    // Function-argument evaluation order is not guaranteed here.
+    auto sender = state->reader.read_async();
     return async_result_sender{
-        state->reader.read_async() |
+        std::move(sender) |
         stdexec::then([](auto status) { return input_result_t{std::move(status)}; }) |
         stdexec::upon_error([](auto &&) noexcept {
           return input_result_t::failure(wh::core::errc::internal_error);
