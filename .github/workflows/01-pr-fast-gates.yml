@@ -2,6 +2,10 @@ name: ci-01-pr-fast-gates
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
+      - feature
   workflow_dispatch:
 
 permissions:

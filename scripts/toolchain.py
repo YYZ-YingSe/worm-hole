@@ -51,6 +51,7 @@ class MatrixLane:
     name: str
     configure_preset: str
     build_preset: str
+    planning_preset: str
     min_shards: int
     suites: tuple[str, ...]
     include_labels: tuple[str, ...]
@@ -529,6 +530,7 @@ def load_matrix_lanes(path: Path) -> list[MatrixLane]:
             )
 
         build_preset = str(item.get("build_preset") or configure_preset)
+        planning_preset = str(item.get("planning_preset") or configure_preset)
         min_shards = max(1, int(item.get("min_shards") or 1))
         suites = tuple(str(value) for value in (item.get("suites") or []))
         include_labels = tuple(str(value) for value in (item.get("include_labels") or []))
@@ -539,6 +541,7 @@ def load_matrix_lanes(path: Path) -> list[MatrixLane]:
                 name=name,
                 configure_preset=configure_preset,
                 build_preset=build_preset,
+                planning_preset=planning_preset,
                 min_shards=min_shards,
                 suites=suites,
                 include_labels=include_labels,
@@ -1096,16 +1099,16 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
     matrix_include: list[dict[str, object]] = []
 
     for lane in lanes:
-        if lane.configure_preset not in manifest_cache:
-            manifest_path = configure_and_validate_manifest(lane.configure_preset, "matrix")
-            manifest_cache[lane.configure_preset] = load_manifest(manifest_path)
-            cost_model_cache[lane.configure_preset] = build_cost_model_for_manifest(
-                lane.configure_preset,
-                manifest_cache[lane.configure_preset],
+        if lane.planning_preset not in manifest_cache:
+            manifest_path = configure_and_validate_manifest(lane.planning_preset, "matrix")
+            manifest_cache[lane.planning_preset] = load_manifest(manifest_path)
+            cost_model_cache[lane.planning_preset] = build_cost_model_for_manifest(
+                lane.planning_preset,
+                manifest_cache[lane.planning_preset],
             )
 
         filtered_entries = filter_test_entries(
-            manifest_cache[lane.configure_preset],
+            manifest_cache[lane.planning_preset],
             suites=lane.suites,
             include_labels=lane.include_labels,
             exclude_labels=lane.exclude_labels,
@@ -1121,23 +1124,23 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
             filtered_entries,
             min_shards=lane.min_shards,
             max_build_actions_per_shard=args.max_build_actions_per_shard,
-            cost_model=cost_model_cache[lane.configure_preset],
+            cost_model=cost_model_cache[lane.planning_preset],
         )
         largest_shard = max(len(shard) for shard in shards)
         largest_actions = max(
-            cost_model_cache[lane.configure_preset].estimate_actions_for_targets(len(shard))
+            cost_model_cache[lane.planning_preset].estimate_actions_for_targets(len(shard))
             for shard in shards
         )
         print_step(
             "matrix",
             f"{lane.name}: targets={len(filtered_entries)} resolved_shards={shard_count} "
             f"largest_shard={largest_shard} estimated_actions={largest_actions} "
-            f"limit={args.max_build_actions_per_shard}",
+            f"limit={args.max_build_actions_per_shard} planning_preset={lane.planning_preset}",
         )
 
         for shard_index, shard in enumerate(shards):
             estimated_build_actions = cost_model_cache[
-                lane.configure_preset
+                lane.planning_preset
             ].estimate_actions_for_targets(len(shard))
             payload: dict[str, object] = {
                 "name": lane.name,
