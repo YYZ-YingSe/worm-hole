@@ -90,3 +90,12 @@ set(WH_BUILD_PROFILE
     "Logical worm-hole build profile. Supported values: debug, release, asan-ubsan, tsan, coverage, analysis")
 set_property(CACHE WH_BUILD_PROFILE PROPERTY STRINGS debug release asan-ubsan
                                                    tsan coverage analysis)
+
+if(WH_BUILD_PROFILE STREQUAL "coverage" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  # Older Linux llvm-cov/llvm-profdata can report header-only methods as
+  # mismatched unless Clang emits all covered declarations. AppleClang's
+  # libc++ headers trip duplicate mangling under this flag, so keep it Linux-only.
+  if(NOT CMAKE_CXX_FLAGS MATCHES "(^| )-femit-all-decls($| )")
+    string(APPEND CMAKE_CXX_FLAGS " -femit-all-decls")
+  endif()
+endif()
