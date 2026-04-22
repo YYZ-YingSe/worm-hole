@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/static_thread_scheduler.hpp"
@@ -49,6 +50,67 @@ struct custom_stream_component {
         wh::compose::graph_value{value},
         wh::compose::graph_value{value + 1},
     });
+  }
+};
+
+template <typename value_t>
+[[nodiscard]] auto read_any(wh::compose::graph_value &&value) -> wh::core::result<value_t>;
+
+struct task_value_value_component {
+  auto async_invoke(const int &value, wh::core::run_context &) const
+      -> exec::task<wh::core::result<int>> {
+    co_return wh::core::result<int>{value + 1};
+  }
+};
+
+struct task_value_stream_component {
+  auto async_stream(const int &value, wh::core::run_context &) const
+      -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+    co_return wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
+        wh::compose::graph_value{value},
+        wh::compose::graph_value{value * 2},
+    });
+  }
+};
+
+struct task_stream_stream_component {
+  auto async_stream(wh::compose::graph_stream_reader reader, wh::core::run_context &) const
+      -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+    auto chunks = wh::compose::collect_graph_stream_reader(std::move(reader));
+    if (chunks.has_error()) {
+      co_return wh::core::result<wh::compose::graph_stream_reader>::failure(chunks.error());
+    }
+
+    std::vector<wh::compose::graph_value> outputs{};
+    outputs.reserve(chunks.value().size());
+    for (auto &chunk : chunks.value()) {
+      auto typed = read_any<int>(std::move(chunk));
+      if (typed.has_error()) {
+        co_return wh::core::result<wh::compose::graph_stream_reader>::failure(typed.error());
+      }
+      outputs.emplace_back(typed.value() + 10);
+    }
+    co_return wh::compose::make_values_stream_reader(std::move(outputs));
+  }
+};
+
+struct task_stream_value_component {
+  auto async_invoke(wh::compose::graph_stream_reader reader, wh::core::run_context &) const
+      -> exec::task<wh::core::result<int>> {
+    auto chunks = wh::compose::collect_graph_stream_reader(std::move(reader));
+    if (chunks.has_error()) {
+      co_return wh::core::result<int>::failure(chunks.error());
+    }
+
+    int total = 0;
+    for (auto &chunk : chunks.value()) {
+      auto typed = read_any<int>(std::move(chunk));
+      if (typed.has_error()) {
+        co_return wh::core::result<int>::failure(typed.error());
+      }
+      total += typed.value();
+    }
+    co_return wh::core::result<int>{total};
   }
 };
 
@@ -308,4 +370,56 @@ TEST_CASE("async component nodes require graph scheduler when invoked directly",
   auto status = std::get<0>(std::move(*waited));
   REQUIRE(status.has_error());
   REQUIRE(status.error() == wh::core::errc::contract_violation);
+}
+
+TEST_CASE("async custom component exec task impls compose through graph boundaries",
+          "[UT][wh/compose/node/component.hpp][make_component_node][async][exec::task][graph]") {
+  auto task_value_value = wh::compose::make_component_node<
+      wh::compose::component_kind::custom, wh::compose::node_contract::value,
+      wh::compose::node_contract::value, int, int, wh::compose::node_exec_mode::async>(
+      "task-vv", task_value_value_component{});
+  auto task_value_stream = wh::compose::make_component_node<
+      wh::compose::component_kind::custom, wh::compose::node_contract::value,
+      wh::compose::node_contract::stream, int, wh::compose::graph_stream_reader,
+      wh::compose::node_exec_mode::async>("task-vs", task_value_stream_component{});
+  auto task_stream_stream = wh::compose::make_component_node<
+      wh::compose::component_kind::custom, wh::compose::node_contract::stream,
+      wh::compose::node_contract::stream, wh::compose::graph_stream_reader,
+      wh::compose::graph_stream_reader, wh::compose::node_exec_mode::async>(
+      "task-ss", task_stream_stream_component{});
+  auto task_stream_value = wh::compose::make_component_node<
+      wh::compose::component_kind::custom, wh::compose::node_contract::stream,
+      wh::compose::node_contract::value, wh::compose::graph_stream_reader, int,
+      wh::compose::node_exec_mode::async>("task-sv", task_stream_value_component{});
+
+  wh::compose::graph graph{};
+  REQUIRE(graph.add_component(task_value_value).has_value());
+  REQUIRE(graph.add_component(task_value_stream).has_value());
+  REQUIRE(graph.add_component(task_stream_stream).has_value());
+  REQUIRE(graph.add_component(task_stream_value).has_value());
+
+  // This serial path forces the graph runtime through all async custom
+  // boundary shapes backed by exec::task.
+  REQUIRE(graph.add_entry_edge("task-vv").has_value());
+  REQUIRE(graph.add_edge("task-vv", "task-vs").has_value());
+  REQUIRE(graph.add_edge("task-vs", "task-ss").has_value());
+  REQUIRE(graph.add_edge("task-ss", "task-sv").has_value());
+  REQUIRE(graph.add_exit_edge("task-sv").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::value(3);
+
+  wh::core::run_context context{};
+  auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
+  REQUIRE(waited.has_value());
+
+  auto status = std::get<0>(std::move(*waited));
+  REQUIRE(status.has_value());
+  auto invoke_result = std::move(status).value();
+  REQUIRE(invoke_result.output_status.has_value());
+
+  auto output = read_any<int>(std::move(invoke_result.output_status).value());
+  REQUIRE(output.has_value());
+  REQUIRE(output.value() == 32);
 }

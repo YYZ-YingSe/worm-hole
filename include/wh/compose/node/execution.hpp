@@ -10,7 +10,6 @@
 #include <utility>
 #include <variant>
 
-#include <exec/any_sender_of.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/stream.hpp"
@@ -51,8 +50,7 @@ struct graph_node_trace {
 using graph_sender = graph_value_sender;
 
 template <typename result_t>
-using typed_result_sender = typename exec::any_receiver_ref<stdexec::completion_signatures<
-    stdexec::set_value_t(result_t), stdexec::set_stopped_t()>>::template any_sender<>;
+using typed_result_sender = wh::core::detail::result_sender<result_t>;
 
 namespace detail {
 [[nodiscard]] inline auto failure_graph_sender(const wh::core::error_code code) -> graph_sender;
@@ -199,21 +197,8 @@ using node_sync_factory = wh::core::callback_function<wh::core::result<graph_val
 using node_async_factory = wh::core::callback_function<graph_sender(
     graph_value &, wh::core::run_context &, const node_runtime &) const>;
 
-template <typename sender_t, typename result_t> struct result_value_signature : std::false_type {};
-
-template <typename result_t, typename... signatures_t>
-struct result_value_signature<result_t, stdexec::completion_signatures<signatures_t...>>
-    : std::bool_constant<
-          stdexec::completion_signatures<signatures_t...>::__count(stdexec::set_value) == 1U &&
-          stdexec::completion_signatures<signatures_t...>::template __contains<stdexec::set_value_t(
-              result_t)>()> {};
-
 template <typename sender_t, typename result_t>
-concept result_typed_sender =
-    stdexec::sender<std::remove_cvref_t<sender_t>> &&
-    result_value_signature<result_t, stdexec::completion_signatures_of_t<
-                                         std::remove_cvref_t<sender_t>,
-                                         wh::core::detail::sender_signature_env>>::value;
+concept result_typed_sender = wh::core::detail::sender_exact_value<sender_t, result_t>;
 
 template <typename sender_t>
 concept graph_result_sender = result_typed_sender<sender_t, wh::core::result<graph_value>>;

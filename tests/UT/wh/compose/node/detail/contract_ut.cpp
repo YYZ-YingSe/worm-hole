@@ -2,6 +2,7 @@
 #include <utility>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/graph/stream.hpp"
@@ -14,6 +15,9 @@ using graph_reader_t = wh::compose::graph_stream_reader;
 using graph_reader_result_t = wh::core::result<graph_reader_t>;
 using pipe_reader_t = wh::schema::stream::pipe_stream_reader<wh::compose::graph_value>;
 using canonical_sender_t = decltype(stdexec::just(graph_reader_result_t{}));
+using task_canonical_sender_t = decltype([]() -> exec::task<graph_reader_result_t> {
+  co_return graph_reader_result_t{};
+}());
 using non_canonical_sender_t = decltype(stdexec::just(wh::core::result<int>{1}));
 
 static_assert(wh::compose::detail::canonical_reader<graph_reader_t>);
@@ -39,6 +43,7 @@ static_assert(!wh::compose::detail::canonical_stream_sender_signature_ok<
               stdexec::set_value_t(graph_reader_result_t)>());
 
 static_assert(wh::compose::detail::canonical_stream_sender<canonical_sender_t>);
+static_assert(wh::compose::detail::canonical_stream_sender<task_canonical_sender_t>);
 static_assert(!wh::compose::detail::canonical_stream_sender<non_canonical_sender_t>);
 
 static_assert(wh::compose::detail::typed_request<wh::compose::node_contract::value, int>);
@@ -69,6 +74,7 @@ TEST_CASE(
   STATIC_REQUIRE_FALSE(wh::compose::detail::canonical_stream_status<wh::core::result<int>>);
 
   STATIC_REQUIRE(wh::compose::detail::canonical_stream_sender<canonical_sender_t>);
+  STATIC_REQUIRE(wh::compose::detail::canonical_stream_sender<task_canonical_sender_t>);
   STATIC_REQUIRE_FALSE(wh::compose::detail::canonical_stream_sender<non_canonical_sender_t>);
 }
 

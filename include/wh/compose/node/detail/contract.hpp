@@ -11,6 +11,7 @@
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/detail/gate.hpp"
 #include "wh/compose/types.hpp"
+#include "wh/core/stdexec/sender_meta.hpp"
 
 namespace wh::compose::detail {
 
@@ -24,28 +25,13 @@ concept canonical_reader = requires(reader_t reader) {
 template <typename status_t>
 concept canonical_stream_status = graph_stream_status<status_t>;
 
-template <typename signature_t> struct set_value_signature : std::false_type {
-  using result_type = void;
-};
-
-template <typename result_t>
-struct set_value_signature<stdexec::set_value_t(result_t)> : std::true_type {
-  using result_type = result_t;
-};
+template <typename signature_t> using set_value_signature = wh::core::detail::set_value_signature<signature_t>;
 
 template <typename... signatures_t>
 [[nodiscard]] consteval auto canonical_stream_sender_signature_ok() -> bool {
-  std::size_t value_count = 0U;
-  bool value_ok = true;
-  (([&] {
-     if constexpr (set_value_signature<signatures_t>::value) {
-       ++value_count;
-       value_ok = value_ok &&
-                  canonical_stream_status<typename set_value_signature<signatures_t>::result_type>;
-     }
-   }()),
-   ...);
-  return value_count == 1U && value_ok;
+  using signature_info =
+      wh::core::detail::single_set_value_signature<stdexec::completion_signatures<signatures_t...>>;
+  return signature_info::value && canonical_stream_status<typename signature_info::result_type>;
 }
 
 template <typename signatures_t> struct canonical_stream_sender_signature : std::false_type {};
@@ -58,7 +44,7 @@ template <typename sender_t>
 concept canonical_stream_sender =
     stdexec::sender<std::remove_cvref_t<sender_t>> &&
     canonical_stream_sender_signature<
-        stdexec::completion_signatures_of_t<std::remove_cvref_t<sender_t>, stdexec::env<>>>::value;
+        wh::core::detail::sender_completion_signatures_t<sender_t>>::value;
 
 template <node_contract From, typename request_t>
 concept typed_request = (From == node_contract::value &&
