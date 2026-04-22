@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/manual_scheduler.hpp"
@@ -154,13 +155,20 @@ TEST_CASE("tools call helpers erase ready failure replay and direct dispatch pat
           },
           .async_invoke = [](wh::compose::tool_call call,
                              wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
-            return stdexec::just(wh::core::result<wh::compose::graph_value>{
-                wh::compose::graph_value{call.arguments}});
+            return [](wh::compose::tool_call owned_call)
+                -> exec::task<wh::core::result<wh::compose::graph_value>> {
+              co_return wh::core::result<wh::compose::graph_value>{
+                  wh::compose::graph_value{std::move(owned_call.arguments)}};
+            }(std::move(call));
           },
           .async_stream = [](wh::compose::tool_call call,
                              wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-            return stdexec::just(wh::compose::make_values_stream_reader(
-                std::vector<wh::compose::graph_value>{wh::compose::graph_value{call.arguments}}));
+            return [](wh::compose::tool_call owned_call)
+                -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+              co_return wh::compose::make_values_stream_reader(
+                  std::vector<wh::compose::graph_value>{
+                      wh::compose::graph_value{std::move(owned_call.arguments)}});
+            }(std::move(call));
           },
       });
   registry.emplace("stream-only", wh::compose::tool_entry{
@@ -277,13 +285,20 @@ TEST_CASE("tools call runners cover sync async rerun cache and middleware error 
           },
           .async_invoke = [](wh::compose::tool_call call,
                              wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
-            return stdexec::just(wh::core::result<wh::compose::graph_value>{
-                wh::compose::graph_value{call.arguments}});
+            return [](wh::compose::tool_call owned_call)
+                -> exec::task<wh::core::result<wh::compose::graph_value>> {
+              co_return wh::core::result<wh::compose::graph_value>{
+                  wh::compose::graph_value{std::move(owned_call.arguments)}};
+            }(std::move(call));
           },
           .async_stream = [](wh::compose::tool_call call,
                              wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-            return stdexec::just(wh::compose::make_values_stream_reader(
-                std::vector<wh::compose::graph_value>{wh::compose::graph_value{call.arguments}}));
+            return [](wh::compose::tool_call owned_call)
+                -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+              co_return wh::compose::make_values_stream_reader(
+                  std::vector<wh::compose::graph_value>{
+                      wh::compose::graph_value{std::move(owned_call.arguments)}});
+            }(std::move(call));
           },
       });
 

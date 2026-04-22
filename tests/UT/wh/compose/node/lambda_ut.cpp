@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/static_thread_scheduler.hpp"
@@ -252,17 +253,96 @@ TEST_CASE("async value to stream lambda returns graph stream reader payload",
   REQUIRE(async_reader.has_value());
 }
 
+TEST_CASE("async lambda exec task senders compose through graph boundaries",
+          "[UT][wh/compose/node/lambda.hpp][make_lambda_node][async][exec::task][graph]") {
+  auto task_value_value = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                        wh::compose::node_contract::value,
+                                                        wh::compose::node_exec_mode::async>(
+      "task-vv",
+      [](wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> exec::task<wh::core::result<wh::compose::graph_value>> {
+        auto *typed = wh::core::any_cast<int>(&input);
+        REQUIRE(typed != nullptr);
+        co_return wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{*typed + 1}};
+      });
+
+  auto sync_value_stream = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                         wh::compose::node_contract::stream>(
+      "sync-vs",
+      [](wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_stream_reader> {
+        auto *typed = wh::core::any_cast<int>(&input);
+        REQUIRE(typed != nullptr);
+        return wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
+            wh::compose::graph_value{*typed},
+            wh::compose::graph_value{*typed * 2},
+        });
+      });
+
+  auto task_stream_value = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                                         wh::compose::node_contract::value,
+                                                         wh::compose::node_exec_mode::async>(
+      "task-sv",
+      [](wh::compose::graph_stream_reader reader, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> exec::task<wh::core::result<wh::compose::graph_value>> {
+        auto chunks = wh::compose::collect_graph_stream_reader(std::move(reader));
+        if (chunks.has_error()) {
+          co_return wh::core::result<wh::compose::graph_value>::failure(chunks.error());
+        }
+
+        int total = 0;
+        for (auto &chunk : chunks.value()) {
+          auto typed = read_any<int>(std::move(chunk));
+          if (typed.has_error()) {
+            co_return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+          }
+          total += typed.value();
+        }
+        co_return wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{total}};
+      });
+
+  wh::compose::graph graph{};
+  REQUIRE(graph.add_lambda(task_value_value).has_value());
+  REQUIRE(graph.add_lambda(sync_value_stream).has_value());
+  REQUIRE(graph.add_lambda(task_stream_value).has_value());
+
+  REQUIRE(graph.add_entry_edge("task-vv").has_value());
+  REQUIRE(graph.add_edge("task-vv", "sync-vs").has_value());
+  REQUIRE(graph.add_edge("sync-vs", "task-sv").has_value());
+  REQUIRE(graph.add_exit_edge("task-sv").has_value());
+  REQUIRE(graph.compile().has_value());
+
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::value(3);
+
+  wh::core::run_context context{};
+  auto waited = stdexec::sync_wait(graph.invoke(context, std::move(request)));
+  REQUIRE(waited.has_value());
+
+  auto status = std::get<0>(std::move(*waited));
+  REQUIRE(status.has_value());
+  REQUIRE(status.value().output_status.has_value());
+
+  auto output = read_any<int>(std::move(status).value().output_status.value());
+  REQUIRE(output.has_value());
+  REQUIRE(output.value() == 12);
+}
+
 TEST_CASE("async lambda requires graph scheduler when compiled async nodes are invoked directly",
           "[UT][wh/compose/node/lambda.hpp][make_lambda_node][condition][error]") {
   auto async_value_node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
                                                         wh::compose::node_contract::value,
                                                         wh::compose::node_exec_mode::async>(
-      "async-value", [](wh::compose::graph_value &input, wh::core::run_context &,
-                        const wh::compose::graph_call_scope &) {
+      "async-value",
+      [](wh::compose::graph_value &input, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> exec::task<wh::core::result<wh::compose::graph_value>> {
         auto *typed = wh::core::any_cast<int>(&input);
         REQUIRE(typed != nullptr);
-        return stdexec::just(
-            wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{*typed + 1}});
+        co_return wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{*typed + 1}};
       });
   auto compiled = compile_lambda_node(async_value_node);
   REQUIRE(compiled.has_value());

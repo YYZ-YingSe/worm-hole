@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/node/detail/lambda_concepts.hpp"
@@ -19,8 +20,9 @@ struct sync_value_lambda {
 
 struct async_value_sender {
   auto operator()(wh::compose::graph_value &, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &) const {
-    return stdexec::just(wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{2}});
+                  const wh::compose::graph_call_scope &) const
+      -> exec::task<wh::core::result<wh::compose::graph_value>> {
+    co_return wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{2}};
   }
 };
 
@@ -34,9 +36,9 @@ struct sync_map_lambda {
 
 struct async_map_sender {
   auto operator()(wh::compose::graph_value_map &, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &) const {
-    return stdexec::just(
-        wh::core::result<wh::compose::graph_value_map>{wh::compose::graph_value_map{}});
+                  const wh::compose::graph_call_scope &) const
+      -> exec::task<wh::core::result<wh::compose::graph_value_map>> {
+    co_return wh::core::result<wh::compose::graph_value_map>{wh::compose::graph_value_map{}};
   }
 };
 
@@ -50,8 +52,9 @@ struct sync_value_stream_lambda {
 
 struct async_value_stream_sender {
   auto operator()(wh::compose::graph_value &, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &) const {
-    return stdexec::just(wh::compose::make_single_value_stream_reader(4));
+                  const wh::compose::graph_call_scope &) const
+      -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+    co_return wh::compose::make_single_value_stream_reader(4);
   }
 };
 
@@ -65,8 +68,9 @@ struct sync_stream_value_lambda {
 
 struct async_stream_value_sender {
   auto operator()(wh::compose::graph_stream_reader, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &) const {
-    return stdexec::just(wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{6}});
+                  const wh::compose::graph_call_scope &) const
+      -> exec::task<wh::core::result<wh::compose::graph_value>> {
+    co_return wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{6}};
   }
 };
 
@@ -80,8 +84,9 @@ struct sync_stream_stream_lambda {
 
 struct async_stream_stream_sender {
   auto operator()(wh::compose::graph_stream_reader, wh::core::run_context &,
-                  const wh::compose::graph_call_scope &) const {
-    return stdexec::just(wh::compose::make_single_value_stream_reader(8));
+                  const wh::compose::graph_call_scope &) const
+      -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+    co_return wh::compose::make_single_value_stream_reader(8);
   }
 };
 

@@ -6,7 +6,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <new>
@@ -20,6 +19,7 @@
 #include "wh/core/error_domain.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/erased_receiver_ref.hpp"
 #include "wh/core/stdexec/detail/receiver_stop_bridge.hpp"
 #include "wh/schema/stream/core/concepts.hpp"
 #include "wh/schema/stream/core/status.hpp"
@@ -34,15 +34,6 @@ template <typename value_t, std::size_t storage_size = 128U> class any_stream_re
 template <typename value_t, std::size_t storage_size = 64U> class any_stream_write_sender;
 
 namespace detail {
-
-template <typename receiver_t>
-[[noreturn]] inline auto missing_receiver_scheduler() noexcept
-    -> wh::core::detail::any_resume_scheduler_t {
-  static_assert(wh::core::detail::receiver_with_resume_scheduler<receiver_t>,
-                "any_stream async sender requires receiver env to expose scheduler or "
-                "completion scheduler");
-  std::abort();
-}
 
 template <std::size_t storage_size> struct erased_storage {
   alignas(std::max_align_t) std::array<std::byte, storage_size> data{};
@@ -210,197 +201,11 @@ private:
   operation_t operation_;
 };
 
-using erased_resume_scheduler = wh::core::detail::any_resume_scheduler_t;
+using receiver_policy = wh::core::detail::erased_receiver_scheduler_policy<
+    wh::core::detail::missing_scheduler_mode::strict>;
 
-struct receiver_env_vtable {
-  erased_resume_scheduler (*get_scheduler)(const void *) noexcept {nullptr};
-  erased_resume_scheduler (*get_delegation_scheduler)(const void *) noexcept {nullptr};
-  erased_resume_scheduler (*get_value_scheduler)(const void *) noexcept {nullptr};
-  erased_resume_scheduler (*get_error_scheduler)(const void *) noexcept {nullptr};
-  erased_resume_scheduler (*get_stopped_scheduler)(const void *) noexcept {nullptr};
-  stdexec::inplace_stop_token (*get_stop_token)(const void *) noexcept {nullptr};
-};
-
-class receiver_env_ref {
-public:
-  receiver_env_ref() = default;
-
-  receiver_env_ref(const void *object, const receiver_env_vtable *vtable) noexcept
-      : object_(object), vtable_(vtable) {}
-
-  [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> erased_resume_scheduler {
-    return vtable_->get_scheduler(object_);
-  }
-
-  [[nodiscard]] auto query(stdexec::get_delegation_scheduler_t) const noexcept
-      -> erased_resume_scheduler {
-    return vtable_->get_delegation_scheduler(object_);
-  }
-
-  [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<stdexec::set_value_t>) const noexcept
-      -> erased_resume_scheduler {
-    return vtable_->get_value_scheduler(object_);
-  }
-
-  [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<stdexec::set_error_t>) const noexcept
-      -> erased_resume_scheduler {
-    return vtable_->get_error_scheduler(object_);
-  }
-
-  [[nodiscard]] auto
-  query(stdexec::get_completion_scheduler_t<stdexec::set_stopped_t>) const noexcept
-      -> erased_resume_scheduler {
-    return vtable_->get_stopped_scheduler(object_);
-  }
-
-  [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept
-      -> stdexec::inplace_stop_token {
-    return vtable_->get_stop_token(object_);
-  }
-
-private:
-  const void *object_{nullptr};
-  const receiver_env_vtable *vtable_{nullptr};
-};
-
-template <typename receiver_t> struct receiver_env_model {
-  template <typename cpo_t>
-  [[nodiscard]] static auto select_completion_scheduler(const void *object) noexcept
-      -> erased_resume_scheduler {
-    const auto &receiver = *static_cast<const receiver_t *>(object);
-    const auto &env = stdexec::get_env(receiver);
-    if constexpr (requires { wh::core::detail::select_resume_scheduler<cpo_t>(env); }) {
-      return wh::core::detail::erase_resume_scheduler(
-          wh::core::detail::select_resume_scheduler<cpo_t>(env));
-    } else if constexpr (requires {
-                           wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env);
-                         }) {
-      return wh::core::detail::erase_resume_scheduler(
-          wh::core::detail::select_resume_scheduler<stdexec::set_value_t>(env));
-    } else {
-      return missing_receiver_scheduler<receiver_t>();
-    }
-  }
-
-  [[nodiscard]] static auto get_scheduler(const void *object) noexcept -> erased_resume_scheduler {
-    const auto &receiver = *static_cast<const receiver_t *>(object);
-    const auto &env = stdexec::get_env(receiver);
-    if constexpr (requires { wh::core::detail::select_launch_scheduler(env); }) {
-      return wh::core::detail::erase_resume_scheduler(
-          wh::core::detail::select_launch_scheduler(env));
-    } else {
-      return missing_receiver_scheduler<receiver_t>();
-    }
-  }
-
-  [[nodiscard]] static auto get_delegation_scheduler(const void *object) noexcept
-      -> erased_resume_scheduler {
-    const auto &receiver = *static_cast<const receiver_t *>(object);
-    const auto &env = stdexec::get_env(receiver);
-    if constexpr (requires { stdexec::get_delegation_scheduler(env); }) {
-      return wh::core::detail::erase_resume_scheduler(stdexec::get_delegation_scheduler(env));
-    } else {
-      return get_scheduler(object);
-    }
-  }
-
-  [[nodiscard]] static auto get_stop_token(const void *object) noexcept
-      -> stdexec::inplace_stop_token {
-    const auto &receiver = *static_cast<const receiver_t *>(object);
-    const auto &env = stdexec::get_env(receiver);
-    if constexpr (requires {
-                    { stdexec::get_stop_token(env) } -> std::same_as<stdexec::inplace_stop_token>;
-                  }) {
-      return stdexec::get_stop_token(env);
-    } else {
-      return {};
-    }
-  }
-
-  static inline constexpr receiver_env_vtable vtable{
-      .get_scheduler = &receiver_env_model::get_scheduler,
-      .get_delegation_scheduler = &receiver_env_model::get_delegation_scheduler,
-      .get_value_scheduler =
-          &receiver_env_model::template select_completion_scheduler<stdexec::set_value_t>,
-      .get_error_scheduler =
-          &receiver_env_model::template select_completion_scheduler<stdexec::set_error_t>,
-      .get_stopped_scheduler =
-          &receiver_env_model::template select_completion_scheduler<stdexec::set_stopped_t>,
-      .get_stop_token = &receiver_env_model::get_stop_token,
-  };
-};
-
-template <typename... value_ts> struct receiver_ref_vtable {
-  void (*set_value)(void *, value_ts...) noexcept {nullptr};
-  void (*set_error)(void *, std::exception_ptr) noexcept {nullptr};
-  void (*set_stopped)(void *) noexcept {nullptr};
-  receiver_env_ref (*get_env)(const void *) noexcept {nullptr};
-};
-
-template <typename receiver_t, typename... value_ts> struct receiver_ref_model {
-  static auto set_value(void *object, value_ts... values) noexcept -> void {
-    stdexec::set_value(std::move(*static_cast<receiver_t *>(object)), std::move(values)...);
-  }
-
-  static auto set_error(void *object, std::exception_ptr error) noexcept -> void {
-    stdexec::set_error(std::move(*static_cast<receiver_t *>(object)), std::move(error));
-  }
-
-  static auto set_stopped(void *object) noexcept -> void {
-    stdexec::set_stopped(std::move(*static_cast<receiver_t *>(object)));
-  }
-
-  [[nodiscard]] static auto get_env(const void *object) noexcept -> receiver_env_ref {
-    return receiver_env_ref{object, &receiver_env_model<receiver_t>::vtable};
-  }
-
-  static inline constexpr receiver_ref_vtable<value_ts...> vtable{
-      .set_value = &receiver_ref_model::set_value,
-      .set_error = &receiver_ref_model::set_error,
-      .set_stopped = &receiver_ref_model::set_stopped,
-      .get_env = &receiver_ref_model::get_env,
-  };
-};
-
-template <typename... value_ts> class basic_receiver_ref {
-public:
-  using receiver_concept = stdexec::receiver_t;
-  using completion_signatures =
-      stdexec::completion_signatures<stdexec::set_value_t(value_ts...),
-                                     stdexec::set_error_t(std::exception_ptr),
-                                     stdexec::set_stopped_t()>;
-
-  basic_receiver_ref(const basic_receiver_ref &) noexcept = default;
-  basic_receiver_ref(basic_receiver_ref &&) noexcept = default;
-  auto operator=(const basic_receiver_ref &) noexcept -> basic_receiver_ref & = default;
-  auto operator=(basic_receiver_ref &&) noexcept -> basic_receiver_ref & = default;
-
-  template <typename receiver_t>
-    requires(!std::same_as<std::remove_cvref_t<receiver_t>, basic_receiver_ref> &&
-             stdexec::receiver_of<std::remove_cvref_t<receiver_t>, completion_signatures> &&
-             wh::core::detail::receiver_with_resume_scheduler<std::remove_cvref_t<receiver_t>>)
-  basic_receiver_ref(receiver_t &receiver) noexcept
-      : object_(std::addressof(receiver)),
-        vtable_(&receiver_ref_model<std::remove_cvref_t<receiver_t>, value_ts...>::vtable) {}
-
-  auto set_value(value_ts... values) noexcept -> void {
-    vtable_->set_value(object_, std::move(values)...);
-  }
-
-  auto set_error(std::exception_ptr error) noexcept -> void {
-    vtable_->set_error(object_, std::move(error));
-  }
-
-  auto set_stopped() noexcept -> void { vtable_->set_stopped(object_); }
-
-  [[nodiscard]] auto get_env() const noexcept -> receiver_env_ref {
-    return vtable_->get_env(object_);
-  }
-
-private:
-  void *object_{nullptr};
-  const receiver_ref_vtable<value_ts...> *vtable_{nullptr};
-};
+template <typename... value_ts>
+using basic_receiver_ref = wh::core::detail::erased_receiver_ref<receiver_policy, value_ts...>;
 
 template <typename value_t> using receiver_ref = basic_receiver_ref<chunk_result_t<value_t>>;
 

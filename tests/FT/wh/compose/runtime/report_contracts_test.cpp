@@ -9,6 +9,8 @@
 
 #include "helper/component_contract_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
+#include "helper/sender_capture.hpp"
+#include "helper/sender_env.hpp"
 #include "wh/compose/graph.hpp"
 #include "wh/compose/node.hpp"
 
@@ -16,6 +18,8 @@ namespace {
 
 using wh::testing::helper::invoke_graph_sync;
 using wh::testing::helper::invoke_value_sync;
+using wh::testing::helper::make_dual_scheduler_env;
+using wh::testing::helper::make_graph_request;
 using wh::testing::helper::make_int_add_node;
 using wh::testing::helper::read_any;
 
@@ -196,6 +200,7 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
     options.node_timeout = std::chrono::milliseconds{20};
     wh::compose::graph graph{std::move(options)};
     exec::static_thread_pool pool{2U};
+    std::atomic<bool> started{false};
     std::atomic<bool> stop_observed{false};
 
     REQUIRE(graph
@@ -208,17 +213,15 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
                           pool.get_scheduler(),
                           stdexec::read_env(stdexec::get_stop_token) |
                               stdexec::let_value([&](auto stop_token) {
-                                const auto deadline = std::chrono::steady_clock::now() +
-                                                      std::chrono::milliseconds{150};
-                                while (std::chrono::steady_clock::now() < deadline) {
-                                  if (stop_token.stop_requested()) {
-                                    stop_observed.store(true, std::memory_order_release);
-                                    break;
-                                  }
-                                  std::this_thread::sleep_for(std::chrono::milliseconds{1});
+                                started.store(true, std::memory_order_release);
+                                started.notify_one();
+                                while (!stop_token.stop_requested()) {
+                                  std::this_thread::yield();
                                 }
+                                stop_observed.store(true, std::memory_order_release);
                                 return stdexec::just(
-                                    wh::core::result<wh::compose::graph_value>{wh::core::any(1)});
+                                    wh::core::result<wh::compose::graph_value>::failure(
+                                        wh::core::errc::canceled));
                               }));
                     })
                 .has_value());
@@ -226,17 +229,40 @@ TEST_CASE("compose graph runtime publishes node run and graph run structured err
     REQUIRE(graph.add_exit_edge("slow").has_value());
     REQUIRE(graph.compile().has_value());
 
-    wh::core::run_context context{};
-    auto invoked = invoke_value_sync(graph, wh::core::any(0), context);
-    REQUIRE(invoked.has_error());
-    REQUIRE(invoked.error() == wh::core::errc::timeout);
+    auto wait_for_atomic_true = [](const std::atomic<bool> &flag,
+                                   const std::chrono::milliseconds timeout) -> bool {
+      const auto deadline = std::chrono::steady_clock::now() + timeout;
+      while (std::chrono::steady_clock::now() < deadline) {
+        if (flag.load(std::memory_order_acquire)) {
+          return true;
+        }
+        std::this_thread::yield();
+      }
+      return flag.load(std::memory_order_acquire);
+    };
 
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{300};
-    while (!stop_observed.load(std::memory_order_acquire) &&
-           std::chrono::steady_clock::now() < deadline) {
-      std::this_thread::yield();
-    }
-    REQUIRE(stop_observed.load(std::memory_order_acquire));
+    wh::core::run_context context{};
+    auto env = make_dual_scheduler_env(pool.get_scheduler(), pool.get_scheduler());
+    using status_t = wh::core::result<wh::compose::graph_invoke_result>;
+    wh::testing::helper::sender_capture<status_t> capture{};
+    auto operation =
+        stdexec::connect(graph.invoke(context, make_graph_request(wh::core::any(0))),
+                         wh::testing::helper::sender_capture_receiver<status_t, decltype(env)>{
+                             &capture,
+                             env,
+                         });
+    stdexec::start(operation);
+
+    REQUIRE(wait_for_atomic_true(started, std::chrono::milliseconds{2000}));
+    REQUIRE(capture.ready.try_acquire_for(std::chrono::milliseconds{2000}));
+    REQUIRE(capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+    REQUIRE(capture.value.has_value());
+
+    auto invoked = std::move(*capture.value);
+    REQUIRE(invoked.has_value());
+    REQUIRE(invoked.value().output_status.has_error());
+    REQUIRE(invoked.value().output_status.error() == wh::core::errc::timeout);
+    REQUIRE(wait_for_atomic_true(stop_observed, std::chrono::milliseconds{2000}));
   }
 
   SECTION("graph run error detail is emitted when step budget is exceeded") {

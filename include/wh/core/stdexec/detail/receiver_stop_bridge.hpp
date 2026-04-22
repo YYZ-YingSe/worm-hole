@@ -10,32 +10,19 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/core/stdexec/resume_scheduler.hpp"
+
 namespace wh::core::detail {
-
-template <typename base_env_t> struct forwarded_stop_env {
-  const base_env_t *base_env{nullptr};
-  stdexec::inplace_stop_token stop_token{};
-
-  [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept
-      -> stdexec::inplace_stop_token {
-    return stop_token;
-  }
-
-  template <typename query_t>
-    requires(!std::same_as<std::remove_cvref_t<query_t>, stdexec::get_stop_token_t> &&
-             requires(const base_env_t &env, const query_t &query) { query(env); })
-  [[nodiscard]] auto query(const query_t &query) const noexcept(noexcept(query(*base_env)))
-      -> decltype(query(*base_env)) {
-    return query(*base_env);
-  }
-};
 
 template <typename receiver_t> class receiver_stop_bridge {
 public:
   using receiver_type = std::remove_cvref_t<receiver_t>;
   using receiver_env_t =
       std::remove_cvref_t<decltype(stdexec::get_env(std::declval<const receiver_type &>()))>;
-  using stop_env_t = forwarded_stop_env<receiver_env_t>;
+  using stop_token_env_t = stdexec::prop<stdexec::get_stop_token_t, stdexec::inplace_stop_token>;
+  using stop_env_t =
+      decltype(stdexec::__env::__join(std::declval<stop_token_env_t>(),
+                                      std::declval<const receiver_env_t &>()));
   using outer_stop_token_t = stdexec::stop_token_of_t<receiver_env_t>;
 
   struct stop_callback {
@@ -70,10 +57,8 @@ public:
   auto operator=(const receiver_stop_bridge &) -> receiver_stop_bridge & = delete;
 
   [[nodiscard]] auto env() const noexcept -> stop_env_t {
-    return stop_env_t{
-        .base_env = std::addressof(env_),
-        .stop_token = stop_source_.get_token(),
-    };
+    return stdexec::__env::__join(
+        stop_token_env_t{stdexec::get_stop_token, stop_source_.get_token()}, env_);
   }
 
   [[nodiscard]] auto stop_requested() const noexcept -> bool {

@@ -3,6 +3,7 @@
 
 #include "wh/core/stdexec/component_async_entry.hpp"
 #include "wh/core/stdexec/defer_sender.hpp"
+#include "wh/core/stdexec/erased_receiver_ref.hpp"
 #include "wh/core/stdexec/inspect_result_sender.hpp"
 #include "wh/core/stdexec/map_result_sender.hpp"
 #include "wh/core/stdexec/ready_result_sender.hpp"
@@ -10,6 +11,7 @@
 #include "wh/core/stdexec/result_sender.hpp"
 #include "wh/core/stdexec/resume_policy.hpp"
 #include "wh/core/stdexec/resume_scheduler.hpp"
+#include "wh/core/stdexec/sender_meta.hpp"
 #include "wh/core/stdexec/scheduler_handoff.hpp"
 #include "wh/core/stdexec/try_schedule.hpp"
 #include "wh/core/stdexec/variant_sender.hpp"

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/static_thread_scheduler.hpp"
@@ -190,13 +191,15 @@ TEST_CASE("async stream tools node returns graph stream reader payload",
       wh::compose::tool_entry{
           .async_stream = [](wh::compose::tool_call call,
                              wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-            auto reader =
-                wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
-                    wh::compose::graph_value{call.arguments},
-                });
-            REQUIRE(reader.has_value());
-            return stdexec::just(
-                wh::core::result<wh::compose::graph_stream_reader>{std::move(reader).value()});
+            return [](wh::compose::tool_call owned_call)
+                -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+              auto reader =
+                  wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
+                      wh::compose::graph_value{std::move(owned_call.arguments)},
+                  });
+              REQUIRE(reader.has_value());
+              co_return wh::core::result<wh::compose::graph_stream_reader>{std::move(reader).value()};
+            }(std::move(call));
           },
       });
 
@@ -242,8 +245,11 @@ TEST_CASE("tools node builders also compile async value endpoints and preserve l
       "echo", wh::compose::tool_entry{
                   .async_invoke = [](wh::compose::tool_call call,
                                      wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
-                    return stdexec::just(wh::core::result<wh::compose::graph_value>{
-                        wh::compose::graph_value{std::string{"async:"} + call.arguments}});
+                    return [](wh::compose::tool_call owned_call)
+                        -> exec::task<wh::core::result<wh::compose::graph_value>> {
+                      co_return wh::core::result<wh::compose::graph_value>{
+                          wh::compose::graph_value{std::string{"async:"} + owned_call.arguments}};
+                    }(std::move(call));
                   },
               });
 
