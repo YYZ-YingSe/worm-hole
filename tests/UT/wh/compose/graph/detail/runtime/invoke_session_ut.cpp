@@ -11,9 +11,11 @@ namespace {
 
 class invoke_session_probe final : public wh::compose::detail::invoke_runtime::invoke_session {
 public:
+  using wh::compose::detail::invoke_runtime::invoke_session::capture_common_checkpoint_state;
   using wh::compose::detail::invoke_runtime::invoke_session::init_error_;
   using wh::compose::detail::invoke_runtime::invoke_session::invoke_session;
   using wh::compose::detail::invoke_runtime::invoke_session::invoke_state;
+  using wh::compose::detail::invoke_runtime::invoke_session::process_state_;
   using wh::compose::detail::invoke_runtime::invoke_session::rebind_moved_runtime_storage;
 };
 
@@ -101,4 +103,31 @@ TEST_CASE("runtime invoke_session captures initialization failures from invalid 
 
   REQUIRE(state.init_error_.has_value());
   REQUIRE(*state.init_error_ == wh::core::errc::not_found);
+}
+
+TEST_CASE("runtime invoke_session includes workflow state in common checkpoint snapshots",
+          "[UT][wh/compose/graph/detail/runtime/"
+          "invoke_session.hpp][capture_common_checkpoint_state][workflow_state][boundary]") {
+  auto graph = wh::testing::helper::make_runtime_identity_graph(
+      wh::compose::graph_runtime_mode::dag, "invoke_session_workflow_state");
+  REQUIRE(graph.has_value());
+
+  wh::core::run_context context{};
+  invoke_session_probe state{
+      &graph.value(),
+      wh::compose::graph_value{9},
+      context,
+      wh::compose::graph_call_options{},
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+      wh::core::detail::erase_resume_scheduler(stdexec::inline_scheduler{}),
+  };
+
+  REQUIRE(state.process_state_.emplace_workflow_state<std::string>("persist-me").has_value());
+
+  auto checkpoint = state.capture_common_checkpoint_state();
+  REQUIRE(checkpoint.has_value());
+  REQUIRE(checkpoint->runtime.workflow_state.has_value());
+  auto *typed = wh::core::any_cast<std::string>(&*checkpoint->runtime.workflow_state);
+  REQUIRE(typed != nullptr);
+  REQUIRE(*typed == "persist-me");
 }

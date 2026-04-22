@@ -129,3 +129,26 @@ TEST_CASE("runtime checkpoint helpers roundtrip stream runtime payload codecs fo
   REQUIRE(edge_chunks.has_value());
   REQUIRE(*wh::core::any_cast<std::string>(&edge_chunks.value().front()) == "edge");
 }
+
+TEST_CASE("runtime checkpoint helpers capture and restore graph-scoped workflow state",
+          "[UT][wh/compose/graph/detail/runtime/"
+          "checkpoint.hpp][capture_workflow_state][restore_workflow_state][condition][boundary]") {
+  using namespace wh::compose::detail::checkpoint_runtime;
+
+  wh::compose::graph_process_state state{};
+  REQUIRE(state.emplace_workflow_state<std::string>("checkpointed").has_value());
+
+  auto captured = capture_workflow_state(state);
+  REQUIRE(captured.has_value());
+  REQUIRE(captured->has_value());
+  REQUIRE(wh::core::any_cast<std::string>(&**captured) != nullptr);
+  REQUIRE(*wh::core::any_cast<std::string>(&**captured) == "checkpointed");
+
+  state.clear_workflow_state();
+  REQUIRE_FALSE(state.has_workflow_state());
+
+  restore_workflow_state(state, std::move(captured).value());
+  auto restored = state.workflow_state_ref<std::string>();
+  REQUIRE(restored.has_value());
+  REQUIRE(restored->get() == "checkpointed");
+}

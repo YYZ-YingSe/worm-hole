@@ -123,41 +123,52 @@ struct graph_state_transition_event {
 /// Thread-safe typed process-state store with optional parent chaining.
 class graph_process_state {
 public:
-  graph_process_state() = default;
+  graph_process_state() noexcept : scope_root_(this) {}
 
-  explicit graph_process_state(graph_process_state *parent) noexcept : parent_(parent) {}
+  explicit graph_process_state(graph_process_state *parent) noexcept
+      : parent_(parent), scope_root_(parent != nullptr ? parent->scope_root_ : this) {}
 
   graph_process_state(const graph_process_state &other) {
-    auto lock = std::scoped_lock{other.mutex_};
+    auto lock = std::scoped_lock{other.mutex_, other.workflow_mutex_};
     values_ = other.values_;
+    workflow_state_ = other.workflow_state_;
     parent_ = other.parent_;
+    scope_root_ = other.scope_root_ == std::addressof(other) ? this : other.scope_root_;
   }
 
   auto operator=(const graph_process_state &other) -> graph_process_state & {
     if (this == &other) {
       return *this;
     }
-    auto lock = std::scoped_lock{mutex_, other.mutex_};
+    auto lock = std::scoped_lock{mutex_, workflow_mutex_, other.mutex_, other.workflow_mutex_};
     values_ = other.values_;
+    workflow_state_ = other.workflow_state_;
     parent_ = other.parent_;
+    scope_root_ = other.scope_root_ == std::addressof(other) ? this : other.scope_root_;
     return *this;
   }
 
   graph_process_state(graph_process_state &&other) noexcept {
-    auto lock = std::scoped_lock{other.mutex_};
+    auto lock = std::scoped_lock{other.mutex_, other.workflow_mutex_};
     values_ = std::move(other.values_);
+    workflow_state_ = std::move(other.workflow_state_);
     parent_ = other.parent_;
+    scope_root_ = other.scope_root_ == std::addressof(other) ? this : other.scope_root_;
     other.parent_ = nullptr;
+    other.scope_root_ = std::addressof(other);
   }
 
   auto operator=(graph_process_state &&other) noexcept -> graph_process_state & {
     if (this == &other) {
       return *this;
     }
-    auto lock = std::scoped_lock{mutex_, other.mutex_};
+    auto lock = std::scoped_lock{mutex_, workflow_mutex_, other.mutex_, other.workflow_mutex_};
     values_ = std::move(other.values_);
+    workflow_state_ = std::move(other.workflow_state_);
     parent_ = other.parent_;
+    scope_root_ = other.scope_root_ == std::addressof(other) ? this : other.scope_root_;
     other.parent_ = nullptr;
+    other.scope_root_ = std::addressof(other);
     return *this;
   }
 
@@ -166,6 +177,21 @@ public:
 
   /// Sets parent process-state used by subgraph fallback lookup.
   auto set_parent(graph_process_state *parent) noexcept -> void { parent_ = parent; }
+
+  /// Returns the graph-scope workflow-state root used by this process-state.
+  [[nodiscard]] auto workflow_scope_root() noexcept -> graph_process_state & {
+    return scope_root_ != nullptr ? *scope_root_ : *this;
+  }
+
+  /// Returns the graph-scope workflow-state root used by this process-state.
+  [[nodiscard]] auto workflow_scope_root() const noexcept -> const graph_process_state & {
+    return scope_root_ != nullptr ? *scope_root_ : *this;
+  }
+
+  /// Rebinds this process-state onto one graph-scope workflow-state root.
+  auto set_workflow_scope_root(graph_process_state *root) noexcept -> void {
+    scope_root_ = root != nullptr ? root : this;
+  }
 
   /// Returns thread-local detail of the last typed state access failure.
   [[nodiscard]] static auto last_error_detail() -> std::string_view { return last_error_detail_; }
@@ -230,11 +256,105 @@ public:
         wh::core::errc::not_found);
   }
 
+  /// Inserts or replaces the graph-scoped workflow state object.
+  template <typename state_t, typename... args_t>
+    requires std::constructible_from<state_t, args_t &&...>
+  auto emplace_workflow_state(args_t &&...args) -> wh::core::result<std::reference_wrapper<state_t>> {
+    auto &root = workflow_scope_root();
+    auto lock = std::scoped_lock{root.workflow_mutex_};
+    if (!root.workflow_state_.has_value()) {
+      root.workflow_state_.emplace();
+    }
+    root.workflow_state_->template emplace<state_t>(std::forward<args_t>(args)...);
+    last_error_detail_.clear();
+    return std::ref(*wh::core::any_cast<state_t>(&*root.workflow_state_));
+  }
+
+  /// Returns mutable graph-scoped workflow state.
+  template <typename state_t>
+  [[nodiscard]] auto workflow_state_ref() -> wh::core::result<std::reference_wrapper<state_t>> {
+    auto &root = workflow_scope_root();
+    auto lock = std::scoped_lock{root.workflow_mutex_};
+    if (!root.workflow_state_.has_value()) {
+      last_error_detail_ = detail::state_not_found_detail<state_t>();
+      return wh::core::result<std::reference_wrapper<state_t>>::failure(
+          wh::core::errc::not_found);
+    }
+    auto *typed = wh::core::any_cast<state_t>(&*root.workflow_state_);
+    if (typed == nullptr) {
+      last_error_detail_ = detail::state_type_mismatch_detail<state_t>(*root.workflow_state_);
+      return wh::core::result<std::reference_wrapper<state_t>>::failure(
+          wh::core::errc::type_mismatch);
+    }
+    last_error_detail_.clear();
+    return std::ref(*typed);
+  }
+
+  /// Returns immutable graph-scoped workflow state.
+  template <typename state_t>
+  [[nodiscard]] auto workflow_state_ref() const
+      -> wh::core::result<std::reference_wrapper<const state_t>> {
+    const auto &root = workflow_scope_root();
+    auto lock = std::scoped_lock{root.workflow_mutex_};
+    if (!root.workflow_state_.has_value()) {
+      last_error_detail_ = detail::state_not_found_detail<state_t>();
+      return wh::core::result<std::reference_wrapper<const state_t>>::failure(
+          wh::core::errc::not_found);
+    }
+    const auto *typed = wh::core::any_cast<state_t>(&*root.workflow_state_);
+    if (typed == nullptr) {
+      last_error_detail_ = detail::state_type_mismatch_detail<state_t>(*root.workflow_state_);
+      return wh::core::result<std::reference_wrapper<const state_t>>::failure(
+          wh::core::errc::type_mismatch);
+    }
+    last_error_detail_.clear();
+    return std::cref(*typed);
+  }
+
+  /// Returns true when graph-scoped workflow state exists.
+  [[nodiscard]] auto has_workflow_state() const -> bool {
+    const auto &root = workflow_scope_root();
+    auto lock = std::scoped_lock{root.workflow_mutex_};
+    return root.workflow_state_.has_value();
+  }
+
+  /// Produces one owned snapshot of the graph-scoped workflow state when present.
+  [[nodiscard]] auto capture_workflow_state_value() const
+      -> wh::core::result<std::optional<graph_value>> {
+    const auto &root = workflow_scope_root();
+    auto lock = std::scoped_lock{root.workflow_mutex_};
+    if (!root.workflow_state_.has_value()) {
+      return std::optional<graph_value>{};
+    }
+    auto owned = wh::core::into_owned(*root.workflow_state_);
+    if (owned.has_error()) {
+      return wh::core::result<std::optional<graph_value>>::failure(owned.error());
+    }
+    return std::optional<graph_value>{std::move(owned).value()};
+  }
+
+  /// Replaces the graph-scoped workflow state from one restored checkpoint payload.
+  auto restore_workflow_state_value(std::optional<graph_value> value) -> void {
+    auto &root = workflow_scope_root();
+    auto lock = std::scoped_lock{root.workflow_mutex_};
+    root.workflow_state_ = std::move(value);
+  }
+
+  /// Clears the graph-scoped workflow state.
+  auto clear_workflow_state() -> void {
+    auto &root = workflow_scope_root();
+    auto lock = std::scoped_lock{root.workflow_mutex_};
+    root.workflow_state_.reset();
+  }
+
 private:
   static inline thread_local std::string last_error_detail_{};
   mutable std::mutex mutex_{};
+  mutable std::mutex workflow_mutex_{};
   std::unordered_map<wh::core::any_type_key, wh::core::any, wh::core::any_type_key_hash> values_{};
+  std::optional<graph_value> workflow_state_{};
   graph_process_state *parent_{nullptr};
+  graph_process_state *scope_root_{nullptr};
 };
 
 /// Node-level state pre-handler (value path).

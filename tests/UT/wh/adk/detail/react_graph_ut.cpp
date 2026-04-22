@@ -191,7 +191,7 @@ TEST_CASE(
 
   auto bootstrap = wh::adk::detail::react_detail::make_bootstrap_options(2U);
   REQUIRE(run_pre(bootstrap, process_state, payload).has_value());
-  auto state = process_state.get<wh::agent::react_state>();
+  auto state = process_state.workflow_state_ref<wh::agent::react_state>();
   REQUIRE(state.has_value());
   REQUIRE(state->get().messages.size() == 1U);
   REQUIRE(state->get().remaining_iterations == 2U);

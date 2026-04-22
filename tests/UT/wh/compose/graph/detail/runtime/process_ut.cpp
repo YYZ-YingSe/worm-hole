@@ -18,6 +18,7 @@ TEST_CASE("process runtime acquires binds and releases node local process state 
   REQUIRE(acquired.has_value());
   REQUIRE(slots[1U].has_value());
   REQUIRE(slots[1U]->parent() == &parent);
+  REQUIRE(&slots[1U]->workflow_scope_root() == &parent);
 
   auto resolved = acquired->get(slots);
   REQUIRE(resolved.has_value());
@@ -26,6 +27,7 @@ TEST_CASE("process runtime acquires binds and releases node local process state 
   wh::compose::graph_process_state rebound{};
   bind_parent_process_state(rebound, &parent);
   REQUIRE(rebound.parent() == &parent);
+  REQUIRE(&rebound.workflow_scope_root() == &rebound);
 
   acquired->release(slots);
   REQUIRE_FALSE(slots[1U].has_value());

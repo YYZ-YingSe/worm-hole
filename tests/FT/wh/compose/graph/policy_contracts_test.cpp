@@ -585,17 +585,17 @@ TEST_CASE("compose graph supports node-level retry and timeout overrides",
   SECTION("node timeout override wins over graph default timeout") {
     wh::compose::graph_compile_options options{};
     options.mode = wh::compose::graph_runtime_mode::dag;
-    options.node_timeout = std::chrono::milliseconds{50};
+    options.node_timeout = std::chrono::milliseconds{500};
     wh::compose::graph graph{std::move(options)};
     wh::compose::graph_add_node_options node_options{};
-    node_options.timeout_override = std::chrono::milliseconds{5};
+    node_options.timeout_override = std::chrono::milliseconds{50};
     REQUIRE(graph
                 .add_lambda(
                     "slow",
                     [](wh::compose::graph_value &input, wh::core::run_context &,
                        const wh::compose::graph_call_scope &)
                         -> wh::core::result<wh::compose::graph_value> {
-                      std::this_thread::sleep_for(std::chrono::milliseconds{20});
+                      std::this_thread::sleep_for(std::chrono::milliseconds{300});
                       return std::move(input);
                     },
                     std::move(node_options))
@@ -612,7 +612,7 @@ TEST_CASE("compose graph supports node-level retry and timeout overrides",
     REQUIRE(invoked.value().report.node_timeout_error.has_value());
     const auto &timeout_detail = *invoked.value().report.node_timeout_error;
     REQUIRE(timeout_detail.node == "slow");
-    REQUIRE(timeout_detail.timeout == std::chrono::milliseconds{5});
-    REQUIRE(timeout_detail.elapsed >= std::chrono::milliseconds{5});
+    REQUIRE(timeout_detail.timeout == std::chrono::milliseconds{50});
+    REQUIRE(timeout_detail.elapsed >= std::chrono::milliseconds{50});
   }
 }

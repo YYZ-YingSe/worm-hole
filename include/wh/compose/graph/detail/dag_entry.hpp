@@ -17,6 +17,8 @@ inline auto detail::invoke_runtime::dag_runtime::restore_entry(
 
   session.restore_skip_pre_handlers_ = prepared.restore_skip_pre_handlers;
   session.invoke_state().step_count = prepared.checkpoint.runtime.step_count;
+  detail::checkpoint_runtime::restore_workflow_state(
+      session.process_state_, std::move(prepared.checkpoint.runtime.workflow_state));
   auto restored_states =
       detail::checkpoint_runtime::restore_node_states(prepared.checkpoint, session.state_table_);
   if (restored_states.has_error()) {

@@ -43,6 +43,42 @@ TEST_CASE("graph process state reports not found and type mismatch details",
               .find("actual=") != std::string::npos);
 }
 
+TEST_CASE("graph process state stores graph-scoped workflow state separately from transient state",
+          "[UT][wh/compose/runtime/state.hpp][graph_process_state::workflow_state_ref]"
+          "[condition][branch][boundary]") {
+  wh::compose::graph_process_state root{};
+  auto inserted = root.emplace_workflow_state<std::string>("workflow");
+  REQUIRE(inserted.has_value());
+  REQUIRE(inserted->get() == "workflow");
+
+  wh::compose::graph_process_state child{&root};
+  auto inherited = child.workflow_state_ref<std::string>();
+  REQUIRE(inherited.has_value());
+  REQUIRE(inherited->get() == "workflow");
+
+  auto mismatch = child.workflow_state_ref<int>();
+  REQUIRE(mismatch.has_error());
+  REQUIRE(mismatch.error() == wh::core::errc::type_mismatch);
+
+  wh::compose::graph_process_state subgraph{};
+  subgraph.set_parent(&root);
+  auto missing = subgraph.workflow_state_ref<std::string>();
+  REQUIRE(missing.has_error());
+  REQUIRE(missing.error() == wh::core::errc::not_found);
+
+  auto captured = root.capture_workflow_state_value();
+  REQUIRE(captured.has_value());
+  REQUIRE(captured->has_value());
+  REQUIRE(wh::core::any_cast<std::string>(&**captured) != nullptr);
+
+  root.clear_workflow_state();
+  REQUIRE_FALSE(root.has_workflow_state());
+  root.restore_workflow_state_value(std::move(captured).value());
+  auto restored = root.workflow_state_ref<std::string>();
+  REQUIRE(restored.has_value());
+  REQUIRE(restored->get() == "workflow");
+}
+
 TEST_CASE(
     "graph state table tracks keyed lifecycle updates and snapshots",
     "[UT][wh/compose/runtime/state.hpp][graph_state_table::update][condition][branch][boundary]") {

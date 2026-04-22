@@ -202,7 +202,7 @@ TEST_CASE(
   };
   auto bootstrap = make_bootstrap_options(definition);
   REQUIRE(run_pre(bootstrap, process_state, payload).has_value());
-  auto state = process_state.get<runtime_state>();
+  auto state = process_state.workflow_state_ref<runtime_state>();
   REQUIRE(state.has_value());
   REQUIRE(state->get().visible_history.size() == 1U);
   REQUIRE(state->get().active_agent_name == "root");

@@ -532,6 +532,11 @@ inline auto detail::invoke_runtime::invoke_session::capture_common_checkpoint_st
   checkpoint.restore_shape = core().restore_shape_;
   checkpoint.runtime.step_count = invoke_state().step_count;
   checkpoint.runtime.lifecycle = state_table_.states();
+  auto workflow_state = detail::checkpoint_runtime::capture_workflow_state(process_state_);
+  if (workflow_state.has_error()) {
+    return wh::core::result<checkpoint_state>::failure(workflow_state.error());
+  }
+  checkpoint.runtime.workflow_state = std::move(workflow_state).value();
 
   auto owned_resume_snapshot =
       context_.resume_info.has_value()

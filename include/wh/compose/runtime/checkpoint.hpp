@@ -1104,6 +1104,14 @@ into_owned_checkpoint_pregel_runtime_state(checkpoint_pregel_runtime_state &&val
 
 [[nodiscard]] inline auto into_owned_checkpoint_runtime_state(const checkpoint_runtime_state &value)
     -> wh::core::result<checkpoint_runtime_state> {
+  std::optional<graph_value> workflow_state{};
+  if (value.workflow_state.has_value()) {
+    auto owned = wh::core::into_owned(*value.workflow_state);
+    if (owned.has_error()) {
+      return wh::core::result<checkpoint_runtime_state>::failure(owned.error());
+    }
+    workflow_state = std::move(owned).value();
+  }
   std::optional<checkpoint_dag_runtime_state> dag{};
   if (value.dag.has_value()) {
     auto owned = into_owned_checkpoint_dag_runtime_state(*value.dag);
@@ -1123,6 +1131,7 @@ into_owned_checkpoint_pregel_runtime_state(checkpoint_pregel_runtime_state &&val
   return checkpoint_runtime_state{
       .step_count = value.step_count,
       .lifecycle = value.lifecycle,
+      .workflow_state = std::move(workflow_state),
       .dag = std::move(dag),
       .pregel = std::move(pregel),
   };
@@ -1130,6 +1139,14 @@ into_owned_checkpoint_pregel_runtime_state(checkpoint_pregel_runtime_state &&val
 
 [[nodiscard]] inline auto into_owned_checkpoint_runtime_state(checkpoint_runtime_state &&value)
     -> wh::core::result<checkpoint_runtime_state> {
+  std::optional<graph_value> workflow_state{};
+  if (value.workflow_state.has_value()) {
+    auto owned = wh::core::into_owned(std::move(*value.workflow_state));
+    if (owned.has_error()) {
+      return wh::core::result<checkpoint_runtime_state>::failure(owned.error());
+    }
+    workflow_state = std::move(owned).value();
+  }
   std::optional<checkpoint_dag_runtime_state> dag{};
   if (value.dag.has_value()) {
     auto owned = into_owned_checkpoint_dag_runtime_state(std::move(*value.dag));
@@ -1149,6 +1166,7 @@ into_owned_checkpoint_pregel_runtime_state(checkpoint_pregel_runtime_state &&val
   return checkpoint_runtime_state{
       .step_count = value.step_count,
       .lifecycle = std::move(value.lifecycle),
+      .workflow_state = std::move(workflow_state),
       .dag = std::move(dag),
       .pregel = std::move(pregel),
   };
