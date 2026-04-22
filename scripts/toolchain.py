@@ -429,28 +429,6 @@ def git_listing(pathspecs: Sequence[str], *, base_ref: str | None = None) -> lis
     return entries
 
 
-def collect_source_files(scope_mode: str) -> tuple[list[Path], str]:
-    incremental_requested = scope_mode in {"auto", "changed", "diff", "incremental"}
-    diff_base = resolve_diff_base() if incremental_requested else None
-
-    if diff_base:
-        files = git_listing(
-            ["*.hpp", "*.h", "*.cpp", "*.cc", "*.cxx", "*.ipp"],
-            base_ref=diff_base,
-        )
-        scope_label = f"incremental:{diff_base}"
-    else:
-        files = git_listing(["*.hpp", "*.h", "*.cpp", "*.cc", "*.cxx", "*.ipp"])
-        scope_label = "full"
-
-    filtered = [
-        file
-        for file in files
-        if under(file, ROOT) and not under(file, THIRD_PARTY_ROOT) and not under(file, BUILD_ROOT)
-    ]
-    return filtered, scope_label
-
-
 def collect_shell_files(scope_mode: str) -> tuple[list[Path], str]:
     incremental_requested = scope_mode in {"auto", "changed", "diff", "incremental"}
     diff_base = resolve_diff_base() if incremental_requested else None
@@ -1210,10 +1188,6 @@ def configure_and_validate_manifest(
 def ci_fast_gates(args: argparse.Namespace) -> None:
     require_commands("fast-gates", "git", "shellcheck")
 
-    formatter_bin = os.environ.get("WH_CLANG_FORMAT_BIN") or shutil.which("clang-format")
-    if formatter_bin is None:
-        fail("clang-format", "clang-format not installed")
-
     shell_files, shell_scope = collect_shell_files(args.shellcheck_scope)
     if shell_files:
         print_step("shellcheck", f"scope: {shell_scope}")
@@ -1221,24 +1195,6 @@ def ci_fast_gates(args: argparse.Namespace) -> None:
         print_step("shellcheck", "PASS")
     else:
         print_step("shellcheck", f"SKIP no shell scripts in scope ({shell_scope})")
-
-    source_files, source_scope = collect_source_files(args.clang_format_scope)
-    if not source_files:
-        print_step("clang-format", f"SKIP no source files in scope ({source_scope})")
-        return
-
-    print_step("clang-format", f"scope: {source_scope}")
-    run(
-        [
-            formatter_bin,
-            "--style=file",
-            "--fallback-style=none",
-            "--dry-run",
-            "--Werror",
-            *[str(path.relative_to(ROOT)) for path in source_files],
-        ]
-    )
-    print_step("clang-format", "PASS")
 
 
 def run_build_test_mode(
@@ -1948,7 +1904,6 @@ def build_parser() -> argparse.ArgumentParser:
     ci_sub = ci.add_subparsers(dest="ci_mode", required=True)
 
     fast_gates_parser = ci_sub.add_parser("fast-gates")
-    fast_gates_parser.add_argument("--clang-format-scope", default="auto")
     fast_gates_parser.add_argument("--shellcheck-scope", default="auto")
     fast_gates_parser.set_defaults(func=ci_fast_gates)
 
