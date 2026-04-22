@@ -77,7 +77,9 @@ TEST_CASE(
   REQUIRE(bad_output.error() == wh::core::errc::type_mismatch);
 
   wh::compose::graph_process_state parent{};
-  REQUIRE(parent.emplace<runtime_state>(runtime_state{.remaining_iterations = 9U}).has_value());
+  REQUIRE(
+      parent.emplace_workflow_state<runtime_state>(runtime_state{.remaining_iterations = 9U})
+          .has_value());
   wh::compose::graph_process_state child{&parent};
   auto shared = wh::adk::detail::plan_execute_detail::read_state(child);
   REQUIRE(shared.has_value());
@@ -97,7 +99,7 @@ TEST_CASE("plan execute state callbacks bootstrap requests parse plans and emit 
   };
   auto bootstrap = wh::adk::detail::plan_execute_detail::make_bootstrap_options(2U);
   REQUIRE(run_pre(bootstrap, process_state, payload).has_value());
-  auto state = process_state.get<runtime_state>();
+  auto state = process_state.workflow_state_ref<runtime_state>();
   REQUIRE(state.has_value());
   REQUIRE(state->get().input_messages.size() == 1U);
   REQUIRE(state->get().remaining_iterations == 2U);

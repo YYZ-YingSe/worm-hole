@@ -76,12 +76,14 @@ acquire_node_local_process_state(node_local_process_state_slots &states,
   auto &slot = states[node_id];
   slot.emplace(&parent_process_state);
   slot->set_parent(&parent_process_state);
+  slot->set_workflow_scope_root(std::addressof(parent_process_state.workflow_scope_root()));
   return scoped_node_local_process_state{node_id};
 }
 
 inline auto bind_parent_process_state(graph_process_state &process_state,
                                       graph_process_state *parent) noexcept -> void {
   process_state.set_parent(parent);
+  process_state.set_workflow_scope_root(std::addressof(process_state));
 }
 
 } // namespace wh::compose::detail::process_runtime

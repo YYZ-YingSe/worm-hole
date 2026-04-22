@@ -142,6 +142,8 @@ struct checkpoint_runtime_state {
   std::size_t step_count{0U};
   /// Lifecycle snapshot captured from graph state table at checkpoint time.
   std::vector<graph_node_state> lifecycle{};
+  /// Graph-scoped workflow state retained across checkpoint/resume when present.
+  std::optional<graph_value> workflow_state{};
   /// Optional DAG-specific runtime snapshot.
   std::optional<checkpoint_dag_runtime_state> dag{};
   /// Optional Pregel-specific runtime snapshot.

@@ -51,3 +51,24 @@ TEST_CASE(
   REQUIRE(shared_again.has_value());
   REQUIRE(shared_again.value().get().value == 11);
 }
+
+TEST_CASE("shared_state helpers keep subgraph roots isolated from parent workflow state",
+          "[UT][wh/adk/detail/shared_state.hpp][shared_state_ref][workflow_root][boundary]") {
+  wh::compose::graph_process_state root{};
+  REQUIRE(wh::adk::detail::emplace_shared_state<shared_counter>(root, 5).has_value());
+
+  wh::compose::graph_process_state subgraph{};
+  subgraph.set_parent(&root);
+
+  auto inherited = wh::adk::detail::shared_state_ref<shared_counter>(subgraph);
+  REQUIRE(inherited.has_error());
+  REQUIRE(inherited.error() == wh::core::errc::not_found);
+
+  auto local = wh::adk::detail::emplace_shared_state<shared_counter>(subgraph, 9);
+  REQUIRE(local.has_value());
+  REQUIRE(local->get().value == 9);
+
+  auto root_again = wh::adk::detail::shared_state_ref<shared_counter>(root);
+  REQUIRE(root_again.has_value());
+  REQUIRE(root_again->get().value == 5);
+}

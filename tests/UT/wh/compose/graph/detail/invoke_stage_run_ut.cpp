@@ -53,18 +53,18 @@ TEST_CASE("invoke stage run honors node timeout overrides when settling executio
           "invoke_stage_run.hpp][invoke_stage_run::launch_node_stage][branch][timeout]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
-  options.node_timeout = std::chrono::milliseconds{50};
+  options.node_timeout = std::chrono::milliseconds{500};
   wh::compose::graph graph{std::move(options)};
 
   wh::compose::graph_add_node_options node_options{};
-  node_options.timeout_override = std::chrono::milliseconds{5};
+  node_options.timeout_override = std::chrono::milliseconds{50};
   REQUIRE(graph
               .add_lambda(
                   "slow",
                   [](wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+                    std::this_thread::sleep_for(std::chrono::milliseconds{300});
                     return std::move(input);
                   },
                   std::move(node_options))
@@ -81,7 +81,7 @@ TEST_CASE("invoke stage run honors node timeout overrides when settling executio
   REQUIRE(invoked->output_status.error() == wh::core::errc::timeout);
   REQUIRE(invoked->report.node_timeout_error.has_value());
   REQUIRE(invoked->report.node_timeout_error->node == "slow");
-  REQUIRE(invoked->report.node_timeout_error->timeout == std::chrono::milliseconds{5});
+  REQUIRE(invoked->report.node_timeout_error->timeout == std::chrono::milliseconds{50});
 }
 
 TEST_CASE("invoke stage run preserves timeout overrides for inline-control sync nodes",
@@ -89,19 +89,19 @@ TEST_CASE("invoke stage run preserves timeout overrides for inline-control sync 
           "invoke_stage_run.hpp][invoke_stage_run::launch_node_stage][inline_control][timeout]") {
   wh::compose::graph_compile_options options{};
   options.mode = wh::compose::graph_runtime_mode::dag;
-  options.node_timeout = std::chrono::milliseconds{50};
+  options.node_timeout = std::chrono::milliseconds{500};
   wh::compose::graph graph{std::move(options)};
 
   wh::compose::graph_add_node_options node_options{};
   node_options.dispatch = wh::compose::sync_dispatch::inline_control;
-  node_options.timeout_override = std::chrono::milliseconds{5};
+  node_options.timeout_override = std::chrono::milliseconds{50};
   REQUIRE(graph
               .add_lambda(
                   "slow_inline",
                   [](wh::compose::graph_value &input, wh::core::run_context &,
                      const wh::compose::graph_call_scope &)
                       -> wh::core::result<wh::compose::graph_value> {
-                    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+                    std::this_thread::sleep_for(std::chrono::milliseconds{300});
                     return std::move(input);
                   },
                   std::move(node_options))
@@ -118,7 +118,7 @@ TEST_CASE("invoke stage run preserves timeout overrides for inline-control sync 
   REQUIRE(invoked->output_status.error() == wh::core::errc::timeout);
   REQUIRE(invoked->report.node_timeout_error.has_value());
   REQUIRE(invoked->report.node_timeout_error->node == "slow_inline");
-  REQUIRE(invoked->report.node_timeout_error->timeout == std::chrono::milliseconds{5});
+  REQUIRE(invoked->report.node_timeout_error->timeout == std::chrono::milliseconds{50});
 }
 
 TEST_CASE(

@@ -74,6 +74,16 @@ inline auto set_error_detail(runtime_state::invoke_outputs &outputs,
   return std::string{};
 }
 
+[[nodiscard]] inline auto capture_workflow_state(graph_process_state &process_state)
+    -> wh::core::result<std::optional<graph_value>> {
+  return process_state.capture_workflow_state_value();
+}
+
+inline auto restore_workflow_state(graph_process_state &process_state,
+                                   std::optional<graph_value> workflow_state) -> void {
+  process_state.restore_workflow_state_value(std::move(workflow_state));
+}
+
 [[nodiscard]] inline auto default_serializer() -> const checkpoint_serializer & {
   static const checkpoint_serializer serializer{
       .encode = checkpoint_serializer_encode{[](checkpoint_state &&state, wh::core::run_context &)
