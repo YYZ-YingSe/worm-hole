@@ -559,6 +559,16 @@ def load_matrix_lanes(path: Path) -> list[MatrixLane]:
     return lanes
 
 
+def filter_matrix_lanes(
+    lanes: Sequence[MatrixLane], *, os_names: Sequence[str] = ()
+) -> list[MatrixLane]:
+    os_filter = {name for name in os_names if name}
+    if not os_filter:
+        return list(lanes)
+
+    return [lane for lane in lanes if lane.os in os_filter]
+
+
 def shard_test_entries(
     entries: Sequence[TestEntry], shard_count: int, shard_index: int
 ) -> list[TestEntry]:
@@ -1286,7 +1296,10 @@ def ci_emit_test_matrix(args: argparse.Namespace) -> None:
     if not config_path.exists():
         fail("matrix", f"missing config: {config_path}", code=2)
 
-    lanes = load_matrix_lanes(config_path)
+    lanes = filter_matrix_lanes(load_matrix_lanes(config_path), os_names=args.lane_os)
+    if not lanes:
+        selected = ", ".join(args.lane_os) if args.lane_os else "<all>"
+        fail("matrix", f"config {config_path} selected no lanes for os={selected}", code=2)
     manifest_cache: dict[str, list[TestEntry]] = {}
     cost_model_cache: dict[str, TestBuildCostModel] = {}
     matrix_include: list[dict[str, object]] = []
@@ -1946,6 +1959,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-build-actions-per-shard",
         type=int,
         default=int(os.environ.get("CI_MAX_BUILD_ACTIONS_PER_SHARD", "200")),
+    )
+    emit_matrix_parser.add_argument(
+        "--lane-os",
+        action="append",
+        default=[],
+        help="Only emit matrix lanes whose os field matches this value. Can be repeated.",
     )
     emit_matrix_parser.set_defaults(func=ci_emit_test_matrix)
 

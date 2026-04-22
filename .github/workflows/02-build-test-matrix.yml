@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  plan-build-test:
-    name: plan build-test matrix
+  plan-build-test-linux:
+    name: plan build-test matrix (linux)
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -45,17 +45,121 @@ jobs:
           matrix_path="${RUNNER_TEMP}/build-test-matrix.json"
           "$python_bin" scripts/toolchain.py ci emit-test-matrix \
             --config .github/matrices/build-test.json \
+            --lane-os ubuntu-latest \
             --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
             --output "$matrix_path"
           echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
 
+  plan-build-test-macos:
+    name: plan build-test matrix (macos)
+    runs-on: macos-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Plan build-test matrix
+        id: plan
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          matrix_path="${RUNNER_TEMP}/build-test-matrix.json"
+          "$python_bin" scripts/toolchain.py ci emit-test-matrix \
+            --config .github/matrices/build-test.json \
+            --lane-os macos-latest \
+            --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
+            --output "$matrix_path"
+          echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
+
+  plan-build-test-windows:
+    name: plan build-test matrix (windows)
+    runs-on: windows-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare CI job
+        uses: ./.github/actions/prepare/job
+        with:
+          install_profile: build
+
+      - name: Plan build-test matrix
+        id: plan
+        shell: bash
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          matrix_path="${RUNNER_TEMP}/build-test-matrix.json"
+          "$python_bin" scripts/toolchain.py ci emit-test-matrix \
+            --config .github/matrices/build-test.json \
+            --lane-os windows-latest \
+            --max-build-actions-per-shard "${CI_MAX_BUILD_ACTIONS_PER_SHARD}" \
+            --output "$matrix_path"
+          echo "matrix=$(tr -d '\n' < "$matrix_path")" >> "$GITHUB_OUTPUT"
+
+  merge-build-test-plans:
+    name: merge build-test matrix
+    runs-on: ubuntu-latest
+    needs:
+      - plan-build-test-linux
+      - plan-build-test-macos
+      - plan-build-test-windows
+    outputs:
+      matrix: ${{ steps.merge.outputs.matrix }}
+
+    steps:
+      - name: Merge planned matrices
+        id: merge
+        shell: bash
+        env:
+          LINUX_MATRIX: ${{ needs.plan-build-test-linux.outputs.matrix }}
+          MACOS_MATRIX: ${{ needs.plan-build-test-macos.outputs.matrix }}
+          WINDOWS_MATRIX: ${{ needs.plan-build-test-windows.outputs.matrix }}
+          MATRIX_PATH: ${{ runner.temp }}/build-test-matrix.json
+        run: |
+          python_bin="$(command -v python3 || command -v python)"
+          "$python_bin" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          include = []
+          for key in ("LINUX_MATRIX", "MACOS_MATRIX", "WINDOWS_MATRIX"):
+              fragment = json.loads(os.environ[key])
+              entries = fragment.get("include")
+              if not isinstance(entries, list):
+                  raise SystemExit(f"invalid matrix fragment in {key}")
+              include.extend(entries)
+
+          Path(os.environ["MATRIX_PATH"]).write_text(
+              json.dumps({"include": include}, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          echo "matrix=$(tr -d '\n' < "$MATRIX_PATH")" >> "$GITHUB_OUTPUT"
+
   build-test:
     name: build-test (${{ matrix.name }}, ${{ matrix.shard_index }}/${{ matrix.shard_count }}, ${{ matrix.target_count }} targets, ~${{ matrix.estimated_build_actions }} actions)
-    needs: plan-build-test
+    needs: merge-build-test-plans
     strategy:
       fail-fast: false
       max-parallel: 4
-      matrix: ${{ fromJson(needs.plan-build-test.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.merge-build-test-plans.outputs.matrix) }}
     uses: ./.github/workflows/reusable-build-test.yml
     with:
       mode: build-test
