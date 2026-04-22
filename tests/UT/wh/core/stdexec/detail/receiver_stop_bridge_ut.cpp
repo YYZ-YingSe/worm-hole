@@ -5,23 +5,21 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
+#include "helper/manual_scheduler.hpp"
 #include "helper/sender_capture.hpp"
 #include "wh/core/stdexec/detail/receiver_stop_bridge.hpp"
 
 namespace {
 
-struct get_marker_t {
-  [[nodiscard]] auto operator()(const auto &env) const noexcept(noexcept(env.marker))
-      -> decltype(env.marker) {
-    return env.marker;
-  }
-};
-
-inline constexpr get_marker_t get_marker{};
+using scheduler_t = wh::testing::helper::manual_scheduler<void>;
 
 struct tagged_env {
-  int marker{0};
+  scheduler_t scheduler{};
   stdexec::inplace_stop_token stop_token{};
+
+  [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> scheduler_t {
+    return scheduler;
+  }
 
   [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept
       -> stdexec::inplace_stop_token {
@@ -49,8 +47,12 @@ struct throwing_stop_token {
 };
 
 struct tagged_throwing_env {
-  int marker{0};
+  scheduler_t scheduler{};
   throwing_stop_token stop_token{};
+
+  [[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> scheduler_t {
+    return scheduler;
+  }
 
   [[nodiscard]] auto query(stdexec::get_stop_token_t) const noexcept -> throwing_stop_token {
     return stop_token;
@@ -63,13 +65,15 @@ TEST_CASE("receiver_stop_bridge forwards outer stop requests into the inner stop
           "[UT][wh/core/stdexec/detail/"
           "receiver_stop_bridge.hpp][receiver_stop_bridge][branch][concurrency]") {
   stdexec::inplace_stop_source outer_stop{};
+  wh::testing::helper::manual_scheduler_state scheduler_state{};
   wh::testing::helper::sender_capture<int> capture{};
   using receiver_t = wh::testing::helper::sender_capture_receiver<int, tagged_env>;
-  receiver_t receiver{&capture, tagged_env{.marker = 17, .stop_token = outer_stop.get_token()}};
+  receiver_t receiver{&capture, tagged_env{.scheduler = scheduler_t{&scheduler_state},
+                                           .stop_token = outer_stop.get_token()}};
 
   wh::core::detail::receiver_stop_bridge<receiver_t> bridge{receiver};
   REQUIRE_FALSE(bridge.stop_requested());
-  REQUIRE(bridge.env().query(get_marker) == 17);
+  REQUIRE(stdexec::get_scheduler(bridge.env()).state == &scheduler_state);
 
   std::atomic<bool> inner_stopped{false};
   auto inner_token = stdexec::get_stop_token(bridge.env());
@@ -92,7 +96,7 @@ TEST_CASE("receiver_stop_bridge completes at most once and respects pre-stopped 
   {
     wh::testing::helper::sender_capture<int> capture{};
     using receiver_t = wh::testing::helper::sender_capture_receiver<int, tagged_env>;
-    receiver_t receiver{&capture, tagged_env{.marker = 3}};
+    receiver_t receiver{&capture, tagged_env{}};
     wh::core::detail::receiver_stop_bridge<receiver_t> bridge{receiver};
 
     REQUIRE_FALSE(bridge.stop_requested());
@@ -111,7 +115,7 @@ TEST_CASE("receiver_stop_bridge completes at most once and respects pre-stopped 
 
     wh::testing::helper::sender_capture<int> capture{};
     using receiver_t = wh::testing::helper::sender_capture_receiver<int, tagged_env>;
-    receiver_t receiver{&capture, tagged_env{.marker = 9, .stop_token = outer_stop.get_token()}};
+    receiver_t receiver{&capture, tagged_env{.stop_token = outer_stop.get_token()}};
     wh::core::detail::receiver_stop_bridge<receiver_t> bridge{receiver};
 
     REQUIRE(bridge.stop_requested());
@@ -128,7 +132,7 @@ TEST_CASE(
     "receiver_stop_bridge.hpp][receiver_stop_bridge][error][boundary]") {
   wh::testing::helper::sender_capture<int> capture{};
   using receiver_t = wh::testing::helper::sender_capture_receiver<int, tagged_throwing_env>;
-  receiver_t receiver{&capture, tagged_throwing_env{.marker = 23}};
+  receiver_t receiver{&capture, tagged_throwing_env{}};
 
   REQUIRE_THROWS_AS((wh::core::detail::receiver_stop_bridge<receiver_t>{receiver}),
                     std::runtime_error);

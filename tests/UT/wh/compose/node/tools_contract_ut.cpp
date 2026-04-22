@@ -30,7 +30,7 @@ TEST_CASE("tools contract types store dispatch payloads middleware and rerun met
   entry.async_invoke = [](wh::compose::tool_call request, wh::tool::call_scope scope) {
     REQUIRE(scope.tool_name == request.tool_name);
     return [](wh::compose::tool_call owned_request)
-        -> exec::task<wh::core::result<wh::compose::graph_value>> {
+               -> exec::task<wh::core::result<wh::compose::graph_value>> {
       co_return wh::core::result<wh::compose::graph_value>{
           wh::compose::graph_value{std::move(owned_request.call_id)}};
     }(std::move(request));
@@ -38,7 +38,7 @@ TEST_CASE("tools contract types store dispatch payloads middleware and rerun met
   entry.async_stream = [](wh::compose::tool_call request, wh::tool::call_scope scope) {
     REQUIRE(scope.call_id == request.call_id);
     return [](wh::compose::tool_call owned_request)
-        -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+               -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
       auto reader =
           wh::compose::make_single_value_stream_reader(std::move(owned_request.tool_name));
       REQUIRE(reader.has_value());
