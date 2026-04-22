@@ -187,21 +187,21 @@ TEST_CASE("async stream tools node returns graph stream reader payload",
           "[UT][wh/compose/node/tools_builder.hpp][tools_node::compile][branch][async]") {
   wh::compose::tool_registry registry{};
   registry.emplace(
-      "stream",
-      wh::compose::tool_entry{
-          .async_stream = [](wh::compose::tool_call call,
-                             wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-            return [](wh::compose::tool_call owned_call)
-                -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
-              auto reader =
-                  wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
-                      wh::compose::graph_value{std::move(owned_call.arguments)},
-                  });
-              REQUIRE(reader.has_value());
-              co_return wh::core::result<wh::compose::graph_stream_reader>{std::move(reader).value()};
-            }(std::move(call));
-          },
-      });
+      "stream", wh::compose::tool_entry{
+                    .async_stream = [](wh::compose::tool_call call,
+                                       wh::tool::call_scope) -> wh::compose::tools_stream_sender {
+                      return [](wh::compose::tool_call owned_call)
+                                 -> exec::task<wh::core::result<wh::compose::graph_stream_reader>> {
+                        auto reader = wh::compose::make_values_stream_reader(
+                            std::vector<wh::compose::graph_value>{
+                                wh::compose::graph_value{std::move(owned_call.arguments)},
+                            });
+                        REQUIRE(reader.has_value());
+                        co_return wh::core::result<wh::compose::graph_stream_reader>{
+                            std::move(reader).value()};
+                      }(std::move(call));
+                    },
+                });
 
   wh::compose::graph graph{};
   REQUIRE(graph
@@ -246,7 +246,7 @@ TEST_CASE("tools node builders also compile async value endpoints and preserve l
                   .async_invoke = [](wh::compose::tool_call call,
                                      wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
                     return [](wh::compose::tool_call owned_call)
-                        -> exec::task<wh::core::result<wh::compose::graph_value>> {
+                               -> exec::task<wh::core::result<wh::compose::graph_value>> {
                       co_return wh::core::result<wh::compose::graph_value>{
                           wh::compose::graph_value{std::string{"async:"} + owned_call.arguments}};
                     }(std::move(call));

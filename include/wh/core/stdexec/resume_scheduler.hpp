@@ -217,6 +217,12 @@ template <stdexec::scheduler scheduler_t> struct scheduler_query_env {
       -> const scheduler_t & {
     return *scheduler;
   }
+
+  template <typename cpo_t>
+  [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
+      -> const scheduler_t & {
+    return *scheduler;
+  }
 };
 
 template <typename outer_env_t, stdexec::scheduler scheduler_t> struct scheduler_env {
@@ -230,6 +236,12 @@ template <typename outer_env_t, stdexec::scheduler scheduler_t> struct scheduler
   }
 
   [[nodiscard]] auto query(stdexec::get_delegation_scheduler_t) const noexcept
+      -> const scheduler_t & {
+    return *scheduler;
+  }
+
+  template <typename cpo_t>
+  [[nodiscard]] auto query(stdexec::get_completion_scheduler_t<cpo_t>) const noexcept
       -> const scheduler_t & {
     return *scheduler;
   }

@@ -55,9 +55,8 @@ namespace {
 
 inline auto record_peak(std::atomic<int> &peak, const int now) noexcept -> void {
   auto observed = peak.load(std::memory_order_relaxed);
-  while (observed < now &&
-         !peak.compare_exchange_weak(observed, now, std::memory_order_release,
-                                     std::memory_order_relaxed)) {
+  while (observed < now && !peak.compare_exchange_weak(observed, now, std::memory_order_release,
+                                                       std::memory_order_relaxed)) {
   }
 }
 
@@ -142,35 +141,35 @@ TEST_CASE("tools runtime async covers immediate error paths and parallel gate fa
 
   wh::compose::tool_registry registry{};
   registry.emplace(
-      "echo", wh::compose::tool_entry{
-                  .async_invoke = [&](wh::compose::tool_call call,
-                                      wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
-                    return stdexec::starts_on(
-                        pool.get_scheduler(),
-                        stdexec::just(std::move(call.arguments)) |
-                            stdexec::then([&active, &peak](
-                                              std::string value)
-                                              -> wh::core::result<wh::compose::graph_value> {
-                              const auto now = active.fetch_add(1, std::memory_order_acq_rel) + 1;
-                              record_peak(peak, now);
-                              std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                              active.fetch_sub(1, std::memory_order_acq_rel);
-                              return wh::compose::graph_value{std::move(value)};
-                            }));
-                  },
-                  .async_stream = [&](wh::compose::tool_call call,
-                                      wh::tool::call_scope) -> wh::compose::tools_stream_sender {
-                    return stdexec::starts_on(
-                        pool.get_scheduler(),
-                        stdexec::just(std::move(call.arguments)) |
-                            stdexec::then([](std::string value)
-                                              -> wh::core::result<wh::compose::graph_stream_reader> {
-                              return wh::compose::make_values_stream_reader(
-                                  std::vector<wh::compose::graph_value>{
-                                      wh::compose::graph_value{std::move(value)}});
-                            }));
-                  },
-              });
+      "echo",
+      wh::compose::tool_entry{
+          .async_invoke = [&](wh::compose::tool_call call,
+                              wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
+            return stdexec::starts_on(
+                pool.get_scheduler(),
+                stdexec::just(std::move(call.arguments)) |
+                    stdexec::then([&active, &peak](std::string value)
+                                      -> wh::core::result<wh::compose::graph_value> {
+                      const auto now = active.fetch_add(1, std::memory_order_acq_rel) + 1;
+                      record_peak(peak, now);
+                      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                      active.fetch_sub(1, std::memory_order_acq_rel);
+                      return wh::compose::graph_value{std::move(value)};
+                    }));
+          },
+          .async_stream = [&](wh::compose::tool_call call,
+                              wh::tool::call_scope) -> wh::compose::tools_stream_sender {
+            return stdexec::starts_on(
+                pool.get_scheduler(),
+                stdexec::just(std::move(call.arguments)) |
+                    stdexec::then([](std::string value)
+                                      -> wh::core::result<wh::compose::graph_stream_reader> {
+                      return wh::compose::make_values_stream_reader(
+                          std::vector<wh::compose::graph_value>{
+                              wh::compose::graph_value{std::move(value)}});
+                    }));
+          },
+      });
 
   wh::compose::tools_options options{};
   options.sequential = false;

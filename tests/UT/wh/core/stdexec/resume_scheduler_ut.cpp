@@ -103,10 +103,12 @@ TEST_CASE("resume scheduler helpers expose scheduler-only env and scheduler wrap
   const auto query_env = wh::core::detail::make_scheduler_queries(scheduler);
   REQUIRE(stdexec::get_scheduler(query_env).state == &state);
   REQUIRE(stdexec::get_delegation_scheduler(query_env).state == &state);
+  REQUIRE(stdexec::get_completion_scheduler<stdexec::set_value_t>(query_env).state == &state);
 
   const auto wrapped_env = wh::core::detail::make_scheduler_env(outer, scheduler);
   REQUIRE(stdexec::get_scheduler(wrapped_env).state == &state);
   REQUIRE(stdexec::get_delegation_scheduler(wrapped_env).state == &state);
+  REQUIRE(stdexec::get_completion_scheduler<stdexec::set_value_t>(wrapped_env).state == &state);
   REQUIRE(custom_query(wrapped_env) == 17);
 
   auto written_sender = wh::core::detail::write_sender_scheduler(
@@ -121,6 +123,25 @@ TEST_CASE("resume scheduler helpers expose scheduler-only env and scheduler wrap
   const auto read_scheduler =
       wh::testing::helper::wait_value_on_test_thread(std::move(wrapped_sender));
   REQUIRE(read_scheduler.state == &state);
+
+  wh::testing::helper::manual_scheduler_state outer_launch_state{};
+  wh::testing::helper::manual_scheduler_state outer_completion_state{};
+  wh::testing::helper::sender_capture<scheduler_t> overridden_capture{};
+  auto overridden_sender = wh::core::detail::write_sender_scheduler(
+      wh::core::read_resume_scheduler(
+          [](auto selected_scheduler) { return stdexec::just(selected_scheduler); }),
+      scheduler);
+  auto overridden_operation = stdexec::connect(
+      std::move(overridden_sender),
+      wh::testing::helper::sender_capture_receiver{
+          &overridden_capture,
+          wh::testing::helper::make_dual_scheduler_env(scheduler_t{&outer_launch_state},
+                                                       scheduler_t{&outer_completion_state})});
+  stdexec::start(overridden_operation);
+  REQUIRE(overridden_capture.ready.try_acquire());
+  REQUIRE(overridden_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(overridden_capture.value.has_value());
+  REQUIRE(overridden_capture.value->state == &state);
 
   auto resumed = wh::core::resume_on(stdexec::just(5), scheduler);
   wh::testing::helper::sender_capture<int> capture{};

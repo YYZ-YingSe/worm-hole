@@ -24,7 +24,7 @@
     "os": "macos-latest",
     "configure_preset": "ci-macos-release",
     "build_preset": "ci-macos-release",
-    "planning_preset": "ci-linux-release",
+    "planning_preset": "ci-macos-release",
     "min_shards": 2,
     "include_labels": ["ci.pr"],
     "exclude_labels": ["ci.nightly"]
@@ -34,7 +34,7 @@
     "os": "windows-latest",
     "configure_preset": "ci-windows-release",
     "build_preset": "ci-windows-release",
-    "planning_preset": "ci-linux-release",
+    "planning_preset": "ci-windows-release",
     "min_shards": 2,
     "include_labels": ["ci.pr"],
     "exclude_labels": ["ci.nightly"]
