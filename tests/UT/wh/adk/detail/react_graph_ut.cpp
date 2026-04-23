@@ -60,7 +60,7 @@ TEST_CASE(
       wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "draft"),
   });
   REQUIRE(stream.has_value());
-  auto messages = wh::adk::detail::react_detail::read_model_messages(std::move(stream).value());
+  auto messages = wh::adk::detail::read_message_stream(std::move(stream).value());
   REQUIRE(messages.has_value());
   REQUIRE(messages->size() == 1U);
 
@@ -69,8 +69,7 @@ TEST_CASE(
           wh::compose::graph_value{9},
       });
   REQUIRE(invalid_stream.has_value());
-  auto invalid_messages =
-      wh::adk::detail::react_detail::read_model_messages(std::move(invalid_stream).value());
+  auto invalid_messages = wh::adk::detail::read_message_stream(std::move(invalid_stream).value());
   REQUIRE(invalid_messages.has_error());
   REQUIRE(invalid_messages.error() == wh::core::errc::type_mismatch);
 
@@ -162,22 +161,67 @@ TEST_CASE(
   REQUIRE(invalid_message.has_error());
   REQUIRE(invalid_message.error() == wh::core::errc::type_mismatch);
 
-  wh::agent::react_state state{};
-  wh::adk::detail::react_detail::write_output_value(state, "value",
+  wh::compose::tool_entry invoke_only{};
+  invoke_only.invoke =
+      [](const wh::compose::tool_call &call,
+         const wh::tool::call_scope &) -> wh::core::result<wh::compose::graph_value> {
+    return wh::compose::graph_value{call.arguments};
+  };
+  auto normalized = wh::adk::detail::react_detail::normalize_tool_entry_for_stream(
+      invoke_only, wh::compose::node_exec_mode::sync);
+  REQUIRE(normalized.has_value());
+  REQUIRE(static_cast<bool>(normalized->stream));
+  wh::core::run_context tool_context{};
+  auto normalized_stream = normalized->stream(
+      wh::compose::tool_call{
+          .call_id = "call-1",
+          .tool_name = "search",
+          .arguments = "{\"q\":\"hi\"}",
+      },
+      wh::tool::call_scope{
+          .run = tool_context,
+          .component = "react",
+          .implementation = "invoke",
+          .tool_name = "search",
+          .call_id = "call-1",
+      });
+  REQUIRE(normalized_stream.has_value());
+  auto normalized_values =
+      wh::compose::collect_graph_stream_reader(std::move(normalized_stream).value());
+  REQUIRE(normalized_values.has_value());
+  REQUIRE(normalized_values->size() == 1U);
+
+  auto tool_events = wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
+      wh::compose::tool_event{
+          .call_id = "call-1",
+          .tool_name = "search",
+          .value = wh::core::any{std::string{"result"}},
+      },
+  });
+  REQUIRE(tool_events.has_value());
+  auto collected_decision = wh::adk::detail::react_detail::collect_apply_tools_decision(
+      std::move(tool_events).value(), authored.tools());
+  REQUIRE(collected_decision.has_value());
+  REQUIRE(collected_decision->direct_return);
+  REQUIRE(collected_decision->tool_messages.size() == 1U);
+
+  wh::agent::agent_output projected{};
+  wh::adk::detail::react_detail::write_output_value(projected, "value",
                                                     wh::agent::react_output_mode::value, assistant);
   wh::adk::detail::react_detail::write_output_value(
-      state, "text", wh::agent::react_output_mode::stream, assistant);
-  REQUIRE(state.output_values.find("value") != state.output_values.end());
-  auto text_iter = state.output_values.find("text");
-  REQUIRE(text_iter != state.output_values.end());
+      projected, "text", wh::agent::react_output_mode::stream, assistant);
+  REQUIRE(projected.output_values.find("value") != projected.output_values.end());
+  auto text_iter = projected.output_values.find("text");
+  REQUIRE(text_iter != projected.output_values.end());
   auto *text = wh::core::any_cast<std::string>(&text_iter->second);
   REQUIRE(text != nullptr);
   REQUIRE(*text == "alpha");
 
-  state.messages.push_back(assistant);
-  auto output = wh::adk::detail::react_detail::make_agent_output(state, assistant);
-  REQUIRE(output.history_messages.size() == 1U);
-  REQUIRE(output.output_values.size() == 2U);
+  auto output = wh::adk::detail::react_detail::make_agent_output(
+      std::vector<wh::schema::message>{assistant}, "value", wh::agent::react_output_mode::value);
+  REQUIRE(output.has_value());
+  REQUIRE(output->history_messages.size() == 1U);
+  REQUIRE(output->output_values.size() == 1U);
 }
 
 TEST_CASE(
@@ -253,22 +297,20 @@ TEST_CASE(
   REQUIRE(state->get().return_direct_call_id == std::optional<std::string>{"call-1"});
 
   payload = decision.direct_message.value();
-  auto emit_direct = wh::adk::detail::react_detail::make_emit_direct_options(
-      "direct", wh::agent::react_output_mode::stream);
+  auto emit_direct = wh::adk::detail::react_detail::make_emit_direct_history_options();
   REQUIRE(run_post(emit_direct, process_state, payload).has_value());
-  auto *direct_output = wh::core::any_cast<wh::agent::agent_output>(&payload);
-  REQUIRE(direct_output != nullptr);
-  REQUIRE(direct_output->output_values.find("direct") != direct_output->output_values.end());
+  auto *direct_history = wh::core::any_cast<std::vector<wh::schema::message>>(&payload);
+  REQUIRE(direct_history != nullptr);
+  REQUIRE(direct_history->size() == 4U);
 
   state->get().remaining_iterations = 1U;
   payload = wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "done");
-  auto finalize = wh::adk::detail::react_detail::make_finalize_options(
-      "final", wh::agent::react_output_mode::stream);
+  auto finalize = wh::adk::detail::react_detail::make_finalize_history_options();
   REQUIRE(run_post(finalize, process_state, payload).has_value());
-  auto *final_output = wh::core::any_cast<wh::agent::agent_output>(&payload);
-  REQUIRE(final_output != nullptr);
-  REQUIRE(state->get().remaining_iterations == 0U);
-  REQUIRE(final_output->output_values.find("final") != final_output->output_values.end());
+  auto *final_history = wh::core::any_cast<std::vector<wh::schema::message>>(&payload);
+  REQUIRE(final_history != nullptr);
+  REQUIRE(state->get().remaining_iterations == 1U);
+  REQUIRE(final_history->size() == 5U);
 
   auto missing_state_payload = wh::compose::graph_value{std::monostate{}};
   wh::compose::graph_process_state missing_state{};
@@ -286,7 +328,13 @@ TEST_CASE("react graph lowers authored shells into executable graphs and binders
   auto authored = wh::testing::helper::make_configured_react("react", "assistant");
   REQUIRE(authored.set_output_key("final").has_value());
   REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
-  auto lowered = wh::adk::detail::react_graph{authored}.lower();
+  auto native = wh::adk::detail::react_graph{authored}.lower(wh::agent::agent_graph_view::native);
+  REQUIRE(native.has_value());
+  REQUIRE(native->compile().has_value());
+  REQUIRE(native->boundary().output == wh::compose::node_contract::stream);
+
+  auto lowered =
+      wh::adk::detail::react_graph{authored}.lower(wh::agent::agent_graph_view::agent_output);
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->compile().has_value());
 

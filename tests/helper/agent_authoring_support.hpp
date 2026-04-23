@@ -86,8 +86,9 @@ namespace wh::testing::helper {
 [[nodiscard]] inline auto make_executable_agent(const std::string &name)
     -> wh::core::result<wh::agent::agent> {
   wh::agent::agent authored{name};
-  auto bound =
-      authored.bind_execution(nullptr, [name]() mutable -> wh::core::result<wh::compose::graph> {
+  auto bound = authored.bind_execution(
+      nullptr,
+      [name](const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
         return make_passthrough_graph(name + "_node");
       });
   if (bound.has_error()) {
@@ -152,9 +153,8 @@ namespace wh::testing::helper {
   wh::agent::agent authored{name};
   auto bound = authored.bind_execution(
       nullptr,
-      [graph = std::move(graph).value()]() mutable -> wh::core::result<wh::compose::graph> {
-        return graph;
-      });
+      [graph = std::move(graph).value()](const wh::agent::agent_graph_view) mutable
+          -> wh::core::result<wh::compose::graph> { return graph; });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }

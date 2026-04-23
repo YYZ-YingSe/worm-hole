@@ -35,14 +35,14 @@ namespace {
 
 TEST_CASE("chat detail helpers normalize message streams instructions and output slots",
           "[UT][wh/adk/detail/"
-          "chat_graph.hpp][chat_detail::read_model_messages][condition][branch][boundary]") {
+          "chat_graph.hpp][chat_detail::make_agent_output][condition][branch][boundary]") {
   auto stream = wh::compose::make_values_stream_reader(std::vector<wh::compose::graph_value>{
       wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "first"),
       wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "second"),
   });
   REQUIRE(stream.has_value());
 
-  auto messages = wh::adk::detail::chat_detail::read_model_messages(std::move(stream).value());
+  auto messages = wh::adk::detail::read_message_stream(std::move(stream).value());
   REQUIRE(messages.has_value());
   REQUIRE(messages->size() == 2U);
 
@@ -51,8 +51,7 @@ TEST_CASE("chat detail helpers normalize message streams instructions and output
           wh::compose::graph_value{17},
       });
   REQUIRE(invalid_stream.has_value());
-  auto invalid_messages =
-      wh::adk::detail::chat_detail::read_model_messages(std::move(invalid_stream).value());
+  auto invalid_messages = wh::adk::detail::read_message_stream(std::move(invalid_stream).value());
   REQUIRE(invalid_messages.has_error());
   REQUIRE(invalid_messages.error() == wh::core::errc::type_mismatch);
 
@@ -94,6 +93,13 @@ TEST_CASE("chat detail helpers normalize message streams instructions and output
   auto *text = wh::core::any_cast<std::string>(&text_iter->second);
   REQUIRE(text != nullptr);
   REQUIRE(*text == "alphabeta");
+
+  auto built = wh::adk::detail::chat_detail::make_agent_output(
+      std::vector<wh::schema::message>{rendered}, "reply", wh::agent::chat_output_mode::text);
+  REQUIRE(built.has_value());
+  REQUIRE(built->history_messages.size() == 1U);
+  auto reply_iter = built->output_values.find("reply");
+  REQUIRE(reply_iter != built->output_values.end());
 }
 
 TEST_CASE("chat graph lowers authored chat shells into executable compose graphs and binders",
@@ -109,9 +115,15 @@ TEST_CASE("chat graph lowers authored chat shells into executable compose graphs
   REQUIRE(authored.set_output_mode(wh::agent::chat_output_mode::text).has_value());
   REQUIRE(authored.freeze().has_value());
 
-  auto lowered = wh::adk::detail::chat_graph{authored}.lower();
+  auto native = wh::adk::detail::chat_graph{authored}.lower(wh::agent::agent_graph_view::native);
+  REQUIRE(native.has_value());
+  REQUIRE(native->compiled());
+  REQUIRE(native->boundary().output == wh::compose::node_contract::stream);
+
+  auto lowered =
+      wh::adk::detail::chat_graph{authored}.lower(wh::agent::agent_graph_view::agent_output);
   REQUIRE(lowered.has_value());
-  REQUIRE(lowered->compiled());
+  REQUIRE(lowered->compile().has_value());
 
   auto output = invoke_chat_graph(lowered.value(), {wh::testing::helper::make_text_message(
                                                        wh::schema::message_role::user, "hello")});
@@ -130,5 +142,5 @@ TEST_CASE("chat graph lowers authored chat shells into executable compose graphs
   REQUIRE(bound->name() == "bound-chat");
   auto bound_graph = bound->lower();
   REQUIRE(bound_graph.has_value());
-  REQUIRE(bound_graph->compiled());
+  REQUIRE(bound_graph->compile().has_value());
 }
