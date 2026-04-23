@@ -427,7 +427,9 @@ struct graph_config {
   wh::agent::agent exported{std::string{authored.name()}};
   auto shell = std::make_unique<wh::agent::self_refine>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
+      nullptr,
+      [shell = std::move(shell)](
+          const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
         auto worker = shell->worker();
         if (worker.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(worker.error());
@@ -436,11 +438,12 @@ struct graph_config {
         if (reviewer.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(reviewer.error());
         }
-        auto worker_graph = worker.value().get().lower();
+        auto worker_graph = worker.value().get().lower(wh::agent::agent_graph_view::agent_output);
         if (worker_graph.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(worker_graph.error());
         }
-        auto reviewer_graph = reviewer.value().get().lower();
+        auto reviewer_graph =
+            reviewer.value().get().lower(wh::agent::agent_graph_view::agent_output);
         if (reviewer_graph.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(reviewer_graph.error());
         }
@@ -473,7 +476,9 @@ struct graph_config {
   wh::agent::agent exported{std::string{authored.name()}};
   auto shell = std::make_unique<wh::agent::reviewer_executor>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
+      nullptr,
+      [shell = std::move(shell)](
+          const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
         auto executor = shell->executor();
         if (executor.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(executor.error());
@@ -482,11 +487,13 @@ struct graph_config {
         if (reviewer.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(reviewer.error());
         }
-        auto executor_graph = executor.value().get().lower();
+        auto executor_graph =
+            executor.value().get().lower(wh::agent::agent_graph_view::agent_output);
         if (executor_graph.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(executor_graph.error());
         }
-        auto reviewer_graph = reviewer.value().get().lower();
+        auto reviewer_graph =
+            reviewer.value().get().lower(wh::agent::agent_graph_view::agent_output);
         if (reviewer_graph.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(reviewer_graph.error());
         }
@@ -519,7 +526,9 @@ struct graph_config {
   wh::agent::agent exported{std::string{authored.name()}};
   auto shell = std::make_unique<wh::agent::reflexion>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
+      nullptr,
+      [shell = std::move(shell)](
+          const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
         auto actor = shell->actor();
         if (actor.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(actor.error());
@@ -528,11 +537,11 @@ struct graph_config {
         if (critic.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(critic.error());
         }
-        auto actor_graph = actor.value().get().lower();
+        auto actor_graph = actor.value().get().lower(wh::agent::agent_graph_view::agent_output);
         if (actor_graph.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(actor_graph.error());
         }
-        auto critic_graph = critic.value().get().lower();
+        auto critic_graph = critic.value().get().lower(wh::agent::agent_graph_view::agent_output);
         if (critic_graph.has_error()) {
           return wh::core::result<wh::compose::graph>::failure(critic_graph.error());
         }
@@ -548,7 +557,8 @@ struct graph_config {
         };
         auto memory_writer = shell->memory_writer();
         if (memory_writer.has_value()) {
-          auto memory_graph = memory_writer.value().get().lower();
+          auto memory_graph =
+              memory_writer.value().get().lower(wh::agent::agent_graph_view::agent_output);
           if (memory_graph.has_error()) {
             return wh::core::result<wh::compose::graph>::failure(memory_graph.error());
           }

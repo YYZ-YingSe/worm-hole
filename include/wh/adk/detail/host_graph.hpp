@@ -529,7 +529,7 @@ inline auto append_visible_history(runtime_state &state,
 
 [[nodiscard]] inline auto lower_member_definition(wh::agent::agent &member)
     -> wh::core::result<host_member_definition> {
-  auto graph = member.lower();
+  auto graph = member.lower(wh::agent::agent_graph_view::agent_output);
   if (graph.has_error()) {
     return wh::core::result<host_member_definition>::failure(graph.error());
   }
@@ -820,7 +820,7 @@ template <typename children_t>
   auto lowered_definition = std::move(definition).value();
   auto bound = exported.value().bind_execution(
       nullptr,
-      [definition = std::move(lowered_definition)]() mutable
+      [definition = std::move(lowered_definition)](const wh::agent::agent_graph_view) mutable
           -> wh::core::result<wh::compose::graph> { return host_graph{*definition}.lower(); });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());

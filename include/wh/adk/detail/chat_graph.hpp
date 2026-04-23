@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "wh/adk/detail/agent_graph_view.hpp"
 #include "wh/adk/deterministic_transfer.hpp"
 #include "wh/agent/agent.hpp"
 #include "wh/agent/chat.hpp"
@@ -20,26 +21,6 @@
 namespace wh::adk::detail {
 
 namespace chat_detail {
-
-[[nodiscard]] inline auto read_model_messages(wh::compose::graph_stream_reader reader)
-    -> wh::core::result<std::vector<wh::schema::message>> {
-  auto values = wh::compose::collect_graph_stream_reader(std::move(reader));
-  if (values.has_error()) {
-    return wh::core::result<std::vector<wh::schema::message>>::failure(values.error());
-  }
-
-  std::vector<wh::schema::message> messages{};
-  messages.reserve(values.value().size());
-  for (auto &value : values.value()) {
-    auto *typed = wh::core::any_cast<wh::schema::message>(&value);
-    if (typed == nullptr) {
-      return wh::core::result<std::vector<wh::schema::message>>::failure(
-          wh::core::errc::type_mismatch);
-    }
-    messages.push_back(std::move(*typed));
-  }
-  return messages;
-}
 
 [[nodiscard]] inline auto make_instruction_message(const std::string_view description,
                                                    const std::string_view instruction)
@@ -88,6 +69,24 @@ inline auto write_output_value(wh::agent::agent_output &output, const std::strin
                                         wh::core::any{render_message_text(message)});
 }
 
+[[nodiscard]] inline auto make_agent_output(std::vector<wh::schema::message> messages,
+                                            const std::string_view output_key,
+                                            const wh::agent::chat_output_mode output_mode)
+    -> wh::core::result<wh::agent::agent_output> {
+  if (messages.empty()) {
+    return wh::core::result<wh::agent::agent_output>::failure(wh::core::errc::not_found);
+  }
+
+  auto final_message = messages.back();
+  wh::agent::agent_output output{
+      .final_message = final_message,
+      .history_messages = std::move(messages),
+      .transfer = wh::adk::extract_transfer_from_message(final_message),
+  };
+  write_output_value(output, output_key, output_mode, output.final_message);
+  return output;
+}
+
 } // namespace chat_detail
 
 /// Internal chat lowering shell that produces one real compose graph.
@@ -96,7 +95,28 @@ public:
   explicit chat_graph(const wh::agent::chat &authored) noexcept
       : authored_(std::addressof(authored)) {}
 
-  [[nodiscard]] auto lower() const -> wh::core::result<wh::compose::graph> {
+  [[nodiscard]] auto
+  lower(const wh::agent::agent_graph_view view = wh::agent::agent_graph_view::native) const
+      -> wh::core::result<wh::compose::graph> {
+    if (view == wh::agent::agent_graph_view::native) {
+      return lower_native();
+    }
+
+    auto native = lower_native();
+    if (native.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(native.error());
+    }
+    return wh::adk::detail::lower_agent_output_view(
+        std::string{authored_->name()}, std::move(native).value(),
+        [output_key = std::string{authored_->output_key()}, output_mode = authored_->output_mode()](
+            std::vector<wh::schema::message> messages,
+            wh::core::run_context &) -> wh::core::result<wh::agent::agent_output> {
+          return chat_detail::make_agent_output(std::move(messages), output_key, output_mode);
+        });
+  }
+
+private:
+  [[nodiscard]] auto lower_native() const -> wh::core::result<wh::compose::graph> {
     if (authored_ == nullptr) {
       return wh::core::result<wh::compose::graph>::failure(wh::core::errc::invalid_argument);
     }
@@ -108,11 +128,9 @@ public:
 
     auto description = std::string{authored_->description()};
     auto instruction = authored_->render_instruction();
-    auto output_key = std::string{authored_->output_key()};
-    const auto output_mode = authored_->output_mode();
-
     wh::compose::graph_compile_options compile_options{};
     compile_options.name = std::string{authored_->name()};
+    compile_options.boundary.output = wh::compose::node_contract::stream;
     wh::compose::chain lowered{std::move(compile_options)};
 
     auto prepare_request = wh::compose::make_lambda_node(
@@ -147,35 +165,6 @@ public:
       return wh::core::result<wh::compose::graph>::failure(model_added.error());
     }
 
-    auto finalize = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
-                                                  wh::compose::node_contract::value>(
-        "finalize",
-        [output_key = std::move(output_key), output_mode](
-            wh::compose::graph_stream_reader reader, wh::core::run_context &,
-            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          auto messages = chat_detail::read_model_messages(std::move(reader));
-          if (messages.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(messages.error());
-          }
-          if (messages.value().empty()) {
-            return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::not_found);
-          }
-
-          auto output_messages = std::move(messages).value();
-          auto final_message = output_messages.back();
-          wh::agent::agent_output output{
-              .final_message = final_message,
-              .history_messages = std::move(output_messages),
-              .transfer = wh::adk::extract_transfer_from_message(final_message),
-          };
-          chat_detail::write_output_value(output, output_key, output_mode, output.final_message);
-          return wh::compose::graph_value{std::move(output)};
-        });
-    auto finalize_added = lowered.append(std::move(finalize));
-    if (finalize_added.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(finalize_added.error());
-    }
-
     auto compiled = lowered.compile();
     if (compiled.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(compiled.error());
@@ -183,8 +172,6 @@ public:
 
     return std::move(lowered).release_graph();
   }
-
-private:
   const wh::agent::chat *authored_{nullptr};
 };
 
@@ -203,9 +190,9 @@ private:
 
   auto shell = std::make_unique<wh::agent::chat>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
-        return chat_graph{*shell}.lower();
-      });
+      nullptr,
+      [shell = std::move(shell)](const wh::agent::agent_graph_view view) mutable
+          -> wh::core::result<wh::compose::graph> { return chat_graph{*shell}.lower(view); });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }

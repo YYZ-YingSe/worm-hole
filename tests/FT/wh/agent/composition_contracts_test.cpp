@@ -53,8 +53,9 @@ namespace {
 [[nodiscard]] auto make_executable_agent(const std::string &name)
     -> wh::core::result<wh::agent::agent> {
   wh::agent::agent authored{name};
-  auto bound =
-      authored.bind_execution(nullptr, [name]() mutable -> wh::core::result<wh::compose::graph> {
+  auto bound = authored.bind_execution(
+      nullptr,
+      [name](const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
         return make_passthrough_graph(name + "_node");
       });
   if (bound.has_error()) {

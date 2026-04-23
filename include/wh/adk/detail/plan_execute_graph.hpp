@@ -282,15 +282,15 @@ public:
       return wh::core::result<wh::compose::graph>::failure(replanner.error());
     }
 
-    auto planner_graph = planner.value().get().lower();
+    auto planner_graph = planner.value().get().lower(wh::agent::agent_graph_view::agent_output);
     if (planner_graph.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(planner_graph.error());
     }
-    auto executor_graph = executor.value().get().lower();
+    auto executor_graph = executor.value().get().lower(wh::agent::agent_graph_view::agent_output);
     if (executor_graph.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(executor_graph.error());
     }
-    auto replanner_graph = replanner.value().get().lower();
+    auto replanner_graph = replanner.value().get().lower(wh::agent::agent_graph_view::agent_output);
     if (replanner_graph.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(replanner_graph.error());
     }
@@ -519,9 +519,9 @@ private:
   wh::agent::agent exported{std::string{authored.name()}};
   auto shell = std::make_unique<wh::agent::plan_execute>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
-        return plan_execute_graph{*shell}.lower();
-      });
+      nullptr,
+      [shell = std::move(shell)](const wh::agent::agent_graph_view) mutable
+          -> wh::core::result<wh::compose::graph> { return plan_execute_graph{*shell}.lower(); });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }

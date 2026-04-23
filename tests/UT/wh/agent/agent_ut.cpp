@@ -98,7 +98,7 @@ TEST_CASE("agent shell validates freeze lower and hook error paths",
         ++*freeze_calls;
         return {};
       },
-      []() -> wh::core::result<wh::compose::graph> {
+      [](const wh::agent::agent_graph_view) -> wh::core::result<wh::compose::graph> {
         return wh::testing::helper::make_passthrough_graph("exec_node");
       });
   REQUIRE(bound.has_value());
@@ -117,7 +117,7 @@ TEST_CASE("agent shell validates freeze lower and hook error paths",
       []() -> wh::core::result<void> {
         return wh::core::result<void>::failure(wh::core::errc::unavailable);
       },
-      []() -> wh::core::result<wh::compose::graph> {
+      [](const wh::agent::agent_graph_view) -> wh::core::result<wh::compose::graph> {
         return wh::testing::helper::make_passthrough_graph("freeze_error_node");
       });
   REQUIRE(freeze_error_bound.has_value());
@@ -150,15 +150,17 @@ TEST_CASE("agent shell rejects invalid mutations duplicate topology and missing 
   REQUIRE(root.add_child(wh::agent::agent{"late"}).has_error());
   REQUIRE(root.allow_transfer_to_child("late").has_error());
   REQUIRE(root.allow_transfer_to_parent().has_error());
-  REQUIRE(root.bind_execution(nullptr,
-                              []() -> wh::core::result<wh::compose::graph> {
-                                return wh::testing::helper::make_passthrough_graph("late_node");
-                              })
+  REQUIRE(root.bind_execution(
+                  nullptr,
+                  [](const wh::agent::agent_graph_view) -> wh::core::result<wh::compose::graph> {
+                    return wh::testing::helper::make_passthrough_graph("late_node");
+                  })
               .has_error());
-  REQUIRE(root.bind_execution(nullptr,
-                              []() -> wh::core::result<wh::compose::graph> {
-                                return wh::testing::helper::make_passthrough_graph("late_node");
-                              })
+  REQUIRE(root.bind_execution(
+                  nullptr,
+                  [](const wh::agent::agent_graph_view) -> wh::core::result<wh::compose::graph> {
+                    return wh::testing::helper::make_passthrough_graph("late_node");
+                  })
               .error() == wh::core::errc::contract_violation);
 }
 
@@ -167,7 +169,9 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
   wh::agent::agent named{"named"};
   const std::string copied_name = "named_node";
   auto copied_bound = named.bind_execution(
-      nullptr, [copied_name]() mutable -> wh::core::result<wh::compose::graph> {
+      nullptr,
+      [copied_name](
+          const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
         return wh::testing::helper::make_passthrough_graph(copied_name);
       });
   REQUIRE(copied_bound.has_value());
@@ -180,7 +184,8 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
   auto shell_name = std::make_unique<std::string>("move_only_node");
   auto move_only_bound = move_only.bind_execution(
       nullptr,
-      [shell_name = std::move(shell_name)]() mutable -> wh::core::result<wh::compose::graph> {
+      [shell_name = std::move(shell_name)](
+          const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
         return wh::testing::helper::make_passthrough_graph(*shell_name);
       });
   REQUIRE(move_only_bound.has_value());
@@ -194,9 +199,8 @@ TEST_CASE("agent shell bind_execution accepts lower hooks with copied and move-o
   wh::agent::agent prebuilt{"prebuilt"};
   auto prebuilt_bound = prebuilt.bind_execution(
       nullptr,
-      [graph = std::move(frozen_graph).value()]() mutable -> wh::core::result<wh::compose::graph> {
-        return graph;
-      });
+      [graph = std::move(frozen_graph).value()](const wh::agent::agent_graph_view) mutable
+          -> wh::core::result<wh::compose::graph> { return graph; });
   REQUIRE(prebuilt_bound.has_value());
   REQUIRE(prebuilt.freeze().has_value());
   auto prebuilt_graph = prebuilt.lower();
