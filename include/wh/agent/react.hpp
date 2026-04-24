@@ -10,13 +10,12 @@
 
 #include "wh/agent/agent.hpp"
 #include "wh/agent/instruction.hpp"
+#include "wh/agent/model_binding.hpp"
 #include "wh/agent/toolset.hpp"
-#include "wh/compose/node/component.hpp"
 #include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
-#include "wh/model/chat_model.hpp"
 #include "wh/schema/message.hpp"
 
 namespace wh::agent {
@@ -210,31 +209,27 @@ public:
     return {};
   }
 
-  template <wh::model::chat_model_like model_t>
-  /// Installs the chat-model leaf component used by this ReAct shell.
-  auto set_model(model_t &&model) -> wh::core::result<void> {
+  /// Installs the semantic model binding used by this ReAct shell.
+  auto set_model(wh::agent::model_binding binding) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
     }
-    model_node_.emplace(wh::compose::make_component_node<wh::compose::component_kind::model,
-                                                         wh::compose::node_contract::value,
-                                                         wh::compose::node_contract::stream>(
-        react_model_node_key, std::forward<model_t>(model)));
+    model_binding_ = std::move(binding);
     return {};
   }
 
   /// Returns the frozen toolset surface.
   [[nodiscard]] auto tools() const noexcept -> const wh::agent::toolset & { return tools_; }
 
-  /// Returns the frozen model node used by this shell.
-  [[nodiscard]] auto model_node() const
-      -> wh::core::result<std::reference_wrapper<const wh::compose::component_node>> {
-    if (!model_node_.has_value()) {
-      return wh::core::result<std::reference_wrapper<const wh::compose::component_node>>::failure(
+  /// Returns the semantic model binding used by this shell.
+  [[nodiscard]] auto model_binding() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::model_binding>> {
+    if (!model_binding_.has_value()) {
+      return wh::core::result<std::reference_wrapper<const wh::agent::model_binding>>::failure(
           wh::core::errc::not_found);
     }
-    return std::cref(*model_node_);
+    return std::cref(*model_binding_);
   }
 
   /// Returns the configured maximum iterations.
@@ -257,8 +252,13 @@ public:
     if (name_.empty() || description_.empty()) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
     }
-    if (!model_node_.has_value()) {
+    if (!model_binding_.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+    auto binding_status = wh::agent::validate_model_binding(
+        *model_binding_, wh::compose::node_contract::value, wh::compose::node_contract::stream);
+    if (binding_status.has_error()) {
+      return binding_status;
     }
     if (max_iterations_ == 0U) {
       return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
@@ -281,7 +281,7 @@ private:
   std::string name_{};
   std::string description_{};
   wh::agent::instruction instruction_{};
-  std::optional<wh::compose::component_node> model_node_{};
+  std::optional<wh::agent::model_binding> model_binding_{};
   wh::agent::toolset tools_{};
   std::size_t max_iterations_{20U};
   std::string output_key_{};

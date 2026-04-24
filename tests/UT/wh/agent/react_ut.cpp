@@ -6,6 +6,23 @@
 #include "wh/agent/bind.hpp"
 #include "wh/agent/react.hpp"
 
+namespace {
+
+template <typename shell_t>
+concept raw_model_settable = requires(shell_t shell, wh::testing::helper::sync_probe_model model) {
+  shell.set_model(std::move(model));
+};
+
+template <typename shell_t>
+concept binding_settable = requires(shell_t shell, wh::agent::model_binding binding) {
+  shell.set_model(std::move(binding));
+};
+
+static_assert(!raw_model_settable<wh::agent::react>);
+static_assert(binding_settable<wh::agent::react>);
+
+} // namespace
+
 TEST_CASE("react shell records tool authoring model policy and lowers into executable agent",
           "[UT][wh/agent/react.hpp][react::freeze][condition][branch][boundary]") {
   REQUIRE(wh::agent::react_model_node_key == "__react_model__");
@@ -17,7 +34,7 @@ TEST_CASE("react shell records tool authoring model policy and lowers into execu
   REQUIRE(authored.max_iterations() == 20U);
   REQUIRE(authored.output_key().empty());
   REQUIRE(authored.output_mode() == wh::agent::react_output_mode::value);
-  REQUIRE(authored.model_node().has_error());
+  REQUIRE(authored.model_binding().has_error());
 
   REQUIRE(authored.append_instruction("system").has_value());
   REQUIRE(authored.replace_instruction("override").has_value());
@@ -49,8 +66,10 @@ TEST_CASE("react shell records tool authoring model policy and lowers into execu
   REQUIRE(authored.tools().node_options().has_value());
 
   auto state = std::make_shared<wh::testing::helper::probe_model_state>();
-  REQUIRE(authored.set_model(wh::testing::helper::sync_probe_model{state}).has_value());
-  REQUIRE(authored.model_node().has_value());
+  REQUIRE(authored.set_model(wh::testing::helper::make_sync_probe_model_binding(
+                                 wh::testing::helper::sync_probe_model{state}))
+              .has_value());
+  REQUIRE(authored.model_binding().has_value());
   REQUIRE(authored.freeze().has_value());
 
   auto lowered = std::move(authored).into_agent();
@@ -110,7 +129,8 @@ TEST_CASE("react shell enforces model and tools node options and blocks late mut
   REQUIRE(missing_model_freeze.error() == wh::core::errc::not_found);
 
   wh::agent::react missing_node_options{"react", "assistant"};
-  REQUIRE(missing_node_options.set_model(wh::testing::helper::sync_probe_model{}).has_value());
+  REQUIRE(missing_node_options.set_model(wh::testing::helper::make_sync_probe_model_binding())
+              .has_value());
   auto missing_node_options_freeze = missing_node_options.freeze();
   REQUIRE(missing_node_options_freeze.has_error());
   REQUIRE(missing_node_options_freeze.error() == wh::core::errc::contract_violation);
@@ -124,5 +144,13 @@ TEST_CASE("react shell enforces model and tools node options and blocks late mut
   REQUIRE(frozen.set_max_iterations(2U).has_error());
   REQUIRE(frozen.set_output_key("late").has_error());
   REQUIRE(frozen.set_output_mode(wh::agent::react_output_mode::value).has_error());
-  REQUIRE(frozen.set_model(wh::testing::helper::sync_probe_model{}).has_error());
+  REQUIRE(frozen.set_model(wh::testing::helper::make_sync_probe_model_binding()).has_error());
+}
+
+TEST_CASE("react shell accepts async model bindings with the same native boundary",
+          "[UT][wh/agent/react.hpp][react::set_model][async][boundary]") {
+  wh::agent::react authored{"react", "assistant"};
+  REQUIRE(authored.set_tools_node_options({}).has_value());
+  REQUIRE(authored.set_model(wh::testing::helper::make_async_probe_model_binding()).has_value());
+  REQUIRE(authored.freeze().has_value());
 }

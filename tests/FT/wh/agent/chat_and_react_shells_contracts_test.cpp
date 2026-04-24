@@ -145,7 +145,11 @@ TEST_CASE("react shell public binding executes real tool-call loop before final 
   auto state = std::make_shared<scripted_react_model_state>();
 
   wh::agent::react authored{"react-loop", "assistant"};
-  REQUIRE(authored.set_model(scripted_react_model{state}).has_value());
+  REQUIRE(authored
+              .set_model(wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                                       wh::compose::node_contract::stream>(
+                  scripted_react_model{state}))
+              .has_value());
   REQUIRE(authored.set_tools_node_options(wh::agent::tools_node_authoring_options{}).has_value());
   REQUIRE(authored.set_output_key("final").has_value());
   REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
