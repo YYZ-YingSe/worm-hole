@@ -502,7 +502,12 @@ private:
       return wh::core::result<wh::compose::graph>::failure(wh::core::errc::invalid_argument);
     }
 
-    auto model_node = authored_->model_node();
+    auto model_binding = authored_->model_binding();
+    if (model_binding.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(model_binding.error());
+    }
+    auto model_node =
+        model_binding.value().get().materialize(std::string{wh::agent::react_model_node_key});
     if (model_node.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(model_node.error());
     }
@@ -567,7 +572,7 @@ private:
       return wh::core::result<wh::compose::graph>::failure(prepare_request_added.error());
     }
 
-    auto model_added = lowered.add_component(model_node.value().get());
+    auto model_added = lowered.add_component(std::move(model_node).value());
     if (model_added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(model_added.error());
     }

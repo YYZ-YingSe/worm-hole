@@ -14,6 +14,29 @@ struct probe_state {
   std::size_t bind_calls{0U};
 };
 
+class bind_only_model {
+public:
+  explicit bind_only_model(std::shared_ptr<probe_state> state,
+                           std::vector<wh::schema::tool_schema_definition> tools = {})
+      : state_(std::move(state)), bound_tools_(std::move(tools)) {}
+
+  [[nodiscard]] auto bind_tools(std::span<const wh::schema::tool_schema_definition> tools) const
+      -> bind_only_model {
+    ++state_->bind_calls;
+    return bind_only_model{
+        state_, std::vector<wh::schema::tool_schema_definition>{tools.begin(), tools.end()}};
+  }
+
+  [[nodiscard]] auto bound_tools() const noexcept
+      -> const std::vector<wh::schema::tool_schema_definition> & {
+    return bound_tools_;
+  }
+
+private:
+  std::shared_ptr<probe_state> state_{};
+  std::vector<wh::schema::tool_schema_definition> bound_tools_{};
+};
+
 class sync_probe_model_impl {
 public:
   explicit sync_probe_model_impl(std::shared_ptr<probe_state> state,
@@ -69,6 +92,8 @@ struct sync_tool {
 };
 
 } // namespace
+
+static_assert(wh::agent::tool_bindable_model<bind_only_model>);
 
 TEST_CASE(
     "agent options resolve structured-output strategy to model policy",
@@ -154,4 +179,18 @@ TEST_CASE("agent options bind_model_tools skips empty schema lists and rebinds n
   REQUIRE(state->bind_calls == 1U);
   REQUIRE(rebound->bound_tools().size() == 1U);
   REQUIRE(rebound->bound_tools().front().name == "search");
+}
+
+TEST_CASE("agent options bind_model_tools only requires bind_tools rather than chat_model_like",
+          "[UT][wh/agent/options.hpp][bind_model_tools][concept][boundary]") {
+  auto state = std::make_shared<probe_state>();
+  bind_only_model model{state};
+
+  const std::array<wh::schema::tool_schema_definition, 1> schemas{{
+      {.name = "search", .description = "lookup"},
+  }};
+  auto rebound = wh::agent::bind_model_tools(model, schemas);
+  REQUIRE(rebound.has_value());
+  REQUIRE(state->bind_calls == 1U);
+  REQUIRE(rebound->bound_tools().size() == 1U);
 }

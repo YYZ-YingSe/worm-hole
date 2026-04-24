@@ -107,7 +107,13 @@ make_tool_binding_pair(const tool_t &tool, const wh::agent::tool_registration re
   };
 }
 
-template <wh::model::chat_model_like model_t>
+template <typename model_t>
+concept tool_bindable_model =
+    requires(const model_t &model, std::span<const wh::schema::tool_schema_definition> tools) {
+      { model.bind_tools(tools) } -> std::same_as<std::remove_cvref_t<model_t>>;
+    };
+
+template <tool_bindable_model model_t>
 [[nodiscard]] inline auto
 bind_model_tools(const model_t &model,
                  const std::span<const wh::schema::tool_schema_definition> tools)

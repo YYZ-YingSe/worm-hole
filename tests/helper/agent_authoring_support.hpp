@@ -11,6 +11,7 @@
 
 #include "wh/agent/bind.hpp"
 #include "wh/agent/chat.hpp"
+#include "wh/agent/model_binding.hpp"
 #include "wh/agent/plan_execute.hpp"
 #include "wh/agent/react.hpp"
 #include "wh/agent/reflexion.hpp"
@@ -296,6 +297,58 @@ private:
   wh::model::chat_model_options options_{};
 };
 
+class async_probe_model {
+public:
+  explicit async_probe_model(
+      std::shared_ptr<probe_model_state> state = std::make_shared<probe_model_state>(),
+      std::vector<wh::schema::tool_schema_definition> tools = {})
+      : state_(std::move(state)), bound_tools_(std::move(tools)) {}
+
+  [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
+    return {"AsyncProbeModel", wh::core::component_kind::model};
+  }
+
+  [[nodiscard]] auto async_stream(wh::model::chat_request, wh::core::run_context &) const {
+    return stdexec::just(wh::model::chat_message_stream_result{
+        wh::model::chat_message_stream_reader{wh::schema::stream::make_values_stream_reader(
+            std::vector<wh::schema::message>{
+                make_text_message(wh::schema::message_role::assistant, "ok")})}});
+  }
+
+  [[nodiscard]] auto bind_tools(std::span<const wh::schema::tool_schema_definition> tools) const
+      -> async_probe_model {
+    ++state_->bind_calls;
+    return async_probe_model{
+        state_, std::vector<wh::schema::tool_schema_definition>{tools.begin(), tools.end()}};
+  }
+
+  [[nodiscard]] auto bound_tools() const noexcept
+      -> const std::vector<wh::schema::tool_schema_definition> & {
+    return bound_tools_;
+  }
+
+  [[nodiscard]] auto state() const noexcept -> const std::shared_ptr<probe_model_state> & {
+    return state_;
+  }
+
+private:
+  std::shared_ptr<probe_model_state> state_{};
+  std::vector<wh::schema::tool_schema_definition> bound_tools_{};
+};
+
+[[nodiscard]] inline auto make_sync_probe_model_binding(
+    sync_probe_model model = sync_probe_model{}) -> wh::agent::model_binding {
+  return wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                       wh::compose::node_contract::stream>(std::move(model));
+}
+
+[[nodiscard]] inline auto make_async_probe_model_binding(
+    async_probe_model model = async_probe_model{}) -> wh::agent::model_binding {
+  return wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                       wh::compose::node_contract::stream,
+                                       wh::compose::node_exec_mode::async>(std::move(model));
+}
+
 struct sync_tool {
   wh::schema::tool_schema_definition schema_value{
       .name = "sync",
@@ -333,14 +386,14 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_chat(std::string name, std::string description)
     -> wh::agent::chat {
   wh::agent::chat authored{std::move(name), std::move(description)};
-  [[maybe_unused]] const auto model_status = authored.set_model(sync_probe_model{});
+  [[maybe_unused]] const auto model_status = authored.set_model(make_sync_probe_model_binding());
   return authored;
 }
 
 [[nodiscard]] inline auto make_configured_react(std::string name, std::string description)
     -> wh::agent::react {
   wh::agent::react authored{std::move(name), std::move(description)};
-  [[maybe_unused]] const auto model_status = authored.set_model(sync_probe_model{});
+  [[maybe_unused]] const auto model_status = authored.set_model(make_sync_probe_model_binding());
   [[maybe_unused]] const auto options_status =
       authored.set_tools_node_options(wh::agent::tools_node_authoring_options{});
   return authored;
