@@ -43,8 +43,9 @@ TEST_CASE("chat shell binds model instruction output controls and lowers into ex
   REQUIRE(authored.output_mode() == wh::agent::chat_output_mode::text);
 
   auto model_state = std::make_shared<wh::testing::helper::probe_model_state>();
-  REQUIRE(authored.set_model(wh::testing::helper::make_sync_probe_model_binding(
-                                 wh::testing::helper::sync_probe_model{model_state}))
+  REQUIRE(authored
+              .set_model(wh::testing::helper::make_sync_probe_model_binding(
+                  wh::testing::helper::sync_probe_model{model_state}))
               .has_value());
   REQUIRE(authored.model_binding().has_value());
   REQUIRE(authored.freeze().has_value());
@@ -85,4 +86,17 @@ TEST_CASE("chat shell accepts async model bindings with the same native boundary
   wh::agent::chat authored{"chat", "assistant"};
   REQUIRE(authored.set_model(wh::testing::helper::make_async_probe_model_binding()).has_value());
   REQUIRE(authored.freeze().has_value());
+}
+
+TEST_CASE("chat shell accepts value model bindings without shell-level contract narrowing",
+          "[UT][wh/agent/chat.hpp][chat::freeze][value-output][boundary]") {
+  wh::agent::chat sync_authored{"chat-sync-value", "assistant"};
+  REQUIRE(sync_authored.set_model(wh::testing::helper::make_sync_probe_model_value_binding())
+              .has_value());
+  REQUIRE(sync_authored.freeze().has_value());
+
+  wh::agent::chat async_authored{"chat-async-value", "assistant"};
+  REQUIRE(async_authored.set_model(wh::testing::helper::make_async_probe_model_value_binding())
+              .has_value());
+  REQUIRE(async_authored.freeze().has_value());
 }

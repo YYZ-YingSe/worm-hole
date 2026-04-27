@@ -76,9 +76,8 @@ TEST_CASE("revision detail helpers expose runtime context payload readers and sh
   REQUIRE(invalid_output.error() == wh::core::errc::type_mismatch);
 
   wh::compose::graph_process_state parent{};
-  REQUIRE(
-      parent.emplace_workflow_state<runtime_state>(runtime_state{.remaining_iterations = 5U})
-          .has_value());
+  REQUIRE(parent.emplace_workflow_state<runtime_state>(runtime_state{.remaining_iterations = 5U})
+              .has_value());
   wh::compose::graph_process_state child{&parent};
   auto shared = wh::adk::detail::revision_detail::read_state(child);
   REQUIRE(shared.has_value());
@@ -188,6 +187,34 @@ TEST_CASE(
   auto lowered_with_memory = wh::adk::detail::revision_detail::lower_graph(std::move(config));
   REQUIRE(lowered_with_memory.has_value());
   REQUIRE(lowered_with_memory->compile().has_value());
+
+  auto mixed_draft = wh::testing::helper::make_fixed_message_graph(
+      "draft_stream_node", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "draft"));
+  auto mixed_review = wh::testing::helper::make_fixed_message_graph(
+      "review_stream_node", wh::compose::node_contract::value, wh::compose::node_contract::stream,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "review"));
+  auto mixed_memory = wh::testing::helper::make_fixed_message_graph(
+      "memory_stream_node", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "memory"));
+  REQUIRE(mixed_draft.has_value());
+  REQUIRE(mixed_review.has_value());
+  REQUIRE(mixed_memory.has_value());
+  auto mixed_lowered =
+      wh::adk::detail::revision_detail::lower_graph(wh::adk::detail::revision_detail::graph_config{
+          .graph_name = "revision-mixed",
+          .max_iterations = 2U,
+          .draft_request_builder = wh::testing::helper::make_revision_request_builder(),
+          .review_request_builder = wh::testing::helper::make_revision_request_builder(),
+          .review_decision_reader = wh::testing::helper::make_review_decision_reader(
+              wh::agent::review_decision_kind::accept),
+          .draft_graph = std::move(mixed_draft).value(),
+          .review_graph = std::move(mixed_review).value(),
+          .memory_request_builder = wh::testing::helper::make_revision_request_builder(),
+          .memory_graph = std::move(mixed_memory).value(),
+      });
+  REQUIRE(mixed_lowered.has_value());
+  REQUIRE(mixed_lowered->compile().has_value());
 
   auto self_refine = wh::testing::helper::make_configured_self_refine("self-refine");
   REQUIRE(self_refine.has_value());

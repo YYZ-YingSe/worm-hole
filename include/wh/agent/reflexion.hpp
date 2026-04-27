@@ -2,13 +2,16 @@
 // memory-writer roles without creating runtime behavior.
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
-#include "wh/agent/agent.hpp"
 #include "wh/agent/revision.hpp"
+#include "wh/agent/role_binding.hpp"
 #include "wh/core/result.hpp"
 
 namespace wh::agent {
@@ -33,18 +36,36 @@ public:
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
   /// Installs the actor role before freeze.
-  auto set_actor(agent &&actor) -> wh::core::result<void> {
+  auto set_actor(wh::agent::role_binding actor) -> wh::core::result<void> {
     return set_role(actor_, std::move(actor));
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_actor(role_t &&actor) -> wh::core::result<void> {
+    return set_actor(wh::agent::make_role_binding(std::forward<role_t>(actor)));
+  }
+
   /// Installs the critic role before freeze.
-  auto set_critic(agent &&critic) -> wh::core::result<void> {
+  auto set_critic(wh::agent::role_binding critic) -> wh::core::result<void> {
     return set_role(critic_, std::move(critic));
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_critic(role_t &&critic) -> wh::core::result<void> {
+    return set_critic(wh::agent::make_role_binding(std::forward<role_t>(critic)));
+  }
+
   /// Installs the optional memory-writer role before freeze.
-  auto set_memory_writer(agent &&memory_writer) -> wh::core::result<void> {
+  auto set_memory_writer(wh::agent::role_binding memory_writer) -> wh::core::result<void> {
     return set_role(memory_writer_, std::move(memory_writer));
+  }
+
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_memory_writer(role_t &&memory_writer) -> wh::core::result<void> {
+    return set_memory_writer(wh::agent::make_role_binding(std::forward<role_t>(memory_writer)));
   }
 
   /// Replaces the maximum reflection iterations. Zero falls back to one.
@@ -114,33 +135,36 @@ public:
   [[nodiscard]] auto max_iterations() const noexcept -> std::size_t { return max_iterations_; }
 
   /// Returns the actor role.
-  [[nodiscard]] auto actor() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto actor() -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(actor_);
   }
 
   /// Returns the actor role.
-  [[nodiscard]] auto actor() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto actor() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(actor_);
   }
 
   /// Returns the critic role.
-  [[nodiscard]] auto critic() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto critic() -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(critic_);
   }
 
   /// Returns the critic role.
-  [[nodiscard]] auto critic() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto critic() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(critic_);
   }
 
   /// Returns the optional memory-writer role.
-  [[nodiscard]] auto memory_writer() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto memory_writer()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(memory_writer_);
   }
 
   /// Returns the optional memory-writer role.
   [[nodiscard]] auto memory_writer() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(memory_writer_);
   }
 
@@ -208,7 +232,8 @@ public:
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:
-  auto set_role(std::optional<agent> &slot, agent &&value) -> wh::core::result<void> {
+  auto set_role(std::optional<wh::agent::role_binding> &slot, wh::agent::role_binding value)
+      -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -220,19 +245,20 @@ private:
     return {};
   }
 
-  [[nodiscard]] static auto role_ref(const std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] static auto role_ref(const std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<const agent>>::failure(
+      return wh::core::result<std::reference_wrapper<const wh::agent::role_binding>>::failure(
           wh::core::errc::not_found);
     }
     return std::cref(*slot);
   }
 
-  [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] static auto role_ref(std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<wh::agent::role_binding>>::failure(
+          wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
@@ -245,9 +271,9 @@ private:
   }
 
   std::string name_{};
-  std::optional<agent> actor_{};
-  std::optional<agent> critic_{};
-  std::optional<agent> memory_writer_{};
+  std::optional<wh::agent::role_binding> actor_{};
+  std::optional<wh::agent::role_binding> critic_{};
+  std::optional<wh::agent::role_binding> memory_writer_{};
   std::size_t max_iterations_{3U};
   revision_request_builder actor_request_builder_{nullptr};
   revision_request_builder critic_request_builder_{nullptr};

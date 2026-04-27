@@ -11,7 +11,6 @@
 namespace {
 
 using wh::testing::helper::invoke_agent_graph;
-using wh::testing::helper::make_executable_chat_agent;
 using wh::testing::helper::make_text_message;
 using wh::testing::helper::message_text;
 
@@ -19,11 +18,17 @@ using wh::testing::helper::message_text;
 
 TEST_CASE("plan execute shell public binding executes planner executor and replanner loop",
           "[core][agent][plan_execute][functional]") {
-  auto planner = make_executable_chat_agent("planner");
+  auto planner = wh::testing::helper::make_executable_message_agent(
+      "planner", wh::compose::node_contract::value, wh::compose::node_contract::stream,
+      make_text_message(wh::schema::message_role::assistant, "plan ready"));
   REQUIRE(planner.has_value());
-  auto executor = make_executable_chat_agent("executor");
+  auto executor = wh::testing::helper::make_executable_message_agent(
+      "executor", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      make_text_message(wh::schema::message_role::assistant, "step done"));
   REQUIRE(executor.has_value());
-  auto replanner = make_executable_chat_agent("replanner");
+  auto replanner = wh::testing::helper::make_executable_message_agent(
+      "replanner", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      make_text_message(wh::schema::message_role::assistant, "replan"));
   REQUIRE(replanner.has_value());
 
   auto planner_requests = std::make_shared<std::size_t>(0U);
@@ -140,7 +145,9 @@ TEST_CASE("plan execute shell public binding executes planner executor and repla
 
 TEST_CASE("self refine shell public binding executes worker fallback reviewer path",
           "[core][agent][self_refine][functional]") {
-  auto worker = make_executable_chat_agent("worker");
+  auto worker = wh::testing::helper::make_executable_message_agent(
+      "worker", wh::compose::node_contract::value, wh::compose::node_contract::stream,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(worker.has_value());
 
   auto worker_requests = std::make_shared<std::size_t>(0U);
@@ -212,7 +219,9 @@ TEST_CASE("self refine shell public binding executes worker fallback reviewer pa
 
 TEST_CASE("self refine shell public binding executes revise loop before final output",
           "[core][agent][self_refine][functional]") {
-  auto worker = make_executable_chat_agent("worker");
+  auto worker = wh::testing::helper::make_executable_message_agent(
+      "worker", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(worker.has_value());
 
   auto worker_requests = std::make_shared<std::size_t>(0U);
@@ -304,9 +313,13 @@ TEST_CASE("self refine shell public binding executes revise loop before final ou
 
 TEST_CASE("reviewer executor shell public binding executes accepted executor draft",
           "[core][agent][reviewer_executor][functional]") {
-  auto reviewer = make_executable_chat_agent("reviewer");
+  auto reviewer = wh::testing::helper::make_executable_message_agent(
+      "reviewer", wh::compose::node_contract::value, wh::compose::node_contract::stream,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(reviewer.has_value());
-  auto executor = make_executable_chat_agent("executor");
+  auto executor = wh::testing::helper::make_executable_message_agent(
+      "executor", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(executor.has_value());
 
   auto executor_requests = std::make_shared<std::size_t>(0U);
@@ -379,9 +392,13 @@ TEST_CASE("reviewer executor shell public binding executes accepted executor dra
 
 TEST_CASE("reviewer executor shell public binding executes revise loop before final output",
           "[core][agent][reviewer_executor][functional]") {
-  auto reviewer = make_executable_chat_agent("reviewer");
+  auto reviewer = wh::testing::helper::make_executable_message_agent(
+      "reviewer", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(reviewer.has_value());
-  auto executor = make_executable_chat_agent("executor");
+  auto executor = wh::testing::helper::make_executable_message_agent(
+      "executor", wh::compose::node_contract::value, wh::compose::node_contract::value,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(executor.has_value());
 
   auto executor_requests = std::make_shared<std::size_t>(0U);
@@ -474,11 +491,17 @@ TEST_CASE("reviewer executor shell public binding executes revise loop before fi
 
 TEST_CASE("reflexion shell public binding executes optional memory writer path",
           "[core][agent][reflexion][functional]") {
-  auto actor = make_executable_chat_agent("actor");
+  auto actor = wh::testing::helper::make_executable_message_agent(
+      "actor", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(actor.has_value());
-  auto critic = make_executable_chat_agent("critic");
+  auto critic = wh::testing::helper::make_executable_message_agent(
+      "critic", wh::compose::node_contract::value, wh::compose::node_contract::stream,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(critic.has_value());
-  auto memory = make_executable_chat_agent("memory");
+  auto memory = wh::testing::helper::make_executable_message_agent(
+      "memory", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      make_text_message(wh::schema::message_role::assistant, "ok"));
   REQUIRE(memory.has_value());
 
   auto actor_requests = std::make_shared<std::size_t>(0U);

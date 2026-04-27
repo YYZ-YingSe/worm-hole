@@ -49,14 +49,6 @@ template <typename value_t>
 using output_reader = wh::core::callback_function<wh::core::result<value_t>(
     const agent_output &, wh::core::run_context &) const>;
 
-/// Named lowering view requested from one executable agent graph.
-enum class agent_graph_view : std::uint8_t {
-  /// Business-native graph boundary exposed by the authored shell.
-  native = 0U,
-  /// Canonical `agent_output` boundary used by composed agent families.
-  agent_output,
-};
-
 /// Mutable authored agent entity with child topology, instruction fragments,
 /// and transfer whitelist rules that freeze before execution.
 class agent {
@@ -65,8 +57,7 @@ public:
   using freeze_hook = wh::core::move_only_function<wh::core::result<void>()>;
 
   /// Lower hook that materializes one frozen executable agent into one graph.
-  using lower_hook =
-      wh::core::move_only_function<wh::core::result<wh::compose::graph>(agent_graph_view)>;
+  using lower_hook = wh::core::move_only_function<wh::core::result<wh::compose::graph>()>;
 
   /// Stores one authored agent name.
   explicit agent(std::string name) noexcept : name_(std::move(name)) {}
@@ -278,16 +269,15 @@ public:
     return {};
   }
 
-  /// Lowers this frozen executable agent into one compose graph view.
-  [[nodiscard]] auto lower(const agent_graph_view view = agent_graph_view::agent_output) const
-      -> wh::core::result<wh::compose::graph> {
+  /// Lowers this frozen executable agent into its native compose graph surface.
+  [[nodiscard]] auto lower() const -> wh::core::result<wh::compose::graph> {
     if (!frozen_) {
       return wh::core::result<wh::compose::graph>::failure(wh::core::errc::contract_violation);
     }
     if (!lower_) {
       return wh::core::result<wh::compose::graph>::failure(wh::core::errc::not_supported);
     }
-    return lower_(view);
+    return lower_();
   }
 
 private:

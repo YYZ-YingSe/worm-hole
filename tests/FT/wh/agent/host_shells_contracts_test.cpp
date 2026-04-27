@@ -6,26 +6,13 @@
 
 TEST_CASE("research shell public binding executes lead transfer into specialist",
           "[core][agent][research][functional]") {
-  wh::agent::agent_output lead_output{};
-  lead_output.final_message = wh::adk::make_transfer_tool_message("specialist", "call-1");
-  lead_output.history_messages.push_back(
-      wh::adk::make_transfer_assistant_message("specialist", "call-1"));
-  lead_output.history_messages.push_back(
+  auto lead = wh::testing::helper::make_executable_message_agent(
+      "research", wh::compose::node_contract::value, wh::compose::node_contract::value,
       wh::adk::make_transfer_tool_message("specialist", "call-1"));
-  lead_output.transfer = wh::agent::agent_transfer{
-      .target_agent_name = "specialist",
-      .tool_call_id = "call-1",
-  };
-
-  wh::agent::agent_output specialist_output{};
-  specialist_output.final_message =
-      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "research done");
-  specialist_output.history_messages.push_back(specialist_output.final_message);
-
-  auto lead = wh::testing::helper::make_fixed_output_agent("research", std::move(lead_output));
   REQUIRE(lead.has_value());
-  auto specialist =
-      wh::testing::helper::make_fixed_output_agent("specialist", std::move(specialist_output));
+  auto specialist = wh::testing::helper::make_executable_message_agent(
+      "specialist", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "research done"));
   REQUIRE(specialist.has_value());
 
   wh::agent::research authored{"research"};
@@ -54,24 +41,13 @@ TEST_CASE("research shell public binding executes lead transfer into specialist"
 
 TEST_CASE("swarm shell public binding executes host transfer into peer",
           "[core][agent][swarm][functional]") {
-  wh::agent::agent_output host_output{};
-  host_output.final_message = wh::adk::make_transfer_tool_message("peer", "call-1");
-  host_output.history_messages.push_back(
-      wh::adk::make_transfer_assistant_message("peer", "call-1"));
-  host_output.history_messages.push_back(wh::adk::make_transfer_tool_message("peer", "call-1"));
-  host_output.transfer = wh::agent::agent_transfer{
-      .target_agent_name = "peer",
-      .tool_call_id = "call-1",
-  };
-
-  wh::agent::agent_output peer_output{};
-  peer_output.final_message =
-      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "swarm done");
-  peer_output.history_messages.push_back(peer_output.final_message);
-
-  auto host = wh::testing::helper::make_fixed_output_agent("swarm", std::move(host_output));
+  auto host = wh::testing::helper::make_executable_message_agent(
+      "swarm", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      wh::adk::make_transfer_tool_message("peer", "call-1"));
   REQUIRE(host.has_value());
-  auto peer = wh::testing::helper::make_fixed_output_agent("peer", std::move(peer_output));
+  auto peer = wh::testing::helper::make_executable_message_agent(
+      "peer", wh::compose::node_contract::value, wh::compose::node_contract::value,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "swarm done"));
   REQUIRE(peer.has_value());
 
   wh::agent::swarm authored{"swarm"};

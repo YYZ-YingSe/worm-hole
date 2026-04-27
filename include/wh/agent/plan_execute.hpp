@@ -2,12 +2,16 @@
 // replanner roles without introducing runtime behavior.
 #pragma once
 
+#include <concepts>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "wh/agent/agent.hpp"
+#include "wh/agent/role_binding.hpp"
 #include "wh/core/result.hpp"
 #include "wh/schema/message.hpp"
 
@@ -183,52 +187,77 @@ public:
   }
 
   /// Installs the planner role before freeze.
-  auto set_planner(agent &&planner) -> wh::core::result<void> {
+  auto set_planner(wh::agent::role_binding planner) -> wh::core::result<void> {
     return set_role(planner_, std::move(planner));
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_planner(role_t &&planner) -> wh::core::result<void> {
+    return set_planner(wh::agent::make_role_binding(std::forward<role_t>(planner)));
+  }
+
   /// Installs the executor role before freeze.
-  auto set_executor(agent &&executor) -> wh::core::result<void> {
+  auto set_executor(wh::agent::role_binding executor) -> wh::core::result<void> {
     return set_role(executor_, std::move(executor));
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_executor(role_t &&executor) -> wh::core::result<void> {
+    return set_executor(wh::agent::make_role_binding(std::forward<role_t>(executor)));
+  }
+
   /// Installs the optional replanner role before freeze.
-  auto set_replanner(agent &&replanner) -> wh::core::result<void> {
+  auto set_replanner(wh::agent::role_binding replanner) -> wh::core::result<void> {
     return set_role(replanner_, std::move(replanner));
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_replanner(role_t &&replanner) -> wh::core::result<void> {
+    return set_replanner(wh::agent::make_role_binding(std::forward<role_t>(replanner)));
+  }
+
   /// Returns the frozen planner role.
-  [[nodiscard]] auto planner() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto planner()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(planner_);
   }
 
   /// Returns the frozen planner role.
-  [[nodiscard]] auto planner() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto planner() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(planner_);
   }
 
   /// Returns the frozen executor role.
-  [[nodiscard]] auto executor() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto executor()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(executor_);
   }
 
   /// Returns the frozen executor role.
-  [[nodiscard]] auto executor() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto executor() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(executor_);
   }
 
   /// Returns the optional replanner role when present.
-  [[nodiscard]] auto replanner() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto replanner()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(replanner_);
   }
 
   /// Returns the optional replanner role when present.
-  [[nodiscard]] auto replanner() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto replanner() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(replanner_);
   }
 
   /// Returns the effective replanner role, falling back to planner.
-  [[nodiscard]] auto effective_replanner() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto effective_replanner()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (replanner_.has_value()) {
       return std::ref(*replanner_);
     }
@@ -237,7 +266,7 @@ public:
 
   /// Returns the effective replanner role, falling back to planner.
   [[nodiscard]] auto effective_replanner() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (replanner_.has_value()) {
       return std::cref(*replanner_);
     }
@@ -342,7 +371,8 @@ public:
 
 private:
   /// Installs one role before freeze.
-  auto set_role(std::optional<agent> &slot, agent &&value) -> wh::core::result<void> {
+  auto set_role(std::optional<wh::agent::role_binding> &slot, wh::agent::role_binding value)
+      -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -355,19 +385,20 @@ private:
   }
 
   /// Returns one installed role by mutable reference.
-  [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] static auto role_ref(std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<wh::agent::role_binding>>::failure(
+          wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
 
   /// Returns one installed role by reference.
-  [[nodiscard]] static auto role_ref(const std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] static auto role_ref(const std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<const agent>>::failure(
+      return wh::core::result<std::reference_wrapper<const wh::agent::role_binding>>::failure(
           wh::core::errc::not_found);
     }
     return std::cref(*slot);
@@ -384,11 +415,11 @@ private:
   /// Stable authored shell name.
   std::string name_{};
   /// Planner role used to author planning turns.
-  std::optional<agent> planner_{};
+  std::optional<wh::agent::role_binding> planner_{};
   /// Executor role used to author execution turns.
-  std::optional<agent> executor_{};
+  std::optional<wh::agent::role_binding> executor_{};
   /// Optional replanner role used after execution feedback.
-  std::optional<agent> replanner_{};
+  std::optional<wh::agent::role_binding> replanner_{};
   /// Maximum execute-replan iterations allowed for the authored shell.
   std::size_t max_iterations_{8U};
   /// Optional output slot written when the scenario converges.

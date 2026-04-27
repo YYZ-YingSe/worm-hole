@@ -2,13 +2,16 @@
 // peer set without creating a second execution runtime.
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "wh/agent/agent.hpp"
+#include "wh/agent/role_binding.hpp"
 #include "wh/core/result.hpp"
 
 namespace wh::agent {
@@ -33,7 +36,7 @@ public:
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
   /// Installs the explicit host role before freeze.
-  auto set_host(agent &&value) -> wh::core::result<void> {
+  auto set_host(wh::agent::role_binding value) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -45,8 +48,14 @@ public:
     return {};
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_host(role_t &&value) -> wh::core::result<void> {
+    return set_host(wh::agent::make_role_binding(std::forward<role_t>(value)));
+  }
+
   /// Adds one peer role that will hand control back through the entry host.
-  auto add_peer(agent &&peer) -> wh::core::result<void> {
+  auto add_peer(wh::agent::role_binding peer) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -58,13 +67,21 @@ public:
     return {};
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto add_peer(role_t &&peer) -> wh::core::result<void> {
+    return add_peer(wh::agent::make_role_binding(std::forward<role_t>(peer)));
+  }
+
   /// Returns the explicit host role.
-  [[nodiscard]] auto host_agent() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto host_agent()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(host_);
   }
 
   /// Returns the explicit host role.
-  [[nodiscard]] auto host_agent() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto host_agent() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(host_);
   }
 
@@ -79,10 +96,12 @@ public:
   }
 
   /// Returns the peer roles used by this authored shell.
-  [[nodiscard]] auto peers() noexcept -> std::vector<agent> & { return peers_; }
+  [[nodiscard]] auto peers() noexcept -> std::vector<wh::agent::role_binding> & { return peers_; }
 
   /// Returns the peer roles used by this authored shell.
-  [[nodiscard]] auto peers() const noexcept -> const std::vector<agent> & { return peers_; }
+  [[nodiscard]] auto peers() const noexcept -> const std::vector<wh::agent::role_binding> & {
+    return peers_;
+  }
 
   /// Validates the authored shape once. Runtime topology wiring happens only
   /// when the shell is lowered into the executable agent surface.
@@ -111,6 +130,16 @@ public:
         }
       }
     }
+    auto host_frozen = host_->freeze();
+    if (host_frozen.has_error()) {
+      return host_frozen;
+    }
+    for (auto &peer : peers_) {
+      auto peer_frozen = peer.freeze();
+      if (peer_frozen.has_error()) {
+        return peer_frozen;
+      }
+    }
     frozen_ = true;
     return {};
   }
@@ -119,19 +148,20 @@ public:
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:
-  [[nodiscard]] static auto role_ref(const std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] static auto role_ref(const std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<const agent>>::failure(
+      return wh::core::result<std::reference_wrapper<const wh::agent::role_binding>>::failure(
           wh::core::errc::not_found);
     }
     return std::cref(*slot);
   }
 
-  [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] static auto role_ref(std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<wh::agent::role_binding>>::failure(
+          wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
@@ -144,8 +174,8 @@ private:
   }
 
   std::string name_{};
-  std::optional<agent> host_{};
-  std::vector<agent> peers_{};
+  std::optional<wh::agent::role_binding> host_{};
+  std::vector<wh::agent::role_binding> peers_{};
   bool frozen_{false};
 };
 

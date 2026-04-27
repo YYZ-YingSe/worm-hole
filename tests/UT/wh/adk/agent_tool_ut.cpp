@@ -184,12 +184,82 @@ struct object_runner {
   }
 };
 
-static_assert(wh::adk::detail::agent_tool_runner_object<object_runner>);
-static_assert(!wh::adk::detail::agent_tool_runner_callable<object_runner>);
+struct async_object_runner {
+  [[nodiscard]] auto run_async(const wh::adk::run_request &request, wh::core::run_context &)
+      -> wh::core::detail::result_sender<wh::adk::agent_run_result> {
+    std::vector<wh::adk::agent_event> events{};
+    events.push_back(wh::adk::make_message_event(
+        make_assistant_message(message_text(request.messages.front()))));
+    return wh::core::detail::ready_sender(wh::adk::agent_run_result{wh::adk::agent_run_output{
+        .events = wh::adk::agent_event_stream_reader{wh::schema::stream::make_values_stream_reader(
+            std::move(events))},
+    }});
+  }
+};
+
+struct dual_object_runner {
+  [[nodiscard]] auto run(const wh::adk::run_request &request, wh::core::run_context &)
+      -> wh::adk::agent_run_result {
+    std::vector<wh::adk::agent_event> events{};
+    events.push_back(wh::adk::make_message_event(
+        make_assistant_message("sync:" + message_text(request.messages.front()))));
+    return wh::adk::agent_run_output{
+        .events = wh::adk::agent_event_stream_reader{wh::schema::stream::make_values_stream_reader(
+            std::move(events))},
+    };
+  }
+
+  [[nodiscard]] auto run_async(const wh::adk::run_request &request, wh::core::run_context &)
+      -> wh::core::detail::result_sender<wh::adk::agent_run_result> {
+    std::vector<wh::adk::agent_event> events{};
+    events.push_back(wh::adk::make_message_event(
+        make_assistant_message("async:" + message_text(request.messages.front()))));
+    return wh::core::detail::ready_sender(wh::adk::agent_run_result{wh::adk::agent_run_output{
+        .events = wh::adk::agent_event_stream_reader{wh::schema::stream::make_values_stream_reader(
+            std::move(events))},
+    }});
+  }
+};
+
+struct move_only_async_callable {
+  std::unique_ptr<int> token{std::make_unique<int>(7)};
+
+  move_only_async_callable() = default;
+  move_only_async_callable(const move_only_async_callable &) = delete;
+  auto operator=(const move_only_async_callable &) -> move_only_async_callable & = delete;
+  move_only_async_callable(move_only_async_callable &&) noexcept = default;
+  auto operator=(move_only_async_callable &&) noexcept -> move_only_async_callable & = default;
+
+  [[nodiscard]] auto operator()(const wh::adk::run_request &request, wh::core::run_context &)
+      -> wh::core::detail::result_sender<wh::adk::agent_run_result> {
+    std::vector<wh::adk::agent_event> events{};
+    events.push_back(wh::adk::make_message_event(
+        make_assistant_message("move:" + message_text(request.messages.front()))));
+    return wh::core::detail::ready_sender(wh::adk::agent_run_result{wh::adk::agent_run_output{
+        .events = wh::adk::agent_event_stream_reader{wh::schema::stream::make_values_stream_reader(
+            std::move(events))},
+    }});
+  }
+};
+
+static_assert(wh::adk::detail::agent_tool_sync_runner_object<object_runner>);
+static_assert(wh::adk::detail::agent_tool_async_runner_object<async_object_runner>);
+static_assert(wh::adk::detail::agent_tool_sync_runner_object<dual_object_runner>);
+static_assert(wh::adk::detail::agent_tool_async_runner_object<dual_object_runner>);
+static_assert(!wh::adk::detail::agent_tool_sync_runner_callable<object_runner>);
 static_assert(wh::adk::detail::bindable_agent_tool_runner<object_runner>);
-static_assert(wh::adk::detail::agent_tool_runner_callable<
+static_assert(wh::adk::detail::bindable_agent_tool_runner<async_object_runner>);
+static_assert(wh::adk::detail::bindable_agent_tool_runner<dual_object_runner>);
+static_assert(wh::adk::detail::bindable_agent_tool_runner<move_only_async_callable>);
+static_assert(wh::adk::detail::agent_tool_sync_runner_callable<
               decltype([](const wh::adk::run_request &, wh::core::run_context &)
                            -> wh::adk::agent_run_result { return wh::adk::agent_run_output{}; })>);
+static_assert(wh::adk::detail::agent_tool_async_runner_callable<
+              decltype([](const wh::adk::run_request &, wh::core::run_context &)
+                           -> wh::core::detail::result_sender<wh::adk::agent_run_result> {
+                return wh::core::detail::ready_sender(
+                    wh::adk::agent_run_result{wh::adk::agent_run_output{}});
+              })>);
 
 } // namespace
 
@@ -234,7 +304,7 @@ TEST_CASE("agent tool surface validates metadata schema freeze and runner dispat
   REQUIRE(tool.set_custom_schema(std::move(custom_schema)).has_value());
   REQUIRE(tool.set_forward_internal_events(true).has_value());
   REQUIRE(tool.forward_internal_events());
-  REQUIRE(tool.bind_runner(wh::adk::detail::agent_tool_runner{nullptr}).has_error());
+  REQUIRE(tool.bind_runner(wh::adk::detail::agent_tool_runner_binding{}).has_error());
   REQUIRE(tool.bind_runner(object_runner{}).has_value());
   REQUIRE(tool.freeze().has_value());
   auto resolved_schema = tool.tool_schema();
@@ -469,4 +539,82 @@ TEST_CASE("agent tool filters controls reports protocol and interrupt outcomes a
   REQUIRE(interrupted.has_value());
   REQUIRE(interrupted.value().interrupted);
   REQUIRE(interrupt_context.interrupt_info.has_value());
+}
+
+TEST_CASE("agent tool compose entry preserves sync and async runner capability",
+          "[UT][wh/adk/agent_tool.hpp][agent_tool::compose_entry][async][boundary]") {
+  wh::compose::tool_call call{
+      .call_id = "call-async",
+      .tool_name = "async-tool",
+      .arguments = R"({"request":"hello async"})",
+  };
+  wh::core::run_context context{};
+
+  wh::adk::agent_tool sync_tool{"sync-tool", "sync tool", wh::agent::agent{"worker"}};
+  REQUIRE(sync_tool.bind_runner(object_runner{}).has_value());
+  REQUIRE(sync_tool.freeze().has_value());
+  auto sync_entry = sync_tool.compose_entry();
+  REQUIRE(sync_entry.has_value());
+  REQUIRE(static_cast<bool>(sync_entry->invoke));
+  REQUIRE(static_cast<bool>(sync_entry->stream));
+  REQUIRE(static_cast<bool>(sync_entry->async_invoke));
+  REQUIRE(static_cast<bool>(sync_entry->async_stream));
+
+  wh::testing::helper::sender_capture<wh::core::result<wh::compose::graph_value>>
+      sync_invoke_capture{};
+  auto sync_invoke_operation = stdexec::connect(
+      sync_entry->async_invoke(call, make_call_scope(context, call.tool_name, call.call_id)),
+      wh::testing::helper::sender_capture_receiver{&sync_invoke_capture,
+                                                   wh::testing::helper::no_scheduler_env{}});
+  stdexec::start(sync_invoke_operation);
+  REQUIRE(sync_invoke_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(sync_invoke_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(sync_invoke_capture.value.has_value());
+  REQUIRE(sync_invoke_capture.value->has_value());
+  REQUIRE(read_graph_string(std::move(sync_invoke_capture.value->value())) == "hello async");
+
+  wh::adk::agent_tool async_tool{"async-tool", "async tool", wh::agent::agent{"worker"}};
+  REQUIRE(async_tool.bind_runner(async_object_runner{}).has_value());
+  REQUIRE(async_tool.freeze().has_value());
+  auto sync_result = async_tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
+  REQUIRE(sync_result.has_error());
+  REQUIRE(sync_result.error() == wh::core::errc::not_supported);
+  auto sync_stream_result =
+      async_tool.stream(call, make_call_scope(context, call.tool_name, call.call_id));
+  REQUIRE(sync_stream_result.has_error());
+  REQUIRE(sync_stream_result.error() == wh::core::errc::not_supported);
+
+  auto async_entry = async_tool.compose_entry();
+  REQUIRE(async_entry.has_value());
+  REQUIRE_FALSE(static_cast<bool>(async_entry->invoke));
+  REQUIRE_FALSE(static_cast<bool>(async_entry->stream));
+  REQUIRE(static_cast<bool>(async_entry->async_invoke));
+  REQUIRE(static_cast<bool>(async_entry->async_stream));
+
+  wh::testing::helper::sender_capture<wh::core::result<wh::compose::graph_value>>
+      async_value_capture{};
+  auto async_value_operation = stdexec::connect(
+      async_entry->async_invoke(call, make_call_scope(context, call.tool_name, call.call_id)),
+      wh::testing::helper::sender_capture_receiver{&async_value_capture,
+                                                   wh::testing::helper::no_scheduler_env{}});
+  stdexec::start(async_value_operation);
+  REQUIRE(async_value_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(async_value_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(async_value_capture.value.has_value());
+  REQUIRE(async_value_capture.value->has_value());
+  REQUIRE(read_graph_string(std::move(async_value_capture.value->value())) == "hello async");
+
+  wh::testing::helper::sender_capture<wh::core::result<wh::compose::graph_stream_reader>>
+      async_stream_capture{};
+  auto async_stream_operation = stdexec::connect(
+      async_entry->async_stream(call, make_call_scope(context, call.tool_name, call.call_id)),
+      wh::testing::helper::sender_capture_receiver{&async_stream_capture,
+                                                   wh::testing::helper::no_scheduler_env{}});
+  stdexec::start(async_stream_operation);
+  REQUIRE(async_stream_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(async_stream_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(async_stream_capture.value.has_value());
+  REQUIRE(async_stream_capture.value->has_value());
+  auto chunks = read_graph_stream_text(async_stream_capture.value->value());
+  REQUIRE(chunks == std::vector<std::string>{"hello async"});
 }

@@ -9,6 +9,8 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/adk/detail/agent_graph_view.hpp"
+#include "wh/adk/detail/react_graph.hpp"
 #include "wh/agent/bind.hpp"
 #include "wh/compose/graph.hpp"
 #include "wh/core/any.hpp"
@@ -30,6 +32,19 @@ namespace {
 struct knowledge_base_state {
   std::vector<wh::schema::document> documents{};
 };
+
+[[nodiscard]] auto lower_react_output_graph(wh::compose::graph native_graph,
+                                            const std::string &output_key,
+                                            const wh::agent::react_output_mode output_mode)
+    -> wh::core::result<wh::compose::graph> {
+  return wh::adk::detail::lower_to_agent_output_graph(
+      std::string{"react-kb-agent-output"}, std::move(native_graph),
+      [output_key, output_mode](std::vector<wh::schema::message> messages, wh::core::run_context &)
+          -> wh::core::result<wh::agent::agent_output> {
+        return wh::adk::detail::react_detail::make_agent_output(std::move(messages), output_key,
+                                                                output_mode);
+      });
+}
 
 [[nodiscard]] auto tokenize(std::string_view text) -> std::vector<std::string> {
   std::vector<std::string> tokens{};
@@ -356,7 +371,11 @@ auto main() -> int {
            .has_value()) {
     return 4;
   }
-  if (!authored.set_model(wh::model::chat_model{scripted_react_model_impl{}}).has_value()) {
+  if (!authored
+           .set_model(wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                                    wh::compose::node_contract::stream>(
+               wh::model::chat_model{scripted_react_model_impl{}}))
+           .has_value()) {
     return 5;
   }
   if (!authored.add_tool(search_tool).has_value()) {
@@ -385,7 +404,12 @@ auto main() -> int {
   if (graph.has_error()) {
     return 12;
   }
-  if (!graph->compiled() && !graph->compile().has_value()) {
+  auto output_graph = lower_react_output_graph(std::move(graph).value(), "answer",
+                                               wh::agent::react_output_mode::stream);
+  if (output_graph.has_error()) {
+    return 13;
+  }
+  if (!output_graph->compiled() && !output_graph->compile().has_value()) {
     return 13;
   }
 
@@ -393,7 +417,7 @@ auto main() -> int {
   request.input = wh::compose::graph_input::value(wh::core::any{rendered.value()});
 
   wh::core::run_context run_context{};
-  auto invoked = stdexec::sync_wait(graph->invoke(run_context, std::move(request)));
+  auto invoked = stdexec::sync_wait(output_graph->invoke(run_context, std::move(request)));
   if (!invoked.has_value()) {
     return 14;
   }

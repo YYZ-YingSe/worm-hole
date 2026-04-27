@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "wh/adk/call_options.hpp"
+#include "wh/adk/detail/agent_graph_view.hpp"
 #include "wh/adk/detail/shared_state.hpp"
 #include "wh/adk/deterministic_transfer.hpp"
 #include "wh/agent/agent.hpp"
@@ -221,6 +222,15 @@ normalize_history_delta(const wh::agent::agent_output &output,
   return std::string{"agent/"} + std::string{agent_name};
 }
 
+[[nodiscard]] inline auto member_request_node_key(const std::string_view agent_name)
+    -> std::string {
+  return std::string{"agent_request/"} + std::string{agent_name};
+}
+
+[[nodiscard]] inline auto member_result_node_key(const std::string_view agent_name) -> std::string {
+  return std::string{"agent_result/"} + std::string{agent_name};
+}
+
 [[nodiscard]] inline auto member_ref(const host_graph_definition &definition,
                                      const std::string_view agent_name)
     -> wh::core::result<std::reference_wrapper<const host_member_definition>> {
@@ -326,6 +336,33 @@ inline auto append_visible_history(runtime_state &state,
       wh::core::errc::type_mismatch);
 }
 
+[[nodiscard]] inline auto project_role_request_to_value(wh::compose::graph_value &payload,
+                                                        const std::string_view agent_name)
+    -> wh::core::result<wh::compose::graph_value> {
+  auto request = read_host_request(payload);
+  if (request.has_error()) {
+    return wh::core::result<wh::compose::graph_value>::failure(request.error());
+  }
+  if (request.value().get().agent_name != agent_name) {
+    return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::contract_violation);
+  }
+  return wh::compose::graph_value{std::move(request.value().get().messages)};
+}
+
+[[nodiscard]] inline auto project_role_request_to_stream(wh::compose::graph_value &payload,
+                                                         const std::string_view agent_name)
+    -> wh::core::result<wh::compose::graph_stream_reader> {
+  auto request = read_host_request(payload);
+  if (request.has_error()) {
+    return wh::core::result<wh::compose::graph_stream_reader>::failure(request.error());
+  }
+  if (request.value().get().agent_name != agent_name) {
+    return wh::core::result<wh::compose::graph_stream_reader>::failure(
+        wh::core::errc::contract_violation);
+  }
+  return wh::adk::detail::make_message_stream_reader(std::move(request.value().get().messages));
+}
+
 [[nodiscard]] inline auto move_agent_output(wh::compose::graph_value &payload)
     -> wh::core::result<wh::agent::agent_output> {
   if (auto *typed = wh::core::any_cast<wh::agent::agent_output>(&payload); typed != nullptr) {
@@ -395,26 +432,6 @@ inline auto append_visible_history(runtime_state &state,
         });
         return {};
       });
-  return options;
-}
-
-[[nodiscard]] inline auto make_role_input_options(std::string agent_name)
-    -> wh::compose::graph_add_node_options {
-  wh::compose::graph_add_node_options options{};
-  options.state.bind_pre([agent_name = std::move(agent_name)](
-                             const wh::compose::graph_state_cause &,
-                             wh::compose::graph_process_state &, wh::compose::graph_value &payload,
-                             wh::core::run_context &) -> wh::core::result<void> {
-    auto request = read_host_request(payload);
-    if (request.has_error()) {
-      return wh::core::result<void>::failure(request.error());
-    }
-    if (request.value().get().agent_name != agent_name) {
-      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
-    }
-    payload = wh::core::any(std::move(request.value().get().messages));
-    return {};
-  });
   return options;
 }
 
@@ -520,30 +537,46 @@ inline auto append_visible_history(runtime_state &state,
 [[nodiscard]] inline auto validate_member_graph(const host_member_definition &member)
     -> wh::core::result<void> {
   const auto &boundary = member.graph.boundary();
-  if (boundary.input != wh::compose::node_contract::value ||
-      boundary.output != wh::compose::node_contract::value) {
+  if (boundary.input != wh::compose::node_contract::value &&
+      boundary.input != wh::compose::node_contract::stream) {
+    return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+  }
+  if (boundary.output != wh::compose::node_contract::value &&
+      boundary.output != wh::compose::node_contract::stream) {
     return wh::core::result<void>::failure(wh::core::errc::contract_violation);
   }
   return {};
 }
 
-[[nodiscard]] inline auto lower_member_definition(wh::agent::agent &member)
-    -> wh::core::result<host_member_definition> {
-  auto graph = member.lower(wh::agent::agent_graph_view::agent_output);
-  if (graph.has_error()) {
-    return wh::core::result<host_member_definition>::failure(graph.error());
+[[nodiscard]] inline auto make_member_agent_output(std::vector<wh::schema::message> messages,
+                                                   wh::core::run_context &)
+    -> wh::core::result<wh::agent::agent_output> {
+  if (messages.empty()) {
+    return wh::core::result<wh::agent::agent_output>::failure(wh::core::errc::not_found);
   }
+  auto final_message = messages.back();
+  return wh::agent::agent_output{
+      .final_message = final_message,
+      .history_messages = std::move(messages),
+      .transfer = wh::adk::extract_transfer_from_message(final_message),
+  };
+}
 
+[[nodiscard]] inline auto lower_member_definition(const wh::agent::role_binding &member)
+    -> wh::core::result<host_member_definition> {
   host_member_definition definition{
       .name = std::string{member.name()},
       .description = std::string{member.description()},
-      .parent_name = member.parent_name().has_value()
-                         ? std::optional<std::string>{std::string{*member.parent_name()}}
-                         : std::nullopt,
-      .allow_transfer_to_parent = member.allows_transfer_to_parent(),
-      .allowed_children = member.allowed_transfer_children(),
-      .graph = std::move(graph).value(),
+      .parent_name = std::nullopt,
+      .allow_transfer_to_parent = false,
+      .allowed_children = {},
+      .graph = {},
   };
+  auto graph = member.lower();
+  if (graph.has_error()) {
+    return wh::core::result<host_member_definition>::failure(graph.error());
+  }
+  definition.graph = std::move(graph).value();
   auto valid = validate_member_graph(definition);
   if (valid.has_error()) {
     return wh::core::result<host_member_definition>::failure(valid.error());
@@ -551,8 +584,74 @@ inline auto append_visible_history(runtime_state &state,
   return definition;
 }
 
+[[nodiscard]] inline auto add_member_request_adapter(wh::compose::graph &graph,
+                                                     const host_member_definition &member)
+    -> wh::core::result<void> {
+  const auto node_key = member_request_node_key(member.name);
+  if (member.graph.boundary().input == wh::compose::node_contract::value) {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                              wh::compose::node_contract::value>(
+        node_key,
+        [agent_name = member.name](
+            wh::compose::graph_value &payload, wh::core::run_context &,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          return project_role_request_to_value(payload, agent_name);
+        });
+    return graph.add_lambda(std::move(node));
+  }
+
+  auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                            wh::compose::node_contract::stream>(
+      node_key,
+      [agent_name = member.name](wh::compose::graph_value &payload, wh::core::run_context &,
+                                 const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_stream_reader> {
+        return project_role_request_to_stream(payload, agent_name);
+      });
+  return graph.add_lambda(std::move(node));
+}
+
+[[nodiscard]] inline auto add_member_result_adapter(wh::compose::graph &graph,
+                                                    const host_member_definition &member)
+    -> wh::core::result<void> {
+  const auto node_key = member_result_node_key(member.name);
+  const auto build_output =
+      wh::adk::detail::agent_output_from_messages{host_graph_detail::make_member_agent_output};
+
+  if (member.graph.boundary().output == wh::compose::node_contract::value) {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                              wh::compose::node_contract::value>(
+        node_key,
+        [build_output](
+            wh::compose::graph_value &payload, wh::core::run_context &context,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          return wh::adk::detail::make_agent_output_value(payload, build_output, context);
+        });
+    return graph.add_lambda(std::move(node));
+  }
+
+  auto node = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                            wh::compose::node_contract::value>(
+      node_key,
+      [build_output](
+          wh::compose::graph_stream_reader payload, wh::core::run_context &context,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+        auto messages = wh::adk::detail::read_message_stream(std::move(payload));
+        if (messages.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(messages.error());
+        }
+        auto output = build_output(std::move(messages).value(), context);
+        if (output.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(output.error());
+        }
+        return wh::compose::graph_value{std::move(output).value()};
+      });
+  return graph.add_lambda(std::move(node));
+}
+
 template <typename children_t>
-[[nodiscard]] inline auto build_definition(wh::agent::agent &root, children_t &children)
+[[nodiscard]] inline auto build_definition(const wh::agent::role_binding &root,
+                                           children_t &children)
     -> wh::core::result<std::unique_ptr<host_graph_definition>> {
   auto root_definition = lower_member_definition(root);
   if (root_definition.has_error()) {
@@ -659,21 +758,47 @@ public:
       return wh::core::result<wh::compose::graph>::failure(prepare_request_added.error());
     }
 
-    const auto root_node_key = member_node_key(definition_->root.name);
-    auto root_node = wh::compose::make_subgraph_node(
-        root_node_key, definition_->root.graph, make_role_input_options(definition_->root.name));
-    auto root_added = lowered.add_subgraph(std::move(root_node));
-    if (root_added.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(root_added.error());
+    const auto add_member_pipeline =
+        [&lowered](const host_member_definition &member) -> wh::core::result<void> {
+      auto request_added = add_member_request_adapter(lowered, member);
+      if (request_added.has_error()) {
+        return request_added;
+      }
+
+      auto member_node =
+          wh::compose::make_subgraph_node(member_node_key(member.name), member.graph);
+      auto member_added = lowered.add_subgraph(std::move(member_node));
+      if (member_added.has_error()) {
+        return wh::core::result<void>::failure(member_added.error());
+      }
+
+      auto result_added = add_member_result_adapter(lowered, member);
+      if (result_added.has_error()) {
+        return result_added;
+      }
+
+      auto request_edge =
+          lowered.add_edge(member_request_node_key(member.name), member_node_key(member.name));
+      if (request_edge.has_error()) {
+        return wh::core::result<void>::failure(request_edge.error());
+      }
+      auto result_edge =
+          lowered.add_edge(member_node_key(member.name), member_result_node_key(member.name));
+      if (result_edge.has_error()) {
+        return wh::core::result<void>::failure(result_edge.error());
+      }
+      return {};
+    };
+
+    auto root_pipeline = add_member_pipeline(definition_->root);
+    if (root_pipeline.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(root_pipeline.error());
     }
 
     for (const auto &child : definition_->children) {
-      const auto child_node_key = member_node_key(child.name);
-      auto child_node = wh::compose::make_subgraph_node(child_node_key, child.graph,
-                                                        make_role_input_options(child.name));
-      auto child_added = lowered.add_subgraph(std::move(child_node));
-      if (child_added.has_error()) {
-        return wh::core::result<wh::compose::graph>::failure(child_added.error());
+      auto child_pipeline = add_member_pipeline(child);
+      if (child_pipeline.has_error()) {
+        return wh::core::result<wh::compose::graph>::failure(child_pipeline.error());
       }
     }
 
@@ -714,12 +839,14 @@ public:
       return wh::core::result<wh::compose::graph>::failure(bootstrap_edge.error());
     }
     for (const auto &child : definition_->children) {
-      auto child_capture = add_edge(member_node_key(child.name), std::string{"capture_result"});
+      auto child_capture =
+          add_edge(member_result_node_key(child.name), std::string{"capture_result"});
       if (child_capture.has_error()) {
         return wh::core::result<wh::compose::graph>::failure(child_capture.error());
       }
     }
-    auto root_capture = add_edge(root_node_key, std::string{"capture_result"});
+    auto root_capture =
+        add_edge(member_result_node_key(definition_->root.name), std::string{"capture_result"});
     if (root_capture.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(root_capture.error());
     }
@@ -731,7 +858,7 @@ public:
     wh::compose::value_branch request_branch{};
     auto add_route_case = [&request_branch](const std::string &target) -> wh::core::result<void> {
       return request_branch.add_case(
-          member_node_key(target),
+          member_request_node_key(target),
           [target](const wh::compose::graph_value &payload,
                    wh::core::run_context &) -> wh::core::result<bool> {
             const auto *request = wh::core::any_cast<host_request>(&payload);
@@ -802,7 +929,7 @@ private:
 };
 
 template <typename children_t>
-[[nodiscard]] inline auto bind_host_agent(wh::agent::agent &root, children_t &children)
+[[nodiscard]] inline auto bind_host_agent(wh::agent::role_binding &root, children_t &children)
     -> wh::core::result<wh::agent::agent> {
   if (!root.frozen()) {
     return wh::core::result<wh::agent::agent>::failure(wh::core::errc::contract_violation);
@@ -820,7 +947,7 @@ template <typename children_t>
   auto lowered_definition = std::move(definition).value();
   auto bound = exported.value().bind_execution(
       nullptr,
-      [definition = std::move(lowered_definition)](const wh::agent::agent_graph_view) mutable
+      [definition = std::move(lowered_definition)]() mutable
           -> wh::core::result<wh::compose::graph> { return host_graph{*definition}.lower(); });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());

@@ -7,6 +7,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
+#include "wh/adk/detail/chat_graph.hpp"
+#include "wh/adk/detail/react_graph.hpp"
 #include "wh/agent/bind.hpp"
 
 namespace {
@@ -14,6 +16,32 @@ namespace {
 using wh::testing::helper::invoke_agent_graph;
 using wh::testing::helper::make_text_message;
 using wh::testing::helper::message_text;
+
+[[nodiscard]] auto lower_chat_output_graph(wh::compose::graph native_graph, std::string output_key,
+                                           wh::agent::chat_output_mode output_mode)
+    -> wh::core::result<wh::compose::graph> {
+  return wh::adk::detail::lower_to_agent_output_graph(
+      std::string{"chat-agent-output"}, std::move(native_graph),
+      [output_key = std::move(output_key),
+       output_mode](std::vector<wh::schema::message> messages,
+                    wh::core::run_context &) -> wh::core::result<wh::agent::agent_output> {
+        return wh::adk::detail::chat_detail::make_agent_output(std::move(messages), output_key,
+                                                               output_mode);
+      });
+}
+
+[[nodiscard]] auto lower_react_output_graph(wh::compose::graph native_graph, std::string output_key,
+                                            wh::agent::react_output_mode output_mode)
+    -> wh::core::result<wh::compose::graph> {
+  return wh::adk::detail::lower_to_agent_output_graph(
+      std::string{"react-agent-output"}, std::move(native_graph),
+      [output_key = std::move(output_key),
+       output_mode](std::vector<wh::schema::message> messages,
+                    wh::core::run_context &) -> wh::core::result<wh::agent::agent_output> {
+        return wh::adk::detail::react_detail::make_agent_output(std::move(messages), output_key,
+                                                                output_mode);
+      });
+}
 
 struct scripted_react_model_state {
   std::size_t bind_calls{0U};
@@ -95,12 +123,16 @@ TEST_CASE("chat shell public binding lowers and executes final output",
 
   auto graph = lowered->lower();
   REQUIRE(graph.has_value());
-  if (!graph->compiled()) {
-    REQUIRE(graph->compile().has_value());
+  auto output_graph =
+      lower_chat_output_graph(std::move(graph).value(), "reply", wh::agent::chat_output_mode::text);
+  REQUIRE(output_graph.has_value());
+  if (!output_graph->compiled()) {
+    REQUIRE(output_graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(graph.value(), {wh::testing::helper::make_text_message(
-                                                      wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(
+      output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
   REQUIRE(output->history_messages.size() == 1U);
@@ -124,12 +156,16 @@ TEST_CASE("react shell public binding lowers and executes tool-capable final out
 
   auto graph = lowered->lower();
   REQUIRE(graph.has_value());
-  if (!graph->compiled()) {
-    REQUIRE(graph->compile().has_value());
+  auto output_graph = lower_react_output_graph(std::move(graph).value(), "final",
+                                               wh::agent::react_output_mode::stream);
+  REQUIRE(output_graph.has_value());
+  if (!output_graph->compiled()) {
+    REQUIRE(output_graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(graph.value(), {wh::testing::helper::make_text_message(
-                                                      wh::schema::message_role::user, "hello")});
+  auto output = invoke_agent_graph(
+      output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->final_message.role == wh::schema::message_role::assistant);
   REQUIRE(output->history_messages.size() == 2U);
@@ -138,6 +174,106 @@ TEST_CASE("react shell public binding lowers and executes tool-capable final out
   auto *final_text = wh::core::any_cast<std::string>(&final_iter->second);
   REQUIRE(final_text != nullptr);
   REQUIRE(*final_text == "ok");
+}
+
+TEST_CASE("chat shell public binding executes value-output model bindings through local adapters",
+          "[core][agent][chat][value-output][functional]") {
+  wh::agent::chat sync_authored{"chat-sync-value", "assistant"};
+  REQUIRE(sync_authored.set_output_key("reply").has_value());
+  REQUIRE(sync_authored.set_output_mode(wh::agent::chat_output_mode::text).has_value());
+  REQUIRE(sync_authored.set_model(wh::testing::helper::make_sync_probe_model_value_binding())
+              .has_value());
+  REQUIRE(sync_authored.freeze().has_value());
+
+  auto sync_agent = std::move(sync_authored).into_agent();
+  REQUIRE(sync_agent.has_value());
+  auto sync_graph = sync_agent->lower();
+  REQUIRE(sync_graph.has_value());
+  auto sync_output_graph = lower_chat_output_graph(std::move(sync_graph).value(), "reply",
+                                                   wh::agent::chat_output_mode::text);
+  REQUIRE(sync_output_graph.has_value());
+  if (!sync_output_graph->compiled()) {
+    REQUIRE(sync_output_graph->compile().has_value());
+  }
+  auto sync_output = invoke_agent_graph(
+      sync_output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(sync_output.has_value());
+  REQUIRE(sync_output->final_message.role == wh::schema::message_role::assistant);
+
+  wh::agent::chat async_authored{"chat-async-value", "assistant"};
+  REQUIRE(async_authored.set_output_key("reply").has_value());
+  REQUIRE(async_authored.set_output_mode(wh::agent::chat_output_mode::text).has_value());
+  REQUIRE(async_authored.set_model(wh::testing::helper::make_async_probe_model_value_binding())
+              .has_value());
+  REQUIRE(async_authored.freeze().has_value());
+
+  auto async_agent = std::move(async_authored).into_agent();
+  REQUIRE(async_agent.has_value());
+  auto async_graph = async_agent->lower();
+  REQUIRE(async_graph.has_value());
+  auto async_output_graph = lower_chat_output_graph(std::move(async_graph).value(), "reply",
+                                                    wh::agent::chat_output_mode::text);
+  REQUIRE(async_output_graph.has_value());
+  if (!async_output_graph->compiled()) {
+    REQUIRE(async_output_graph->compile().has_value());
+  }
+  auto async_output = invoke_agent_graph(
+      async_output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(async_output.has_value());
+  REQUIRE(async_output->final_message.role == wh::schema::message_role::assistant);
+}
+
+TEST_CASE("react shell public binding executes value-output model bindings through local adapters",
+          "[core][agent][react][value-output][functional]") {
+  wh::agent::react sync_authored{"react-sync-value", "assistant"};
+  REQUIRE(sync_authored.set_output_key("final").has_value());
+  REQUIRE(sync_authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
+  REQUIRE(sync_authored.set_tools_node_options({}).has_value());
+  REQUIRE(sync_authored.set_model(wh::testing::helper::make_sync_probe_model_value_binding())
+              .has_value());
+  REQUIRE(sync_authored.freeze().has_value());
+
+  auto sync_agent = std::move(sync_authored).into_agent();
+  REQUIRE(sync_agent.has_value());
+  auto sync_graph = sync_agent->lower();
+  REQUIRE(sync_graph.has_value());
+  auto sync_output_graph = lower_react_output_graph(std::move(sync_graph).value(), "final",
+                                                    wh::agent::react_output_mode::stream);
+  REQUIRE(sync_output_graph.has_value());
+  if (!sync_output_graph->compiled()) {
+    REQUIRE(sync_output_graph->compile().has_value());
+  }
+  auto sync_output = invoke_agent_graph(
+      sync_output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(sync_output.has_value());
+  REQUIRE(sync_output->final_message.role == wh::schema::message_role::assistant);
+
+  wh::agent::react async_authored{"react-async-value", "assistant"};
+  REQUIRE(async_authored.set_output_key("final").has_value());
+  REQUIRE(async_authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
+  REQUIRE(async_authored.set_tools_node_options({}).has_value());
+  REQUIRE(async_authored.set_model(wh::testing::helper::make_async_probe_model_value_binding())
+              .has_value());
+  REQUIRE(async_authored.freeze().has_value());
+
+  auto async_agent = std::move(async_authored).into_agent();
+  REQUIRE(async_agent.has_value());
+  auto async_graph = async_agent->lower();
+  REQUIRE(async_graph.has_value());
+  auto async_output_graph = lower_react_output_graph(std::move(async_graph).value(), "final",
+                                                     wh::agent::react_output_mode::stream);
+  REQUIRE(async_output_graph.has_value());
+  if (!async_output_graph->compiled()) {
+    REQUIRE(async_output_graph->compile().has_value());
+  }
+  auto async_output = invoke_agent_graph(
+      async_output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(async_output.has_value());
+  REQUIRE(async_output->final_message.role == wh::schema::message_role::assistant);
 }
 
 TEST_CASE("react shell public binding executes real tool-call loop before final output",
@@ -172,11 +308,14 @@ TEST_CASE("react shell public binding executes real tool-call loop before final 
 
   auto graph = lowered->lower();
   REQUIRE(graph.has_value());
-  if (!graph->compiled()) {
-    REQUIRE(graph->compile().has_value());
+  auto output_graph = lower_react_output_graph(std::move(graph).value(), "final",
+                                               wh::agent::react_output_mode::stream);
+  REQUIRE(output_graph.has_value());
+  if (!output_graph->compiled()) {
+    REQUIRE(output_graph->compile().has_value());
   }
 
-  auto output = invoke_agent_graph(graph.value(),
+  auto output = invoke_agent_graph(output_graph.value(),
                                    {make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(output.has_value());
   REQUIRE(output->transfer == std::nullopt);

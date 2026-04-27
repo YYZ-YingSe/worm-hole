@@ -11,6 +11,19 @@
 
 namespace {
 
+[[nodiscard]] auto lower_chat_output_graph(wh::compose::graph native_graph, std::string output_key,
+                                           wh::agent::chat_output_mode output_mode)
+    -> wh::core::result<wh::compose::graph> {
+  return wh::adk::detail::lower_to_agent_output_graph(
+      std::string{"chat-agent-output"}, std::move(native_graph),
+      [output_key = std::move(output_key),
+       output_mode](std::vector<wh::schema::message> messages,
+                    wh::core::run_context &) -> wh::core::result<wh::agent::agent_output> {
+        return wh::adk::detail::chat_detail::make_agent_output(std::move(messages), output_key,
+                                                               output_mode);
+      });
+}
+
 [[nodiscard]] auto invoke_chat_graph(wh::compose::graph &graph,
                                      std::vector<wh::schema::message> messages)
     -> wh::agent::agent_output {
@@ -115,13 +128,13 @@ TEST_CASE("chat graph lowers authored chat shells into executable compose graphs
   REQUIRE(authored.set_output_mode(wh::agent::chat_output_mode::text).has_value());
   REQUIRE(authored.freeze().has_value());
 
-  auto native = wh::adk::detail::chat_graph{authored}.lower(wh::agent::agent_graph_view::native);
+  auto native = wh::adk::detail::chat_graph{authored}.lower();
   REQUIRE(native.has_value());
   REQUIRE(native->compiled());
   REQUIRE(native->boundary().output == wh::compose::node_contract::stream);
 
-  auto lowered =
-      wh::adk::detail::chat_graph{authored}.lower(wh::agent::agent_graph_view::agent_output);
+  auto lowered = lower_chat_output_graph(std::move(native).value(), "reply",
+                                         wh::agent::chat_output_mode::text);
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->compile().has_value());
 
@@ -142,5 +155,58 @@ TEST_CASE("chat graph lowers authored chat shells into executable compose graphs
   REQUIRE(bound->name() == "bound-chat");
   auto bound_graph = bound->lower();
   REQUIRE(bound_graph.has_value());
-  REQUIRE(bound_graph->compile().has_value());
+  REQUIRE(bound_graph->boundary().output == wh::compose::node_contract::stream);
+  auto bound_output_graph = lower_chat_output_graph(std::move(bound_graph).value(), "",
+                                                    wh::agent::chat_output_mode::value);
+  REQUIRE(bound_output_graph.has_value());
+  REQUIRE(bound_output_graph->compile().has_value());
+}
+
+TEST_CASE("chat graph preserves value-output model bindings by inserting local stream adapters",
+          "[UT][wh/adk/detail/chat_graph.hpp][chat_graph::lower][value-output][boundary]") {
+  wh::agent::chat sync_authored{"chat-sync-value", "assistant"};
+  REQUIRE(sync_authored.set_output_key("reply").has_value());
+  REQUIRE(sync_authored.set_output_mode(wh::agent::chat_output_mode::text).has_value());
+  REQUIRE(sync_authored.set_model(wh::testing::helper::make_sync_probe_model_value_binding())
+              .has_value());
+  REQUIRE(sync_authored.freeze().has_value());
+
+  auto sync_native = wh::adk::detail::chat_graph{sync_authored}.lower();
+  REQUIRE(sync_native.has_value());
+  REQUIRE(sync_native->compiled());
+  REQUIRE(sync_native->boundary().output == wh::compose::node_contract::stream);
+
+  auto sync_lowered = lower_chat_output_graph(std::move(sync_native).value(), "reply",
+                                              wh::agent::chat_output_mode::text);
+  REQUIRE(sync_lowered.has_value());
+  REQUIRE(sync_lowered->compile().has_value());
+  auto sync_output = invoke_chat_graph(
+      sync_lowered.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(sync_output.final_message.role == wh::schema::message_role::assistant);
+  auto sync_reply_iter = sync_output.output_values.find("reply");
+  REQUIRE(sync_reply_iter != sync_output.output_values.end());
+
+  wh::agent::chat async_authored{"chat-async-value", "assistant"};
+  REQUIRE(async_authored.set_output_key("reply").has_value());
+  REQUIRE(async_authored.set_output_mode(wh::agent::chat_output_mode::text).has_value());
+  REQUIRE(async_authored.set_model(wh::testing::helper::make_async_probe_model_value_binding())
+              .has_value());
+  REQUIRE(async_authored.freeze().has_value());
+
+  auto async_native = wh::adk::detail::chat_graph{async_authored}.lower();
+  REQUIRE(async_native.has_value());
+  REQUIRE(async_native->compiled());
+  REQUIRE(async_native->boundary().output == wh::compose::node_contract::stream);
+
+  auto async_lowered = lower_chat_output_graph(std::move(async_native).value(), "reply",
+                                               wh::agent::chat_output_mode::text);
+  REQUIRE(async_lowered.has_value());
+  REQUIRE(async_lowered->compile().has_value());
+  auto async_output = invoke_chat_graph(
+      async_lowered.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(async_output.final_message.role == wh::schema::message_role::assistant);
+  auto async_reply_iter = async_output.output_values.find("reply");
+  REQUIRE(async_reply_iter != async_output.output_values.end());
 }

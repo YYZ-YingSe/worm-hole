@@ -66,8 +66,9 @@ TEST_CASE("react shell records tool authoring model policy and lowers into execu
   REQUIRE(authored.tools().node_options().has_value());
 
   auto state = std::make_shared<wh::testing::helper::probe_model_state>();
-  REQUIRE(authored.set_model(wh::testing::helper::make_sync_probe_model_binding(
-                                 wh::testing::helper::sync_probe_model{state}))
+  REQUIRE(authored
+              .set_model(wh::testing::helper::make_sync_probe_model_binding(
+                  wh::testing::helper::sync_probe_model{state}))
               .has_value());
   REQUIRE(authored.model_binding().has_value());
   REQUIRE(authored.freeze().has_value());
@@ -153,4 +154,19 @@ TEST_CASE("react shell accepts async model bindings with the same native boundar
   REQUIRE(authored.set_tools_node_options({}).has_value());
   REQUIRE(authored.set_model(wh::testing::helper::make_async_probe_model_binding()).has_value());
   REQUIRE(authored.freeze().has_value());
+}
+
+TEST_CASE("react shell accepts value model bindings without shell-level contract narrowing",
+          "[UT][wh/agent/react.hpp][react::freeze][value-output][boundary]") {
+  wh::agent::react sync_authored{"react-sync-value", "assistant"};
+  REQUIRE(sync_authored.set_tools_node_options({}).has_value());
+  REQUIRE(sync_authored.set_model(wh::testing::helper::make_sync_probe_model_value_binding())
+              .has_value());
+  REQUIRE(sync_authored.freeze().has_value());
+
+  wh::agent::react async_authored{"react-async-value", "assistant"};
+  REQUIRE(async_authored.set_tools_node_options({}).has_value());
+  REQUIRE(async_authored.set_model(wh::testing::helper::make_async_probe_model_value_binding())
+              .has_value());
+  REQUIRE(async_authored.freeze().has_value());
 }

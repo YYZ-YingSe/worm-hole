@@ -31,9 +31,9 @@ public:
 };
 
 using lower_hook_probe =
-    owning_storage_probe<wh::core::result<wh::compose::graph>(wh::agent::agent_graph_view),
-                         wh::core::fn::deep_copy, wh::core::fn::non_copyable_accept,
-                         wh::core::fn::assert_on_error, sizeof(void *)>;
+    owning_storage_probe<wh::core::result<wh::compose::graph>(), wh::core::fn::deep_copy,
+                         wh::core::fn::non_copyable_accept, wh::core::fn::assert_on_error,
+                         sizeof(void *)>;
 
 using graph_selector_probe =
     owning_storage_probe<wh::core::result<std::vector<std::uint32_t>>(
@@ -97,9 +97,8 @@ TEST_CASE("function storage accepts representative callable layouts across "
           "move-only and callback wrappers",
           "[UT][wh/core/function/detail/storage_policy.hpp][platform]["
           "windows][boundary]") {
-  auto lower = [payload = std::make_unique<int>(7)](
-                   const wh::agent::agent_graph_view) mutable
-      -> wh::core::result<wh::compose::graph> {
+  auto lower = [payload =
+                    std::make_unique<int>(7)]() mutable -> wh::core::result<wh::compose::graph> {
     return wh::core::result<wh::compose::graph>::failure(wh::core::errc::not_supported);
   };
   using lower_t = decltype(lower);

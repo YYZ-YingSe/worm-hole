@@ -30,6 +30,23 @@ TEST_CASE("research shell binds lead specialists validates names and lowers into
   REQUIRE(lowered.value().executable());
 }
 
+TEST_CASE("research shell accepts authored role providers directly",
+          "[UT][wh/agent/research.hpp][research::set_lead][surface][role_binding]") {
+  wh::agent::research authored{"lead-authored"};
+  REQUIRE(
+      authored.set_lead(wh::testing::helper::make_configured_chat("lead-authored", "lead-authored"))
+          .has_value());
+  REQUIRE(
+      authored
+          .add_specialist(wh::testing::helper::make_configured_react("specialist", "specialist"))
+          .has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  REQUIRE(lowered->lower().has_value());
+}
+
 TEST_CASE("research shell rejects invalid lead specialist topology and late mutation",
           "[UT][wh/agent/research.hpp][research::add_specialist][condition][branch][boundary]") {
   wh::agent::research missing{"lead"};

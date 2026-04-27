@@ -30,6 +30,21 @@ TEST_CASE("swarm shell binds host peers validates names and lowers into executab
   REQUIRE(lowered.value().executable());
 }
 
+TEST_CASE("swarm shell accepts authored role providers directly",
+          "[UT][wh/agent/swarm.hpp][swarm::set_host][surface][role_binding]") {
+  wh::agent::swarm authored{"host-authored"};
+  REQUIRE(
+      authored.set_host(wh::testing::helper::make_configured_chat("host-authored", "host-authored"))
+          .has_value());
+  REQUIRE(
+      authored.add_peer(wh::testing::helper::make_configured_react("peer", "peer")).has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  REQUIRE(lowered->lower().has_value());
+}
+
 TEST_CASE("swarm shell rejects invalid role topology duplicates and late mutation",
           "[UT][wh/agent/swarm.hpp][swarm::add_peer][condition][branch][boundary]") {
   wh::agent::swarm missing{"host"};

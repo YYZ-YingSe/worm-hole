@@ -2,13 +2,16 @@
 // agent plus a worker set without creating a second execution runtime.
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "wh/agent/agent.hpp"
+#include "wh/agent/role_binding.hpp"
 #include "wh/core/result.hpp"
 
 namespace wh::agent {
@@ -33,7 +36,7 @@ public:
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
   /// Installs the explicit supervisor role before freeze.
-  auto set_supervisor(agent &&value) -> wh::core::result<void> {
+  auto set_supervisor(wh::agent::role_binding value) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -45,9 +48,15 @@ public:
     return {};
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_supervisor(role_t &&value) -> wh::core::result<void> {
+    return set_supervisor(wh::agent::make_role_binding(std::forward<role_t>(value)));
+  }
+
   /// Adds one worker role that will be constrained to transfer only back to
   /// the supervisor.
-  auto add_worker(agent &&worker) -> wh::core::result<void> {
+  auto add_worker(wh::agent::role_binding worker) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -59,14 +68,21 @@ public:
     return {};
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto add_worker(role_t &&worker) -> wh::core::result<void> {
+    return add_worker(wh::agent::make_role_binding(std::forward<role_t>(worker)));
+  }
+
   /// Returns the explicit supervisor role.
-  [[nodiscard]] auto supervisor_agent() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto supervisor_agent()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(supervisor_);
   }
 
   /// Returns the explicit supervisor role.
   [[nodiscard]] auto supervisor_agent() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(supervisor_);
   }
 
@@ -81,10 +97,14 @@ public:
   }
 
   /// Returns the worker roles used by this authored shell.
-  [[nodiscard]] auto workers() noexcept -> std::vector<agent> & { return workers_; }
+  [[nodiscard]] auto workers() noexcept -> std::vector<wh::agent::role_binding> & {
+    return workers_;
+  }
 
   /// Returns the worker roles used by this authored shell.
-  [[nodiscard]] auto workers() const noexcept -> const std::vector<agent> & { return workers_; }
+  [[nodiscard]] auto workers() const noexcept -> const std::vector<wh::agent::role_binding> & {
+    return workers_;
+  }
 
   /// Validates the authored shape once. Runtime topology wiring happens only
   /// when the shell is lowered into the executable agent surface.
@@ -113,6 +133,16 @@ public:
         }
       }
     }
+    auto supervisor_frozen = supervisor_->freeze();
+    if (supervisor_frozen.has_error()) {
+      return supervisor_frozen;
+    }
+    for (auto &worker : workers_) {
+      auto worker_frozen = worker.freeze();
+      if (worker_frozen.has_error()) {
+        return worker_frozen;
+      }
+    }
     frozen_ = true;
     return {};
   }
@@ -121,19 +151,20 @@ public:
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:
-  [[nodiscard]] static auto role_ref(const std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] static auto role_ref(const std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<const agent>>::failure(
+      return wh::core::result<std::reference_wrapper<const wh::agent::role_binding>>::failure(
           wh::core::errc::not_found);
     }
     return std::cref(*slot);
   }
 
-  [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] static auto role_ref(std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<wh::agent::role_binding>>::failure(
+          wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
@@ -146,8 +177,8 @@ private:
   }
 
   std::string name_{};
-  std::optional<agent> supervisor_{};
-  std::vector<agent> workers_{};
+  std::optional<wh::agent::role_binding> supervisor_{};
+  std::vector<wh::agent::role_binding> workers_{};
   bool frozen_{false};
 };
 

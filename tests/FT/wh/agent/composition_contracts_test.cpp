@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "helper/agent_authoring_support.hpp"
 #include "wh/adk/agent_tool.hpp"
 #include "wh/agent/agent.hpp"
 #include "wh/agent/bind.hpp"
@@ -17,62 +18,6 @@
 #include "wh/model/chat_model.hpp"
 
 namespace {
-
-[[nodiscard]] auto make_passthrough_graph(const std::string &name)
-    -> wh::core::result<wh::compose::graph> {
-  auto node = wh::compose::make_lambda_node(
-      name,
-      [](wh::compose::graph_value &input, wh::core::run_context &,
-         const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-        return std::move(input);
-      });
-  wh::compose::graph_boundary boundary{
-      .input = node.input_contract(),
-      .output = node.output_contract(),
-  };
-  wh::compose::graph graph{boundary, {}};
-  auto added = graph.add_lambda(std::move(node));
-  if (added.has_error()) {
-    return wh::core::result<wh::compose::graph>::failure(added.error());
-  }
-  auto start = graph.add_entry_edge(name);
-  if (start.has_error()) {
-    return wh::core::result<wh::compose::graph>::failure(start.error());
-  }
-  auto finish = graph.add_exit_edge(name);
-  if (finish.has_error()) {
-    return wh::core::result<wh::compose::graph>::failure(finish.error());
-  }
-  auto compiled = graph.compile();
-  if (compiled.has_error()) {
-    return wh::core::result<wh::compose::graph>::failure(compiled.error());
-  }
-  return graph;
-}
-
-[[nodiscard]] auto make_executable_agent(const std::string &name)
-    -> wh::core::result<wh::agent::agent> {
-  wh::agent::agent authored{name};
-  auto bound = authored.bind_execution(
-      nullptr,
-      [name](const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
-        return make_passthrough_graph(name + "_node");
-      });
-  if (bound.has_error()) {
-    return wh::core::result<wh::agent::agent>::failure(bound.error());
-  }
-  auto frozen = authored.freeze();
-  if (frozen.has_error()) {
-    return wh::core::result<wh::agent::agent>::failure(frozen.error());
-  }
-  return authored;
-}
-
-[[nodiscard]] auto require_executable_agent(const std::string &name) -> wh::agent::agent {
-  auto authored = make_executable_agent(name);
-  REQUIRE(authored.has_value());
-  return std::move(authored).value();
-}
 
 [[nodiscard]] auto make_revision_request_builder() -> wh::agent::revision_request_builder {
   return [](const wh::agent::revision_context &,
@@ -207,8 +152,10 @@ TEST_CASE("agent tool build hook rejects missing custom schema", "[core][agent][
 TEST_CASE("plan execute build hook freezes planner executor and effective replanner",
           "[core][agent][condition]") {
   wh::agent::plan_execute authored{"plan-execute"};
-  REQUIRE(authored.set_planner(require_executable_agent("planner")).has_value());
-  REQUIRE(authored.set_executor(require_executable_agent("executor")).has_value());
+  REQUIRE(authored.set_planner(wh::testing::helper::make_configured_chat("planner", "planner"))
+              .has_value());
+  REQUIRE(authored.set_executor(wh::testing::helper::make_configured_chat("executor", "executor"))
+              .has_value());
   REQUIRE(authored.set_planner_request_builder(make_plan_request_builder()).has_value());
   REQUIRE(authored.set_executor_request_builder(make_plan_request_builder()).has_value());
   REQUIRE(authored.set_replanner_request_builder(make_plan_request_builder()).has_value());
@@ -258,12 +205,14 @@ TEST_CASE("plan execute build hook rejects missing or conflicting roles",
 TEST_CASE("self refine build hook requires explicit revision contracts and lowers into agent",
           "[core][agent][self_refine]") {
   wh::agent::self_refine missing{"self-refine"};
-  REQUIRE(missing.set_worker(require_executable_agent("worker")).has_value());
+  REQUIRE(missing.set_worker(wh::testing::helper::make_configured_chat("worker", "worker"))
+              .has_value());
   REQUIRE(missing.freeze().has_error());
   REQUIRE(missing.freeze().error() == wh::core::errc::contract_violation);
 
   wh::agent::self_refine authored{"self-refine"};
-  REQUIRE(authored.set_worker(require_executable_agent("worker")).has_value());
+  REQUIRE(authored.set_worker(wh::testing::helper::make_configured_chat("worker", "worker"))
+              .has_value());
   REQUIRE(authored.set_worker_request_builder(make_revision_request_builder()).has_value());
   REQUIRE(authored.set_reviewer_request_builder(make_revision_request_builder()).has_value());
   REQUIRE(authored
@@ -283,8 +232,10 @@ TEST_CASE("self refine build hook requires explicit revision contracts and lower
 TEST_CASE("reviewer executor build hook freezes explicit contracts and lowers into agent",
           "[core][agent][reviewer_executor]") {
   wh::agent::reviewer_executor authored{"reviewer-executor"};
-  REQUIRE(authored.set_executor(require_executable_agent("executor")).has_value());
-  REQUIRE(authored.set_reviewer(require_executable_agent("reviewer")).has_value());
+  REQUIRE(authored.set_executor(wh::testing::helper::make_configured_chat("executor", "executor"))
+              .has_value());
+  REQUIRE(authored.set_reviewer(wh::testing::helper::make_configured_react("reviewer", "reviewer"))
+              .has_value());
   REQUIRE(authored.set_executor_request_builder(make_revision_request_builder()).has_value());
   REQUIRE(authored.set_reviewer_request_builder(make_revision_request_builder()).has_value());
   REQUIRE(authored
@@ -301,9 +252,15 @@ TEST_CASE("reviewer executor build hook freezes explicit contracts and lowers in
 TEST_CASE("reflexion build hook keeps optional memory writer explicit",
           "[core][agent][reflexion]") {
   wh::agent::reflexion missing_memory_builder{"reflexion"};
-  REQUIRE(missing_memory_builder.set_actor(require_executable_agent("actor")).has_value());
-  REQUIRE(missing_memory_builder.set_critic(require_executable_agent("critic")).has_value());
-  REQUIRE(missing_memory_builder.set_memory_writer(require_executable_agent("memory")).has_value());
+  REQUIRE(
+      missing_memory_builder.set_actor(wh::testing::helper::make_configured_chat("actor", "actor"))
+          .has_value());
+  REQUIRE(missing_memory_builder
+              .set_critic(wh::testing::helper::make_configured_chat("critic", "critic"))
+              .has_value());
+  REQUIRE(missing_memory_builder
+              .set_memory_writer(wh::testing::helper::make_configured_react("memory", "memory"))
+              .has_value());
   REQUIRE(missing_memory_builder.set_actor_request_builder(make_revision_request_builder())
               .has_value());
   REQUIRE(missing_memory_builder.set_critic_request_builder(make_revision_request_builder())
@@ -316,9 +273,12 @@ TEST_CASE("reflexion build hook keeps optional memory writer explicit",
   REQUIRE(missing_memory_builder.freeze().error() == wh::core::errc::contract_violation);
 
   wh::agent::reflexion authored{"reflexion"};
-  REQUIRE(authored.set_actor(require_executable_agent("actor")).has_value());
-  REQUIRE(authored.set_critic(require_executable_agent("critic")).has_value());
-  REQUIRE(authored.set_memory_writer(require_executable_agent("memory")).has_value());
+  REQUIRE(
+      authored.set_actor(wh::testing::helper::make_configured_chat("actor", "actor")).has_value());
+  REQUIRE(authored.set_critic(wh::testing::helper::make_configured_react("critic", "critic"))
+              .has_value());
+  REQUIRE(authored.set_memory_writer(wh::testing::helper::make_configured_chat("memory", "memory"))
+              .has_value());
   REQUIRE(authored.set_actor_request_builder(make_revision_request_builder()).has_value());
   REQUIRE(authored.set_critic_request_builder(make_revision_request_builder()).has_value());
   REQUIRE(authored.set_memory_writer_request_builder(make_revision_request_builder()).has_value());
@@ -336,13 +296,17 @@ TEST_CASE("reflexion build hook keeps optional memory writer explicit",
 TEST_CASE("supervisor build hook auto-wires upward return and worker delegation",
           "[core][agent][condition]") {
   wh::agent::supervisor authored{"supervisor"};
-  REQUIRE(authored.set_supervisor(require_executable_agent("supervisor")).has_value());
-  REQUIRE(authored.add_worker(require_executable_agent("planner")).has_value());
-  REQUIRE(authored.add_worker(require_executable_agent("executor")).has_value());
+  REQUIRE(
+      authored.set_supervisor(wh::testing::helper::make_configured_chat("supervisor", "supervisor"))
+          .has_value());
+  REQUIRE(authored.add_worker(wh::testing::helper::make_configured_chat("planner", "planner"))
+              .has_value());
+  REQUIRE(authored.add_worker(wh::testing::helper::make_configured_react("executor", "executor"))
+              .has_value());
   REQUIRE(authored.freeze().has_value());
   REQUIRE(authored.frozen());
   REQUIRE(authored.supervisor_agent().has_value());
-  REQUIRE_FALSE(authored.supervisor_agent().value().get().allows_transfer_to_child("planner"));
+  REQUIRE(authored.worker_names() == std::vector<std::string>{"planner", "executor"});
 
   auto lowered = std::move(authored).into_agent();
   REQUIRE(lowered.has_value());

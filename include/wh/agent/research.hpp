@@ -2,13 +2,16 @@
 // built on top of the common transfer topology contract.
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "wh/agent/agent.hpp"
+#include "wh/agent/role_binding.hpp"
 #include "wh/core/result.hpp"
 
 namespace wh::agent {
@@ -34,7 +37,7 @@ public:
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
   /// Installs the lead researcher before freeze.
-  auto set_lead(agent &&lead) -> wh::core::result<void> {
+  auto set_lead(wh::agent::role_binding lead) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -46,8 +49,14 @@ public:
     return {};
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_lead(role_t &&lead) -> wh::core::result<void> {
+    return set_lead(wh::agent::make_role_binding(std::forward<role_t>(lead)));
+  }
+
   /// Adds one specialist peer before freeze.
-  auto add_specialist(agent &&specialist) -> wh::core::result<void> {
+  auto add_specialist(wh::agent::role_binding specialist) -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -59,13 +68,20 @@ public:
     return {};
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto add_specialist(role_t &&specialist) -> wh::core::result<void> {
+    return add_specialist(wh::agent::make_role_binding(std::forward<role_t>(specialist)));
+  }
+
   /// Returns the lead researcher role.
-  [[nodiscard]] auto lead() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto lead() -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(lead_);
   }
 
   /// Returns the lead researcher role.
-  [[nodiscard]] auto lead() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto lead() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(lead_);
   }
 
@@ -80,10 +96,12 @@ public:
   }
 
   /// Returns the specialist roles used by this authored shell.
-  [[nodiscard]] auto specialists() noexcept -> std::vector<agent> & { return specialists_; }
+  [[nodiscard]] auto specialists() noexcept -> std::vector<wh::agent::role_binding> & {
+    return specialists_;
+  }
 
   /// Returns the specialist roles used by this authored shell.
-  [[nodiscard]] auto specialists() const noexcept -> const std::vector<agent> & {
+  [[nodiscard]] auto specialists() const noexcept -> const std::vector<wh::agent::role_binding> & {
     return specialists_;
   }
 
@@ -114,6 +132,16 @@ public:
         }
       }
     }
+    auto lead_frozen = lead_->freeze();
+    if (lead_frozen.has_error()) {
+      return lead_frozen;
+    }
+    for (auto &specialist : specialists_) {
+      auto specialist_frozen = specialist.freeze();
+      if (specialist_frozen.has_error()) {
+        return specialist_frozen;
+      }
+    }
     frozen_ = true;
     return {};
   }
@@ -122,19 +150,20 @@ public:
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:
-  [[nodiscard]] static auto role_ref(const std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] static auto role_ref(const std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<const agent>>::failure(
+      return wh::core::result<std::reference_wrapper<const wh::agent::role_binding>>::failure(
           wh::core::errc::not_found);
     }
     return std::cref(*slot);
   }
 
-  [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] static auto role_ref(std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<wh::agent::role_binding>>::failure(
+          wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
@@ -147,8 +176,8 @@ private:
   }
 
   std::string name_{};
-  std::optional<agent> lead_{};
-  std::vector<agent> specialists_{};
+  std::optional<wh::agent::role_binding> lead_{};
+  std::vector<wh::agent::role_binding> specialists_{};
   bool frozen_{false};
 };
 

@@ -183,6 +183,19 @@ struct scripted_agent_tool_runner_state {
   };
 }
 
+struct async_object_runner {
+  [[nodiscard]] auto run_async(const wh::adk::run_request &request, wh::core::run_context &)
+      -> wh::core::detail::result_sender<wh::adk::agent_run_result> {
+    std::vector<wh::adk::agent_event> events{};
+    events.push_back(wh::adk::make_message_event(
+        make_assistant_message(message_text(request.messages.front()))));
+    return wh::core::detail::ready_sender(wh::adk::agent_run_result{wh::adk::agent_run_output{
+        .events = wh::adk::agent_event_stream_reader{wh::schema::stream::make_values_stream_reader(
+            std::move(events))},
+    }});
+  }
+};
+
 } // namespace
 
 TEST_CASE("agent tool request mode maps request json to child chat request and "
@@ -617,6 +630,54 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
   auto eof = reader.read();
   REQUIRE(eof.has_value());
   REQUIRE(eof.value().eof);
+}
+
+TEST_CASE("agent tool compose entry keeps async-only runner async-only",
+          "[core][agent][async][condition]") {
+  wh::adk::agent_tool tool{"delegate_async", "delegate async", wh::agent::agent{"worker"}};
+  REQUIRE(tool.bind_runner(async_object_runner{}).has_value());
+  REQUIRE(tool.freeze().has_value());
+
+  auto entry = tool.compose_entry();
+  REQUIRE(entry.has_value());
+  REQUIRE_FALSE(static_cast<bool>(entry->invoke));
+  REQUIRE_FALSE(static_cast<bool>(entry->stream));
+  REQUIRE(static_cast<bool>(entry->async_invoke));
+  REQUIRE(static_cast<bool>(entry->async_stream));
+
+  wh::compose::tool_call call{
+      .call_id = "call-async-1",
+      .tool_name = "delegate_async",
+      .arguments = R"({"request":"hello async"})",
+  };
+  wh::core::run_context context{};
+  auto scope = make_call_scope(context, call.tool_name, call.call_id);
+
+  wh::testing::helper::sender_capture<wh::core::result<wh::compose::graph_value>> invoke_capture{};
+  auto invoke_operation =
+      stdexec::connect(entry->async_invoke(call, scope),
+                       wh::testing::helper::sender_capture_receiver{
+                           &invoke_capture, wh::testing::helper::no_scheduler_env{}});
+  stdexec::start(invoke_operation);
+  REQUIRE(invoke_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(invoke_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(invoke_capture.value.has_value());
+  REQUIRE(invoke_capture.value->has_value());
+  REQUIRE(read_graph_string(std::move(invoke_capture.value->value())) == "hello async");
+
+  wh::testing::helper::sender_capture<wh::core::result<wh::compose::graph_stream_reader>>
+      stream_capture{};
+  auto stream_operation =
+      stdexec::connect(entry->async_stream(call, scope),
+                       wh::testing::helper::sender_capture_receiver{
+                           &stream_capture, wh::testing::helper::no_scheduler_env{}});
+  stdexec::start(stream_operation);
+  REQUIRE(stream_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(stream_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(stream_capture.value.has_value());
+  REQUIRE(stream_capture.value->has_value());
+  auto chunks = read_graph_stream_text(stream_capture.value->value());
+  REQUIRE(chunks == std::vector<std::string>{"hello async"});
 }
 
 TEST_CASE("agent tool resume reuses bridge checkpoint state without "
