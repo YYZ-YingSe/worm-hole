@@ -135,11 +135,6 @@ public:
     if (!model_binding_.has_value()) {
       return wh::core::result<void>::failure(wh::core::errc::not_found);
     }
-    auto binding_status = wh::agent::validate_model_binding(
-        *model_binding_, wh::compose::node_contract::value, wh::compose::node_contract::stream);
-    if (binding_status.has_error()) {
-      return binding_status;
-    }
     frozen_ = true;
     return {};
   }

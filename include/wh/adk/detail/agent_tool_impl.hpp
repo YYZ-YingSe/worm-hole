@@ -1040,6 +1040,10 @@ inline auto restore_outer_interrupt(wh::core::run_context &context, agent_tool_r
                                          const wh::compose::tool_call &call,
                                          const wh::tool::call_scope &scope)
     -> wh::core::result<agent_tool_result> {
+  if (!static_cast<bool>(runtime.runner.sync)) {
+    return wh::core::result<agent_tool_result>::failure(wh::core::errc::not_supported);
+  }
+
   const auto scope_snapshot = make_agent_tool_scope_snapshot(scope);
   auto setup = prepare_agent_tool_run_setup(runtime, call, scope.run, scope_snapshot);
   if (setup.has_error()) {
@@ -1056,7 +1060,7 @@ inline auto restore_outer_interrupt(wh::core::run_context &context, agent_tool_r
     }
   }
 
-  auto run_result = runtime.runner(setup.value().request, scope.run);
+  auto run_result = runtime.runner.sync(setup.value().request, scope.run);
   if (run_result.has_error()) {
     restore_outer_interrupt(scope.run, std::move(setup).value());
     output.final_error = run_result.error();
@@ -1818,13 +1822,18 @@ private:
                                                  const wh::compose::tool_call &call,
                                                  const wh::tool::call_scope &scope)
     -> wh::core::result<wh::compose::graph_stream_reader> {
+  if (!static_cast<bool>(runtime.runner.sync)) {
+    return wh::core::result<wh::compose::graph_stream_reader>::failure(
+        wh::core::errc::not_supported);
+  }
+
   auto scope_snapshot = make_agent_tool_scope_snapshot(scope);
   auto setup = prepare_agent_tool_run_setup(runtime, call, scope.run, scope_snapshot);
   if (setup.has_error()) {
     return wh::core::result<wh::compose::graph_stream_reader>::failure(setup.error());
   }
 
-  auto run_result = runtime.runner(setup.value().request, scope.run);
+  auto run_result = runtime.runner.sync(setup.value().request, scope.run);
   if (run_result.has_error()) {
     restore_outer_interrupt(scope.run, std::move(setup).value());
     return wh::core::result<wh::compose::graph_stream_reader>::failure(run_result.error());
@@ -1833,6 +1842,128 @@ private:
   return wh::compose::graph_stream_reader{
       agent_tool_live_stream_reader{runtime, std::move(scope_snapshot), scope.run,
                                     std::move(setup).value(), std::move(run_result).value()}};
+}
+
+[[nodiscard]] inline auto open_agent_tool_result_sender(const agent_tool_runtime &runtime,
+                                                        const wh::compose::tool_call &call,
+                                                        const wh::tool::call_scope &scope)
+    -> wh::core::detail::result_sender<wh::core::result<agent_tool_result>> {
+  using result_t = wh::core::result<agent_tool_result>;
+
+  if (!static_cast<bool>(runtime.runner.async)) {
+    return wh::core::detail::result_sender<result_t>{
+        wh::core::detail::failure_result_sender<result_t>(wh::core::errc::not_supported)};
+  }
+
+  const auto scope_snapshot = make_agent_tool_scope_snapshot(scope);
+  auto setup = prepare_agent_tool_run_setup(runtime, call, scope.run, scope_snapshot);
+  if (setup.has_error()) {
+    return wh::core::detail::result_sender<result_t>{
+        wh::core::detail::failure_result_sender<result_t>(setup.error())};
+  }
+
+  auto setup_state = std::move(setup).value();
+  return wh::core::detail::result_sender<result_t>{wh::core::detail::map_result_sender<result_t>(
+      runtime.runner.async(std::move(setup_state.request), scope.run),
+      [runtime, scope_snapshot, &context = scope.run,
+       setup = std::move(setup_state)](agent_run_result status) mutable -> result_t {
+        auto bridge = wh::adk::detail::make_live_event_bridge();
+        agent_tool_output_summary output{};
+        if (setup.projection.has_value()) {
+          output = make_agent_tool_output_summary(setup.projection->state.checkpoint);
+          auto replayed = replay_agent_tool_events(output.checkpoint_events, bridge);
+          if (replayed.has_error()) {
+            restore_outer_interrupt(context, std::move(setup));
+            return result_t::failure(replayed.error());
+          }
+        }
+
+        if (status.has_error()) {
+          restore_outer_interrupt(context, std::move(setup));
+          output.final_error = status.error();
+          auto emitted = bridge.emit(
+              make_error_event(status.error(), std::string{agent_tool_bridge_failed_message}, {},
+                               default_tool_metadata(runtime, scope_snapshot)));
+          if (emitted.has_error()) {
+            return result_t::failure(emitted.error());
+          }
+          auto closed = bridge.close();
+          if (closed.has_error()) {
+            return result_t::failure(closed.error());
+          }
+          return agent_tool_result{
+              .events = std::move(bridge).release_reader(),
+              .final_error = status.error(),
+          };
+        }
+
+        auto materialized = materialize_agent_tool_output(runtime, std::move(status).value(),
+                                                          scope_snapshot, bridge, output);
+        if (materialized.has_error()) {
+          restore_outer_interrupt(context, std::move(setup));
+          return result_t::failure(materialized.error());
+        }
+
+        auto projected = project_child_runtime(context, scope_snapshot, setup.saved_outer_interrupt,
+                                               runtime, setup.projection, output);
+        if (projected.has_error()) {
+          restore_outer_interrupt(context, std::move(setup));
+          return result_t::failure(projected.error());
+        }
+
+        std::string joined_text{};
+        for (const auto &chunk : output.text_chunks) {
+          joined_text.append(chunk);
+        }
+
+        auto closed = bridge.close();
+        if (closed.has_error()) {
+          restore_outer_interrupt(context, std::move(setup));
+          return result_t::failure(closed.error());
+        }
+
+        return agent_tool_result{
+            .events = std::move(bridge).release_reader(),
+            .output_chunks = std::move(output.text_chunks),
+            .output_text = std::move(joined_text),
+            .final_message = std::move(output.final_message),
+            .final_error = output.final_error,
+            .interrupted = output.interrupted,
+        };
+      })};
+}
+
+[[nodiscard]] inline auto open_agent_tool_stream_sender(const agent_tool_runtime &runtime,
+                                                        const wh::compose::tool_call &call,
+                                                        const wh::tool::call_scope &scope)
+    -> wh::compose::tools_stream_sender {
+  using result_t = wh::core::result<wh::compose::graph_stream_reader>;
+
+  if (!static_cast<bool>(runtime.runner.async)) {
+    return wh::compose::tools_stream_sender{
+        wh::core::detail::failure_result_sender<result_t>(wh::core::errc::not_supported)};
+  }
+
+  auto scope_snapshot = make_agent_tool_scope_snapshot(scope);
+  auto setup = prepare_agent_tool_run_setup(runtime, call, scope.run, scope_snapshot);
+  if (setup.has_error()) {
+    return wh::compose::tools_stream_sender{
+        wh::core::detail::failure_result_sender<result_t>(setup.error())};
+  }
+
+  auto setup_state = std::move(setup).value();
+  return wh::compose::tools_stream_sender{wh::core::detail::map_result_sender<result_t>(
+      runtime.runner.async(std::move(setup_state.request), scope.run),
+      [runtime, scope_snapshot = std::move(scope_snapshot), &context = scope.run,
+       setup = std::move(setup_state)](agent_run_result status) mutable -> result_t {
+        if (status.has_error()) {
+          restore_outer_interrupt(context, std::move(setup));
+          return result_t::failure(status.error());
+        }
+        return wh::compose::graph_stream_reader{
+            agent_tool_live_stream_reader{runtime, std::move(scope_snapshot), context,
+                                          std::move(setup), std::move(status).value()}};
+      })};
 }
 
 [[nodiscard]] inline auto default_message_history_schema() -> std::string {
@@ -1910,20 +2041,66 @@ inline auto agent_tool::compose_entry() const -> wh::core::result<wh::compose::t
   }
 
   wh::compose::tool_entry entry{};
-  entry.invoke = wh::compose::tool_invoke{
-      [runtime = runtime.value()](const wh::compose::tool_call &call, wh::tool::call_scope scope)
-          -> wh::core::result<wh::compose::graph_value> {
-        auto result = detail::run_agent_tool(runtime, call, scope);
-        if (result.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(result.error());
-        }
-        return detail::materialize_agent_tool_value(std::move(result).value());
-      }};
-  entry.stream = wh::compose::tool_stream{
-      [runtime = runtime.value()](const wh::compose::tool_call &call, wh::tool::call_scope scope)
-          -> wh::core::result<wh::compose::graph_stream_reader> {
-        return detail::open_agent_tool_stream(runtime, call, scope);
-      }};
+  if (static_cast<bool>(runtime->runner.sync)) {
+    entry.invoke = wh::compose::tool_invoke{
+        [runtime = runtime.value()](const wh::compose::tool_call &call, wh::tool::call_scope scope)
+            -> wh::core::result<wh::compose::graph_value> {
+          auto result = detail::run_agent_tool(runtime, call, scope);
+          if (result.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(result.error());
+          }
+          return detail::materialize_agent_tool_value(std::move(result).value());
+        }};
+    entry.stream = wh::compose::tool_stream{
+        [runtime = runtime.value()](const wh::compose::tool_call &call, wh::tool::call_scope scope)
+            -> wh::core::result<wh::compose::graph_stream_reader> {
+          return detail::open_agent_tool_stream(runtime, call, scope);
+        }};
+  }
+
+  if (static_cast<bool>(runtime->runner.async)) {
+    entry.async_invoke = wh::compose::tool_async_invoke{
+        [runtime =
+             runtime.value()](wh::compose::tool_call call,
+                              wh::tool::call_scope scope) -> wh::compose::tools_invoke_sender {
+          return wh::compose::tools_invoke_sender{
+              wh::core::detail::map_result_sender<wh::core::result<wh::compose::graph_value>>(
+                  detail::open_agent_tool_result_sender(runtime, call, scope),
+                  [](agent_tool_result result) -> wh::core::result<wh::compose::graph_value> {
+                    return detail::materialize_agent_tool_value(std::move(result));
+                  })};
+        }};
+    entry.async_stream = wh::compose::tool_async_stream{
+        [runtime =
+             runtime.value()](wh::compose::tool_call call,
+                              wh::tool::call_scope scope) -> wh::compose::tools_stream_sender {
+          return detail::open_agent_tool_stream_sender(runtime, call, scope);
+        }};
+    return entry;
+  }
+
+  if (static_cast<bool>(runtime->runner.sync)) {
+    entry.async_invoke = wh::compose::tool_async_invoke{
+        [runtime =
+             runtime.value()](wh::compose::tool_call call,
+                              wh::tool::call_scope scope) -> wh::compose::tools_invoke_sender {
+          auto result = detail::run_agent_tool(runtime, call, scope);
+          if (result.has_error()) {
+            return wh::compose::tools_invoke_sender{
+                wh::core::detail::failure_result_sender<wh::core::result<wh::compose::graph_value>>(
+                    result.error())};
+          }
+          return wh::compose::tools_invoke_sender{wh::core::detail::ready_sender(
+              detail::materialize_agent_tool_value(std::move(result).value()))};
+        }};
+    entry.async_stream = wh::compose::tool_async_stream{
+        [runtime =
+             runtime.value()](wh::compose::tool_call call,
+                              wh::tool::call_scope scope) -> wh::compose::tools_stream_sender {
+          return wh::compose::tools_stream_sender{
+              wh::core::detail::ready_sender(detail::open_agent_tool_stream(runtime, call, scope))};
+        }};
+  }
   return entry;
 }
 

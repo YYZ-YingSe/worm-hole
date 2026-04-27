@@ -25,31 +25,19 @@ namespace {
 }
 
 using wh::testing::helper::invoke_agent_graph;
-using wh::testing::helper::make_fixed_output_agent;
 using wh::testing::helper::message_text;
 
 } // namespace
 
 TEST_CASE("supervisor host graph executes root transfer into child subgraph",
           "[core][agent][host_graph]") {
-  wh::agent::agent_output supervisor_output{};
-  supervisor_output.final_message = wh::adk::make_transfer_tool_message("planner", "call-1");
-  supervisor_output.history_messages.push_back(
-      wh::adk::make_transfer_assistant_message("planner", "call-1"));
-  supervisor_output.history_messages.push_back(
+  auto supervisor_agent = wh::testing::helper::make_executable_message_agent(
+      "supervisor", wh::compose::node_contract::value, wh::compose::node_contract::stream,
       wh::adk::make_transfer_tool_message("planner", "call-1"));
-  supervisor_output.transfer = wh::agent::agent_transfer{
-      .target_agent_name = "planner",
-      .tool_call_id = "call-1",
-  };
-
-  wh::agent::agent_output worker_output{};
-  worker_output.final_message = make_assistant_message("planner", "done");
-  worker_output.history_messages.push_back(worker_output.final_message);
-
-  auto supervisor_agent = make_fixed_output_agent("supervisor", std::move(supervisor_output));
   REQUIRE(supervisor_agent.has_value());
-  auto planner_agent = make_fixed_output_agent("planner", std::move(worker_output));
+  auto planner_agent = wh::testing::helper::make_executable_message_agent(
+      "planner", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      make_assistant_message("planner", "done"));
   REQUIRE(planner_agent.has_value());
 
   wh::agent::supervisor authored{"supervisor"};

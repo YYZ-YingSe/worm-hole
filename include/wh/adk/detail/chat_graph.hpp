@@ -22,6 +22,8 @@ namespace wh::adk::detail {
 
 namespace chat_detail {
 
+inline constexpr std::string_view chat_model_messages_node_key = "__chat_model_messages__";
+
 [[nodiscard]] inline auto make_instruction_message(const std::string_view description,
                                                    const std::string_view instruction)
     -> std::optional<wh::schema::message> {
@@ -95,24 +97,8 @@ public:
   explicit chat_graph(const wh::agent::chat &authored) noexcept
       : authored_(std::addressof(authored)) {}
 
-  [[nodiscard]] auto
-  lower(const wh::agent::agent_graph_view view = wh::agent::agent_graph_view::native) const
-      -> wh::core::result<wh::compose::graph> {
-    if (view == wh::agent::agent_graph_view::native) {
-      return lower_native();
-    }
-
-    auto native = lower_native();
-    if (native.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(native.error());
-    }
-    return wh::adk::detail::lower_agent_output_view(
-        std::string{authored_->name()}, std::move(native).value(),
-        [output_key = std::string{authored_->output_key()}, output_mode = authored_->output_mode()](
-            std::vector<wh::schema::message> messages,
-            wh::core::run_context &) -> wh::core::result<wh::agent::agent_output> {
-          return chat_detail::make_agent_output(std::move(messages), output_key, output_mode);
-        });
+  [[nodiscard]] auto lower() const -> wh::core::result<wh::compose::graph> {
+    return lower_native();
   }
 
 private:
@@ -170,6 +156,21 @@ private:
       return wh::core::result<wh::compose::graph>::failure(model_added.error());
     }
 
+    if (model_binding.value().get().output_contract() == wh::compose::node_contract::value) {
+      auto project_model_output = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                                wh::compose::node_contract::stream>(
+          std::string{chat_detail::chat_model_messages_node_key},
+          [](wh::compose::graph_value &input, wh::core::run_context &,
+             const wh::compose::graph_call_scope &)
+              -> wh::core::result<wh::compose::graph_stream_reader> {
+            return wh::adk::detail::make_message_stream_from_value_payload(input);
+          });
+      auto project_added = lowered.append(std::move(project_model_output));
+      if (project_added.has_error()) {
+        return wh::core::result<wh::compose::graph>::failure(project_added.error());
+      }
+    }
+
     auto compiled = lowered.compile();
     if (compiled.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(compiled.error());
@@ -195,9 +196,9 @@ private:
 
   auto shell = std::make_unique<wh::agent::chat>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr,
-      [shell = std::move(shell)](const wh::agent::agent_graph_view view) mutable
-          -> wh::core::result<wh::compose::graph> { return chat_graph{*shell}.lower(view); });
+      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
+        return chat_graph{*shell}.lower();
+      });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }

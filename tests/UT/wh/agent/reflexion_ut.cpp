@@ -50,6 +50,34 @@ TEST_CASE(
   REQUIRE(lowered.value().executable());
 }
 
+TEST_CASE("reflexion accepts authored role providers directly",
+          "[UT][wh/agent/reflexion.hpp][reflexion::set_actor][surface][role_binding]") {
+  wh::agent::reflexion authored{"reflexion-authored"};
+  REQUIRE(
+      authored.set_actor(wh::testing::helper::make_configured_react("actor", "actor")).has_value());
+  REQUIRE(authored.set_critic(wh::testing::helper::make_configured_chat("critic", "critic"))
+              .has_value());
+  REQUIRE(authored.set_memory_writer(wh::testing::helper::make_configured_chat("memory", "memory"))
+              .has_value());
+  REQUIRE(authored.set_actor_request_builder(wh::testing::helper::make_revision_request_builder())
+              .has_value());
+  REQUIRE(authored.set_critic_request_builder(wh::testing::helper::make_revision_request_builder())
+              .has_value());
+  REQUIRE(
+      authored
+          .set_memory_writer_request_builder(wh::testing::helper::make_revision_request_builder())
+          .has_value());
+  REQUIRE(authored
+              .set_review_decision_reader(wh::testing::helper::make_review_decision_reader(
+                  wh::agent::review_decision_kind::accept))
+              .has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  REQUIRE(lowered->lower().has_value());
+}
+
 TEST_CASE(
     "reflexion shell enforces builder role parity executability and late mutation",
     "[UT][wh/agent/"

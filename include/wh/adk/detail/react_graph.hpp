@@ -29,6 +29,8 @@ namespace wh::adk::detail {
 
 namespace react_detail {
 
+inline constexpr std::string_view react_model_messages_node_key = "__react_model_messages__";
+
 struct prepared_tool_round {
   wh::schema::message assistant_message{};
   std::vector<wh::agent::react_tool_action> actions{};
@@ -476,24 +478,8 @@ public:
   explicit react_graph(const wh::agent::react &authored) noexcept
       : authored_(std::addressof(authored)) {}
 
-  [[nodiscard]] auto
-  lower(const wh::agent::agent_graph_view view = wh::agent::agent_graph_view::native) const
-      -> wh::core::result<wh::compose::graph> {
-    if (view == wh::agent::agent_graph_view::native) {
-      return lower_native();
-    }
-
-    auto native = lower_native();
-    if (native.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(native.error());
-    }
-    return wh::adk::detail::lower_agent_output_view(
-        std::string{authored_->name()}, std::move(native).value(),
-        [output_key = std::string{authored_->output_key()}, output_mode = authored_->output_mode()](
-            std::vector<wh::schema::message> messages,
-            wh::core::run_context &) -> wh::core::result<wh::agent::agent_output> {
-          return react_detail::make_agent_output(std::move(messages), output_key, output_mode);
-        });
+  [[nodiscard]] auto lower() const -> wh::core::result<wh::compose::graph> {
+    return lower_native();
   }
 
 private:
@@ -575,6 +561,28 @@ private:
     auto model_added = lowered.add_component(std::move(model_node).value());
     if (model_added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(model_added.error());
+    }
+
+    std::string model_stream_source{std::string{wh::agent::react_model_node_key}};
+    if (model_binding.value().get().output_contract() == wh::compose::node_contract::value) {
+      auto project_model_output = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                                wh::compose::node_contract::stream>(
+          std::string{react_detail::react_model_messages_node_key},
+          [](wh::compose::graph_value &input, wh::core::run_context &,
+             const wh::compose::graph_call_scope &)
+              -> wh::core::result<wh::compose::graph_stream_reader> {
+            return wh::adk::detail::make_message_stream_from_value_payload(input);
+          });
+      auto project_added = lowered.add_lambda(std::move(project_model_output));
+      if (project_added.has_error()) {
+        return wh::core::result<wh::compose::graph>::failure(project_added.error());
+      }
+      model_stream_source = std::string{react_detail::react_model_messages_node_key};
+      auto project_edge =
+          lowered.add_edge(std::string{wh::agent::react_model_node_key}, model_stream_source);
+      if (project_edge.has_error()) {
+        return wh::core::result<wh::compose::graph>::failure(project_edge.error());
+      }
     }
 
     auto prepare_tools = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
@@ -735,7 +743,7 @@ private:
       return wh::core::result<wh::compose::graph>::failure(finalize_id.error());
     }
     auto model_branch_added = lowered.add_stream_branch(wh::compose::graph_stream_branch{
-        .from = std::string{wh::agent::react_model_node_key},
+        .from = std::move(model_stream_source),
         .end_nodes = {"prepare_tools", "finalize_history"},
         .selector_ids = [prepare_tools_id = prepare_tools_id.value(),
                          finalize_id = finalize_id.value()](wh::compose::graph_stream_reader input,
@@ -812,9 +820,9 @@ private:
 
   auto shell = std::make_unique<wh::agent::react>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr,
-      [shell = std::move(shell)](const wh::agent::agent_graph_view view) mutable
-          -> wh::core::result<wh::compose::graph> { return react_graph{*shell}.lower(view); });
+      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
+        return react_graph{*shell}.lower();
+      });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }

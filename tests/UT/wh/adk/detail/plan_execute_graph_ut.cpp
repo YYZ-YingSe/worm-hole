@@ -77,9 +77,8 @@ TEST_CASE(
   REQUIRE(bad_output.error() == wh::core::errc::type_mismatch);
 
   wh::compose::graph_process_state parent{};
-  REQUIRE(
-      parent.emplace_workflow_state<runtime_state>(runtime_state{.remaining_iterations = 9U})
-          .has_value());
+  REQUIRE(parent.emplace_workflow_state<runtime_state>(runtime_state{.remaining_iterations = 9U})
+              .has_value());
   wh::compose::graph_process_state child{&parent};
   auto shared = wh::adk::detail::plan_execute_detail::read_state(child);
   REQUIRE(shared.has_value());
@@ -214,10 +213,42 @@ TEST_CASE("plan execute graph lowers authored shells and exposes executable bind
 
   auto configured = wh::testing::helper::make_configured_plan_execute("planner");
   REQUIRE(configured.has_value());
+  REQUIRE(configured->freeze().has_value());
   auto lowered = wh::adk::detail::plan_execute_graph{configured.value()}.lower();
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->compile().has_value());
-  REQUIRE(configured->freeze().has_value());
+
+  wh::agent::plan_execute mixed{"mixed"};
+  auto planner = wh::testing::helper::make_executable_message_agent(
+      "planner", wh::compose::node_contract::value, wh::compose::node_contract::stream,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "plan"));
+  auto executor = wh::testing::helper::make_executable_message_agent(
+      "executor", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "step"));
+  auto replanner = wh::testing::helper::make_executable_message_agent(
+      "replanner", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "replan"));
+  REQUIRE(planner.has_value());
+  REQUIRE(executor.has_value());
+  REQUIRE(replanner.has_value());
+  REQUIRE(mixed.set_planner(std::move(planner).value()).has_value());
+  REQUIRE(mixed.set_executor(std::move(executor).value()).has_value());
+  REQUIRE(mixed.set_replanner(std::move(replanner).value()).has_value());
+  REQUIRE(mixed.set_planner_request_builder(wh::testing::helper::make_plan_request_builder())
+              .has_value());
+  REQUIRE(mixed.set_executor_request_builder(wh::testing::helper::make_plan_request_builder())
+              .has_value());
+  REQUIRE(mixed.set_replanner_request_builder(wh::testing::helper::make_plan_request_builder())
+              .has_value());
+  REQUIRE(mixed.set_planner_plan_reader(wh::testing::helper::make_plan_reader()).has_value());
+  REQUIRE(mixed.set_executor_step_reader(wh::testing::helper::make_step_reader()).has_value());
+  REQUIRE(
+      mixed.set_replanner_decision_reader(wh::testing::helper::make_plan_execute_decision_reader())
+          .has_value());
+  REQUIRE(mixed.freeze().has_value());
+  auto mixed_lowered = wh::adk::detail::plan_execute_graph{mixed}.lower();
+  REQUIRE(mixed_lowered.has_value());
+  REQUIRE(mixed_lowered->compile().has_value());
 
   auto bound = wh::adk::detail::bind_plan_execute_agent(std::move(configured).value());
   REQUIRE(bound.has_value());

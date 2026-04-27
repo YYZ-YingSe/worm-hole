@@ -3,6 +3,7 @@
 
 #include <concepts>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -48,8 +49,21 @@ struct agent_tool_result {
 
 namespace detail {
 
-using agent_tool_runner = wh::core::callback_function<agent_run_result(
+using agent_tool_sync_runner = wh::core::callback_function<agent_run_result(
     const wh::adk::run_request &, wh::core::run_context &) const>;
+
+using agent_tool_async_runner =
+    wh::core::callback_function<wh::core::detail::result_sender<agent_run_result>(
+        wh::adk::run_request, wh::core::run_context &) const>;
+
+struct agent_tool_runner_binding {
+  agent_tool_sync_runner sync{nullptr};
+  agent_tool_async_runner async{nullptr};
+
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return static_cast<bool>(sync) || static_cast<bool>(async);
+  }
+};
 
 /// Frozen bridge runtime captured once from the public authored shell.
 struct agent_tool_runtime {
@@ -61,41 +75,135 @@ struct agent_tool_runtime {
   agent_tool_input_mode input_mode{agent_tool_input_mode::request};
   /// True forwards child internal events after boundary filtering.
   bool forward_internal_events{false};
-  /// Frozen child-agent execution entrypoint.
-  agent_tool_runner runner{nullptr};
+  /// Frozen child-agent execution entrypoints preserved at authored capability.
+  agent_tool_runner_binding runner{};
 };
 
 template <typename value_t> struct agent_tool_runner_box {
+  template <typename value_u>
+    requires std::constructible_from<value_t, value_u>
+  explicit agent_tool_runner_box(value_u &&stored) : value(std::forward<value_u>(stored)) {}
+
   mutable value_t value;
 };
 
 template <typename runner_t>
-concept agent_tool_runner_object = requires(runner_t &runner, const wh::adk::run_request &request,
-                                            wh::core::run_context &context) {
+concept agent_tool_sync_runner_object_const = requires(
+    runner_t &runner, const wh::adk::run_request &request, wh::core::run_context &context) {
   { runner.run(request, context) } -> std::same_as<agent_run_result>;
 };
 
 template <typename runner_t>
-concept agent_tool_runner_callable = requires(runner_t &runner, const wh::adk::run_request &request,
-                                              wh::core::run_context &context) {
+concept agent_tool_sync_runner_object_move =
+    requires(runner_t &runner, wh::adk::run_request request, wh::core::run_context &context) {
+      { runner.run(std::move(request), context) } -> std::same_as<agent_run_result>;
+    };
+
+template <typename runner_t>
+concept agent_tool_sync_runner_object =
+    agent_tool_sync_runner_object_const<runner_t> || agent_tool_sync_runner_object_move<runner_t>;
+
+template <typename runner_t>
+concept agent_tool_sync_runner_callable_const = requires(
+    runner_t &runner, const wh::adk::run_request &request, wh::core::run_context &context) {
   { std::invoke(runner, request, context) } -> std::same_as<agent_run_result>;
 };
 
 template <typename runner_t>
-concept bindable_agent_tool_runner = std::copy_constructible<std::remove_cvref_t<runner_t>> &&
-                                     (agent_tool_runner_object<std::remove_cvref_t<runner_t>> ||
-                                      agent_tool_runner_callable<std::remove_cvref_t<runner_t>>);
+concept agent_tool_sync_runner_callable_move =
+    requires(runner_t &runner, wh::adk::run_request request, wh::core::run_context &context) {
+      { std::invoke(runner, std::move(request), context) } -> std::same_as<agent_run_result>;
+    };
+
+template <typename runner_t>
+concept agent_tool_sync_runner_callable = agent_tool_sync_runner_callable_const<runner_t> ||
+                                          agent_tool_sync_runner_callable_move<runner_t>;
+
+template <typename runner_t>
+concept agent_tool_async_runner_object_const = requires(
+    runner_t &runner, const wh::adk::run_request &request, wh::core::run_context &context) {
+  requires wh::core::detail::sender_exact_value<decltype(runner.run_async(request, context)),
+                                                agent_run_result>;
+};
+
+template <typename runner_t>
+concept agent_tool_async_runner_object_move =
+    requires(runner_t &runner, wh::adk::run_request request, wh::core::run_context &context) {
+      requires wh::core::detail::sender_exact_value<
+          decltype(runner.run_async(std::move(request), context)), agent_run_result>;
+    };
+
+template <typename runner_t>
+concept agent_tool_async_runner_object =
+    agent_tool_async_runner_object_const<runner_t> || agent_tool_async_runner_object_move<runner_t>;
+
+template <typename runner_t>
+concept agent_tool_async_runner_callable_const = requires(
+    runner_t &runner, const wh::adk::run_request &request, wh::core::run_context &context) {
+  requires wh::core::detail::sender_exact_value<decltype(std::invoke(runner, request, context)),
+                                                agent_run_result>;
+};
+
+template <typename runner_t>
+concept agent_tool_async_runner_callable_move =
+    requires(runner_t &runner, wh::adk::run_request request, wh::core::run_context &context) {
+      requires wh::core::detail::sender_exact_value<
+          decltype(std::invoke(runner, std::move(request), context)), agent_run_result>;
+    };
+
+template <typename runner_t>
+concept agent_tool_async_runner_callable = agent_tool_async_runner_callable_const<runner_t> ||
+                                           agent_tool_async_runner_callable_move<runner_t>;
+
+template <typename runner_t>
+concept bindable_agent_tool_runner =
+    agent_tool_sync_runner_object<std::remove_cvref_t<runner_t>> ||
+    agent_tool_sync_runner_callable<std::remove_cvref_t<runner_t>> ||
+    agent_tool_async_runner_object<std::remove_cvref_t<runner_t>> ||
+    agent_tool_async_runner_callable<std::remove_cvref_t<runner_t>>;
+
+template <typename runner_t>
+[[nodiscard]] inline auto dispatch_agent_tool_sync_runner(runner_t &runner,
+                                                          const wh::adk::run_request &request,
+                                                          wh::core::run_context &context)
+    -> agent_run_result {
+  if constexpr (agent_tool_sync_runner_object_const<runner_t>) {
+    return runner.run(request, context);
+  } else if constexpr (agent_tool_sync_runner_object_move<runner_t>) {
+    return runner.run(wh::adk::run_request{request}, context);
+  } else if constexpr (agent_tool_sync_runner_callable_const<runner_t>) {
+    return std::invoke(runner, request, context);
+  } else {
+    return std::invoke(runner, wh::adk::run_request{request}, context);
+  }
+}
+
+template <typename runner_t>
+[[nodiscard]] inline auto dispatch_agent_tool_async_runner(runner_t &runner,
+                                                           wh::adk::run_request request,
+                                                           wh::core::run_context &context)
+    -> wh::core::detail::result_sender<agent_run_result> {
+  if constexpr (agent_tool_async_runner_object<runner_t>) {
+    return wh::core::detail::request_result_sender<agent_run_result>(
+        std::move(request), [&runner, &context](auto &&forwarded_request) mutable {
+          return runner.run_async(std::forward<decltype(forwarded_request)>(forwarded_request),
+                                  context);
+        });
+  } else {
+    return wh::core::detail::request_result_sender<agent_run_result>(
+        std::move(request), [&runner, &context](auto &&forwarded_request) mutable {
+          return std::invoke(runner, std::forward<decltype(forwarded_request)>(forwarded_request),
+                             context);
+        });
+  }
+}
 
 template <typename runner_t>
 [[nodiscard]] inline auto dispatch_agent_tool_runner(runner_t &runner,
                                                      const wh::adk::run_request &request,
                                                      wh::core::run_context &context)
     -> agent_run_result {
-  if constexpr (agent_tool_runner_object<runner_t>) {
-    return runner.run(request, context);
-  } else {
-    return std::invoke(runner, request, context);
-  }
+  return dispatch_agent_tool_sync_runner(runner, request, context);
 }
 
 struct agent_tool_access;
@@ -171,7 +279,7 @@ public:
   }
 
   /// Binds one executable child runner by the authored bound-agent name.
-  auto bind_runner(detail::agent_tool_runner runner) -> wh::core::result<void> {
+  auto bind_runner(detail::agent_tool_runner_binding runner) -> wh::core::result<void> {
     auto mutable_result = ensure_mutable();
     if (mutable_result.has_error()) {
       return mutable_result;
@@ -187,12 +295,27 @@ public:
   template <detail::bindable_agent_tool_runner runner_t>
   auto bind_runner(runner_t &&runner) -> wh::core::result<void> {
     using stored_runner_t = std::remove_cvref_t<runner_t>;
-    return bind_runner(detail::agent_tool_runner{
-        [runner_box = detail::agent_tool_runner_box<stored_runner_t>{stored_runner_t{
-             std::forward<runner_t>(runner)}}](const wh::adk::run_request &request,
-                                               wh::core::run_context &context) -> agent_run_result {
-          return detail::dispatch_agent_tool_runner(runner_box.value, request, context);
-        }});
+    auto runner_box = std::make_shared<detail::agent_tool_runner_box<stored_runner_t>>(
+        std::forward<runner_t>(runner));
+    detail::agent_tool_runner_binding binding{};
+    if constexpr (detail::agent_tool_sync_runner_object<stored_runner_t> ||
+                  detail::agent_tool_sync_runner_callable<stored_runner_t>) {
+      binding.sync = detail::agent_tool_sync_runner{
+          [runner_box](const wh::adk::run_request &request,
+                       wh::core::run_context &context) -> agent_run_result {
+            return detail::dispatch_agent_tool_sync_runner(runner_box->value, request, context);
+          }};
+    }
+    if constexpr (detail::agent_tool_async_runner_object<stored_runner_t> ||
+                  detail::agent_tool_async_runner_callable<stored_runner_t>) {
+      binding.async = detail::agent_tool_async_runner{
+          [runner_box](wh::adk::run_request request, wh::core::run_context &context)
+              -> wh::core::detail::result_sender<agent_run_result> {
+            return detail::dispatch_agent_tool_async_runner(runner_box->value, std::move(request),
+                                                            context);
+          }};
+    }
+    return bind_runner(std::move(binding));
   }
 
   /// Materializes the authored tool schema visible to runtime/tool routing.
@@ -259,8 +382,8 @@ private:
   bool forward_internal_events_{false};
   /// Bound authored agent that will later be lowered behind the tool boundary.
   wh::agent::agent bound_agent_{""};
-  /// Frozen child-agent execution entrypoint.
-  detail::agent_tool_runner runner_{nullptr};
+  /// Frozen child-agent execution entrypoints preserved at authored capability.
+  detail::agent_tool_runner_binding runner_{};
   /// Cached runtime bundle materialized exactly once at freeze.
   std::optional<detail::agent_tool_runtime> runtime_{};
 

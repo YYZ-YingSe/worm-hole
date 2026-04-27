@@ -83,6 +83,36 @@ TEST_CASE("plan execute contracts carry plan step context readers and effective 
   REQUIRE(lowered.value().executable());
 }
 
+TEST_CASE("plan execute accepts authored role providers directly",
+          "[UT][wh/agent/plan_execute.hpp][plan_execute::set_planner][surface][role_binding]") {
+  wh::agent::plan_execute authored{"planner-shell"};
+  REQUIRE(authored.set_planner(wh::testing::helper::make_configured_chat("planner", "planner"))
+              .has_value());
+  REQUIRE(authored.set_executor(wh::testing::helper::make_configured_chat("executor", "executor"))
+              .has_value());
+  REQUIRE(
+      authored.set_replanner(wh::testing::helper::make_configured_chat("replanner", "replanner"))
+          .has_value());
+  REQUIRE(authored.set_planner_request_builder(wh::testing::helper::make_plan_request_builder())
+              .has_value());
+  REQUIRE(authored.set_executor_request_builder(wh::testing::helper::make_plan_request_builder())
+              .has_value());
+  REQUIRE(authored.set_replanner_request_builder(wh::testing::helper::make_plan_request_builder())
+              .has_value());
+  REQUIRE(authored.set_planner_plan_reader(wh::testing::helper::make_plan_reader()).has_value());
+  REQUIRE(authored.set_executor_step_reader(wh::testing::helper::make_step_reader()).has_value());
+  REQUIRE(
+      authored
+          .set_replanner_decision_reader(wh::testing::helper::make_plan_execute_decision_reader())
+          .has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  auto graph = lowered->lower();
+  REQUIRE(graph.has_value());
+}
+
 TEST_CASE(
     "plan execute shell rejects invalid builders roles and late mutation",
     "[UT][wh/agent/"

@@ -4,9 +4,11 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "wh/adk/detail/agent_graph_view.hpp"
 #include "wh/adk/detail/shared_state.hpp"
 #include "wh/adk/deterministic_transfer.hpp"
 #include "wh/agent/agent.hpp"
@@ -35,6 +37,14 @@ struct runtime_state {
 struct replanner_result {
   wh::agent::plan_execute_decision decision{};
 };
+
+[[nodiscard]] inline auto role_request_node_key(const std::string_view role_name) -> std::string {
+  return std::string{role_name} + "_request_adapter";
+}
+
+[[nodiscard]] inline auto role_result_node_key(const std::string_view role_name) -> std::string {
+  return std::string{role_name} + "_result_adapter";
+}
 
 [[nodiscard]] inline auto read_state(wh::compose::graph_process_state &process_state)
     -> wh::core::result<std::reference_wrapper<runtime_state>> {
@@ -66,6 +76,108 @@ struct replanner_result {
   }
   return wh::core::result<std::reference_wrapper<const wh::agent::agent_output>>::failure(
       wh::core::errc::type_mismatch);
+}
+
+[[nodiscard]] inline auto validate_role_graph(const wh::compose::graph &graph)
+    -> wh::core::result<void> {
+  const auto boundary = graph.boundary();
+  if (boundary.input != wh::compose::node_contract::value &&
+      boundary.input != wh::compose::node_contract::stream) {
+    return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+  }
+  if (boundary.output != wh::compose::node_contract::value &&
+      boundary.output != wh::compose::node_contract::stream) {
+    return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+  }
+  return {};
+}
+
+[[nodiscard]] inline auto make_role_agent_output(std::vector<wh::schema::message> messages,
+                                                 wh::core::run_context &)
+    -> wh::core::result<wh::agent::agent_output> {
+  if (messages.empty()) {
+    return wh::core::result<wh::agent::agent_output>::failure(wh::core::errc::not_found);
+  }
+  auto final_message = messages.back();
+  return wh::agent::agent_output{
+      .final_message = final_message,
+      .history_messages = std::move(messages),
+      .transfer = wh::adk::extract_transfer_from_message(final_message),
+  };
+}
+
+[[nodiscard]] inline auto add_role_request_adapter(wh::compose::graph &graph,
+                                                   const std::string &role_name,
+                                                   const wh::compose::node_contract input_contract)
+    -> wh::core::result<void> {
+  const auto node_key = role_request_node_key(role_name);
+  if (input_contract == wh::compose::node_contract::value) {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                              wh::compose::node_contract::value>(
+        node_key,
+        [](wh::compose::graph_value &payload, wh::core::run_context &,
+           const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto messages = read_messages_payload(payload);
+          if (messages.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(messages.error());
+          }
+          return wh::compose::graph_value{std::move(messages).value()};
+        });
+    return graph.add_lambda(std::move(node));
+  }
+
+  auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                            wh::compose::node_contract::stream>(
+      node_key,
+      [](wh::compose::graph_value &payload, wh::core::run_context &,
+         const wh::compose::graph_call_scope &)
+          -> wh::core::result<wh::compose::graph_stream_reader> {
+        auto messages = read_messages_payload(payload);
+        if (messages.has_error()) {
+          return wh::core::result<wh::compose::graph_stream_reader>::failure(messages.error());
+        }
+        return wh::adk::detail::make_message_stream_reader(std::move(messages).value());
+      });
+  return graph.add_lambda(std::move(node));
+}
+
+[[nodiscard]] inline auto add_role_result_adapter(wh::compose::graph &graph,
+                                                  const std::string &role_name,
+                                                  const wh::compose::node_contract output_contract)
+    -> wh::core::result<void> {
+  const auto node_key = role_result_node_key(role_name);
+  const auto build_output =
+      wh::adk::detail::agent_output_from_messages{plan_execute_detail::make_role_agent_output};
+
+  if (output_contract == wh::compose::node_contract::value) {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                              wh::compose::node_contract::value>(
+        node_key,
+        [build_output](
+            wh::compose::graph_value &payload, wh::core::run_context &context,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          return wh::adk::detail::make_agent_output_value(payload, build_output, context);
+        });
+    return graph.add_lambda(std::move(node));
+  }
+
+  auto node = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                            wh::compose::node_contract::value>(
+      node_key,
+      [build_output](
+          wh::compose::graph_stream_reader payload, wh::core::run_context &context,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+        auto messages = wh::adk::detail::read_message_stream(std::move(payload));
+        if (messages.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(messages.error());
+        }
+        auto output = build_output(std::move(messages).value(), context);
+        if (output.has_error()) {
+          return wh::core::result<wh::compose::graph_value>::failure(output.error());
+        }
+        return wh::compose::graph_value{std::move(output).value()};
+      });
+  return graph.add_lambda(std::move(node));
 }
 
 [[nodiscard]] inline auto make_bootstrap_options(const std::size_t max_iterations)
@@ -282,23 +394,38 @@ public:
       return wh::core::result<wh::compose::graph>::failure(replanner.error());
     }
 
-    auto planner_graph = planner.value().get().lower(wh::agent::agent_graph_view::agent_output);
-    if (planner_graph.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(planner_graph.error());
+    auto planner_native = planner.value().get().lower();
+    if (planner_native.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(planner_native.error());
     }
-    auto executor_graph = executor.value().get().lower(wh::agent::agent_graph_view::agent_output);
-    if (executor_graph.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(executor_graph.error());
+    auto planner_graph = std::move(planner_native).value();
+    auto planner_valid = plan_execute_detail::validate_role_graph(planner_graph);
+    if (planner_valid.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(planner_valid.error());
     }
-    auto replanner_graph = replanner.value().get().lower(wh::agent::agent_graph_view::agent_output);
-    if (replanner_graph.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(replanner_graph.error());
+    auto executor_native = executor.value().get().lower();
+    if (executor_native.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(executor_native.error());
+    }
+    auto executor_graph = std::move(executor_native).value();
+    auto executor_valid = plan_execute_detail::validate_role_graph(executor_graph);
+    if (executor_valid.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(executor_valid.error());
+    }
+    auto replanner_native = replanner.value().get().lower();
+    if (replanner_native.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(replanner_native.error());
+    }
+    auto replanner_graph = std::move(replanner_native).value();
+    auto replanner_valid = plan_execute_detail::validate_role_graph(replanner_graph);
+    if (replanner_valid.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(replanner_valid.error());
     }
 
     wh::compose::graph_compile_options compile_options{};
     compile_options.name = std::string{authored_->name()};
     compile_options.mode = wh::compose::graph_runtime_mode::pregel;
-    compile_options.max_steps = authored_->max_iterations() * 5U + 8U;
+    compile_options.max_steps = authored_->max_iterations() * 10U + 8U;
     compile_options.max_parallel_nodes = 1U;
     compile_options.max_parallel_per_node = 1U;
     wh::compose::graph lowered{std::move(compile_options)};
@@ -327,11 +454,21 @@ public:
       return wh::core::result<wh::compose::graph>::failure(plan_request_added.error());
     }
 
-    auto planner_node =
-        wh::compose::make_subgraph_node("planner", std::move(planner_graph).value());
+    const auto planner_boundary = planner_graph.boundary();
+    auto planner_request_adapter = plan_execute_detail::add_role_request_adapter(
+        lowered, std::string{"planner"}, planner_boundary.input);
+    if (planner_request_adapter.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(planner_request_adapter.error());
+    }
+    auto planner_node = wh::compose::make_subgraph_node("planner", std::move(planner_graph));
     auto planner_added = lowered.add_subgraph(std::move(planner_node));
     if (planner_added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(planner_added.error());
+    }
+    auto planner_result_adapter = plan_execute_detail::add_role_result_adapter(
+        lowered, std::string{"planner"}, planner_boundary.output);
+    if (planner_result_adapter.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(planner_result_adapter.error());
     }
 
     auto parse_plan = wh::compose::make_lambda_node(
@@ -358,11 +495,21 @@ public:
       return wh::core::result<wh::compose::graph>::failure(execute_request_added.error());
     }
 
-    auto executor_node =
-        wh::compose::make_subgraph_node("executor", std::move(executor_graph).value());
+    const auto executor_boundary = executor_graph.boundary();
+    auto executor_request_adapter = plan_execute_detail::add_role_request_adapter(
+        lowered, std::string{"executor"}, executor_boundary.input);
+    if (executor_request_adapter.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(executor_request_adapter.error());
+    }
+    auto executor_node = wh::compose::make_subgraph_node("executor", std::move(executor_graph));
     auto executor_added = lowered.add_subgraph(std::move(executor_node));
     if (executor_added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(executor_added.error());
+    }
+    auto executor_result_adapter = plan_execute_detail::add_role_result_adapter(
+        lowered, std::string{"executor"}, executor_boundary.output);
+    if (executor_result_adapter.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(executor_result_adapter.error());
     }
 
     auto capture_step = wh::compose::make_lambda_node(
@@ -389,11 +536,21 @@ public:
       return wh::core::result<wh::compose::graph>::failure(replan_request_added.error());
     }
 
-    auto replanner_node =
-        wh::compose::make_subgraph_node("replanner", std::move(replanner_graph).value());
+    const auto replanner_boundary = replanner_graph.boundary();
+    auto replanner_request_adapter = plan_execute_detail::add_role_request_adapter(
+        lowered, std::string{"replanner"}, replanner_boundary.input);
+    if (replanner_request_adapter.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(replanner_request_adapter.error());
+    }
+    auto replanner_node = wh::compose::make_subgraph_node("replanner", std::move(replanner_graph));
     auto replanner_added = lowered.add_subgraph(std::move(replanner_node));
     if (replanner_added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(replanner_added.error());
+    }
+    auto replanner_result_adapter = plan_execute_detail::add_role_result_adapter(
+        lowered, std::string{"replanner"}, replanner_boundary.output);
+    if (replanner_result_adapter.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(replanner_result_adapter.error());
     }
 
     auto parse_replanner = wh::compose::make_lambda_node(
@@ -432,33 +589,57 @@ public:
     if (bootstrap_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(bootstrap_edge.error());
     }
-    auto planner_request_edge = add_edge("plan_request", "planner");
+    auto planner_request_edge = add_edge("plan_request", "planner_request_adapter");
     if (planner_request_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(planner_request_edge.error());
     }
-    auto planner_parse_edge = add_edge("planner", "parse_plan");
+    auto planner_role_edge = add_edge("planner_request_adapter", "planner");
+    if (planner_role_edge.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(planner_role_edge.error());
+    }
+    auto planner_parse_edge = add_edge("planner_result_adapter", "parse_plan");
     if (planner_parse_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(planner_parse_edge.error());
     }
-    auto execute_request_edge = add_edge("execute_request", "executor");
+    auto planner_result_edge = add_edge("planner", "planner_result_adapter");
+    if (planner_result_edge.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(planner_result_edge.error());
+    }
+    auto execute_request_edge = add_edge("execute_request", "executor_request_adapter");
     if (execute_request_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(execute_request_edge.error());
     }
-    auto executor_capture_edge = add_edge("executor", "capture_step");
+    auto executor_role_edge = add_edge("executor_request_adapter", "executor");
+    if (executor_role_edge.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(executor_role_edge.error());
+    }
+    auto executor_capture_edge = add_edge("executor_result_adapter", "capture_step");
     if (executor_capture_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(executor_capture_edge.error());
+    }
+    auto executor_result_edge = add_edge("executor", "executor_result_adapter");
+    if (executor_result_edge.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(executor_result_edge.error());
     }
     auto capture_replan_edge = add_edge("capture_step", "replan_request");
     if (capture_replan_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(capture_replan_edge.error());
     }
-    auto replanner_request_edge = add_edge("replan_request", "replanner");
+    auto replanner_request_edge = add_edge("replan_request", "replanner_request_adapter");
     if (replanner_request_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(replanner_request_edge.error());
     }
-    auto replanner_parse_edge = add_edge("replanner", "parse_replanner");
+    auto replanner_role_edge = add_edge("replanner_request_adapter", "replanner");
+    if (replanner_role_edge.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(replanner_role_edge.error());
+    }
+    auto replanner_parse_edge = add_edge("replanner_result_adapter", "parse_replanner");
     if (replanner_parse_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(replanner_parse_edge.error());
+    }
+    auto replanner_result_edge = add_edge("replanner", "replanner_result_adapter");
+    if (replanner_result_edge.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(replanner_result_edge.error());
     }
     auto emit_final_edge = lowered.add_exit_edge("emit_final");
     if (emit_final_edge.has_error()) {
@@ -519,9 +700,9 @@ private:
   wh::agent::agent exported{std::string{authored.name()}};
   auto shell = std::make_unique<wh::agent::plan_execute>(std::move(authored));
   auto bound = exported.bind_execution(
-      nullptr,
-      [shell = std::move(shell)](const wh::agent::agent_graph_view) mutable
-          -> wh::core::result<wh::compose::graph> { return plan_execute_graph{*shell}.lower(); });
+      nullptr, [shell = std::move(shell)]() mutable -> wh::core::result<wh::compose::graph> {
+        return plan_execute_graph{*shell}.lower();
+      });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }

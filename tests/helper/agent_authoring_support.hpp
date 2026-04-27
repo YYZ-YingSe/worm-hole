@@ -9,6 +9,7 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/adk/detail/agent_graph_view.hpp"
 #include "wh/agent/bind.hpp"
 #include "wh/agent/chat.hpp"
 #include "wh/agent/model_binding.hpp"
@@ -22,6 +23,7 @@
 #include "wh/agent/supervisor.hpp"
 #include "wh/agent/swarm.hpp"
 #include "wh/compose/graph.hpp"
+#include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/lambda.hpp"
 #include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/component.hpp"
@@ -87,9 +89,8 @@ namespace wh::testing::helper {
 [[nodiscard]] inline auto make_executable_agent(const std::string &name)
     -> wh::core::result<wh::agent::agent> {
   wh::agent::agent authored{name};
-  auto bound = authored.bind_execution(
-      nullptr,
-      [name](const wh::agent::agent_graph_view) mutable -> wh::core::result<wh::compose::graph> {
+  auto bound =
+      authored.bind_execution(nullptr, [name]() mutable -> wh::core::result<wh::compose::graph> {
         return make_passthrough_graph(name + "_node");
       });
   if (bound.has_error()) {
@@ -154,8 +155,151 @@ namespace wh::testing::helper {
   wh::agent::agent authored{name};
   auto bound = authored.bind_execution(
       nullptr,
-      [graph = std::move(graph).value()](const wh::agent::agent_graph_view) mutable
-          -> wh::core::result<wh::compose::graph> { return graph; });
+      [graph = std::move(graph).value()]() mutable -> wh::core::result<wh::compose::graph> {
+        return graph;
+      });
+  if (bound.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(bound.error());
+  }
+  auto frozen = authored.freeze();
+  if (frozen.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(frozen.error());
+  }
+  return authored;
+}
+
+[[nodiscard]] inline auto make_fixed_message_graph(const std::string &name,
+                                                   const wh::compose::node_contract input_contract,
+                                                   const wh::compose::node_contract output_contract,
+                                                   wh::schema::message output_message)
+    -> wh::core::result<wh::compose::graph> {
+  const auto read_value_messages =
+      [](wh::compose::graph_value &input) -> wh::core::result<std::vector<wh::schema::message>> {
+    if (auto *typed = wh::core::any_cast<std::vector<wh::schema::message>>(&input);
+        typed != nullptr) {
+      return std::move(*typed);
+    }
+    return wh::core::result<std::vector<wh::schema::message>>::failure(
+        wh::core::errc::type_mismatch);
+  };
+
+  const auto read_stream_messages = [](wh::compose::graph_stream_reader input)
+      -> wh::core::result<std::vector<wh::schema::message>> {
+    return wh::adk::detail::read_message_stream(std::move(input));
+  };
+
+  const auto make_output_stream =
+      [](wh::schema::message message) -> wh::core::result<wh::compose::graph_stream_reader> {
+    return wh::adk::detail::make_message_stream_reader(
+        std::vector<wh::schema::message>{std::move(message)});
+  };
+
+  wh::compose::graph graph{
+      wh::compose::graph_boundary{
+          .input = input_contract,
+          .output = output_contract,
+      },
+      {},
+  };
+
+  wh::core::result<void> added{};
+  if (input_contract == wh::compose::node_contract::value &&
+      output_contract == wh::compose::node_contract::value) {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                              wh::compose::node_contract::value>(
+        name,
+        [read_value_messages, output_message = std::move(output_message)](
+            wh::compose::graph_value &input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto messages = read_value_messages(input);
+          if (messages.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(messages.error());
+          }
+          return wh::compose::graph_value{output_message};
+        });
+    added = graph.add_lambda(std::move(node));
+  } else if (input_contract == wh::compose::node_contract::value &&
+             output_contract == wh::compose::node_contract::stream) {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                              wh::compose::node_contract::stream>(
+        name,
+        [read_value_messages, make_output_stream, output_message = std::move(output_message)](
+            wh::compose::graph_value &input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &)
+            -> wh::core::result<wh::compose::graph_stream_reader> {
+          auto messages = read_value_messages(input);
+          if (messages.has_error()) {
+            return wh::core::result<wh::compose::graph_stream_reader>::failure(messages.error());
+          }
+          return make_output_stream(output_message);
+        });
+    added = graph.add_lambda(std::move(node));
+  } else if (input_contract == wh::compose::node_contract::stream &&
+             output_contract == wh::compose::node_contract::value) {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                              wh::compose::node_contract::value>(
+        name,
+        [read_stream_messages, output_message = std::move(output_message)](
+            wh::compose::graph_stream_reader input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto messages = read_stream_messages(std::move(input));
+          if (messages.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(messages.error());
+          }
+          return wh::compose::graph_value{output_message};
+        });
+    added = graph.add_lambda(std::move(node));
+  } else {
+    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+                                              wh::compose::node_contract::stream>(
+        name,
+        [read_stream_messages, make_output_stream, output_message = std::move(output_message)](
+            wh::compose::graph_stream_reader input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &)
+            -> wh::core::result<wh::compose::graph_stream_reader> {
+          auto messages = read_stream_messages(std::move(input));
+          if (messages.has_error()) {
+            return wh::core::result<wh::compose::graph_stream_reader>::failure(messages.error());
+          }
+          return make_output_stream(output_message);
+        });
+    added = graph.add_lambda(std::move(node));
+  }
+
+  if (added.has_error()) {
+    return wh::core::result<wh::compose::graph>::failure(added.error());
+  }
+  auto start = graph.add_entry_edge(name);
+  if (start.has_error()) {
+    return wh::core::result<wh::compose::graph>::failure(start.error());
+  }
+  auto finish = graph.add_exit_edge(name);
+  if (finish.has_error()) {
+    return wh::core::result<wh::compose::graph>::failure(finish.error());
+  }
+  auto compiled = graph.compile();
+  if (compiled.has_error()) {
+    return wh::core::result<wh::compose::graph>::failure(compiled.error());
+  }
+  return graph;
+}
+
+[[nodiscard]] inline auto make_executable_message_agent(
+    const std::string &name, const wh::compose::node_contract input_contract,
+    const wh::compose::node_contract output_contract, wh::schema::message output_message)
+    -> wh::core::result<wh::agent::agent> {
+  auto graph = make_fixed_message_graph(name + "_node", input_contract, output_contract,
+                                        std::move(output_message));
+  if (graph.has_error()) {
+    return wh::core::result<wh::agent::agent>::failure(graph.error());
+  }
+
+  wh::agent::agent authored{name};
+  auto bound = authored.bind_execution(
+      nullptr,
+      [graph = std::move(graph).value()]() mutable -> wh::core::result<wh::compose::graph> {
+        return graph;
+      });
   if (bound.has_error()) {
     return wh::core::result<wh::agent::agent>::failure(bound.error());
   }
@@ -308,10 +452,15 @@ public:
     return {"AsyncProbeModel", wh::core::component_kind::model};
   }
 
+  [[nodiscard]] auto async_invoke(wh::model::chat_request, wh::core::run_context &) const {
+    return stdexec::just(wh::model::chat_invoke_result{wh::model::chat_response{
+        .message = make_text_message(wh::schema::message_role::assistant, "ok")}});
+  }
+
   [[nodiscard]] auto async_stream(wh::model::chat_request, wh::core::run_context &) const {
-    return stdexec::just(wh::model::chat_message_stream_result{
-        wh::model::chat_message_stream_reader{wh::schema::stream::make_values_stream_reader(
-            std::vector<wh::schema::message>{
+    return stdexec::just(
+        wh::model::chat_message_stream_result{wh::model::chat_message_stream_reader{
+            wh::schema::stream::make_values_stream_reader(std::vector<wh::schema::message>{
                 make_text_message(wh::schema::message_role::assistant, "ok")})}});
   }
 
@@ -331,21 +480,42 @@ public:
     return state_;
   }
 
+  [[nodiscard]] auto options() const noexcept -> const wh::model::chat_model_options & {
+    return options_;
+  }
+
 private:
   std::shared_ptr<probe_model_state> state_{};
   std::vector<wh::schema::tool_schema_definition> bound_tools_{};
+  wh::model::chat_model_options options_{};
 };
 
-[[nodiscard]] inline auto make_sync_probe_model_binding(
-    sync_probe_model model = sync_probe_model{}) -> wh::agent::model_binding {
+[[nodiscard]] inline auto make_sync_probe_model_binding(sync_probe_model model = sync_probe_model{})
+    -> wh::agent::model_binding {
   return wh::agent::make_model_binding<wh::compose::node_contract::value,
                                        wh::compose::node_contract::stream>(std::move(model));
 }
 
-[[nodiscard]] inline auto make_async_probe_model_binding(
-    async_probe_model model = async_probe_model{}) -> wh::agent::model_binding {
+[[nodiscard]] inline auto
+make_sync_probe_model_value_binding(sync_probe_model model = sync_probe_model{})
+    -> wh::agent::model_binding {
+  return wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                       wh::compose::node_contract::value>(std::move(model));
+}
+
+[[nodiscard]] inline auto
+make_async_probe_model_binding(async_probe_model model = async_probe_model{})
+    -> wh::agent::model_binding {
   return wh::agent::make_model_binding<wh::compose::node_contract::value,
                                        wh::compose::node_contract::stream,
+                                       wh::compose::node_exec_mode::async>(std::move(model));
+}
+
+[[nodiscard]] inline auto
+make_async_probe_model_value_binding(async_probe_model model = async_probe_model{})
+    -> wh::agent::model_binding {
+  return wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                       wh::compose::node_contract::value,
                                        wh::compose::node_exec_mode::async>(std::move(model));
 }
 
@@ -402,19 +572,11 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_plan_execute(std::string name)
     -> wh::core::result<wh::agent::plan_execute> {
   wh::agent::plan_execute authored{std::move(name)};
-  auto planner = make_executable_agent("planner");
-  if (planner.has_error()) {
-    return wh::core::result<wh::agent::plan_execute>::failure(planner.error());
-  }
-  auto executor = make_executable_agent("executor");
-  if (executor.has_error()) {
-    return wh::core::result<wh::agent::plan_execute>::failure(executor.error());
-  }
-  auto planner_set = authored.set_planner(std::move(planner).value());
+  auto planner_set = authored.set_planner(make_configured_chat("planner", "planner"));
   if (planner_set.has_error()) {
     return wh::core::result<wh::agent::plan_execute>::failure(planner_set.error());
   }
-  auto executor_set = authored.set_executor(std::move(executor).value());
+  auto executor_set = authored.set_executor(make_configured_chat("executor", "executor"));
   if (executor_set.has_error()) {
     return wh::core::result<wh::agent::plan_execute>::failure(executor_set.error());
   }
@@ -430,19 +592,11 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_reviewer_executor(std::string name)
     -> wh::core::result<wh::agent::reviewer_executor> {
   wh::agent::reviewer_executor authored{std::move(name)};
-  auto reviewer = make_executable_agent("reviewer");
-  if (reviewer.has_error()) {
-    return wh::core::result<wh::agent::reviewer_executor>::failure(reviewer.error());
-  }
-  auto executor = make_executable_agent("executor");
-  if (executor.has_error()) {
-    return wh::core::result<wh::agent::reviewer_executor>::failure(executor.error());
-  }
-  auto reviewer_set = authored.set_reviewer(std::move(reviewer).value());
+  auto reviewer_set = authored.set_reviewer(make_configured_chat("reviewer", "reviewer"));
   if (reviewer_set.has_error()) {
     return wh::core::result<wh::agent::reviewer_executor>::failure(reviewer_set.error());
   }
-  auto executor_set = authored.set_executor(std::move(executor).value());
+  auto executor_set = authored.set_executor(make_configured_chat("executor", "executor"));
   if (executor_set.has_error()) {
     return wh::core::result<wh::agent::reviewer_executor>::failure(executor_set.error());
   }
@@ -456,11 +610,7 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_self_refine(std::string name)
     -> wh::core::result<wh::agent::self_refine> {
   wh::agent::self_refine authored{std::move(name)};
-  auto worker = make_executable_agent("worker");
-  if (worker.has_error()) {
-    return wh::core::result<wh::agent::self_refine>::failure(worker.error());
-  }
-  auto worker_set = authored.set_worker(std::move(worker).value());
+  auto worker_set = authored.set_worker(make_configured_chat("worker", "worker"));
   if (worker_set.has_error()) {
     return wh::core::result<wh::agent::self_refine>::failure(worker_set.error());
   }
@@ -474,19 +624,11 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_reflexion(std::string name)
     -> wh::core::result<wh::agent::reflexion> {
   wh::agent::reflexion authored{std::move(name)};
-  auto actor = make_executable_agent("actor");
-  if (actor.has_error()) {
-    return wh::core::result<wh::agent::reflexion>::failure(actor.error());
-  }
-  auto critic = make_executable_agent("critic");
-  if (critic.has_error()) {
-    return wh::core::result<wh::agent::reflexion>::failure(critic.error());
-  }
-  auto actor_set = authored.set_actor(std::move(actor).value());
+  auto actor_set = authored.set_actor(make_configured_chat("actor", "actor"));
   if (actor_set.has_error()) {
     return wh::core::result<wh::agent::reflexion>::failure(actor_set.error());
   }
-  auto critic_set = authored.set_critic(std::move(critic).value());
+  auto critic_set = authored.set_critic(make_configured_chat("critic", "critic"));
   if (critic_set.has_error()) {
     return wh::core::result<wh::agent::reflexion>::failure(critic_set.error());
   }
@@ -500,19 +642,11 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_research(std::string name)
     -> wh::core::result<wh::agent::research> {
   wh::agent::research authored{name};
-  auto lead = make_executable_agent(name);
-  if (lead.has_error()) {
-    return wh::core::result<wh::agent::research>::failure(lead.error());
-  }
-  auto specialist = make_executable_agent("specialist");
-  if (specialist.has_error()) {
-    return wh::core::result<wh::agent::research>::failure(specialist.error());
-  }
-  auto lead_set = authored.set_lead(std::move(lead).value());
+  auto lead_set = authored.set_lead(make_configured_chat(name, name));
   if (lead_set.has_error()) {
     return wh::core::result<wh::agent::research>::failure(lead_set.error());
   }
-  auto specialist_set = authored.add_specialist(std::move(specialist).value());
+  auto specialist_set = authored.add_specialist(make_configured_chat("specialist", "specialist"));
   if (specialist_set.has_error()) {
     return wh::core::result<wh::agent::research>::failure(specialist_set.error());
   }
@@ -522,19 +656,11 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_supervisor(std::string name)
     -> wh::core::result<wh::agent::supervisor> {
   wh::agent::supervisor authored{name};
-  auto supervisor = make_executable_agent(name);
-  if (supervisor.has_error()) {
-    return wh::core::result<wh::agent::supervisor>::failure(supervisor.error());
-  }
-  auto worker = make_executable_agent("worker");
-  if (worker.has_error()) {
-    return wh::core::result<wh::agent::supervisor>::failure(worker.error());
-  }
-  auto supervisor_set = authored.set_supervisor(std::move(supervisor).value());
+  auto supervisor_set = authored.set_supervisor(make_configured_chat(name, name));
   if (supervisor_set.has_error()) {
     return wh::core::result<wh::agent::supervisor>::failure(supervisor_set.error());
   }
-  auto worker_set = authored.add_worker(std::move(worker).value());
+  auto worker_set = authored.add_worker(make_configured_chat("worker", "worker"));
   if (worker_set.has_error()) {
     return wh::core::result<wh::agent::supervisor>::failure(worker_set.error());
   }
@@ -544,19 +670,11 @@ struct async_stream_tool {
 [[nodiscard]] inline auto make_configured_swarm(std::string name)
     -> wh::core::result<wh::agent::swarm> {
   wh::agent::swarm authored{name};
-  auto host = make_executable_agent(name);
-  if (host.has_error()) {
-    return wh::core::result<wh::agent::swarm>::failure(host.error());
-  }
-  auto peer = make_executable_agent("peer");
-  if (peer.has_error()) {
-    return wh::core::result<wh::agent::swarm>::failure(peer.error());
-  }
-  auto host_set = authored.set_host(std::move(host).value());
+  auto host_set = authored.set_host(make_configured_chat(name, name));
   if (host_set.has_error()) {
     return wh::core::result<wh::agent::swarm>::failure(host_set.error());
   }
-  auto peer_set = authored.add_peer(std::move(peer).value());
+  auto peer_set = authored.add_peer(make_configured_chat("peer", "peer"));
   if (peer_set.has_error()) {
     return wh::core::result<wh::agent::swarm>::failure(peer_set.error());
   }

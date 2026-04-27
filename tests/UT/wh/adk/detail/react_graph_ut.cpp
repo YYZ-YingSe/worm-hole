@@ -12,6 +12,19 @@
 
 namespace {
 
+[[nodiscard]] auto lower_react_output_graph(wh::compose::graph native_graph, std::string output_key,
+                                            wh::agent::react_output_mode output_mode)
+    -> wh::core::result<wh::compose::graph> {
+  return wh::adk::detail::lower_to_agent_output_graph(
+      std::string{"react-agent-output"}, std::move(native_graph),
+      [output_key = std::move(output_key),
+       output_mode](std::vector<wh::schema::message> messages,
+                    wh::core::run_context &) -> wh::core::result<wh::agent::agent_output> {
+        return wh::adk::detail::react_detail::make_agent_output(std::move(messages), output_key,
+                                                                output_mode);
+      });
+}
+
 [[nodiscard]] auto run_pre(wh::compose::graph_add_node_options &options,
                            wh::compose::graph_process_state &process_state,
                            wh::compose::graph_value &payload) -> wh::core::result<void> {
@@ -328,13 +341,13 @@ TEST_CASE("react graph lowers authored shells into executable graphs and binders
   auto authored = wh::testing::helper::make_configured_react("react", "assistant");
   REQUIRE(authored.set_output_key("final").has_value());
   REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
-  auto native = wh::adk::detail::react_graph{authored}.lower(wh::agent::agent_graph_view::native);
+  auto native = wh::adk::detail::react_graph{authored}.lower();
   REQUIRE(native.has_value());
   REQUIRE(native->compile().has_value());
   REQUIRE(native->boundary().output == wh::compose::node_contract::stream);
 
-  auto lowered =
-      wh::adk::detail::react_graph{authored}.lower(wh::agent::agent_graph_view::agent_output);
+  auto lowered = lower_react_output_graph(std::move(native).value(), "final",
+                                          wh::agent::react_output_mode::stream);
   REQUIRE(lowered.has_value());
   REQUIRE(lowered->compile().has_value());
 
@@ -354,5 +367,60 @@ TEST_CASE("react graph lowers authored shells into executable graphs and binders
   REQUIRE(bound.has_value());
   auto bound_graph = bound->lower();
   REQUIRE(bound_graph.has_value());
-  REQUIRE(bound_graph->compile().has_value());
+  REQUIRE(bound_graph->boundary().output == wh::compose::node_contract::stream);
+  auto bound_output_graph = lower_react_output_graph(std::move(bound_graph).value(), "",
+                                                     wh::agent::react_output_mode::value);
+  REQUIRE(bound_output_graph.has_value());
+  REQUIRE(bound_output_graph->compile().has_value());
+}
+
+TEST_CASE("react graph preserves value-output model bindings by inserting local message adapters",
+          "[UT][wh/adk/detail/react_graph.hpp][react_graph::lower][value-output][boundary]") {
+  wh::agent::react sync_authored{"react-sync-value", "assistant"};
+  REQUIRE(sync_authored.set_output_key("final").has_value());
+  REQUIRE(sync_authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
+  REQUIRE(sync_authored.set_tools_node_options({}).has_value());
+  REQUIRE(sync_authored.set_model(wh::testing::helper::make_sync_probe_model_value_binding())
+              .has_value());
+  REQUIRE(sync_authored.freeze().has_value());
+
+  auto sync_native = wh::adk::detail::react_graph{sync_authored}.lower();
+  REQUIRE(sync_native.has_value());
+  REQUIRE(sync_native->compile().has_value());
+  REQUIRE(sync_native->boundary().output == wh::compose::node_contract::stream);
+
+  auto sync_lowered = lower_react_output_graph(std::move(sync_native).value(), "final",
+                                               wh::agent::react_output_mode::stream);
+  REQUIRE(sync_lowered.has_value());
+  REQUIRE(sync_lowered->compile().has_value());
+  auto sync_output = invoke_react_graph(
+      sync_lowered.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(sync_output.final_message.role == wh::schema::message_role::assistant);
+  auto sync_final_iter = sync_output.output_values.find("final");
+  REQUIRE(sync_final_iter != sync_output.output_values.end());
+
+  wh::agent::react async_authored{"react-async-value", "assistant"};
+  REQUIRE(async_authored.set_output_key("final").has_value());
+  REQUIRE(async_authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
+  REQUIRE(async_authored.set_tools_node_options({}).has_value());
+  REQUIRE(async_authored.set_model(wh::testing::helper::make_async_probe_model_value_binding())
+              .has_value());
+  REQUIRE(async_authored.freeze().has_value());
+
+  auto async_native = wh::adk::detail::react_graph{async_authored}.lower();
+  REQUIRE(async_native.has_value());
+  REQUIRE(async_native->compile().has_value());
+  REQUIRE(async_native->boundary().output == wh::compose::node_contract::stream);
+
+  auto async_lowered = lower_react_output_graph(std::move(async_native).value(), "final",
+                                                wh::agent::react_output_mode::stream);
+  REQUIRE(async_lowered.has_value());
+  REQUIRE(async_lowered->compile().has_value());
+  auto async_output = invoke_react_graph(
+      async_lowered.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(async_output.final_message.role == wh::schema::message_role::assistant);
+  auto async_final_iter = async_output.output_values.find("final");
+  REQUIRE(async_final_iter != async_output.output_values.end());
 }

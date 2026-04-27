@@ -45,6 +45,29 @@ TEST_CASE("self refine shell binds worker optional reviewer and lowers into exec
   REQUIRE(lowered.value().executable());
 }
 
+TEST_CASE("self refine accepts authored role providers directly",
+          "[UT][wh/agent/self_refine.hpp][self_refine::set_worker][surface][role_binding]") {
+  wh::agent::self_refine authored{"self-refine-authored"};
+  REQUIRE(authored.set_worker(wh::testing::helper::make_configured_chat("worker", "worker"))
+              .has_value());
+  REQUIRE(authored.set_reviewer(wh::testing::helper::make_configured_react("reviewer", "reviewer"))
+              .has_value());
+  REQUIRE(authored.set_worker_request_builder(wh::testing::helper::make_revision_request_builder())
+              .has_value());
+  REQUIRE(
+      authored.set_reviewer_request_builder(wh::testing::helper::make_revision_request_builder())
+          .has_value());
+  REQUIRE(authored
+              .set_review_decision_reader(wh::testing::helper::make_review_decision_reader(
+                  wh::agent::review_decision_kind::accept))
+              .has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  REQUIRE(lowered->lower().has_value());
+}
+
 TEST_CASE(
     "self refine shell rejects missing builders non executable worker and late mutation",
     "[UT][wh/agent/"

@@ -31,6 +31,21 @@ TEST_CASE(
   REQUIRE(lowered.value().executable());
 }
 
+TEST_CASE("supervisor shell accepts authored role providers directly",
+          "[UT][wh/agent/supervisor.hpp][supervisor::set_supervisor][surface][role_binding]") {
+  wh::agent::supervisor authored{"lead"};
+  REQUIRE(authored.set_supervisor(wh::testing::helper::make_configured_chat("lead", "lead"))
+              .has_value());
+  REQUIRE(authored.add_worker(wh::testing::helper::make_configured_chat("worker", "worker"))
+              .has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  auto graph = lowered->lower();
+  REQUIRE(graph.has_value());
+}
+
 TEST_CASE("supervisor shell rejects invalid role topology duplicates and late mutation",
           "[UT][wh/agent/supervisor.hpp][supervisor::add_worker][condition][branch][boundary]") {
   wh::agent::supervisor missing{"lead"};

@@ -155,28 +155,52 @@ TEST_CASE("host graph topology helpers validate member graphs export placeholder
   REQUIRE(built_output.final_message.name == "worker");
   REQUIRE_FALSE(built_output.transfer.has_value());
 
-  wh::compose::graph invalid_graph{
-      wh::compose::graph_boundary{
-          .input = wh::compose::node_contract::stream,
-          .output = wh::compose::node_contract::value,
-      },
-      {},
-  };
-  auto invalid_member = host_member_definition{
-      .name = "invalid",
-      .graph = std::move(invalid_graph),
-  };
-  auto invalid_status = validate_member_graph(invalid_member);
-  REQUIRE(invalid_status.has_error());
-  REQUIRE(invalid_status.error() == wh::core::errc::contract_violation);
+  auto value_value = wh::testing::helper::make_executable_message_agent(
+      "vv", wh::compose::node_contract::value, wh::compose::node_contract::value,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "vv"));
+  auto value_stream = wh::testing::helper::make_executable_message_agent(
+      "vs", wh::compose::node_contract::value, wh::compose::node_contract::stream,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "vs"));
+  auto stream_value = wh::testing::helper::make_executable_message_agent(
+      "sv", wh::compose::node_contract::stream, wh::compose::node_contract::value,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "sv"));
+  auto stream_stream = wh::testing::helper::make_executable_message_agent(
+      "ss", wh::compose::node_contract::stream, wh::compose::node_contract::stream,
+      wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "ss"));
+  REQUIRE(value_value.has_value());
+  REQUIRE(value_stream.has_value());
+  REQUIRE(stream_value.has_value());
+  REQUIRE(stream_stream.has_value());
+
+  auto vv_definition =
+      lower_member_definition(wh::agent::make_role_binding(std::move(value_value).value()));
+  auto vs_definition =
+      lower_member_definition(wh::agent::make_role_binding(std::move(value_stream).value()));
+  auto sv_definition =
+      lower_member_definition(wh::agent::make_role_binding(std::move(stream_value).value()));
+  auto ss_definition =
+      lower_member_definition(wh::agent::make_role_binding(std::move(stream_stream).value()));
+  REQUIRE(vv_definition.has_value());
+  REQUIRE(vs_definition.has_value());
+  REQUIRE(sv_definition.has_value());
+  REQUIRE(ss_definition.has_value());
+  REQUIRE(vv_definition->graph.boundary().input == wh::compose::node_contract::value);
+  REQUIRE(vv_definition->graph.boundary().output == wh::compose::node_contract::value);
+  REQUIRE(vs_definition->graph.boundary().input == wh::compose::node_contract::value);
+  REQUIRE(vs_definition->graph.boundary().output == wh::compose::node_contract::stream);
+  REQUIRE(sv_definition->graph.boundary().input == wh::compose::node_contract::stream);
+  REQUIRE(sv_definition->graph.boundary().output == wh::compose::node_contract::value);
+  REQUIRE(ss_definition->graph.boundary().input == wh::compose::node_contract::stream);
+  REQUIRE(ss_definition->graph.boundary().output == wh::compose::node_contract::stream);
 
   auto root = wh::testing::helper::make_executable_agent("root");
   auto worker = wh::testing::helper::make_executable_agent("worker");
   REQUIRE(root.has_value());
   REQUIRE(worker.has_value());
-  std::vector<wh::agent::agent> children{};
-  children.push_back(std::move(worker).value());
-  auto built = build_definition(root.value(), children);
+  auto root_binding = wh::agent::make_role_binding(std::move(root).value());
+  std::vector<wh::agent::role_binding> children{};
+  children.push_back(wh::agent::make_role_binding(std::move(worker).value()));
+  auto built = build_definition(root_binding, children);
   REQUIRE(built.has_value());
   REQUIRE(built->get()->children.size() == 1U);
   REQUIRE(built->get()->root.allowed_children == std::vector<std::string>{"worker"});
@@ -214,15 +238,25 @@ TEST_CASE(
   REQUIRE(host_request != nullptr);
   REQUIRE(host_request->agent_name == "root");
 
-  auto root_input = make_role_input_options("root");
-  REQUIRE(run_pre(root_input, process_state, payload).has_value());
-  REQUIRE(wh::core::any_cast<std::vector<wh::schema::message>>(&payload) != nullptr);
+  auto role_value = project_role_request_to_value(payload, "root");
+  REQUIRE(role_value.has_value());
+  REQUIRE(wh::core::any_cast<std::vector<wh::schema::message>>(&role_value.value()) != nullptr);
+
+  payload = wh::adk::detail::host_graph_detail::host_request{
+      .agent_name = "root",
+      .messages = {wh::testing::helper::make_text_message(wh::schema::message_role::user, "seed")},
+  };
+  auto role_stream = project_role_request_to_stream(payload, "root");
+  REQUIRE(role_stream.has_value());
+  auto streamed_messages = wh::adk::detail::read_message_stream(std::move(role_stream).value());
+  REQUIRE(streamed_messages.has_value());
+  REQUIRE(streamed_messages->size() == 1U);
 
   payload = wh::adk::detail::host_graph_detail::host_request{
       .agent_name = "other",
       .messages = {},
   };
-  auto wrong_role = run_pre(root_input, process_state, payload);
+  auto wrong_role = project_role_request_to_value(payload, "root");
   REQUIRE(wrong_role.has_error());
   REQUIRE(wrong_role.error() == wh::core::errc::contract_violation);
 

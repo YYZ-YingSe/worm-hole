@@ -2,13 +2,16 @@
 // its own feedback without creating runtime behavior.
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
-#include "wh/agent/agent.hpp"
 #include "wh/agent/revision.hpp"
+#include "wh/agent/role_binding.hpp"
 #include "wh/core/result.hpp"
 
 namespace wh::agent {
@@ -33,13 +36,25 @@ public:
   [[nodiscard]] auto frozen() const noexcept -> bool { return frozen_; }
 
   /// Installs the worker role before freeze.
-  auto set_worker(agent &&worker) -> wh::core::result<void> {
+  auto set_worker(wh::agent::role_binding worker) -> wh::core::result<void> {
     return set_role(worker_, std::move(worker));
   }
 
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_worker(role_t &&worker) -> wh::core::result<void> {
+    return set_worker(wh::agent::make_role_binding(std::forward<role_t>(worker)));
+  }
+
   /// Installs the optional reviewer role before freeze.
-  auto set_reviewer(agent &&reviewer) -> wh::core::result<void> {
+  auto set_reviewer(wh::agent::role_binding reviewer) -> wh::core::result<void> {
     return set_role(reviewer_, std::move(reviewer));
+  }
+
+  template <typename role_t>
+    requires(!std::same_as<std::remove_cvref_t<role_t>, wh::agent::role_binding>)
+  auto set_reviewer(role_t &&reviewer) -> wh::core::result<void> {
+    return set_reviewer(wh::agent::make_role_binding(std::forward<role_t>(reviewer)));
   }
 
   /// Replaces the maximum refinement iterations. Zero falls back to one.
@@ -92,27 +107,31 @@ public:
   }
 
   /// Returns the worker role.
-  [[nodiscard]] auto worker() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto worker() -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(worker_);
   }
 
   /// Returns the worker role.
-  [[nodiscard]] auto worker() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto worker() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(worker_);
   }
 
   /// Returns the optional reviewer role when present.
-  [[nodiscard]] auto reviewer() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto reviewer()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     return role_ref(reviewer_);
   }
 
   /// Returns the optional reviewer role when present.
-  [[nodiscard]] auto reviewer() const -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] auto reviewer() const
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     return role_ref(reviewer_);
   }
 
   /// Returns the effective reviewer role, falling back to the worker.
-  [[nodiscard]] auto effective_reviewer() -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] auto effective_reviewer()
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (reviewer_.has_value()) {
       return std::ref(*reviewer_);
     }
@@ -121,7 +140,7 @@ public:
 
   /// Returns the effective reviewer role, falling back to the worker.
   [[nodiscard]] auto effective_reviewer() const
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (reviewer_.has_value()) {
       return std::cref(*reviewer_);
     }
@@ -182,7 +201,8 @@ public:
   [[nodiscard]] auto into_agent() && -> wh::core::result<wh::agent::agent>;
 
 private:
-  auto set_role(std::optional<agent> &slot, agent &&value) -> wh::core::result<void> {
+  auto set_role(std::optional<wh::agent::role_binding> &slot, wh::agent::role_binding value)
+      -> wh::core::result<void> {
     auto mutable_status = ensure_mutable();
     if (mutable_status.has_error()) {
       return mutable_status;
@@ -194,19 +214,20 @@ private:
     return {};
   }
 
-  [[nodiscard]] static auto role_ref(const std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<const agent>> {
+  [[nodiscard]] static auto role_ref(const std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<const wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<const agent>>::failure(
+      return wh::core::result<std::reference_wrapper<const wh::agent::role_binding>>::failure(
           wh::core::errc::not_found);
     }
     return std::cref(*slot);
   }
 
-  [[nodiscard]] static auto role_ref(std::optional<agent> &slot)
-      -> wh::core::result<std::reference_wrapper<agent>> {
+  [[nodiscard]] static auto role_ref(std::optional<wh::agent::role_binding> &slot)
+      -> wh::core::result<std::reference_wrapper<wh::agent::role_binding>> {
     if (!slot.has_value()) {
-      return wh::core::result<std::reference_wrapper<agent>>::failure(wh::core::errc::not_found);
+      return wh::core::result<std::reference_wrapper<wh::agent::role_binding>>::failure(
+          wh::core::errc::not_found);
     }
     return std::ref(*slot);
   }
@@ -219,8 +240,8 @@ private:
   }
 
   std::string name_{};
-  std::optional<agent> worker_{};
-  std::optional<agent> reviewer_{};
+  std::optional<wh::agent::role_binding> worker_{};
+  std::optional<wh::agent::role_binding> reviewer_{};
   std::size_t max_iterations_{3U};
   revision_request_builder worker_request_builder_{nullptr};
   revision_request_builder reviewer_request_builder_{nullptr};
