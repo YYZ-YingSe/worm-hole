@@ -1,4 +1,4 @@
-// Defines local-skill tool bindings and request mutators that reuse the
+// Defines local-skill tool bindings and request transforms that reuse the
 // existing toolset/model contracts instead of introducing a new runtime.
 #pragma once
 
@@ -13,12 +13,11 @@
 #include <utility>
 #include <vector>
 
-#include "wh/agent/toolset.hpp"
-#include "wh/compose/graph/stream.hpp"
+#include "wh/agent/middlewares/surface.hpp"
+#include "wh/agent/tool_payload.hpp"
 #include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/function.hpp"
-#include "wh/core/json.hpp"
 #include "wh/core/result.hpp"
 #include "wh/model/chat_model.hpp"
 #include "wh/schema/tool.hpp"
@@ -51,12 +50,18 @@ struct loaded_skill {
   std::string content{};
 };
 
-/// Runtime backend used by the mounted skill tool.
-struct skill_backend {
+using skill_list_result = wh::core::result<std::vector<skill_info>>;
+using skill_load_result = wh::core::result<loaded_skill>;
+using skill_list_capability = wh::agent::middlewares::operation_binding<skill_list_result>;
+using skill_load_capability =
+    wh::agent::middlewares::operation_binding<skill_load_result, std::string>;
+
+/// Runtime capabilities used by the mounted skill tool.
+struct skill_capabilities {
   /// Lists the current visible skill set.
-  wh::core::callback_function<wh::core::result<std::vector<skill_info>>() const> list{nullptr};
+  skill_list_capability list{};
   /// Loads one skill document by its public skill name.
-  wh::core::callback_function<wh::core::result<loaded_skill>(std::string_view) const> load{nullptr};
+  skill_load_capability load{};
 };
 
 /// Public configuration for the generated skill tool.
@@ -69,18 +74,9 @@ struct skill_tool_options {
   skill_language language{skill_language::english};
 };
 
-/// One generated skill tool binding.
-struct skill_tool_binding {
-  /// Public tool schema visible to the model.
-  wh::schema::tool_schema_definition schema{};
-  /// Compose dispatch entry implementing the tool.
-  wh::compose::tool_entry entry{};
+struct skill_load_arguments {
+  std::string name{};
 };
-
-/// Request mutator used by callers to refresh skill visibility before the
-/// model turn begins.
-using skill_request_middleware =
-    wh::core::callback_function<wh::core::result<void>(wh::model::chat_request &) const>;
 
 namespace detail {
 
@@ -187,24 +183,11 @@ namespace detail {
          "skill tool to read one local skill guide.";
 }
 
-[[nodiscard]] inline auto read_skill_name(const std::string_view input_json)
-    -> wh::core::result<std::string> {
-  auto parsed = wh::core::parse_json(input_json);
-  if (parsed.has_error()) {
-    return wh::core::result<std::string>::failure(parsed.error());
+[[nodiscard]] inline auto default_tool_description(const skill_language language) -> std::string {
+  if (language == skill_language::chinese) {
+    return "按名称读取一个本地技能指南。";
   }
-  if (!parsed.value().IsObject()) {
-    return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
-  }
-  auto name = wh::core::json_find_member(parsed.value(), "name");
-  if (name.has_error()) {
-    return wh::core::result<std::string>::failure(name.error());
-  }
-  if (!name.value()->IsString()) {
-    return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
-  }
-  return std::string{name.value()->GetString(),
-                     static_cast<std::size_t>(name.value()->GetStringLength())};
+  return "Load one local skill guide by name.";
 }
 
 [[nodiscard]] inline auto render_loaded_skill(const loaded_skill &skill,
@@ -241,6 +224,25 @@ namespace detail {
 }
 
 } // namespace detail
+
+inline auto wh_to_json(const skill_load_arguments &input, wh::core::json_value &output,
+                       wh::core::json_allocator &allocator) -> wh::core::result<void> {
+  output.SetObject();
+  return wh::agent::detail::write_json_member(output, "name", input.name, allocator);
+}
+
+inline auto wh_from_json(const wh::core::json_value &input, skill_load_arguments &output)
+    -> wh::core::result<void> {
+  if (!input.IsObject()) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+  }
+  auto name = wh::agent::detail::read_required_json_member<std::string>(input, "name");
+  if (name.has_error()) {
+    return wh::core::result<void>::failure(name.error());
+  }
+  output.name = std::move(name).value();
+  return {};
+}
 
 /// Local backend that scans one absolute base directory for first-level
 /// `SKILL.md` documents.
@@ -305,14 +307,18 @@ public:
     return wh::core::result<loaded_skill>::failure(wh::core::errc::not_found);
   }
 
-  /// Projects the local backend into the generic skill-backend contract.
-  [[nodiscard]] auto to_backend() const -> skill_backend {
-    return skill_backend{
-        .list = [backend = *this]() -> wh::core::result<std::vector<skill_info>> {
-          return backend.list();
-        },
-        .load = [backend = *this](const std::string_view skill_name)
-            -> wh::core::result<loaded_skill> { return backend.load(skill_name); },
+  /// Projects the local backend into the generic skill-capability contract.
+  [[nodiscard]] auto to_capabilities() const -> skill_capabilities {
+    return skill_capabilities{
+        .list =
+            skill_list_capability{
+                .sync = [backend = *this]() -> wh::core::result<std::vector<skill_info>> {
+                  return backend.list();
+                }},
+        .load = skill_load_capability{.sync = [backend = *this](std::string skill_name)
+                                          -> wh::core::result<loaded_skill> {
+          return backend.load(skill_name);
+        }},
     };
   }
 
@@ -322,17 +328,36 @@ private:
 };
 
 /// Renders the current skill-tool description from the latest backend list.
-[[nodiscard]] inline auto render_skill_tool_description(const skill_backend &backend,
+[[nodiscard]] inline auto render_skill_tool_description(const skill_capabilities &backend,
                                                         const skill_tool_options &options = {})
     -> wh::core::result<std::string> {
-  if (!static_cast<bool>(backend.list)) {
+  if (!backend.list.sync) {
     return wh::core::result<std::string>::failure(wh::core::errc::invalid_argument);
   }
-  auto listed = backend.list();
+  auto listed = backend.list.sync();
   if (listed.has_error()) {
     return wh::core::result<std::string>::failure(listed.error());
   }
   return detail::render_skill_list(listed.value(), options.language);
+}
+
+[[nodiscard]] inline auto
+render_skill_tool_description_sender(const skill_capabilities &backend,
+                                     const skill_tool_options &options = {})
+    -> wh::agent::middlewares::operation_sender<wh::core::result<std::string>> {
+  if (!static_cast<bool>(backend.list)) {
+    return wh::agent::middlewares::detail::make_operation_failure_sender<
+        wh::core::result<std::string>>(wh::core::errc::invalid_argument);
+  }
+  return wh::agent::middlewares::operation_sender<wh::core::result<std::string>>{
+      wh::agent::middlewares::detail::open_operation_sender(backend.list) |
+      stdexec::then(
+          [language = options.language](skill_list_result listed) -> wh::core::result<std::string> {
+            if (listed.has_error()) {
+              return wh::core::result<std::string>::failure(listed.error());
+            }
+            return detail::render_skill_list(listed.value(), language);
+          })};
 }
 
 /// Returns the instruction fragment that documents the mounted skill tool.
@@ -343,58 +368,112 @@ private:
   return detail::default_instruction(options.language);
 }
 
-/// Creates a request mutator that refreshes the skill-tool description and
+/// Creates a request transform that refreshes the skill-tool description and
 /// prepends the configured instruction on every model turn.
-[[nodiscard]] inline auto make_skill_request_middleware(const skill_backend &backend,
-                                                        const skill_tool_options &options = {})
-    -> wh::core::result<skill_request_middleware> {
+[[nodiscard]] inline auto make_skill_request_transform(const skill_capabilities &backend,
+                                                       const skill_tool_options &options = {})
+    -> wh::core::result<wh::agent::middlewares::request_transform_binding> {
   if (!static_cast<bool>(backend.list)) {
-    return wh::core::result<skill_request_middleware>::failure(wh::core::errc::invalid_argument);
+    return wh::core::result<wh::agent::middlewares::request_transform_binding>::failure(
+        wh::core::errc::invalid_argument);
   }
   const auto tool_name = options.tool_name;
   if (tool_name.empty()) {
-    return wh::core::result<skill_request_middleware>::failure(wh::core::errc::invalid_argument);
+    return wh::core::result<wh::agent::middlewares::request_transform_binding>::failure(
+        wh::core::errc::invalid_argument);
   }
 
-  return skill_request_middleware{
-      [backend, options, tool_name](wh::model::chat_request &request) -> wh::core::result<void> {
-        auto description = render_skill_tool_description(backend, options);
-        if (description.has_error()) {
-          return wh::core::result<void>::failure(description.error());
-        }
-        for (auto &tool : request.tools) {
-          if (tool.name == tool_name) {
-            tool.description = description.value();
-          }
-        }
-        auto instruction = make_skill_instruction(options);
-        if (!instruction.empty()) {
-          wh::schema::message message{};
-          message.role = wh::schema::message_role::system;
-          message.parts.emplace_back(wh::schema::text_part{std::move(instruction)});
-          request.messages.insert(request.messages.begin(), std::move(message));
-        }
-        return {};
-      }};
+  return wh::agent::middlewares::request_transform_binding{
+      .sync = backend.list.sync
+                  ? wh::agent::middlewares::sync_operation<
+                        wh::agent::middlewares::request_transform_result, wh::model::chat_request,
+                        wh::core::run_context
+                            &>{[backend, options, tool_name](wh::model::chat_request request,
+                                                             wh::core::run_context &)
+                                   -> wh::agent::middlewares::request_transform_result {
+                      auto description = render_skill_tool_description(backend, options);
+                      if (description.has_error()) {
+                        return wh::agent::middlewares::request_transform_result::failure(
+                            description.error());
+                      }
+                      for (auto &tool : request.tools) {
+                        if (tool.name == tool_name) {
+                          tool.description = description.value();
+                        }
+                      }
+                      auto instruction = make_skill_instruction(options);
+                      if (!instruction.empty()) {
+                        wh::schema::message message{};
+                        message.role = wh::schema::message_role::system;
+                        message.parts.emplace_back(wh::schema::text_part{std::move(instruction)});
+                        request.messages.insert(request.messages.begin(), std::move(message));
+                      }
+                      return request;
+                    }}
+                  : nullptr,
+      .async = backend.list.async
+                   ? wh::agent::middlewares::async_operation<
+                         wh::agent::middlewares::request_transform_result, wh::model::chat_request,
+                         wh::core::run_context
+                             &>{[backend,
+                                 options, tool_name](wh::model::chat_request request,
+                                                     wh::core::run_context &)
+                                    -> wh::agent::middlewares::request_transform_sender {
+                       return wh::agent::middlewares::request_transform_sender{
+                           render_skill_tool_description_sender(backend, options) |
+                           stdexec::then([request = std::move(request), tool_name,
+                                          instruction = make_skill_instruction(options)](
+                                             wh::core::result<std::string> description) mutable
+                                             -> wh::agent::middlewares::request_transform_result {
+                             if (description.has_error()) {
+                               return wh::agent::middlewares::request_transform_result::failure(
+                                   description.error());
+                             }
+                             for (auto &tool : request.tools) {
+                               if (tool.name == tool_name) {
+                                 tool.description = description.value();
+                               }
+                             }
+                             if (!instruction.empty()) {
+                               wh::schema::message message{};
+                               message.role = wh::schema::message_role::system;
+                               message.parts.emplace_back(
+                                   wh::schema::text_part{std::move(instruction)});
+                               request.messages.insert(request.messages.begin(),
+                                                       std::move(message));
+                             }
+                             return request;
+                           })};
+                     }}
+                   : nullptr};
 }
 
-/// Creates one mounted skill tool binding.
-[[nodiscard]] inline auto make_skill_tool_binding(const skill_backend &backend,
-                                                  const skill_tool_options &options = {})
-    -> wh::core::result<skill_tool_binding> {
+/// Builds one skill middleware surface.
+[[nodiscard]] inline auto make_skill_middleware_surface(const skill_capabilities &backend,
+                                                        const skill_tool_options &options = {})
+    -> wh::core::result<wh::agent::middlewares::middleware_surface> {
   if (!static_cast<bool>(backend.list) || !static_cast<bool>(backend.load) ||
       options.tool_name.empty()) {
-    return wh::core::result<skill_tool_binding>::failure(wh::core::errc::invalid_argument);
+    return wh::core::result<wh::agent::middlewares::middleware_surface>::failure(
+        wh::core::errc::invalid_argument);
   }
 
-  auto description = render_skill_tool_description(backend, options);
-  if (description.has_error()) {
-    return wh::core::result<skill_tool_binding>::failure(description.error());
+  auto request_transform = make_skill_request_transform(backend, options);
+  if (request_transform.has_error()) {
+    return wh::core::result<wh::agent::middlewares::middleware_surface>::failure(
+        request_transform.error());
   }
 
-  skill_tool_binding binding{};
+  wh::agent::middlewares::middleware_surface surface{};
+  surface.instruction_fragments.push_back(make_skill_instruction(options));
+  surface.request_transforms.push_back(std::move(request_transform).value());
+  surface.tool_bindings.emplace_back();
+  auto &binding = surface.tool_bindings.back();
   binding.schema.name = options.tool_name;
-  binding.schema.description = description.value();
+  auto description = render_skill_tool_description(backend, options);
+  binding.schema.description = description.has_value()
+                                   ? std::move(description).value()
+                                   : detail::default_tool_description(options.language);
   binding.schema.parameters.push_back(wh::schema::tool_parameter_schema{
       .name = "name",
       .type = wh::schema::tool_parameter_type::string,
@@ -402,39 +481,40 @@ private:
                                                                  : "要加载的技能名称。",
       .required = true,
   });
-  binding.entry.invoke = wh::compose::tool_invoke{
-      [backend, language = options.language](
-          const wh::compose::tool_call &call,
-          wh::tool::call_scope) -> wh::core::result<wh::compose::graph_value> {
-        auto skill_name = detail::read_skill_name(call.arguments);
-        if (skill_name.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(skill_name.error());
-        }
-        auto loaded = backend.load(skill_name.value());
-        if (loaded.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(loaded.error());
-        }
-        return detail::graph_string_value(detail::render_loaded_skill(loaded.value(), language));
-      }};
-  return binding;
-}
-
-/// Mounts the skill tool into one authored toolset and returns the instruction
-/// fragment that should be appended to the agent.
-[[nodiscard]] inline auto mount_skill_tool(wh::agent::toolset &toolset,
-                                           const skill_backend &backend,
-                                           const skill_tool_options &options = {})
-    -> wh::core::result<std::string> {
-  auto binding = make_skill_tool_binding(backend, options);
-  if (binding.has_error()) {
-    return wh::core::result<std::string>::failure(binding.error());
-  }
-  auto added =
-      toolset.add_entry(std::move(binding.value().schema), std::move(binding.value().entry));
-  if (added.has_error()) {
-    return wh::core::result<std::string>::failure(added.error());
-  }
-  return make_skill_instruction(options);
+  binding.entry = wh::agent::make_value_tool_entry<skill_load_arguments>({
+      .sync = backend.load.sync
+                  ? wh::agent::sync_value_tool_handler<skill_load_arguments>{
+                        [backend, language = options.language](
+                            const wh::compose::tool_call &,
+                            skill_load_arguments args) -> wh::agent::tool_text_result {
+                          auto loaded = backend.load.sync(std::move(args.name));
+                          if (loaded.has_error()) {
+                            return wh::agent::tool_text_result::failure(loaded.error());
+                          }
+                          return detail::render_loaded_skill(loaded.value(), language);
+                        }}
+                  : nullptr,
+      .async =
+          backend.load.async
+              ? wh::agent::async_value_tool_handler<skill_load_arguments>{
+                    [backend, language = options.language](
+                        wh::compose::tool_call,
+                        skill_load_arguments args) -> wh::agent::tool_text_sender {
+                      return wh::agent::tool_text_sender{
+                          wh::agent::middlewares::detail::open_operation_sender(
+                              backend.load, std::move(args.name)) |
+                          stdexec::then([language](
+                                            skill_load_result loaded)
+                                            -> wh::agent::tool_text_result {
+                            if (loaded.has_error()) {
+                              return wh::agent::tool_text_result::failure(loaded.error());
+                            }
+                            return detail::render_loaded_skill(loaded.value(), language);
+                          })};
+                    }}
+              : nullptr,
+  });
+  return surface;
 }
 
 } // namespace wh::agent::middlewares::skill

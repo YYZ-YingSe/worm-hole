@@ -107,6 +107,45 @@ private:
   wh::model::chat_model_options options_{};
 };
 
+class request_transform_probe_model {
+public:
+  [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
+    return {"RequestTransformProbeModel", wh::core::component_kind::model};
+  }
+
+  [[nodiscard]] auto invoke(const wh::model::chat_request &request, wh::core::run_context &) const
+      -> wh::model::chat_invoke_result {
+    return wh::model::chat_response{.message = render_request_message(request)};
+  }
+
+  [[nodiscard]] auto stream(const wh::model::chat_request &request, wh::core::run_context &) const
+      -> wh::model::chat_message_stream_result {
+    return wh::model::chat_message_stream_reader{wh::schema::stream::make_values_stream_reader(
+        std::vector<wh::schema::message>{render_request_message(request)})};
+  }
+
+  [[nodiscard]] auto bind_tools(std::span<const wh::schema::tool_schema_definition>) const
+      -> request_transform_probe_model {
+    return *this;
+  }
+
+  [[nodiscard]] auto options() const noexcept -> const wh::model::chat_model_options & {
+    return options_;
+  }
+
+private:
+  [[nodiscard]] static auto render_request_message(const wh::model::chat_request &request)
+      -> wh::schema::message {
+    std::string text{"missing"};
+    if (!request.messages.empty()) {
+      text = message_text(request.messages.front());
+    }
+    return make_text_message(wh::schema::message_role::assistant, std::move(text));
+  }
+
+  wh::model::chat_model_options options_{};
+};
+
 } // namespace
 
 TEST_CASE("chat shell public binding lowers and executes final output",
@@ -225,6 +264,46 @@ TEST_CASE("chat shell public binding executes value-output model bindings throug
   REQUIRE(async_output->final_message.role == wh::schema::message_role::assistant);
 }
 
+TEST_CASE("chat shell request transforms run before the model turn",
+          "[core][agent][chat][request-transform][functional]") {
+  wh::agent::chat authored{"chat-transform", "assistant"};
+  REQUIRE(authored.set_output_key("reply").has_value());
+  REQUIRE(authored.set_output_mode(wh::agent::chat_output_mode::text).has_value());
+  REQUIRE(authored
+              .set_model(wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                                       wh::compose::node_contract::stream>(
+                  request_transform_probe_model{}))
+              .has_value());
+  REQUIRE(authored
+              .add_request_transform(wh::agent::middlewares::request_transform_binding{
+                  .sync = [](wh::model::chat_request request, wh::core::run_context &)
+                      -> wh::agent::middlewares::request_transform_result {
+                    request.messages.insert(
+                        request.messages.begin(),
+                        make_text_message(wh::schema::message_role::system, "chat middleware"));
+                    return request;
+                  }})
+              .has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  auto graph = lowered->lower();
+  REQUIRE(graph.has_value());
+  auto output_graph =
+      lower_chat_output_graph(std::move(graph).value(), "reply", wh::agent::chat_output_mode::text);
+  REQUIRE(output_graph.has_value());
+  if (!output_graph->compiled()) {
+    REQUIRE(output_graph->compile().has_value());
+  }
+
+  auto output = invoke_agent_graph(
+      output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(output.has_value());
+  REQUIRE(message_text(output->final_message) == "chat middleware");
+}
+
 TEST_CASE("react shell public binding executes value-output model bindings through local adapters",
           "[core][agent][react][value-output][functional]") {
   wh::agent::react sync_authored{"react-sync-value", "assistant"};
@@ -274,6 +353,47 @@ TEST_CASE("react shell public binding executes value-output model bindings throu
       {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
   REQUIRE(async_output.has_value());
   REQUIRE(async_output->final_message.role == wh::schema::message_role::assistant);
+}
+
+TEST_CASE("react shell request transforms run before the model turn",
+          "[core][agent][react][request-transform][functional]") {
+  wh::agent::react authored{"react-transform", "assistant"};
+  REQUIRE(authored.set_output_key("final").has_value());
+  REQUIRE(authored.set_output_mode(wh::agent::react_output_mode::stream).has_value());
+  REQUIRE(authored.set_tools_node_options({}).has_value());
+  REQUIRE(authored
+              .set_model(wh::agent::make_model_binding<wh::compose::node_contract::value,
+                                                       wh::compose::node_contract::stream>(
+                  request_transform_probe_model{}))
+              .has_value());
+  REQUIRE(authored
+              .add_request_transform(wh::agent::middlewares::request_transform_binding{
+                  .sync = [](wh::model::chat_request request, wh::core::run_context &)
+                      -> wh::agent::middlewares::request_transform_result {
+                    request.messages.insert(
+                        request.messages.begin(),
+                        make_text_message(wh::schema::message_role::system, "react middleware"));
+                    return request;
+                  }})
+              .has_value());
+  REQUIRE(authored.freeze().has_value());
+
+  auto lowered = std::move(authored).into_agent();
+  REQUIRE(lowered.has_value());
+  auto graph = lowered->lower();
+  REQUIRE(graph.has_value());
+  auto output_graph = lower_react_output_graph(std::move(graph).value(), "final",
+                                               wh::agent::react_output_mode::stream);
+  REQUIRE(output_graph.has_value());
+  if (!output_graph->compiled()) {
+    REQUIRE(output_graph->compile().has_value());
+  }
+
+  auto output = invoke_agent_graph(
+      output_graph.value(),
+      {wh::testing::helper::make_text_message(wh::schema::message_role::user, "hello")});
+  REQUIRE(output.has_value());
+  REQUIRE(message_text(output->final_message) == "react middleware");
 }
 
 TEST_CASE("react shell public binding executes real tool-call loop before final output",

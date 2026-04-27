@@ -738,41 +738,19 @@ project_child_runtime(wh::core::run_context &parent, const agent_tool_scope_snap
   return {};
 }
 
-[[nodiscard]] inline auto parse_request_text(const std::string_view input_json)
-    -> wh::core::result<std::string> {
-  auto parsed = wh::core::parse_json(input_json);
-  if (parsed.has_error()) {
-    return wh::core::result<std::string>::failure(parsed.error());
-  }
-  if (!parsed.value().IsObject()) {
-    return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
-  }
-
-  auto request_value = wh::core::json_find_member(parsed.value(), agent_tool_request_json_key);
-  if (request_value.has_error()) {
-    return wh::core::result<std::string>::failure(request_value.error());
-  }
-  if (!request_value.value()->IsString()) {
-    return wh::core::result<std::string>::failure(wh::core::errc::type_mismatch);
-  }
-  return std::string{
-      request_value.value()->GetString(),
-      static_cast<std::size_t>(request_value.value()->GetStringLength()),
-  };
-}
-
 [[nodiscard]] inline auto
 build_agent_tool_request(const agent_tool_runtime &runtime, const wh::compose::tool_call &call,
                          [[maybe_unused]] const wh::core::run_context &context)
     -> wh::core::result<wh::adk::run_request> {
   switch (runtime.input_mode) {
   case agent_tool_input_mode::request: {
-    auto request_text = parse_request_text(call.arguments);
-    if (request_text.has_error()) {
-      return wh::core::result<wh::adk::run_request>::failure(request_text.error());
+    auto request_payload = wh::agent::decode_tool_payload<wh::adk::agent_tool_request_arguments>(
+        call.arguments);
+    if (request_payload.has_error()) {
+      return wh::core::result<wh::adk::run_request>::failure(request_payload.error());
     }
     wh::adk::run_request request{};
-    request.messages.push_back(make_user_message(std::move(request_text).value()));
+    request.messages.push_back(make_user_message(std::move(request_payload).value().request));
     return request;
   }
   case agent_tool_input_mode::message_history: {

@@ -4,18 +4,12 @@
 
 #include <optional>
 #include <span>
-#include <string>
-#include <utility>
-#include <vector>
 
 #include "wh/adk/call_options.hpp"
-#include "wh/agent/toolset.hpp"
+#include "wh/agent/tool_binding.hpp"
 #include "wh/compose/graph/call_options.hpp"
-#include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/model/chat_model.hpp"
-#include "wh/schema/message.hpp"
-#include "wh/schema/tool.hpp"
 
 namespace wh::agent {
 
@@ -26,19 +20,6 @@ enum class structured_output_strategy {
   /// Prefer tool-call mediated structured output.
   tool,
 };
-
-/// Stable pair of model-visible schema and runtime execution binding.
-struct tool_binding_pair {
-  /// Public schema bound into the model request.
-  wh::schema::tool_schema_definition schema{};
-  /// Runtime execution entry bound into the lowered tools node.
-  wh::compose::tool_entry entry{};
-};
-
-/// Explicit history rewrite hook applied before one model turn is lowered.
-using history_rewriter =
-    wh::core::callback_function<wh::core::result<std::vector<wh::schema::message>>(
-        std::span<const wh::schema::message>) const>;
 
 /// Shared authored option shell layered on top of compose and ADK controls.
 struct agent_options {
@@ -52,8 +33,6 @@ struct agent_options {
   wh::adk::call_options call_override{};
   /// Optional structured-output strategy. Empty means "do not inject one".
   std::optional<structured_output_strategy> structured_output{};
-  /// Optional explicit history rewrite hook. Null means "do not rewrite".
-  history_rewriter rewrite_history{nullptr};
 };
 
 /// Maps agent-level structured-output preference to model-layer negotiation
@@ -95,16 +74,6 @@ inline auto apply_agent_options(wh::model::chat_request &request, const agent_op
     -> wh::adk::call_options {
   return wh::adk::resolve_call_options(defaults, &options.agent_controls, &options.adk_controls,
                                        &options.call_override);
-}
-
-template <wh::agent::detail::registered_tool_component tool_t>
-[[nodiscard]] inline auto
-make_tool_binding_pair(const tool_t &tool, const wh::agent::tool_registration registration = {})
-    -> tool_binding_pair {
-  return tool_binding_pair{
-      .schema = tool.schema(),
-      .entry = wh::agent::detail::make_tool_entry(tool, registration.return_direct),
-  };
 }
 
 template <typename model_t>

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -10,6 +11,7 @@
 
 #include "wh/agent/agent.hpp"
 #include "wh/agent/instruction.hpp"
+#include "wh/agent/middlewares/surface.hpp"
 #include "wh/agent/model_binding.hpp"
 #include "wh/agent/toolset.hpp"
 #include "wh/compose/node/tools_contract.hpp"
@@ -169,6 +171,56 @@ public:
     return tools_.add_middleware(std::move(middleware));
   }
 
+  /// Appends one request transform before freeze.
+  auto add_request_transform(wh::agent::middlewares::request_transform_binding binding)
+      -> wh::core::result<void> {
+    auto mutable_status = ensure_mutable();
+    if (mutable_status.has_error()) {
+      return mutable_status;
+    }
+    if (!static_cast<bool>(binding)) {
+      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+    }
+    request_transforms_.push_back(std::move(binding));
+    return {};
+  }
+
+  /// Applies one middleware surface that may contribute instructions, tools,
+  /// and request transforms.
+  auto add_middleware_surface(wh::agent::middlewares::middleware_surface surface)
+      -> wh::core::result<void> {
+    auto mutable_status = ensure_mutable();
+    if (mutable_status.has_error()) {
+      return mutable_status;
+    }
+
+    auto next_instruction = instruction_;
+    auto next_tools = tools_;
+    auto next_transforms = request_transforms_;
+    for (auto &fragment : surface.instruction_fragments) {
+      if (!fragment.empty()) {
+        next_instruction.append(std::move(fragment), 0);
+      }
+    }
+    for (auto &binding : surface.tool_bindings) {
+      auto added = next_tools.add_entry(std::move(binding.schema), std::move(binding.entry));
+      if (added.has_error()) {
+        return added;
+      }
+    }
+    for (auto &binding : surface.request_transforms) {
+      if (!static_cast<bool>(binding)) {
+        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+      }
+      next_transforms.push_back(std::move(binding));
+    }
+
+    instruction_ = std::move(next_instruction);
+    tools_ = std::move(next_tools);
+    request_transforms_ = std::move(next_transforms);
+    return {};
+  }
+
   /// Pins the authored tools-node lowering options used by the shell.
   auto set_tools_node_options(const tools_node_authoring_options options)
       -> wh::core::result<void> {
@@ -232,6 +284,12 @@ public:
     return std::cref(*model_binding_);
   }
 
+  /// Returns the configured request-transform pipeline.
+  [[nodiscard]] auto request_transforms() const noexcept
+      -> std::span<const wh::agent::middlewares::request_transform_binding> {
+    return {request_transforms_.data(), request_transforms_.size()};
+  }
+
   /// Returns the configured maximum iterations.
   [[nodiscard]] auto max_iterations() const noexcept -> std::size_t { return max_iterations_; }
 
@@ -278,6 +336,7 @@ private:
   wh::agent::instruction instruction_{};
   std::optional<wh::agent::model_binding> model_binding_{};
   wh::agent::toolset tools_{};
+  std::vector<wh::agent::middlewares::request_transform_binding> request_transforms_{};
   std::size_t max_iterations_{20U};
   std::string output_key_{};
   react_output_mode output_mode_{react_output_mode::value};

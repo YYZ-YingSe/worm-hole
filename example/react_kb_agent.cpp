@@ -12,9 +12,9 @@
 #include "wh/adk/detail/agent_graph_view.hpp"
 #include "wh/adk/detail/react_graph.hpp"
 #include "wh/agent/bind.hpp"
+#include "wh/agent/tool_payload.hpp"
 #include "wh/compose/graph.hpp"
 #include "wh/core/any.hpp"
-#include "wh/core/json.hpp"
 #include "wh/document/keys.hpp"
 #include "wh/flow.hpp"
 #include "wh/indexer/indexer.hpp"
@@ -31,6 +31,10 @@ namespace {
 
 struct knowledge_base_state {
   std::vector<wh::schema::document> documents{};
+};
+
+struct search_kb_arguments {
+  std::string query{};
 };
 
 [[nodiscard]] auto lower_react_output_graph(wh::compose::graph native_graph,
@@ -144,16 +148,23 @@ struct knowledge_base_state {
   return wh::retriever::retriever{impl{kb}};
 }
 
-[[nodiscard]] auto make_tool_arguments_json(const std::string &query) -> std::string {
-  std::string escaped{};
-  escaped.reserve(query.size());
-  for (const char ch : query) {
-    if (ch == '\\' || ch == '"') {
-      escaped.push_back('\\');
-    }
-    escaped.push_back(ch);
+inline auto wh_to_json(const search_kb_arguments &input, wh::core::json_value &output,
+                       wh::core::json_allocator &allocator) -> wh::core::result<void> {
+  output.SetObject();
+  return wh::agent::detail::write_json_member(output, "query", input.query, allocator);
+}
+
+inline auto wh_from_json(const wh::core::json_value &input, search_kb_arguments &output)
+    -> wh::core::result<void> {
+  if (!input.IsObject()) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
   }
-  return std::string{"{\"query\":\""} + escaped + "\"}";
+  auto query = wh::agent::detail::read_required_json_member<std::string>(input, "query");
+  if (query.has_error()) {
+    return wh::core::result<void>::failure(query.error());
+  }
+  output.query = std::move(query).value();
+  return {};
 }
 
 [[nodiscard]] auto first_text_part(const wh::schema::message &message) -> std::string {
@@ -184,14 +195,22 @@ public:
 
   [[nodiscard]] auto invoke(const wh::model::chat_request &request) const
       -> wh::model::chat_invoke_result {
-    return wh::model::chat_response{make_message(request), {}};
+    auto message = make_message(request);
+    if (message.has_error()) {
+      return wh::model::chat_invoke_result::failure(message.error());
+    }
+    return wh::model::chat_response{std::move(message).value(), {}};
   }
 
   [[nodiscard]] auto stream(const wh::model::chat_request &request) const
       -> wh::model::chat_message_stream_result {
+    auto message = make_message(request);
+    if (message.has_error()) {
+      return wh::model::chat_message_stream_result::failure(message.error());
+    }
     return wh::model::chat_message_stream_reader{
         wh::schema::stream::make_single_value_stream_reader<wh::schema::message>(
-            make_message(request))};
+            std::move(message).value())};
   }
 
   [[nodiscard]] auto bind_tools(std::span<const wh::schema::tool_schema_definition> tools) const
@@ -202,7 +221,7 @@ public:
 
 private:
   [[nodiscard]] auto make_message(const wh::model::chat_request &request) const
-      -> wh::schema::message {
+      -> wh::core::result<wh::schema::message> {
     wh::schema::message message{};
     message.role = wh::schema::message_role::assistant;
 
@@ -217,6 +236,10 @@ private:
         last_message_by_role(request.messages, wh::schema::message_role::user);
     const auto query = user_message != nullptr ? first_text_part(*user_message) : std::string{};
     const auto tool_name = !bound_tools_.empty() ? bound_tools_.front().name : "search_kb";
+    auto arguments = wh::agent::encode_tool_payload(search_kb_arguments{.query = query});
+    if (arguments.has_error()) {
+      return wh::core::result<wh::schema::message>::failure(arguments.error());
+    }
 
     message.parts.emplace_back(wh::schema::text_part{"Searching the indexed knowledge base."});
     message.parts.emplace_back(wh::schema::tool_call_part{
@@ -224,7 +247,7 @@ private:
         .id = "search-call-1",
         .type = "function",
         .name = tool_name,
-        .arguments = make_tool_arguments_json(query),
+        .arguments = std::move(arguments).value(),
         .complete = true,
     });
     return message;
@@ -238,19 +261,11 @@ struct search_tool_impl {
 
   [[nodiscard]] auto invoke(const wh::tool::tool_request &request) const
       -> wh::tool::tool_invoke_result {
-    auto parsed = wh::core::parse_json(request.input_json);
-    if (parsed.has_error()) {
-      return wh::tool::tool_invoke_result::failure(parsed.error());
+    auto payload = wh::agent::decode_tool_payload<search_kb_arguments>(request.input_json);
+    if (payload.has_error()) {
+      return wh::tool::tool_invoke_result::failure(payload.error());
     }
-
-    auto query_node = wh::core::json_find_member(parsed.value(), "query");
-    const auto *query_value = query_node.has_value() ? query_node.value() : nullptr;
-    if (query_value == nullptr || !query_value->IsString()) {
-      return wh::tool::tool_invoke_result::failure(wh::core::errc::invalid_argument);
-    }
-
-    const auto query = std::string{query_value->GetString(),
-                                   static_cast<std::size_t>(query_value->GetStringLength())};
+    const auto query = std::move(payload).value().query;
 
     auto flow = wh::flow::retrieval::multi_query{make_memory_retriever(kb)};
     auto max_queries = flow.set_max_queries(3U);

@@ -23,6 +23,7 @@
 #include "wh/compose/node/tools_builder.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/stdexec.hpp"
 #include "wh/model/chat_model.hpp"
 
 namespace wh::adk::detail {
@@ -503,6 +504,8 @@ private:
     }
 
     auto toolset = authored_->tools();
+    auto request_transforms = std::vector<wh::agent::middlewares::request_transform_binding>{
+        authored_->request_transforms().begin(), authored_->request_transforms().end()};
     auto registry = react_detail::normalize_tools_registry_for_stream(toolset.registry(),
                                                                       tools_options->exec_mode);
     if (registry.has_error()) {
@@ -543,11 +546,26 @@ private:
       return wh::core::result<wh::compose::graph>::failure(bootstrap_added.error());
     }
 
-    auto prepare_request = wh::compose::make_lambda_node(
+    auto prepare_request = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                         wh::compose::node_contract::value,
+                                                         wh::compose::node_exec_mode::async>(
         "prepare_request",
-        [](wh::compose::graph_value &input, wh::core::run_context &,
-           const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          return std::move(input);
+        [request_transforms = std::move(request_transforms)](
+            wh::compose::graph_value &input, wh::core::run_context &context,
+            const wh::compose::graph_call_scope &) -> wh::compose::graph_value_sender {
+          auto *request = wh::core::any_cast<wh::model::chat_request>(&input);
+          if (request == nullptr) {
+            return wh::compose::graph_value_sender{
+                wh::core::detail::failure_result_sender<wh::core::result<wh::compose::graph_value>>(
+                    wh::core::errc::type_mismatch)};
+          }
+          return wh::compose::graph_value_sender{
+              wh::core::detail::map_result_sender<wh::core::result<wh::compose::graph_value>>(
+                  wh::agent::middlewares::apply_request_transforms(request_transforms,
+                                                                   std::move(*request), context),
+                  [](wh::model::chat_request transformed) -> wh::compose::graph_value {
+                    return wh::core::any(std::move(transformed));
+                  })};
         },
         react_detail::make_prepare_request_options(
             std::move(description), std::move(instruction),
