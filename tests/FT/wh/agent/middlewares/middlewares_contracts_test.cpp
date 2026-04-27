@@ -18,6 +18,13 @@
 
 namespace {
 
+template <typename payload_t> [[nodiscard]] auto encode_payload(const payload_t &payload)
+    -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(payload);
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
+
 [[nodiscard]] auto make_call_scope(wh::core::run_context &context, const std::string_view tool_name,
                                    const std::string_view call_id) -> wh::tool::call_scope {
   return wh::tool::call_scope{
@@ -65,78 +72,90 @@ TEST_CASE("filesystem middleware mounts six tools in stable order and applies no
   std::string large_result_path{};
   std::string large_result_text{};
 
-  wh::agent::middlewares::filesystem::filesystem_backend backend{
-      .ls = [&ls_path](const std::string_view path)
-          -> wh::core::result<
-              std::vector<wh::agent::middlewares::filesystem::filesystem_ls_entry>> {
-        ls_path = std::string{path};
+  wh::agent::middlewares::filesystem::filesystem_capabilities backend{
+      .ls = {.sync = [&ls_path](std::string path)
+                 -> wh::core::result<
+                     std::vector<wh::agent::middlewares::filesystem::filesystem_ls_entry>> {
+        ls_path = std::move(path);
         return std::vector<wh::agent::middlewares::filesystem::filesystem_ls_entry>{
             {.path = "src", .directory = true},
             {.path = "README.md", .directory = false},
         };
-      },
-      .read = [&read_offset,
-               &read_limit](const std::string_view, const std::size_t offset,
-                            const std::size_t limit) -> wh::core::result<std::string> {
+      }},
+      .read = {.sync = [&read_offset,
+                        &read_limit](std::string, const std::size_t offset,
+                                     const std::size_t limit) -> wh::core::result<std::string> {
         read_offset = offset;
         read_limit = limit;
         return std::string(40U, 'x');
-      },
-      .write = [](const std::string_view, const std::string_view) -> wh::core::result<void> {
-        return {};
-      },
-      .edit = [](const std::string_view, const std::string_view, const std::string_view,
-                 const bool) -> wh::core::result<void> { return {}; },
-      .glob = [&glob_path](const std::string_view path,
-                           const std::string_view) -> wh::core::result<std::vector<std::string>> {
-        glob_path = std::string{path};
+      }},
+      .write = {.sync = [](std::string, std::string) -> wh::core::result<void> { return {}; }},
+      .edit = {.sync = [](std::string, std::string, std::string,
+                          const bool) -> wh::core::result<void> { return {}; }},
+      .glob = {.sync = [&glob_path](std::string path,
+                                    std::string) -> wh::core::result<std::vector<std::string>> {
+        glob_path = std::move(path);
         return std::vector<std::string>{"a.txt", "b.txt"};
-      },
-      .grep = [](const std::string_view, const std::string_view)
-          -> wh::core::result<
-              std::vector<wh::agent::middlewares::filesystem::filesystem_grep_match>> {
+      }},
+      .grep = {.sync = [](std::string, std::string)
+                   -> wh::core::result<
+                       std::vector<wh::agent::middlewares::filesystem::filesystem_grep_match>> {
         return std::vector<wh::agent::middlewares::filesystem::filesystem_grep_match>{
             {.path = "a.txt", .line = 2U, .text = "alpha"},
             {.path = "a.txt", .line = 5U, .text = "beta"},
             {.path = "b.txt", .line = 1U, .text = "gamma"},
         };
-      },
-      .write_large_result = [&large_result_path, &large_result_text](
-                                const std::string_view path,
-                                const std::string_view text) -> wh::core::result<void> {
-        large_result_path = std::string{path};
-        large_result_text = std::string{text};
+      }},
+      .write_large_result = {.sync = [&large_result_path, &large_result_text](
+                                         std::string path,
+                                         std::string text) -> wh::core::result<void> {
+        large_result_path = std::move(path);
+        large_result_text = std::move(text);
         return {};
-      },
+      }},
   };
   wh::agent::middlewares::filesystem::filesystem_tool_options options{};
   options.instruction = "filesystem instruction";
   options.large_result.token_limit = 4U;
   options.large_result.path_prefix = "/tmp/result";
 
-  auto bindings =
-      wh::agent::middlewares::filesystem::make_filesystem_tool_bindings(backend, options);
-  REQUIRE(bindings.has_value());
-  REQUIRE(bindings.value().size() == 6U);
-  REQUIRE(bindings.value()[0].schema.name == "ls");
-  REQUIRE(bindings.value()[1].schema.name == "read_file");
-  REQUIRE(bindings.value()[2].schema.name == "write_file");
-  REQUIRE(bindings.value()[3].schema.name == "edit_file");
-  REQUIRE(bindings.value()[4].schema.name == "glob");
-  REQUIRE(bindings.value()[5].schema.name == "grep");
+  auto surface =
+      wh::agent::middlewares::filesystem::make_filesystem_middleware_surface(backend, options);
+  REQUIRE(surface.has_value());
+  REQUIRE(surface->tool_bindings.size() == 6U);
+  REQUIRE(surface->tool_bindings[0].schema.name == "ls");
+  REQUIRE(surface->tool_bindings[1].schema.name == "read_file");
+  REQUIRE(surface->tool_bindings[2].schema.name == "write_file");
+  REQUIRE(surface->tool_bindings[3].schema.name == "edit_file");
+  REQUIRE(surface->tool_bindings[4].schema.name == "glob");
+  REQUIRE(surface->tool_bindings[5].schema.name == "grep");
+  REQUIRE(surface->instruction_fragments == std::vector<std::string>{"filesystem instruction"});
+  REQUIRE(surface->request_transforms.empty());
 
   wh::core::run_context context{};
-  auto ls_result = bindings.value()[0].entry.invoke(
-      wh::compose::tool_call{.call_id = "call-ls", .tool_name = "ls", .arguments = "{}"},
+  auto ls_result = surface->tool_bindings[0].entry.invoke(
+      wh::compose::tool_call{
+          .call_id = "call-ls",
+          .tool_name = "ls",
+          .arguments = encode_payload(
+              wh::agent::middlewares::filesystem::filesystem_ls_arguments{}),
+      },
       make_call_scope(context, "ls", "call-ls"));
   REQUIRE(ls_result.has_value());
   REQUIRE(ls_path == "/");
   REQUIRE(read_graph_string(std::move(ls_result).value()) == "src/\nREADME.md");
 
-  auto read_result = bindings.value()[1].entry.invoke(
-      wh::compose::tool_call{.call_id = "call-read",
-                             .tool_name = "read_file",
-                             .arguments = R"({"path":"file.txt","offset":-3,"limit":0})"},
+  auto read_result = surface->tool_bindings[1].entry.invoke(
+      wh::compose::tool_call{
+          .call_id = "call-read",
+          .tool_name = "read_file",
+          .arguments = encode_payload(
+              wh::agent::middlewares::filesystem::filesystem_read_arguments{
+                  .path = "file.txt",
+                  .offset = -3,
+                  .limit = 0,
+              }),
+      },
       make_call_scope(context, "read_file", "call-read"));
   REQUIRE(read_result.has_value());
   REQUIRE(read_offset == 0U);
@@ -145,19 +164,27 @@ TEST_CASE("filesystem middleware mounts six tools in stable order and applies no
   REQUIRE(large_result_path == "/tmp/result/call-read");
   REQUIRE(large_result_text == std::string(40U, 'x'));
   REQUIRE(read_text.find("Large result saved to /tmp/result/call-read") != std::string::npos);
-  REQUIRE_FALSE(static_cast<bool>(bindings.value()[1].entry.stream));
+  REQUIRE_FALSE(static_cast<bool>(surface->tool_bindings[1].entry.stream));
 
-  auto glob_result = bindings.value()[4].entry.invoke(
-      wh::compose::tool_call{
-          .call_id = "call-glob", .tool_name = "glob", .arguments = R"({"pattern":"*.txt"})"},
+  auto glob_result = surface->tool_bindings[4].entry.invoke(
+      wh::compose::tool_call{.call_id = "call-glob",
+                             .tool_name = "glob",
+                             .arguments = encode_payload(
+                                 wh::agent::middlewares::filesystem::filesystem_glob_arguments{
+                                     .pattern = "*.txt",
+                                 })},
       make_call_scope(context, "glob", "call-glob"));
   REQUIRE(glob_result.has_value());
   REQUIRE(glob_path == "/");
   REQUIRE(read_graph_string(std::move(glob_result).value()) == "a.txt\nb.txt");
 
-  auto grep_result = bindings.value()[5].entry.invoke(
-      wh::compose::tool_call{
-          .call_id = "call-grep", .tool_name = "grep", .arguments = R"({"pattern":"a"})"},
+  auto grep_result = surface->tool_bindings[5].entry.invoke(
+      wh::compose::tool_call{.call_id = "call-grep",
+                             .tool_name = "grep",
+                             .arguments = encode_payload(
+                                 wh::agent::middlewares::filesystem::filesystem_grep_arguments{
+                                     .pattern = "a",
+                                 })},
       make_call_scope(context, "grep", "call-grep"));
   REQUIRE(grep_result.has_value());
   REQUIRE(read_graph_string(std::move(grep_result).value()) == "a.txt\nb.txt");
@@ -183,7 +210,7 @@ TEST_CASE("skill middleware scans local skills, renders dynamic descriptions, an
   }
 
   const auto local = wh::agent::middlewares::skill::skill_local_backend{temp.path};
-  const auto backend = local.to_backend();
+  const auto backend = local.to_capabilities();
 
   auto description = wh::agent::middlewares::skill::render_skill_tool_description(
       backend, wh::agent::middlewares::skill::skill_tool_options{
@@ -192,19 +219,25 @@ TEST_CASE("skill middleware scans local skills, renders dynamic descriptions, an
   REQUIRE(description.value().find("brainstorming") != std::string::npos);
   REQUIRE(description.value().find("Explore design options") != std::string::npos);
 
-  auto binding = wh::agent::middlewares::skill::make_skill_tool_binding(
+  auto surface = wh::agent::middlewares::skill::make_skill_middleware_surface(
       backend, wh::agent::middlewares::skill::skill_tool_options{
                    .tool_name = "load_skill",
                    .language = wh::agent::middlewares::skill::skill_language::chinese});
-  REQUIRE(binding.has_value());
-  REQUIRE(binding.value().schema.name == "load_skill");
-  REQUIRE(binding.value().schema.description.find("可用技能") != std::string::npos);
+  REQUIRE(surface.has_value());
+  REQUIRE(surface->tool_bindings.size() == 1U);
+  REQUIRE(surface->request_transforms.size() == 1U);
+  REQUIRE(surface->tool_bindings.front().schema.name == "load_skill");
+  REQUIRE(surface->tool_bindings.front().schema.description.find("可用技能") != std::string::npos);
 
   wh::core::run_context context{};
-  auto loaded = binding.value().entry.invoke(
-      wh::compose::tool_call{.call_id = "call-skill",
-                             .tool_name = "load_skill",
-                             .arguments = R"({"name":"brainstorming"})"},
+  auto loaded = surface->tool_bindings.front().entry.invoke(
+      wh::compose::tool_call{
+          .call_id = "call-skill",
+          .tool_name = "load_skill",
+          .arguments = encode_payload(wh::agent::middlewares::skill::skill_load_arguments{
+              .name = "brainstorming",
+          }),
+      },
       make_call_scope(context, "load_skill", "call-skill"));
   REQUIRE(loaded.has_value());
   auto loaded_text = read_graph_string(std::move(loaded).value());
@@ -212,12 +245,13 @@ TEST_CASE("skill middleware scans local skills, renders dynamic descriptions, an
   REQUIRE(loaded_text.find("SKILL.md") != std::string::npos);
   REQUIRE(loaded_text.find("Use this to design before implementation.") != std::string::npos);
 
-  auto middleware = wh::agent::middlewares::skill::make_skill_request_middleware(
+  auto request_transform = wh::agent::middlewares::skill::make_skill_request_transform(
       backend, wh::agent::middlewares::skill::skill_tool_options{
                    .tool_name = "load_skill",
                    .instruction = "Read local skills before acting.",
                    .language = wh::agent::middlewares::skill::skill_language::english});
-  REQUIRE(middleware.has_value());
+  REQUIRE(request_transform.has_value());
+  REQUIRE(static_cast<bool>(request_transform->sync));
 
   std::filesystem::create_directories(temp.path / "dynamic");
   {
@@ -232,15 +266,15 @@ TEST_CASE("skill middleware scans local skills, renders dynamic descriptions, an
       .name = "load_skill",
       .description = "stale",
   });
-  auto mutated = middleware.value()(request);
+  auto mutated = request_transform->sync(std::move(request), context);
   REQUIRE(mutated.has_value());
-  REQUIRE(request.messages.front().role == wh::schema::message_role::system);
-  REQUIRE(std::get<wh::schema::text_part>(request.messages.front().parts.front()).text ==
+  REQUIRE(mutated->messages.front().role == wh::schema::message_role::system);
+  REQUIRE(std::get<wh::schema::text_part>(mutated->messages.front().parts.front()).text ==
           "Read local skills before acting.");
-  REQUIRE(request.tools.front().description.find("dynamic") != std::string::npos);
+  REQUIRE(mutated->tools.front().description.find("dynamic") != std::string::npos);
 }
 
-TEST_CASE("clear tool result middleware only trims old tool messages outside the protected window",
+TEST_CASE("clear tool result surface only trims old tool messages outside the protected window",
           "[core][adk][middleware][reduction]") {
   wh::model::chat_request request{};
   request.messages.push_back(make_text_message(wh::schema::message_role::system, "system"));
@@ -261,19 +295,20 @@ TEST_CASE("clear tool result middleware only trims old tool messages outside the
   request.messages.push_back(
       make_text_message(wh::schema::message_role::tool, "recent tool payload", "search"));
 
-  auto middleware = wh::agent::middlewares::reduction::make_clear_tool_result_middleware(
+  auto transform = wh::agent::middlewares::reduction::make_clear_tool_result_transform(
       wh::agent::middlewares::reduction::clear_tool_result_options{
           .max_history_tokens = 20U,
           .protected_recent_tokens = 8U,
           .placeholder = "[[trimmed]]",
           .excluded_tool_names = {"keep"},
       });
-
-  auto reduced = middleware(request);
+  wh::core::run_context context{};
+  auto reduced = transform.sync(std::move(request), context);
   REQUIRE(reduced.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(request.messages[2].parts.front()).text == "[[trimmed]]");
-  REQUIRE(std::get<wh::schema::text_part>(request.messages[3].parts.front()).text ==
+  REQUIRE(std::get<wh::schema::text_part>(reduced->messages[2].parts.front()).text ==
+          "[[trimmed]]");
+  REQUIRE(std::get<wh::schema::text_part>(reduced->messages[3].parts.front()).text ==
           "excluded payload");
-  REQUIRE(std::get<wh::schema::text_part>(request.messages.back().parts.front()).text ==
+  REQUIRE(std::get<wh::schema::text_part>(reduced->messages.back().parts.front()).text ==
           "recent tool payload");
 }

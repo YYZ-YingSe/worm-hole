@@ -8,9 +8,9 @@
 #include <unordered_set>
 #include <utility>
 
+#include "wh/agent/middlewares/surface.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
-#include "wh/model/chat_model.hpp"
 #include "wh/schema/message.hpp"
 
 namespace wh::agent::middlewares::reduction {
@@ -18,12 +18,7 @@ namespace wh::agent::middlewares::reduction {
 /// Token estimator used by tool-result reduction.
 using token_estimator = wh::core::callback_function<std::size_t(const wh::schema::message &) const>;
 
-/// Request mutator used by callers to shrink old tool results before the next
-/// model turn begins.
-using clear_tool_result_middleware =
-    wh::core::callback_function<wh::core::result<void>(wh::model::chat_request &) const>;
-
-/// Public configuration for the clear-tool-result request mutator.
+/// Public configuration for the clear-tool-result request transform.
 struct clear_tool_result_options {
   /// Total-token threshold above which old tool messages may be reduced.
   std::size_t max_history_tokens{4096U};
@@ -68,16 +63,18 @@ namespace detail {
 
 } // namespace detail
 
-/// Creates a request mutator that clears old tool-message content once the
+/// Creates one request transform that clears old tool-message content once the
 /// configured total-token threshold is exceeded.
-[[nodiscard]] inline auto make_clear_tool_result_middleware(clear_tool_result_options options = {})
-    -> clear_tool_result_middleware {
+[[nodiscard]] inline auto make_clear_tool_result_transform(clear_tool_result_options options = {})
+    -> wh::agent::middlewares::request_transform_binding {
   if (options.placeholder.empty()) {
     options.placeholder = "[tool result omitted]";
   }
 
-  return clear_tool_result_middleware{
-      [options = std::move(options)](wh::model::chat_request &request) -> wh::core::result<void> {
+  return wh::agent::middlewares::request_transform_binding{
+      .sync = [options = std::move(options)](
+                  wh::model::chat_request request,
+                  wh::core::run_context &) -> wh::agent::middlewares::request_transform_result {
         const auto &estimate = static_cast<bool>(options.estimate_tokens)
                                    ? options.estimate_tokens
                                    : token_estimator{detail::default_estimate_tokens};
@@ -87,7 +84,7 @@ namespace detail {
           total_tokens += estimate(message);
         }
         if (total_tokens <= options.max_history_tokens) {
-          return {};
+          return request;
         }
 
         std::size_t protected_tokens = 0U;
@@ -105,8 +102,17 @@ namespace detail {
           message.parts.clear();
           message.parts.emplace_back(wh::schema::text_part{options.placeholder});
         }
-        return {};
+        return request;
       }};
+}
+
+/// Builds one reduction middleware surface that exports the clear-tool-result
+/// transform and no tools.
+[[nodiscard]] inline auto make_clear_tool_result_surface(clear_tool_result_options options = {})
+    -> wh::agent::middlewares::middleware_surface {
+  wh::agent::middlewares::middleware_surface surface{};
+  surface.request_transforms.push_back(make_clear_tool_result_transform(std::move(options)));
+  return surface;
 }
 
 } // namespace wh::agent::middlewares::reduction

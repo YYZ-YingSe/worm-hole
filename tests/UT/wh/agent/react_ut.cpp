@@ -170,3 +170,22 @@ TEST_CASE("react shell accepts value model bindings without shell-level contract
               .has_value());
   REQUIRE(async_authored.freeze().has_value());
 }
+
+TEST_CASE("react shell mounts middleware surfaces and validates request transforms",
+          "[UT][wh/agent/react.hpp][react::add_middleware_surface][condition][branch][boundary]") {
+  wh::agent::react authored{"react", "assistant"};
+  wh::agent::middlewares::middleware_surface surface{};
+  surface.instruction_fragments.push_back("filesystem instruction");
+  surface.tool_bindings.push_back(
+      wh::agent::make_tool_binding_pair(wh::testing::helper::sync_tool{}));
+  surface.request_transforms.push_back(wh::agent::middlewares::request_transform_binding{
+      .sync = [](wh::model::chat_request request, wh::core::run_context &)
+          -> wh::agent::middlewares::request_transform_result { return request; }});
+  REQUIRE(authored.add_middleware_surface(std::move(surface)).has_value());
+  REQUIRE(authored.render_instruction().find("filesystem instruction") != std::string::npos);
+  REQUIRE(authored.tools().size() == 1U);
+  REQUIRE(authored.request_transforms().size() == 1U);
+
+  REQUIRE(authored.add_request_transform({}).has_error());
+  REQUIRE(authored.add_request_transform({}).error() == wh::core::errc::invalid_argument);
+}

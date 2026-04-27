@@ -47,10 +47,10 @@ TEST_CASE("clear tool result detail helpers estimate tokens and classify reducib
 }
 
 TEST_CASE(
-    "clear tool result middleware trims only old tool messages outside protected suffix and honors "
+    "clear tool result transform trims only old tool messages outside protected suffix and honors "
     "custom estimator",
     "[UT][wh/agent/middlewares/reduction/"
-    "clear_tool_result.hpp][make_clear_tool_result_middleware][condition][branch][boundary]") {
+    "clear_tool_result.hpp][make_clear_tool_result_transform][condition][branch][boundary]") {
   wh::model::chat_request request{};
   request.messages.push_back(make_text_message(wh::schema::message_role::system, "system"));
 
@@ -70,7 +70,7 @@ TEST_CASE(
   request.messages.push_back(
       make_text_message(wh::schema::message_role::tool, "recent tool payload", "search"));
 
-  auto middleware = wh::agent::middlewares::reduction::make_clear_tool_result_middleware(
+  auto transform = wh::agent::middlewares::reduction::make_clear_tool_result_transform(
       wh::agent::middlewares::reduction::clear_tool_result_options{
           .max_history_tokens = 20U,
           .protected_recent_tokens = 8U,
@@ -78,29 +78,32 @@ TEST_CASE(
           .excluded_tool_names = {"keep"},
       });
 
-  auto reduced = middleware(request);
+  wh::core::run_context context{};
+  auto reduced = transform.sync(std::move(request), context);
   REQUIRE(reduced.has_value());
-  REQUIRE(std::get<wh::schema::text_part>(request.messages[2].parts.front()).text == "[[trimmed]]");
-  REQUIRE(std::get<wh::schema::text_part>(request.messages[3].parts.front()).text ==
+  REQUIRE(std::get<wh::schema::text_part>(reduced->messages[2].parts.front()).text ==
+          "[[trimmed]]");
+  REQUIRE(std::get<wh::schema::text_part>(reduced->messages[3].parts.front()).text ==
           "excluded payload");
-  REQUIRE(std::get<wh::schema::text_part>(request.messages.back().parts.front()).text ==
+  REQUIRE(std::get<wh::schema::text_part>(reduced->messages.back().parts.front()).text ==
           "recent tool payload");
 
   wh::model::chat_request unchanged{};
   unchanged.messages.push_back(
       make_text_message(wh::schema::message_role::tool, "short", "search"));
-  auto no_trim = wh::agent::middlewares::reduction::make_clear_tool_result_middleware(
+  auto no_trim = wh::agent::middlewares::reduction::make_clear_tool_result_transform(
       wh::agent::middlewares::reduction::clear_tool_result_options{
           .max_history_tokens = 100U,
       });
-  REQUIRE(no_trim(unchanged).has_value());
-  REQUIRE(std::get<wh::schema::text_part>(unchanged.messages.front().parts.front()).text ==
+  auto unchanged_result = no_trim.sync(std::move(unchanged), context);
+  REQUIRE(unchanged_result.has_value());
+  REQUIRE(std::get<wh::schema::text_part>(unchanged_result->messages.front().parts.front()).text ==
           "short");
 
   wh::model::chat_request fallback_placeholder{};
   fallback_placeholder.messages.push_back(
       make_text_message(wh::schema::message_role::tool, "payload", "search"));
-  auto custom = wh::agent::middlewares::reduction::make_clear_tool_result_middleware(
+  auto custom = wh::agent::middlewares::reduction::make_clear_tool_result_transform(
       wh::agent::middlewares::reduction::clear_tool_result_options{
           .max_history_tokens = 1U,
           .protected_recent_tokens = 0U,
@@ -109,8 +112,14 @@ TEST_CASE(
               wh::agent::middlewares::reduction::token_estimator{
                   [](const wh::schema::message &) -> std::size_t { return 10U; }},
       });
-  REQUIRE(custom(fallback_placeholder).has_value());
-  REQUIRE(
-      std::get<wh::schema::text_part>(fallback_placeholder.messages.front().parts.front()).text ==
-      "[tool result omitted]");
+  auto custom_result = custom.sync(std::move(fallback_placeholder), context);
+  REQUIRE(custom_result.has_value());
+  REQUIRE(std::get<wh::schema::text_part>(custom_result->messages.front().parts.front()).text ==
+          "[tool result omitted]");
+
+  auto surface = wh::agent::middlewares::reduction::make_clear_tool_result_surface(
+      wh::agent::middlewares::reduction::clear_tool_result_options{});
+  REQUIRE(surface.tool_bindings.empty());
+  REQUIRE(surface.instruction_fragments.empty());
+  REQUIRE(surface.request_transforms.size() == 1U);
 }

@@ -6,10 +6,33 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/agent_authoring_support.hpp"
+#include "wh/agent/tool_payload.hpp"
 #include "wh/adk/detail/chat_graph.hpp"
 #include "wh/compose/graph/stream.hpp"
 
 namespace {
+
+struct empty_tool_arguments {};
+
+inline auto wh_to_json(const empty_tool_arguments &, wh::core::json_value &output,
+                       wh::core::json_allocator &) -> wh::core::result<void> {
+  output.SetObject();
+  return {};
+}
+
+inline auto wh_from_json(const wh::core::json_value &input, empty_tool_arguments &)
+    -> wh::core::result<void> {
+  if (!input.IsObject()) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+  }
+  return {};
+}
+
+[[nodiscard]] auto encode_empty_payload() -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(empty_tool_arguments{});
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
 
 [[nodiscard]] auto lower_chat_output_graph(wh::compose::graph native_graph, std::string output_key,
                                            wh::agent::chat_output_mode output_mode)
@@ -82,7 +105,7 @@ TEST_CASE("chat detail helpers normalize message streams instructions and output
       .id = "call-1",
       .type = "function",
       .name = "search",
-      .arguments = "{}",
+      .arguments = encode_empty_payload(),
       .complete = true,
   });
   rendered.parts.emplace_back(wh::schema::text_part{"beta"});

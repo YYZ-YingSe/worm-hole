@@ -4,11 +4,20 @@
 #include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
+#include <stdexec/execution.hpp>
 
 #include "helper/agent_authoring_support.hpp"
 #include "wh/agent/middlewares/skill/skill.hpp"
+#include "wh/agent/react.hpp"
 
 namespace {
+
+template <typename payload_t> [[nodiscard]] auto encode_payload(const payload_t &payload)
+    -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(payload);
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
 
 struct scoped_directory {
   std::filesystem::path path{};
@@ -99,13 +108,20 @@ TEST_CASE("skill detail helpers trim parse render and decode local skill documen
               wh::agent::middlewares::skill::skill_language::chinese)
               .find("skill 工具") != std::string::npos);
 
-  auto skill_name =
-      wh::agent::middlewares::skill::detail::read_skill_name(R"({"name":"brainstorming"})");
+  auto encoded_name =
+      wh::agent::encode_tool_payload(wh::agent::middlewares::skill::skill_load_arguments{
+          .name = "brainstorming",
+      });
+  REQUIRE(encoded_name.has_value());
+  auto skill_name = wh::agent::decode_tool_payload<
+      wh::agent::middlewares::skill::skill_load_arguments>(encoded_name.value());
   REQUIRE(skill_name.has_value());
-  REQUIRE(skill_name.value() == "brainstorming");
-  auto missing_name = wh::agent::middlewares::skill::detail::read_skill_name(R"({"other":"x"})");
+  REQUIRE(skill_name->name == "brainstorming");
+  auto missing_name = wh::agent::decode_tool_payload<
+      wh::agent::middlewares::skill::skill_load_arguments>(R"({"other":"x"})");
   REQUIRE(missing_name.has_error());
-  auto wrong_name = wh::agent::middlewares::skill::detail::read_skill_name(R"({"name":1})");
+  auto wrong_name = wh::agent::decode_tool_payload<
+      wh::agent::middlewares::skill::skill_load_arguments>(R"({"name":1})");
   REQUIRE(wrong_name.has_error());
   REQUIRE(wrong_name.error() == wh::core::errc::type_mismatch);
 
@@ -120,9 +136,9 @@ TEST_CASE("skill detail helpers trim parse render and decode local skill documen
   REQUIRE(*wh::core::any_cast<std::string>(&graph_value.value()) == "hello");
 }
 
-TEST_CASE("skill middleware lists loads renders mounts and refreshes skill tools",
+TEST_CASE("skill middleware lists loads renders surfaces and refreshes skill tools",
           "[UT][wh/agent/middlewares/skill/"
-          "skill.hpp][make_skill_tool_binding][condition][branch][boundary]") {
+          "skill.hpp][make_skill_middleware_surface][condition][branch][boundary]") {
   scoped_directory temp{.path =
                             std::filesystem::temp_directory_path() / "worm_hole_skill_public_ut"};
   std::filesystem::create_directories(temp.path / "brainstorming");
@@ -153,57 +169,67 @@ TEST_CASE("skill middleware lists loads renders mounts and refreshes skill tools
   REQUIRE(missing_load.has_error());
   REQUIRE(missing_load.error() == wh::core::errc::not_found);
 
-  const auto backend = local.to_backend();
+  const auto backend = local.to_capabilities();
   auto description = wh::agent::middlewares::skill::render_skill_tool_description(
       backend, wh::agent::middlewares::skill::skill_tool_options{
                    .language = wh::agent::middlewares::skill::skill_language::english});
   REQUIRE(description.has_value());
   REQUIRE(description.value().find("brainstorming") != std::string::npos);
 
-  wh::agent::middlewares::skill::skill_backend invalid_backend{};
+  wh::agent::middlewares::skill::skill_capabilities invalid_backend{};
   REQUIRE(
       wh::agent::middlewares::skill::render_skill_tool_description(invalid_backend).has_error());
+  REQUIRE(wh::agent::middlewares::skill::make_skill_request_transform(invalid_backend).has_error());
   REQUIRE(
-      wh::agent::middlewares::skill::make_skill_request_middleware(invalid_backend).has_error());
-  REQUIRE(wh::agent::middlewares::skill::make_skill_tool_binding(invalid_backend).has_error());
+      wh::agent::middlewares::skill::make_skill_middleware_surface(invalid_backend).has_error());
   REQUIRE(wh::agent::middlewares::skill::make_skill_instruction({.instruction = "custom"}) ==
           "custom");
   REQUIRE(wh::agent::middlewares::skill::make_skill_instruction(
               {.language = wh::agent::middlewares::skill::skill_language::english})
               .find("skill tool") != std::string::npos);
 
-  auto binding = wh::agent::middlewares::skill::make_skill_tool_binding(
+  auto surface = wh::agent::middlewares::skill::make_skill_middleware_surface(
       backend, wh::agent::middlewares::skill::skill_tool_options{
                    .tool_name = "load_skill",
                    .language = wh::agent::middlewares::skill::skill_language::chinese});
-  REQUIRE(binding.has_value());
-  REQUIRE(binding.value().schema.name == "load_skill");
-  REQUIRE(binding.value().schema.description.find("可用技能") != std::string::npos);
+  REQUIRE(surface.has_value());
+  REQUIRE(surface->instruction_fragments.size() == 1U);
+  REQUIRE(surface->tool_bindings.size() == 1U);
+  REQUIRE(surface->request_transforms.size() == 1U);
+  REQUIRE(surface->tool_bindings.front().schema.name == "load_skill");
+  REQUIRE(surface->tool_bindings.front().schema.description.find("可用技能") != std::string::npos);
+  REQUIRE_FALSE(static_cast<bool>(surface->tool_bindings.front().entry.async_invoke));
 
   wh::core::run_context context{};
-  auto loaded = binding.value().entry.invoke(
-      wh::compose::tool_call{.call_id = "call-skill",
-                             .tool_name = "load_skill",
-                             .arguments = R"({"name":"brainstorming"})"},
+  auto loaded = surface->tool_bindings.front().entry.invoke(
+      wh::compose::tool_call{
+          .call_id = "call-skill",
+          .tool_name = "load_skill",
+          .arguments = encode_payload(wh::agent::middlewares::skill::skill_load_arguments{
+              .name = "brainstorming",
+          }),
+      },
       make_call_scope(context, "load_skill", "call-skill"));
   REQUIRE(loaded.has_value());
   auto loaded_text = read_graph_string(std::move(loaded).value());
   REQUIRE(loaded_text.find("brainstorming") != std::string::npos);
   REQUIRE(loaded_text.find("SKILL.md") != std::string::npos);
 
-  auto bad_call = binding.value().entry.invoke(wh::compose::tool_call{.call_id = "call-bad",
-                                                                      .tool_name = "load_skill",
-                                                                      .arguments = R"({"name":1})"},
-                                               make_call_scope(context, "load_skill", "call-bad"));
+  auto bad_call = surface->tool_bindings.front().entry.invoke(
+      wh::compose::tool_call{
+          .call_id = "call-bad", .tool_name = "load_skill", .arguments = R"({"name":1})"},
+      make_call_scope(context, "load_skill", "call-bad"));
   REQUIRE(bad_call.has_error());
   REQUIRE(bad_call.error() == wh::core::errc::type_mismatch);
 
-  auto middleware = wh::agent::middlewares::skill::make_skill_request_middleware(
+  auto request_transform = wh::agent::middlewares::skill::make_skill_request_transform(
       backend, wh::agent::middlewares::skill::skill_tool_options{
                    .tool_name = "load_skill",
                    .instruction = "Read local skills before acting.",
                    .language = wh::agent::middlewares::skill::skill_language::english});
-  REQUIRE(middleware.has_value());
+  REQUIRE(request_transform.has_value());
+  REQUIRE(static_cast<bool>(request_transform->sync));
+  REQUIRE_FALSE(static_cast<bool>(request_transform->async));
 
   std::filesystem::create_directories(temp.path / "dynamic");
   {
@@ -219,26 +245,98 @@ TEST_CASE("skill middleware lists loads renders mounts and refreshes skill tools
       .name = "load_skill",
       .description = "stale",
   });
-  auto mutated = middleware.value()(request);
+  auto mutated = request_transform->sync(std::move(request), context);
   REQUIRE(mutated.has_value());
-  REQUIRE(request.messages.front().role == wh::schema::message_role::system);
-  REQUIRE(std::get<wh::schema::text_part>(request.messages.front().parts.front()).text ==
+  REQUIRE(mutated->messages.front().role == wh::schema::message_role::system);
+  REQUIRE(std::get<wh::schema::text_part>(mutated->messages.front().parts.front()).text ==
           "Read local skills before acting.");
-  REQUIRE(request.tools.front().description.find("dynamic") != std::string::npos);
+  REQUIRE(mutated->tools.front().description.find("dynamic") != std::string::npos);
 
-  wh::agent::toolset toolset{};
-  auto mounted = wh::agent::middlewares::skill::mount_skill_tool(
-      toolset, backend,
-      wh::agent::middlewares::skill::skill_tool_options{
-          .tool_name = "load_skill",
-      });
-  REQUIRE(mounted.has_value());
-  REQUIRE(toolset.size() == 1U);
-  auto duplicate = wh::agent::middlewares::skill::mount_skill_tool(
-      toolset, backend,
-      wh::agent::middlewares::skill::skill_tool_options{
-          .tool_name = "load_skill",
-      });
+  wh::agent::react authored{"react", "assistant"};
+  REQUIRE(authored.add_middleware_surface(std::move(surface).value()).has_value());
+  REQUIRE(authored.tools().size() == 1U);
+  REQUIRE(authored.render_instruction().find("skill 工具") != std::string::npos);
+
+  auto duplicate_surface = wh::agent::middlewares::skill::make_skill_middleware_surface(
+      backend, wh::agent::middlewares::skill::skill_tool_options{
+                   .tool_name = "load_skill",
+                   .language = wh::agent::middlewares::skill::skill_language::chinese});
+  REQUIRE(duplicate_surface.has_value());
+  auto duplicate = authored.add_middleware_surface(std::move(duplicate_surface).value());
   REQUIRE(duplicate.has_error());
   REQUIRE(duplicate.error() == wh::core::errc::already_exists);
+}
+
+TEST_CASE("skill middleware preserves async-only capabilities without fabricating sync entry",
+          "[UT][wh/agent/middlewares/skill/"
+          "skill.hpp][async-capabilities][condition][branch][boundary]") {
+  wh::agent::middlewares::skill::skill_capabilities backend{
+      .list = {.async = []() -> wh::agent::middlewares::operation_sender<
+                                 wh::agent::middlewares::skill::skill_list_result> {
+        return wh::agent::middlewares::operation_sender<
+            wh::agent::middlewares::skill::skill_list_result>{
+            stdexec::just(wh::agent::middlewares::skill::skill_list_result{
+                std::vector<wh::agent::middlewares::skill::skill_info>{
+                    {.name = "async-skill",
+                     .description = "Async description",
+                     .directory = "/tmp/async-skill"}}})};
+      }},
+      .load = {.async = [](std::string skill_name)
+                   -> wh::agent::middlewares::operation_sender<
+                       wh::agent::middlewares::skill::skill_load_result> {
+        return wh::agent::middlewares::operation_sender<
+            wh::agent::middlewares::skill::skill_load_result>{
+            stdexec::just(wh::agent::middlewares::skill::skill_load_result{
+                wh::agent::middlewares::skill::loaded_skill{
+                    .info = {.name = std::move(skill_name),
+                             .description = "Async description",
+                             .directory = "/tmp/async-skill"},
+                    .content = "Async body\n"}})};
+      }},
+  };
+
+  auto request_transform = wh::agent::middlewares::skill::make_skill_request_transform(
+      backend, wh::agent::middlewares::skill::skill_tool_options{
+                   .tool_name = "load_skill",
+                   .instruction = "Use async skills.",
+                   .language = wh::agent::middlewares::skill::skill_language::english});
+  REQUIRE(request_transform.has_value());
+  REQUIRE_FALSE(static_cast<bool>(request_transform->sync));
+  REQUIRE(static_cast<bool>(request_transform->async));
+
+  wh::model::chat_request request{};
+  request.tools.push_back(wh::schema::tool_schema_definition{
+      .name = "load_skill",
+      .description = "stale",
+  });
+  wh::core::run_context context{};
+  auto transformed = stdexec::sync_wait(request_transform->async(std::move(request), context));
+  REQUIRE(transformed.has_value());
+  REQUIRE(std::get<0>(*transformed).has_value());
+  auto transformed_request = std::move(std::get<0>(*transformed)).value();
+  REQUIRE(transformed_request.tools.front().description.find("async-skill") != std::string::npos);
+  REQUIRE(transformed_request.messages.front().role == wh::schema::message_role::system);
+
+  auto surface = wh::agent::middlewares::skill::make_skill_middleware_surface(
+      backend, wh::agent::middlewares::skill::skill_tool_options{
+                   .tool_name = "load_skill",
+                   .language = wh::agent::middlewares::skill::skill_language::english});
+  REQUIRE(surface.has_value());
+  REQUIRE_FALSE(static_cast<bool>(surface->tool_bindings.front().entry.invoke));
+  REQUIRE(static_cast<bool>(surface->tool_bindings.front().entry.async_invoke));
+
+  auto loaded = stdexec::sync_wait(surface->tool_bindings.front().entry.async_invoke(
+      wh::compose::tool_call{
+          .call_id = "call-skill",
+          .tool_name = "load_skill",
+          .arguments = encode_payload(wh::agent::middlewares::skill::skill_load_arguments{
+              .name = "async-skill",
+          }),
+      },
+      make_call_scope(context, "load_skill", "call-skill")));
+  REQUIRE(loaded.has_value());
+  REQUIRE(std::get<0>(*loaded).has_value());
+  auto loaded_text = read_graph_string(std::move(std::get<0>(*loaded)).value());
+  REQUIRE(loaded_text.find("async-skill") != std::string::npos);
+  REQUIRE(loaded_text.find("Async body") != std::string::npos);
 }

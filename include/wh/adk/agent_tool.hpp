@@ -13,6 +13,7 @@
 
 #include "wh/adk/runner.hpp"
 #include "wh/agent/agent.hpp"
+#include "wh/agent/tool_payload.hpp"
 #include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
@@ -30,6 +31,29 @@ enum class agent_tool_input_mode {
   /// Pass the raw JSON payload through as one user message.
   custom_schema,
 };
+
+struct agent_tool_request_arguments {
+  std::string request{};
+};
+
+inline auto wh_to_json(const agent_tool_request_arguments &input, wh::core::json_value &output,
+                       wh::core::json_allocator &allocator) -> wh::core::result<void> {
+  output.SetObject();
+  return wh::agent::detail::write_json_member(output, "request", input.request, allocator);
+}
+
+inline auto wh_from_json(const wh::core::json_value &input, agent_tool_request_arguments &output)
+    -> wh::core::result<void> {
+  if (!input.IsObject()) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+  }
+  auto request = wh::agent::detail::read_required_json_member<std::string>(input, "request");
+  if (request.has_error()) {
+    return wh::core::result<void>::failure(request.error());
+  }
+  output.request = std::move(request).value();
+  return {};
+}
 
 /// Final bridge report returned after one agent-tool run.
 struct agent_tool_result {

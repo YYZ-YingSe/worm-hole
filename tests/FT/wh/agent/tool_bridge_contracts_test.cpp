@@ -21,6 +21,14 @@
 
 namespace {
 
+[[nodiscard]] auto encode_request_payload(std::string request) -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(wh::adk::agent_tool_request_arguments{
+      .request = std::move(request),
+  });
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
+
 [[nodiscard]] auto make_user_message(const std::string &text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
@@ -215,7 +223,7 @@ TEST_CASE("agent tool request mode maps request json to child chat request and "
   wh::compose::tool_call call{
       .call_id = "call-1",
       .tool_name = "delegate",
-      .arguments = R"({"request":"hello bridge"})",
+      .arguments = encode_request_payload("hello bridge"),
   };
   wh::core::run_context context{};
   auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
@@ -252,7 +260,7 @@ TEST_CASE("agent tool message history mode reads projected react state and "
   wh::compose::tool_call call{
       .call_id = "call-2",
       .tool_name = "delegate_history",
-      .arguments = "{}",
+      .arguments = encode_request_payload(""),
       .payload = wh::core::any(wh::model::chat_request{
           .messages = {make_user_message("keep user")},
       }),
@@ -286,7 +294,7 @@ TEST_CASE("agent tool message history mode accepts shared history-request payloa
   wh::compose::tool_call call{
       .call_id = "call-2b",
       .tool_name = "delegate_payload",
-      .arguments = "{}",
+      .arguments = encode_request_payload(""),
       .payload = wh::core::any(std::move(payload)),
   };
   auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
@@ -334,7 +342,7 @@ TEST_CASE("agent tool flattens child message substreams without rebuilding a "
   wh::compose::tool_call call{
       .call_id = "call-stream-1",
       .tool_name = "delegate_stream",
-      .arguments = R"({"request":"stream please"})",
+      .arguments = encode_request_payload("stream please"),
   };
   wh::core::run_context context{};
   auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
@@ -374,7 +382,7 @@ TEST_CASE("agent tool boundary consumes non interrupt controls and fails when "
   wh::compose::tool_call success_call{
       .call_id = "call-3",
       .tool_name = "delegate",
-      .arguments = R"({"request":"hello"})",
+      .arguments = encode_request_payload("hello"),
   };
   wh::core::run_context success_context{};
   auto success = filtered.run(
@@ -400,7 +408,7 @@ TEST_CASE("agent tool boundary consumes non interrupt controls and fails when "
   wh::compose::tool_call empty_call{
       .call_id = "call-4",
       .tool_name = "delegate_empty",
-      .arguments = R"({"request":"hello"})",
+      .arguments = encode_request_payload("hello"),
   };
   wh::core::run_context empty_context{};
   auto empty_result = empty.run(
@@ -429,7 +437,7 @@ TEST_CASE("agent tool forwards internal events with prefixed tool run path",
   wh::compose::tool_call call{
       .call_id = "call-5",
       .tool_name = "delegate_stream",
-      .arguments = R"({"request":"hello"})",
+      .arguments = encode_request_payload("hello"),
   };
   wh::core::run_context context{};
   auto result = tool.run(call, make_call_scope(context, call.tool_name, call.call_id));
@@ -464,7 +472,7 @@ TEST_CASE("agent tool compose entry reuses same bridge for invoke and stream",
   wh::compose::tool_call call{
       .call_id = "call-6",
       .tool_name = "delegate_entry",
-      .arguments = R"({"request":"invoke me"})",
+      .arguments = encode_request_payload("invoke me"),
   };
   wh::core::run_context context{};
   auto scope = make_call_scope(context, call.tool_name, call.call_id);
@@ -520,7 +528,7 @@ TEST_CASE("agent tool compose entry stream flattens child message substreams",
   wh::compose::tool_call call{
       .call_id = "call-entry-stream-1",
       .tool_name = "delegate_entry_stream",
-      .arguments = R"({"request":"stream through entry"})",
+      .arguments = encode_request_payload("stream through entry"),
   };
   wh::core::run_context context{};
   auto scope = make_call_scope(context, call.tool_name, call.call_id);
@@ -577,7 +585,7 @@ TEST_CASE("agent tool compose entry stream returns live reader before child "
   wh::compose::tool_call call{
       .call_id = "call-entry-live-1",
       .tool_name = "delegate_entry_live",
-      .arguments = R"({"request":"live please"})",
+      .arguments = encode_request_payload("live please"),
   };
   wh::core::run_context context{};
   auto scope = make_call_scope(context, call.tool_name, call.call_id);
@@ -648,7 +656,7 @@ TEST_CASE("agent tool compose entry keeps async-only runner async-only",
   wh::compose::tool_call call{
       .call_id = "call-async-1",
       .tool_name = "delegate_async",
-      .arguments = R"({"request":"hello async"})",
+      .arguments = encode_request_payload("hello async"),
   };
   wh::core::run_context context{};
   auto scope = make_call_scope(context, call.tool_name, call.call_id);
@@ -703,7 +711,7 @@ TEST_CASE("agent tool resume reuses bridge checkpoint state without "
   wh::compose::tool_call call{
       .call_id = "call-resume-1",
       .tool_name = "delegate_resume",
-      .arguments = R"({"request":"resume me"})",
+      .arguments = encode_request_payload("resume me"),
   };
 
   wh::core::run_context first_context{};
@@ -770,7 +778,7 @@ TEST_CASE("agent tool exact resume target fails when bridge checkpoint state "
   wh::compose::tool_call call{
       .call_id = "call-resume-missing",
       .tool_name = "delegate_resume",
-      .arguments = R"({"request":"resume me"})",
+      .arguments = encode_request_payload("resume me"),
   };
 
   wh::core::run_context context{};
@@ -829,7 +837,7 @@ TEST_CASE("agent tool compose tools node projects bridge interrupt context "
   wh::compose::tool_call call{
       .call_id = "call-graph-resume",
       .tool_name = "delegate_graph_resume",
-      .arguments = R"({"request":"resume graph"})",
+      .arguments = encode_request_payload("resume graph"),
   };
 
   wh::compose::graph_value input =

@@ -6,11 +6,63 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/agent_authoring_support.hpp"
+#include "wh/agent/tool_payload.hpp"
 #include "wh/adk/detail/history_request.hpp"
 #include "wh/adk/detail/react_graph.hpp"
 #include "wh/compose/graph/stream.hpp"
 
 namespace {
+
+struct query_tool_arguments {
+  std::string q{};
+};
+
+struct empty_tool_arguments {};
+
+inline auto wh_to_json(const query_tool_arguments &input, wh::core::json_value &output,
+                       wh::core::json_allocator &allocator) -> wh::core::result<void> {
+  output.SetObject();
+  return wh::agent::detail::write_json_member(output, "q", input.q, allocator);
+}
+
+inline auto wh_from_json(const wh::core::json_value &input, query_tool_arguments &output)
+    -> wh::core::result<void> {
+  if (!input.IsObject()) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+  }
+  auto query = wh::agent::detail::read_required_json_member<std::string>(input, "q");
+  if (query.has_error()) {
+    return wh::core::result<void>::failure(query.error());
+  }
+  output.q = std::move(query).value();
+  return {};
+}
+
+inline auto wh_to_json(const empty_tool_arguments &, wh::core::json_value &output,
+                       wh::core::json_allocator &) -> wh::core::result<void> {
+  output.SetObject();
+  return {};
+}
+
+inline auto wh_from_json(const wh::core::json_value &input, empty_tool_arguments &)
+    -> wh::core::result<void> {
+  if (!input.IsObject()) {
+    return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+  }
+  return {};
+}
+
+[[nodiscard]] auto encode_query_payload(std::string query) -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(query_tool_arguments{.q = std::move(query)});
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
+
+[[nodiscard]] auto encode_empty_payload() -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(empty_tool_arguments{});
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
 
 [[nodiscard]] auto lower_react_output_graph(wh::compose::graph native_graph, std::string output_key,
                                             wh::agent::react_output_mode output_mode)
@@ -110,7 +162,7 @@ TEST_CASE(
       .id = "call-1",
       .type = "function",
       .name = "search",
-      .arguments = "{\"q\":\"hi\"}",
+      .arguments = encode_query_payload("hi"),
       .complete = true,
   });
   assistant.parts.emplace_back(wh::schema::tool_call_part{
@@ -118,7 +170,7 @@ TEST_CASE(
       .id = "call-2",
       .type = "function",
       .name = "other",
-      .arguments = "{}",
+      .arguments = encode_empty_payload(),
       .complete = true,
   });
 
@@ -189,7 +241,7 @@ TEST_CASE(
       wh::compose::tool_call{
           .call_id = "call-1",
           .tool_name = "search",
-          .arguments = "{\"q\":\"hi\"}",
+          .arguments = encode_query_payload("hi"),
       },
       wh::tool::call_scope{
           .run = tool_context,
@@ -275,7 +327,7 @@ TEST_CASE(
       .actions = {wh::agent::react_tool_action{
           .call_id = "call-1",
           .tool_name = "search",
-          .arguments = "{}",
+          .arguments = encode_empty_payload(),
           .return_direct = false,
       }},
   };

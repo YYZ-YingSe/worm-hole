@@ -100,3 +100,26 @@ TEST_CASE("chat shell accepts value model bindings without shell-level contract 
               .has_value());
   REQUIRE(async_authored.freeze().has_value());
 }
+
+TEST_CASE("chat shell accepts request transforms and rejects tool-exporting middleware surfaces",
+          "[UT][wh/agent/chat.hpp][chat::add_middleware_surface][condition][branch][boundary]") {
+  wh::agent::chat authored{"chat", "assistant"};
+  wh::agent::middlewares::middleware_surface request_only{};
+  request_only.instruction_fragments.push_back("middleware instruction");
+  request_only.request_transforms.push_back(wh::agent::middlewares::request_transform_binding{
+      .sync = [](wh::model::chat_request request, wh::core::run_context &)
+          -> wh::agent::middlewares::request_transform_result { return request; }});
+  REQUIRE(authored.add_middleware_surface(std::move(request_only)).has_value());
+  REQUIRE(authored.render_instruction().find("middleware instruction") != std::string::npos);
+  REQUIRE(authored.request_transforms().size() == 1U);
+
+  REQUIRE(authored.add_request_transform({}).has_error());
+  REQUIRE(authored.add_request_transform({}).error() == wh::core::errc::invalid_argument);
+
+  wh::agent::middlewares::middleware_surface with_tool{};
+  with_tool.tool_bindings.push_back(
+      wh::agent::make_tool_binding_pair(wh::testing::helper::sync_tool{}));
+  auto unsupported = authored.add_middleware_surface(std::move(with_tool));
+  REQUIRE(unsupported.has_error());
+  REQUIRE(unsupported.error() == wh::core::errc::not_supported);
+}

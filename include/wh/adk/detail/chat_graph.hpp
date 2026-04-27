@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include <stdexec/execution.hpp>
+
 #include "wh/adk/detail/agent_graph_view.hpp"
 #include "wh/adk/deterministic_transfer.hpp"
 #include "wh/agent/agent.hpp"
@@ -15,6 +17,7 @@
 #include "wh/compose/graph.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/stdexec.hpp"
 #include "wh/model/chat_model.hpp"
 #include "wh/schema/message.hpp"
 
@@ -119,20 +122,26 @@ private:
 
     auto description = std::string{authored_->description()};
     auto instruction = authored_->render_instruction();
+    auto request_transforms = std::vector<wh::agent::middlewares::request_transform_binding>{
+        authored_->request_transforms().begin(), authored_->request_transforms().end()};
     wh::compose::graph_compile_options compile_options{};
     compile_options.name = std::string{authored_->name()};
     compile_options.boundary.output = wh::compose::node_contract::stream;
     wh::compose::chain lowered{std::move(compile_options)};
 
-    auto prepare_request = wh::compose::make_lambda_node(
+    auto prepare_request = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                         wh::compose::node_contract::value,
+                                                         wh::compose::node_exec_mode::async>(
         "prepare_request",
-        [description = std::move(description), instruction = std::move(instruction)](
-            wh::compose::graph_value &input, wh::core::run_context &,
-            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+        [description = std::move(description), instruction = std::move(instruction),
+         request_transforms = std::move(request_transforms)](
+            wh::compose::graph_value &input, wh::core::run_context &context,
+            const wh::compose::graph_call_scope &) -> wh::compose::graph_value_sender {
           auto *messages = wh::core::any_cast<std::vector<wh::schema::message>>(&input);
           if (messages == nullptr) {
-            return wh::core::result<wh::compose::graph_value>::failure(
-                wh::core::errc::type_mismatch);
+            return wh::compose::graph_value_sender{
+                wh::core::detail::failure_result_sender<wh::core::result<wh::compose::graph_value>>(
+                    wh::core::errc::type_mismatch)};
           }
 
           wh::model::chat_request request{};
@@ -144,7 +153,13 @@ private:
           for (auto &message : *messages) {
             request.messages.push_back(std::move(message));
           }
-          return wh::compose::graph_value{std::move(request)};
+          return wh::compose::graph_value_sender{
+              wh::core::detail::map_result_sender<wh::core::result<wh::compose::graph_value>>(
+                  wh::agent::middlewares::apply_request_transforms(request_transforms,
+                                                                   std::move(request), context),
+                  [](wh::model::chat_request transformed) -> wh::compose::graph_value {
+                    return wh::core::any(std::move(transformed));
+                  })};
         });
     auto prepare_added = lowered.append(std::move(prepare_request));
     if (prepare_added.has_error()) {

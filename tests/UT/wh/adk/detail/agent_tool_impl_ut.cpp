@@ -10,6 +10,14 @@
 
 namespace {
 
+[[nodiscard]] auto encode_request_payload(std::string request) -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(wh::adk::agent_tool_request_arguments{
+      .request = std::move(request),
+  });
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
+
 [[nodiscard]] auto make_call_scope(wh::core::run_context &context) -> wh::tool::call_scope {
   return wh::tool::call_scope{
       .run = context,
@@ -172,10 +180,12 @@ TEST_CASE(
     "agent tool impl detail parses requests builds run inputs and materializes terminal values",
     "[UT][wh/adk/detail/"
     "agent_tool_impl.hpp][materialize_agent_tool_value][condition][branch][boundary]") {
-  auto parsed = wh::adk::detail::parse_request_text(R"({"request":"hello"})");
+  auto parsed = wh::agent::decode_tool_payload<wh::adk::agent_tool_request_arguments>(
+      encode_request_payload("hello"));
   REQUIRE(parsed.has_value());
-  REQUIRE(*parsed == "hello");
-  auto invalid_json = wh::adk::detail::parse_request_text("[]");
+  REQUIRE(parsed->request == "hello");
+  auto invalid_json =
+      wh::agent::decode_tool_payload<wh::adk::agent_tool_request_arguments>("[]");
   REQUIRE(invalid_json.has_error());
 
   wh::adk::detail::agent_tool_runtime request_runtime{
@@ -186,7 +196,7 @@ TEST_CASE(
   wh::compose::tool_call request_call{
       .call_id = "call-1",
       .tool_name = "delegate",
-      .arguments = R"({"request":"hello bridge"})",
+      .arguments = encode_request_payload("hello bridge"),
   };
   wh::core::run_context context{};
   auto request = wh::adk::detail::build_agent_tool_request(request_runtime, request_call, context);

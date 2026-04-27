@@ -16,6 +16,14 @@
 
 namespace {
 
+[[nodiscard]] auto encode_request_payload(std::string request) -> std::string {
+  auto encoded = wh::agent::encode_tool_payload(wh::adk::agent_tool_request_arguments{
+      .request = std::move(request),
+  });
+  REQUIRE(encoded.has_value());
+  return std::move(encoded).value();
+}
+
 [[nodiscard]] auto make_user_message(const std::string &text) -> wh::schema::message {
   wh::schema::message message{};
   message.role = wh::schema::message_role::user;
@@ -340,7 +348,7 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
   wh::compose::tool_call request_call{
       .call_id = "call-1",
       .tool_name = "delegate",
-      .arguments = R"({"request":"hello bridge"})",
+      .arguments = encode_request_payload("hello bridge"),
   };
   wh::core::run_context request_context{};
   auto unfrozen_request_result = request_tool.run(
@@ -376,7 +384,7 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
   wh::compose::tool_call history_call{
       .call_id = "call-2",
       .tool_name = "delegate_history",
-      .arguments = "{}",
+      .arguments = encode_request_payload(""),
       .payload = wh::core::any(std::move(payload)),
   };
   wh::core::run_context history_context{};
@@ -435,7 +443,7 @@ TEST_CASE("agent tool request history and entry paths map inputs flatten outputs
   wh::compose::tool_call live_call{
       .call_id = "call-live",
       .tool_name = "delegate_live",
-      .arguments = R"({"request":"live please"})",
+      .arguments = encode_request_payload("live please"),
   };
   wh::core::run_context live_context{};
   std::atomic<bool> produced{false};
@@ -504,7 +512,7 @@ TEST_CASE("agent tool filters controls reports protocol and interrupt outcomes a
   wh::compose::tool_call empty_call{
       .call_id = "call-empty",
       .tool_name = "empty",
-      .arguments = R"({"request":"hello"})",
+      .arguments = encode_request_payload("hello"),
   };
   wh::core::run_context empty_context{};
   auto empty_result = empty_tool.run(
@@ -530,7 +538,7 @@ TEST_CASE("agent tool filters controls reports protocol and interrupt outcomes a
   wh::compose::tool_call interrupt_call{
       .call_id = "call-interrupt",
       .tool_name = "interrupt",
-      .arguments = R"({"request":"resume me"})",
+      .arguments = encode_request_payload("resume me"),
   };
   wh::core::run_context interrupt_context{};
   auto interrupted = interrupt_tool.run(
@@ -546,7 +554,7 @@ TEST_CASE("agent tool compose entry preserves sync and async runner capability",
   wh::compose::tool_call call{
       .call_id = "call-async",
       .tool_name = "async-tool",
-      .arguments = R"({"request":"hello async"})",
+      .arguments = encode_request_payload("hello async"),
   };
   wh::core::run_context context{};
 

@@ -3,11 +3,14 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "wh/agent/agent.hpp"
 #include "wh/agent/instruction.hpp"
+#include "wh/agent/middlewares/surface.hpp"
 #include "wh/agent/model_binding.hpp"
 #include "wh/core/result.hpp"
 
@@ -105,6 +108,51 @@ public:
     return {};
   }
 
+  /// Appends one request transform before freeze.
+  auto add_request_transform(wh::agent::middlewares::request_transform_binding binding)
+      -> wh::core::result<void> {
+    auto mutable_status = ensure_mutable();
+    if (mutable_status.has_error()) {
+      return mutable_status;
+    }
+    if (!static_cast<bool>(binding)) {
+      return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+    }
+    request_transforms_.push_back(std::move(binding));
+    return {};
+  }
+
+  /// Applies one middleware surface that only exports instruction fragments and
+  /// request transforms.
+  auto add_middleware_surface(wh::agent::middlewares::middleware_surface surface)
+      -> wh::core::result<void> {
+    auto mutable_status = ensure_mutable();
+    if (mutable_status.has_error()) {
+      return mutable_status;
+    }
+    if (!surface.tool_bindings.empty()) {
+      return wh::core::result<void>::failure(wh::core::errc::not_supported);
+    }
+
+    auto next_instruction = instruction_;
+    auto next_transforms = request_transforms_;
+    for (auto &fragment : surface.instruction_fragments) {
+      if (!fragment.empty()) {
+        next_instruction.append(std::move(fragment), 0);
+      }
+    }
+    for (auto &binding : surface.request_transforms) {
+      if (!static_cast<bool>(binding)) {
+        return wh::core::result<void>::failure(wh::core::errc::invalid_argument);
+      }
+      next_transforms.push_back(std::move(binding));
+    }
+
+    instruction_ = std::move(next_instruction);
+    request_transforms_ = std::move(next_transforms);
+    return {};
+  }
+
   /// Returns the semantic model binding used by this shell.
   [[nodiscard]] auto model_binding() const
       -> wh::core::result<std::reference_wrapper<const wh::agent::model_binding>> {
@@ -113,6 +161,12 @@ public:
           wh::core::errc::not_found);
     }
     return std::cref(*model_binding_);
+  }
+
+  /// Returns the configured request-transform pipeline.
+  [[nodiscard]] auto request_transforms() const noexcept
+      -> std::span<const wh::agent::middlewares::request_transform_binding> {
+    return {request_transforms_.data(), request_transforms_.size()};
   }
 
   /// Returns the configured output slot name.
@@ -151,6 +205,7 @@ private:
   std::string description_{};
   wh::agent::instruction instruction_{};
   std::optional<wh::agent::model_binding> model_binding_{};
+  std::vector<wh::agent::middlewares::request_transform_binding> request_transforms_{};
   std::string output_key_{};
   chat_output_mode output_mode_{chat_output_mode::value};
   bool frozen_{false};
