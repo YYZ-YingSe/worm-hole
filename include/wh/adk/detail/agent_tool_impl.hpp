@@ -1841,8 +1841,11 @@ private:
   }
 
   auto setup_state = std::move(setup).value();
+  // Materialize the child request before moving the remaining setup into the continuation.
+  auto request = std::move(setup_state.request);
+  auto status_sender = runtime.runner.async(std::move(request), scope.run);
   return wh::core::detail::result_sender<result_t>{wh::core::detail::map_result_sender<result_t>(
-      runtime.runner.async(std::move(setup_state.request), scope.run),
+      std::move(status_sender),
       [runtime, scope_snapshot, &context = scope.run,
        setup = std::move(setup_state)](agent_run_result status) mutable -> result_t {
         auto bridge = wh::adk::detail::make_live_event_bridge();
@@ -1930,8 +1933,11 @@ private:
   }
 
   auto setup_state = std::move(setup).value();
+  // Materialize the child request before moving the remaining setup into the continuation.
+  auto request = std::move(setup_state.request);
+  auto status_sender = runtime.runner.async(std::move(request), scope.run);
   return wh::compose::tools_stream_sender{wh::core::detail::map_result_sender<result_t>(
-      runtime.runner.async(std::move(setup_state.request), scope.run),
+      std::move(status_sender),
       [runtime, scope_snapshot = std::move(scope_snapshot), &context = scope.run,
        setup = std::move(setup_state)](agent_run_result status) mutable -> result_t {
         if (status.has_error()) {

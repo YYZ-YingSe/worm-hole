@@ -31,6 +31,8 @@ inline auto wh_from_json(const wh::core::json_value &input, empty_tool_arguments
 [[nodiscard]] auto encode_empty_payload() -> std::string {
   auto encoded = wh::agent::encode_tool_payload(empty_tool_arguments{});
   REQUIRE(encoded.has_value());
+  auto decoded = wh::agent::decode_tool_payload<empty_tool_arguments>(encoded.value());
+  REQUIRE(decoded.has_value());
   return std::move(encoded).value();
 }
 
