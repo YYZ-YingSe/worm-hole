@@ -625,4 +625,53 @@ TEST_CASE("agent tool compose entry preserves sync and async runner capability",
   REQUIRE(async_stream_capture.value->has_value());
   auto chunks = read_graph_stream_text(async_stream_capture.value->value());
   REQUIRE(chunks == std::vector<std::string>{"hello async"});
+
+  wh::adk::agent_tool move_only_tool{"move-only-tool", "move-only tool",
+                                     wh::agent::agent{"worker"}};
+  REQUIRE(move_only_tool.bind_runner(move_only_async_callable{}).has_value());
+  REQUIRE(move_only_tool.freeze().has_value());
+  auto move_only_entry = move_only_tool.compose_entry();
+  REQUIRE(move_only_entry.has_value());
+  REQUIRE_FALSE(static_cast<bool>(move_only_entry->invoke));
+  REQUIRE_FALSE(static_cast<bool>(move_only_entry->stream));
+  REQUIRE(static_cast<bool>(move_only_entry->async_invoke));
+  REQUIRE(static_cast<bool>(move_only_entry->async_stream));
+  wh::compose::tool_call move_only_call{
+      .call_id = "call-move-only",
+      .tool_name = "move-only-tool",
+      .arguments = encode_request_payload("hello async"),
+  };
+
+  wh::testing::helper::sender_capture<wh::core::result<wh::compose::graph_value>>
+      move_only_value_capture{};
+  auto move_only_value_operation = stdexec::connect(
+      move_only_entry->async_invoke(
+          move_only_call,
+          make_call_scope(context, move_only_call.tool_name, move_only_call.call_id)),
+      wh::testing::helper::sender_capture_receiver{&move_only_value_capture,
+                                                   wh::testing::helper::no_scheduler_env{}});
+  stdexec::start(move_only_value_operation);
+  REQUIRE(move_only_value_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(move_only_value_capture.terminal == wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(move_only_value_capture.value.has_value());
+  REQUIRE(move_only_value_capture.value->has_value());
+  REQUIRE(read_graph_string(std::move(move_only_value_capture.value->value())) ==
+          "move:hello async");
+
+  wh::testing::helper::sender_capture<wh::core::result<wh::compose::graph_stream_reader>>
+      move_only_stream_capture{};
+  auto move_only_stream_operation = stdexec::connect(
+      move_only_entry->async_stream(
+          move_only_call,
+          make_call_scope(context, move_only_call.tool_name, move_only_call.call_id)),
+      wh::testing::helper::sender_capture_receiver{&move_only_stream_capture,
+                                                   wh::testing::helper::no_scheduler_env{}});
+  stdexec::start(move_only_stream_operation);
+  REQUIRE(move_only_stream_capture.ready.try_acquire_for(std::chrono::milliseconds(100)));
+  REQUIRE(move_only_stream_capture.terminal ==
+          wh::testing::helper::sender_terminal_kind::value);
+  REQUIRE(move_only_stream_capture.value.has_value());
+  REQUIRE(move_only_stream_capture.value->has_value());
+  auto move_only_chunks = read_graph_stream_text(move_only_stream_capture.value->value());
+  REQUIRE(move_only_chunks == std::vector<std::string>{"move:hello async"});
 }
