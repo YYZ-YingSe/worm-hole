@@ -180,6 +180,18 @@ protected:
 
   [[nodiscard]] auto freeze_external() const noexcept -> bool;
 
+  auto request_persist_checkpoint() noexcept -> void;
+
+  [[nodiscard]] auto persist_requested() const noexcept -> bool;
+
+  [[nodiscard]] auto persist_inflight() const noexcept -> bool;
+
+  [[nodiscard]] auto begin_persist_checkpoint() noexcept -> bool;
+
+  auto finish_persist_checkpoint() noexcept -> void;
+
+  [[nodiscard]] auto should_auto_persist_freeze() const noexcept -> bool;
+
   template <typename persist_fn_t>
   [[nodiscard]] auto make_freeze_sender(graph_sender capture_sender, const bool external_interrupt,
                                         persist_fn_t &&persist) -> graph_sender;

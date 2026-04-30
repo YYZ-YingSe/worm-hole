@@ -312,6 +312,17 @@ protected:
 
   auto resume_turn_add_ref() noexcept -> void { count_.fetch_add(1U, std::memory_order_relaxed); }
 
+  auto request_child_stop() noexcept -> void {
+    if (!child_stop_source_.stop_requested()) {
+      child_stop_source_.request_stop();
+    }
+  }
+
+  auto reset_child_stop() noexcept -> void {
+    std::destroy_at(std::addressof(child_stop_source_));
+    std::construct_at(std::addressof(child_stop_source_));
+  }
+
   auto resume_turn_schedule_error(const wh::core::error_code error) noexcept -> void {
     override_terminal(wh::core::result<graph_value>::failure(error));
   }

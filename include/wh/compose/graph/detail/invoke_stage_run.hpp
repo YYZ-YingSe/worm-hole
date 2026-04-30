@@ -29,6 +29,16 @@ public:
   auto request_resume() noexcept -> void { join_base_t::request_resume(); }
 
 protected:
+  enum class pending_terminal_kind : std::uint8_t {
+    status = 0U,
+    finish_output,
+  };
+
+  struct pending_terminal_state {
+    pending_terminal_kind kind{pending_terminal_kind::status};
+    std::optional<wh::core::result<graph_value>> status{};
+  };
+
   [[nodiscard]] auto state() noexcept -> state_t & { return *state_; }
 
   [[nodiscard]] auto state() const noexcept -> const state_t & { return *state_; }
@@ -73,6 +83,79 @@ protected:
     attempt_slot.node_id = attempt.slot;
     return this->start_child(
         static_cast<derived_t &>(*this).build_freeze_sender(session().freeze_external()), attempt);
+  }
+
+  auto launch_persist_stage() -> wh::core::result<void> {
+    const auto attempt = session().control_attempt_id();
+    session().release_attempt(attempt);
+    if (!session().begin_persist_checkpoint()) {
+      return {};
+    }
+    auto &attempt_slot = session().slot(attempt);
+    attempt_slot.current_stage = stage::persist;
+    attempt_slot.node_id = attempt.slot;
+    return this->start_child(state().make_persist_sender(), attempt);
+  }
+
+  [[nodiscard]] auto terminal_transition_pending() const noexcept -> bool {
+    return pending_terminal_.has_value();
+  }
+
+  auto flush_pending_terminal() noexcept -> void {
+    if (!pending_terminal_.has_value()) {
+      return;
+    }
+    auto pending = std::move(*pending_terminal_);
+    pending_terminal_.reset();
+    if (pending.kind == pending_terminal_kind::finish_output) {
+      this->enter_terminal(state_->finish());
+      return;
+    }
+    this->enter_terminal(std::move(*pending.status));
+  }
+
+  auto advance_terminal_transition() noexcept -> void {
+    if (!terminal_transition_pending() || this->terminal_pending() || this->finished()) {
+      return;
+    }
+    if (this->active_child_count() != 0U) {
+      return;
+    }
+    if (session().persist_requested() && !session().persist_inflight()) {
+      this->reset_child_stop();
+      auto started = launch_persist_stage();
+      if (started.has_error()) {
+        pending_terminal_.reset();
+        this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
+      }
+      return;
+    }
+    flush_pending_terminal();
+  }
+
+  auto request_terminal_status(wh::core::result<graph_value> status) noexcept -> void {
+    if (!session().persist_requested()) {
+      this->enter_terminal(std::move(status));
+      return;
+    }
+    pending_terminal_ = pending_terminal_state{
+        .kind = pending_terminal_kind::status,
+        .status = std::move(status),
+    };
+    this->request_child_stop();
+    advance_terminal_transition();
+  }
+
+  auto request_terminal_finish() noexcept -> void {
+    if (!session().persist_requested()) {
+      this->enter_terminal(state_->finish());
+      return;
+    }
+    pending_terminal_ = pending_terminal_state{
+        .kind = pending_terminal_kind::finish_output,
+    };
+    this->request_child_stop();
+    advance_terminal_transition();
   }
 
   auto restore_attempt_input(const attempt_id attempt) -> wh::core::result<void> {
@@ -153,7 +236,8 @@ protected:
     if (prepared_input.has_error()) {
       state_->try_persist_checkpoint();
       session().release_attempt(attempt);
-      return wh::core::result<void>::failure(prepared_input.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(prepared_input.error()));
+      return {};
     }
     auto prepared_stage = std::move(prepared_input).value();
     if (prepared_stage.sender.has_value()) {
@@ -163,7 +247,8 @@ protected:
     auto finalized = session().finalize_node_attempt(prepared_stage.attempt);
     if (finalized.has_error()) {
       state_->try_persist_checkpoint();
-      return wh::core::result<void>::failure(finalized.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(finalized.error()));
+      return {};
     }
 
     return launch_node_with_live_input(prepared_stage.attempt);
@@ -175,13 +260,17 @@ protected:
       auto failed =
           session().fail_node_stage(attempt, resolved.error(), "node pre-state handler failed");
       state_->try_persist_checkpoint();
-      return failed;
+      request_terminal_status(
+          wh::core::result<graph_value>::failure(failed.has_error() ? failed.error()
+                                                                    : resolved.error()));
+      return {};
     }
     auto stored = session().store_attempt_input(attempt, std::move(resolved).value());
     if (stored.has_error()) {
       state_->try_persist_checkpoint();
       session().release_attempt(attempt);
-      return wh::core::result<void>::failure(stored.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(stored.error()));
+      return {};
     }
     return continue_attempt(attempt);
   }
@@ -192,13 +281,17 @@ protected:
       auto failed = session().fail_node_stage(attempt, resolved.error(),
                                               "node execution input normalization failed");
       state_->try_persist_checkpoint();
-      return failed;
+      request_terminal_status(
+          wh::core::result<graph_value>::failure(failed.has_error() ? failed.error()
+                                                                    : resolved.error()));
+      return {};
     }
     auto stored = session().store_attempt_input(attempt, std::move(resolved).value());
     if (stored.has_error()) {
       state_->try_persist_checkpoint();
       session().release_attempt(attempt);
-      return wh::core::result<void>::failure(stored.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(stored.error()));
+      return {};
     }
     return continue_attempt(attempt);
   }
@@ -209,7 +302,10 @@ protected:
       auto failed =
           session().fail_node_stage(attempt, resolved.error(), "node post-state handler failed");
       state_->try_persist_checkpoint();
-      return failed;
+      request_terminal_status(
+          wh::core::result<graph_value>::failure(failed.has_error() ? failed.error()
+                                                                    : resolved.error()));
+      return {};
     }
     return static_cast<derived_t &>(*this).commit_node_output(
         attempt, std::move(resolved).value(), [this](const std::uint32_t node_id) {
@@ -235,7 +331,10 @@ protected:
       if (session().should_wrap_node_error(error_code)) {
         auto failed = session().fail_node_stage(attempt, error_code, "node execution failed");
         state_->try_persist_checkpoint();
-        return failed;
+        request_terminal_status(
+            wh::core::result<graph_value>::failure(failed.has_error() ? failed.error()
+                                                                      : error_code));
+        return {};
       }
       session().state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::canceled,
                                     attempt_slot.retry_budget + 1U, error_code);
@@ -247,14 +346,16 @@ protected:
                                   });
       state_->try_persist_checkpoint();
       session().release_attempt(attempt);
-      return wh::core::result<void>::failure(error_code);
+      request_terminal_status(wh::core::result<graph_value>::failure(error_code));
+      return {};
     }
 
     auto output = std::move(executed).value();
     auto post = session().begin_state_post(attempt, output);
     if (post.has_error()) {
       state_->try_persist_checkpoint();
-      return wh::core::result<void>::failure(post.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(post.error()));
+      return {};
     }
     auto post_sender = std::move(post).value();
     if (post_sender.has_value()) {
@@ -298,7 +399,8 @@ protected:
                                   });
       state_->try_persist_checkpoint();
       session().release_attempt(attempt);
-      return wh::core::result<void>::failure(resolved.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(resolved.error()));
+      return {};
     }
     auto input = std::move(resolved).value();
 
@@ -306,7 +408,8 @@ protected:
       const auto node_id = attempt_slot.node_id;
       auto committed = state_->commit_terminal_input(attempt, std::move(input));
       if (committed.has_error()) {
-        return committed;
+        request_terminal_status(wh::core::result<graph_value>::failure(committed.error()));
+        return {};
       }
       static_cast<derived_t &>(*this).enqueue_committed_node(node_id);
       return {};
@@ -316,7 +419,8 @@ protected:
     if (stored.has_error()) {
       state_->try_persist_checkpoint();
       session().release_attempt(attempt);
-      return wh::core::result<void>::failure(stored.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(stored.error()));
+      return {};
     }
 
     auto prepared = state_->begin_state_pre(attempt);
@@ -327,7 +431,8 @@ protected:
       }
       state_->try_persist_checkpoint();
       session().release_attempt(attempt);
-      return wh::core::result<void>::failure(prepared.error());
+      request_terminal_status(wh::core::result<graph_value>::failure(prepared.error()));
+      return {};
     }
 
     auto prepared_stage = std::move(prepared).value();
@@ -357,7 +462,16 @@ protected:
       if (executed.has_error()) {
         return wh::core::result<void>::failure(executed.error());
       }
-      this->enter_terminal(wh::core::result<graph_value>::failure(wh::core::errc::canceled));
+      request_terminal_status(wh::core::result<graph_value>::failure(wh::core::errc::canceled));
+      return {};
+    }
+    if (current_stage == stage::persist) {
+      session().release_attempt(attempt);
+      session().finish_persist_checkpoint();
+      if (executed.has_error() && !terminal_transition_pending()) {
+        return wh::core::result<void>::failure(executed.error());
+      }
+      advance_terminal_transition();
       return {};
     }
     wh_invariant(current_stage == stage::node);
@@ -368,7 +482,14 @@ protected:
     join_base_t::drain_completions(
         [this](const attempt_id attempt) noexcept { release_attempt(attempt); },
         [this](const attempt_id attempt, wh::core::result<graph_value> &&executed)
-            -> wh::core::result<void> { return settle_async(attempt, std::move(executed)); });
+            -> wh::core::result<void> {
+          if (terminal_transition_pending() &&
+              session().slot(attempt).current_stage != stage::persist) {
+            release_attempt(attempt);
+            return {};
+          }
+          return settle_async(attempt, std::move(executed));
+        });
   }
 
   // Runs the common resume preflight once: stop polling, child completion
@@ -377,6 +498,11 @@ protected:
   [[nodiscard]] auto begin_resume_iteration() noexcept -> bool {
     drain_runtime_completions();
     if (this->finished() || this->terminal_pending()) {
+      return false;
+    }
+
+    if (terminal_transition_pending()) {
+      advance_terminal_transition();
       return false;
     }
 
@@ -397,7 +523,7 @@ protected:
     if (this->active_child_count() == 0U) {
       auto started = launch_freeze_stage();
       if (started.has_error()) {
-        this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
+        request_terminal_status(wh::core::result<graph_value>::failure(started.error()));
       }
     }
     return false;
@@ -411,14 +537,16 @@ protected:
       session().request_freeze(true);
       auto started = launch_freeze_stage();
       if (started.has_error()) {
-        this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
+        request_terminal_status(wh::core::result<graph_value>::failure(started.error()));
       }
       return;
     }
-    this->enter_terminal(state_->finish());
+    session().request_persist_checkpoint();
+    request_terminal_finish();
   }
 
   std::optional<state_t> state_{};
+  std::optional<pending_terminal_state> pending_terminal_{};
 };
 
 } // namespace wh::compose

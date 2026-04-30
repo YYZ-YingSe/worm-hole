@@ -1,6 +1,8 @@
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
@@ -23,7 +25,10 @@ TEST_CASE("compose checkpoint default stream codec round-trips stream payloads",
       std::vector<wh::compose::graph_value>{wh::core::any(3), wh::core::any(4)});
   REQUIRE(source_stream.has_value());
 
-  auto encoded = default_codec.to_value(std::move(source_stream).value(), context);
+  auto encoded_waited =
+      stdexec::sync_wait(default_codec.to_value(std::move(source_stream).value(), context));
+  REQUIRE(encoded_waited.has_value());
+  auto encoded = std::get<0>(std::move(*encoded_waited));
   REQUIRE(encoded.has_value());
   auto encoded_chunks =
       read_graph_value_cref<std::vector<wh::compose::graph_value>>(encoded.value());

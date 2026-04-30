@@ -70,17 +70,14 @@ inline auto detail::invoke_runtime::dag_runtime::finish() -> wh::core::result<gr
         compose_error_phase::execute, wh::core::errc::contract_violation,
         "end node was not executed");
     invoke.outputs.completed_node_keys = session_.completed_node_keys();
-    try_persist_checkpoint();
     return wh::core::result<graph_value>::failure(wh::core::errc::contract_violation);
   }
   if (!session_.output_valid().test(final_node_id)) {
     session_.owner_->publish_graph_run_error(
         invoke.outputs, session_.runtime_node_path(final_node_id), final_node_key,
         compose_error_phase::execute, wh::core::errc::not_found, "end node output not found");
-    try_persist_checkpoint();
     return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
   }
-  try_persist_checkpoint();
   auto final_output = session_.owner_->take_node_output(final_node_id, session_.io_storage_);
   if (final_output.has_value()) {
     session_.output_valid().clear(final_node_id);
@@ -148,12 +145,12 @@ public:
           continue;
         }
         if (action.kind == ready_action_kind::terminal_error) {
-          this->enter_terminal(wh::core::result<graph_value>::failure(action.error));
+          this->request_terminal_status(wh::core::result<graph_value>::failure(action.error));
           break;
         }
         auto started = this->launch_input_stage(action.attempt);
         if (started.has_error()) {
-          this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
+          this->request_terminal_status(wh::core::result<graph_value>::failure(started.error()));
           break;
         }
       }

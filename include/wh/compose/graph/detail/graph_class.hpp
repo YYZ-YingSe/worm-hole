@@ -508,10 +508,12 @@ private:
                                   forwarded_checkpoint_map &forwarded_checkpoints) const
       -> wh::core::result<std::optional<detail::checkpoint_runtime::prepared_restore>>;
 
-  auto maybe_persist_checkpoint(wh::core::run_context &context, checkpoint_state checkpoint,
-                                const detail::runtime_state::invoke_config &config,
-                                detail::runtime_state::invoke_outputs &outputs) const
-      -> wh::core::result<void>;
+  [[nodiscard]] auto
+  make_persist_checkpoint_sender(wh::core::run_context &context, checkpoint_state checkpoint,
+                                 const detail::runtime_state::invoke_config &config,
+                                 detail::runtime_state::invoke_outputs &outputs,
+                                 const wh::core::detail::any_resume_scheduler_t &work_scheduler) const
+      -> graph_sender;
 
   [[nodiscard]] auto
   resolve_edge_status_indexed(const indexed_edge &edge,

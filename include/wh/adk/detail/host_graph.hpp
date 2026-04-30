@@ -617,34 +617,13 @@ inline auto append_visible_history(runtime_state &state,
   const auto node_key = member_result_node_key(member.name);
   const auto build_output =
       wh::adk::detail::agent_output_from_messages{host_graph_detail::make_member_agent_output};
-
-  if (member.graph.boundary().output == wh::compose::node_contract::value) {
-    auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
-                                              wh::compose::node_contract::value>(
-        node_key,
-        [build_output](
-            wh::compose::graph_value &payload, wh::core::run_context &context,
-            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          return wh::adk::detail::make_agent_output_value(payload, build_output, context);
-        });
-    return graph.add_lambda(std::move(node));
-  }
-
-  auto node = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+  auto node = wh::compose::make_lambda_node<wh::compose::node_contract::value,
                                             wh::compose::node_contract::value>(
       node_key,
       [build_output](
-          wh::compose::graph_stream_reader payload, wh::core::run_context &context,
+          wh::compose::graph_value &payload, wh::core::run_context &context,
           const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-        auto messages = wh::adk::detail::read_message_stream(std::move(payload));
-        if (messages.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(messages.error());
-        }
-        auto output = build_output(std::move(messages).value(), context);
-        if (output.has_error()) {
-          return wh::core::result<wh::compose::graph_value>::failure(output.error());
-        }
-        return wh::compose::graph_value{std::move(output).value()};
+        return wh::adk::detail::make_agent_output_value(payload, build_output, context);
       });
   return graph.add_lambda(std::move(node));
 }

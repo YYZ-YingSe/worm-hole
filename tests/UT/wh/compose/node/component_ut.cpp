@@ -1,3 +1,4 @@
+#include <memory>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -11,6 +12,7 @@
 #include "wh/compose/graph/call_options.hpp"
 #include "wh/compose/graph/graph.hpp"
 #include "wh/compose/node/component.hpp"
+#include "wh/model/retry.hpp"
 
 namespace {
 
@@ -132,6 +134,61 @@ struct model_component_stub {
   auto async_stream(wh::model::chat_request, wh::core::run_context &) const {
     return stdexec::just(
         wh::model::chat_message_stream_result::failure(wh::core::errc::not_supported));
+  }
+};
+
+[[nodiscard]] auto make_user_message(const std::string &text) -> wh::schema::message {
+  wh::schema::message message{};
+  message.role = wh::schema::message_role::user;
+  message.parts.emplace_back(wh::schema::text_part{text});
+  return message;
+}
+
+struct retry_async_model_state {
+  std::size_t invoke_calls{0U};
+  std::size_t stream_calls{0U};
+};
+
+struct retry_async_model_impl {
+  std::shared_ptr<retry_async_model_state> state{};
+
+  [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
+    return {"RetryAsyncModelComponent", wh::core::component_kind::model};
+  }
+
+  [[nodiscard]] auto async_invoke(wh::model::chat_request, wh::core::run_context &) const {
+    ++state->invoke_calls;
+    if (state->invoke_calls == 1U) {
+      return stdexec::just(
+          wh::model::chat_invoke_result::failure(wh::core::errc::unavailable));
+    }
+
+    wh::schema::message message{};
+    message.role = wh::schema::message_role::assistant;
+    message.parts.emplace_back(wh::schema::text_part{"retry-async-vv"});
+    return stdexec::just(
+        wh::model::chat_invoke_result{wh::model::chat_response{.message = std::move(message)}});
+  }
+
+  [[nodiscard]] auto async_stream(wh::model::chat_request, wh::core::run_context &) const {
+    ++state->stream_calls;
+    if (state->stream_calls == 1U) {
+      return stdexec::just(
+          wh::model::chat_message_stream_result::failure(wh::core::errc::unavailable));
+    }
+
+    wh::schema::message message{};
+    message.role = wh::schema::message_role::assistant;
+    message.parts.emplace_back(wh::schema::text_part{"retry-async-vs"});
+    return stdexec::just(wh::model::chat_message_stream_result{
+        wh::model::chat_message_stream_reader{
+            wh::schema::stream::make_single_value_stream_reader<wh::schema::message>(
+                std::move(message))}});
+  }
+
+  [[nodiscard]] auto bind_tools(const std::span<const wh::schema::tool_schema_definition>) const
+      -> retry_async_model_impl {
+    return *this;
   }
 };
 
@@ -422,4 +479,120 @@ TEST_CASE("async custom component exec task impls compose through graph boundari
   auto output = read_any<int>(std::move(invoke_result.output_status).value());
   REQUIRE(output.has_value());
   REQUIRE(output.value() == 32);
+}
+
+TEST_CASE("retry chat model async surfaces compose through model graph nodes",
+          "[UT][wh/compose/node/component.hpp][model][async][retry][graph]") {
+  auto make_request = []() {
+    wh::model::chat_request request{};
+    request.messages.push_back(make_user_message("hello"));
+    return request;
+  };
+
+  auto invoke_state = std::make_shared<retry_async_model_state>();
+  wh::model::retry_chat_model retry_invoke{
+      retry_async_model_impl{invoke_state},
+      wh::model::retry_chat_model_options{.max_attempts = 3U}};
+
+  auto model_vv = wh::compose::make_component_node<wh::compose::component_kind::model,
+                                                   wh::compose::node_contract::value,
+                                                   wh::compose::node_contract::value,
+                                                   wh::compose::node_exec_mode::async>(
+      "retry-vv", retry_invoke);
+
+  wh::compose::graph value_graph{};
+  REQUIRE(value_graph.add_component(model_vv).has_value());
+  REQUIRE(value_graph.add_entry_edge("retry-vv").has_value());
+  REQUIRE(value_graph.add_exit_edge("retry-vv").has_value());
+  REQUIRE(value_graph.compile().has_value());
+
+  wh::compose::graph_invoke_request value_request{};
+  value_request.input = wh::compose::graph_input::value(make_request());
+  wh::core::run_context value_context{};
+  auto value_waited = stdexec::sync_wait(value_graph.invoke(value_context, std::move(value_request)));
+  REQUIRE(value_waited.has_value());
+  auto value_status = std::get<0>(std::move(*value_waited));
+  REQUIRE(value_status.has_value());
+  auto value_result = std::move(value_status).value();
+  REQUIRE(value_result.output_status.has_value());
+  auto response = read_any<wh::model::chat_response>(std::move(value_result.output_status).value());
+  REQUIRE(response.has_value());
+  REQUIRE(std::get<wh::schema::text_part>(response.value().message.parts.front()).text ==
+          "retry-async-vv");
+  REQUIRE(invoke_state->invoke_calls == 2U);
+
+  auto stream_state = std::make_shared<retry_async_model_state>();
+  wh::model::retry_chat_model retry_stream{
+      retry_async_model_impl{stream_state},
+      wh::model::retry_chat_model_options{.max_attempts = 3U}};
+
+  auto model_vs = wh::compose::make_component_node<wh::compose::component_kind::model,
+                                                   wh::compose::node_contract::value,
+                                                   wh::compose::node_contract::stream,
+                                                   wh::compose::node_exec_mode::async>(
+      "retry-vs", retry_stream);
+
+  wh::compose::graph stream_graph{
+      wh::compose::graph_boundary{.output = wh::compose::node_contract::stream}};
+  REQUIRE(stream_graph.add_component(model_vs).has_value());
+  REQUIRE(stream_graph.add_entry_edge("retry-vs").has_value());
+  REQUIRE(stream_graph.add_exit_edge("retry-vs").has_value());
+  REQUIRE(stream_graph.compile().has_value());
+
+  wh::compose::graph_invoke_request stream_request{};
+  stream_request.input = wh::compose::graph_input::value(make_request());
+  wh::core::run_context stream_context{};
+  auto stream_waited =
+      stdexec::sync_wait(stream_graph.invoke(stream_context, std::move(stream_request)));
+  REQUIRE(stream_waited.has_value());
+  auto stream_status = std::get<0>(std::move(*stream_waited));
+  REQUIRE(stream_status.has_value());
+  auto stream_result = std::move(stream_status).value();
+  REQUIRE(stream_result.output_status.has_value());
+  auto reader = read_any<wh::compose::graph_stream_reader>(std::move(stream_result.output_status).value());
+  REQUIRE(reader.has_value());
+  auto collected = wh::compose::collect_graph_stream_reader(std::move(reader).value());
+  REQUIRE(collected.has_value());
+  REQUIRE(collected.value().size() == 1U);
+  auto message = read_any<wh::schema::message>(std::move(collected.value().front()));
+  REQUIRE(message.has_value());
+  REQUIRE(std::get<wh::schema::text_part>(message.value().parts.front()).text == "retry-async-vs");
+  REQUIRE(stream_state->stream_calls == 2U);
+
+  auto collected_state = std::make_shared<retry_async_model_state>();
+  wh::model::retry_chat_model retry_stream_collected{
+      retry_async_model_impl{collected_state},
+      wh::model::retry_chat_model_options{.max_attempts = 3U}};
+
+  auto model_vs_collected = wh::compose::make_component_node<wh::compose::component_kind::model,
+                                                             wh::compose::node_contract::value,
+                                                             wh::compose::node_contract::stream,
+                                                             wh::compose::node_exec_mode::async>(
+      "retry-vs-collected", retry_stream_collected);
+
+  wh::compose::graph collected_graph{};
+  REQUIRE(collected_graph.add_component(model_vs_collected).has_value());
+  REQUIRE(collected_graph.add_entry_edge("retry-vs-collected").has_value());
+  REQUIRE(collected_graph.add_exit_edge("retry-vs-collected").has_value());
+  REQUIRE(collected_graph.compile().has_value());
+
+  wh::compose::graph_invoke_request collected_request{};
+  collected_request.input = wh::compose::graph_input::value(make_request());
+  wh::core::run_context collected_context{};
+  auto collected_waited =
+      stdexec::sync_wait(collected_graph.invoke(collected_context, std::move(collected_request)));
+  REQUIRE(collected_waited.has_value());
+  auto collected_status = std::get<0>(std::move(*collected_waited));
+  REQUIRE(collected_status.has_value());
+  auto collected_result = std::move(collected_status).value();
+  REQUIRE(collected_result.output_status.has_value());
+  auto values =
+      read_any<std::vector<wh::compose::graph_value>>(std::move(collected_result.output_status).value());
+  REQUIRE(values.has_value());
+  REQUIRE(values.value().size() == 1U);
+  auto collected_message = read_any<wh::schema::message>(std::move(values.value().front()));
+  REQUIRE(collected_message.has_value());
+  REQUIRE(std::get<wh::schema::text_part>(collected_message.value().parts.front()).text ==
+          "retry-async-vs");
+  REQUIRE(collected_state->stream_calls == 2U);
 }

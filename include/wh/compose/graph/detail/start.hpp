@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "wh/compose/graph/detail/run_sender.hpp"
 #include "wh/compose/graph/detail/runtime/dag_runtime.hpp"
 #include "wh/compose/graph/detail/runtime/pregel_runtime.hpp"
@@ -72,12 +74,34 @@ inline auto detail::invoke_runtime::start_initialized_runtime(runtime_t runtime)
   auto &session = runtime.session();
   if (session.init_error_.has_value()) {
     runtime.try_persist_checkpoint();
-    return session.immediate_failure(*session.init_error_);
+    if (!session.persist_requested()) {
+      return session.immediate_failure(*session.init_error_);
+    }
+    const auto error = *session.init_error_;
+    auto owned_runtime = std::make_shared<runtime_t>(std::move(runtime));
+    return detail::bridge_graph_sender(
+        owned_runtime->make_persist_sender() |
+        stdexec::let_value(
+            [owned_runtime = std::move(owned_runtime),
+             error](wh::core::result<graph_value>) mutable -> graph_sender {
+              return owned_runtime->session().immediate_failure(error);
+            }));
   }
   runtime.initialize_entry();
   if (session.init_error_.has_value()) {
     runtime.try_persist_checkpoint();
-    return session.immediate_failure(*session.init_error_);
+    if (!session.persist_requested()) {
+      return session.immediate_failure(*session.init_error_);
+    }
+    const auto error = *session.init_error_;
+    auto owned_runtime = std::make_shared<runtime_t>(std::move(runtime));
+    return detail::bridge_graph_sender(
+        owned_runtime->make_persist_sender() |
+        stdexec::let_value(
+            [owned_runtime = std::move(owned_runtime),
+             error](wh::core::result<graph_value>) mutable -> graph_sender {
+              return owned_runtime->session().immediate_failure(error);
+            }));
   }
   return graph_sender{sender_t{std::move(runtime)}};
 }

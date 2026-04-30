@@ -80,7 +80,7 @@ TEST_CASE("chat detail helpers normalize message streams instructions and output
   });
   REQUIRE(stream.has_value());
 
-  auto messages = wh::adk::detail::read_message_stream(std::move(stream).value());
+  auto messages = wh::testing::helper::read_message_stream(std::move(stream).value());
   REQUIRE(messages.has_value());
   REQUIRE(messages->size() == 2U);
 
@@ -89,7 +89,7 @@ TEST_CASE("chat detail helpers normalize message streams instructions and output
           wh::compose::graph_value{17},
       });
   REQUIRE(invalid_stream.has_value());
-  auto invalid_messages = wh::adk::detail::read_message_stream(std::move(invalid_stream).value());
+  auto invalid_messages = wh::testing::helper::read_message_stream(std::move(invalid_stream).value());
   REQUIRE(invalid_messages.has_error());
   REQUIRE(invalid_messages.error() == wh::core::errc::type_mismatch);
 

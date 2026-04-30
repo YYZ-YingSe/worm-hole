@@ -48,6 +48,8 @@ public:
 
   auto try_persist_checkpoint() -> void;
 
+  [[nodiscard]] auto make_persist_sender() -> graph_sender;
+
   auto make_freeze_sender(graph_sender capture_sender, const bool external_interrupt)
       -> graph_sender {
     return session_.make_freeze_sender(std::move(capture_sender), external_interrupt,

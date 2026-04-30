@@ -78,6 +78,10 @@ struct invoke_state {
   graph_call_scope bound_call_scope{};
   /// Precomputed start-node branch selection.
   std::optional<std::vector<std::uint32_t>> start_entry_selection{};
+  /// True once terminal/checkpoint paths requested one persist stage.
+  bool persist_requested{false};
+  /// True while one persist stage is currently running.
+  bool persist_inflight{false};
 };
 
 } // namespace detail::runtime_state
@@ -91,6 +95,7 @@ enum class stage : std::uint8_t {
   node,
   post_state,
   freeze,
+  persist,
 };
 
 struct attempt_id {

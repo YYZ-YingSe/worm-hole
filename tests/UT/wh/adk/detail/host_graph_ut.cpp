@@ -248,7 +248,7 @@ TEST_CASE(
   };
   auto role_stream = project_role_request_to_stream(payload, "root");
   REQUIRE(role_stream.has_value());
-  auto streamed_messages = wh::adk::detail::read_message_stream(std::move(role_stream).value());
+  auto streamed_messages = wh::testing::helper::read_message_stream(std::move(role_stream).value());
   REQUIRE(streamed_messages.has_value());
   REQUIRE(streamed_messages->size() == 1U);
 

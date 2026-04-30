@@ -744,6 +744,46 @@ inline auto detail::invoke_runtime::invoke_session::freeze_external() const noex
   return interrupt_state().freeze_external;
 }
 
+inline auto detail::invoke_runtime::invoke_session::request_persist_checkpoint() noexcept -> void {
+  auto &invoke = invoke_state();
+  if (invoke.config.checkpoint_store_ptr == nullptr && invoke.config.checkpoint_backend_ptr == nullptr &&
+      !invoke.config.checkpoint_save.has_value()) {
+    return;
+  }
+  invoke.persist_requested = true;
+}
+
+inline auto detail::invoke_runtime::invoke_session::persist_requested() const noexcept -> bool {
+  return invoke_state().persist_requested;
+}
+
+inline auto detail::invoke_runtime::invoke_session::persist_inflight() const noexcept -> bool {
+  return invoke_state().persist_inflight;
+}
+
+inline auto detail::invoke_runtime::invoke_session::begin_persist_checkpoint() noexcept -> bool {
+  auto &invoke = invoke_state();
+  if (!invoke.persist_requested || invoke.persist_inflight) {
+    return false;
+  }
+  invoke.persist_requested = false;
+  invoke.persist_inflight = true;
+  return true;
+}
+
+inline auto detail::invoke_runtime::invoke_session::finish_persist_checkpoint() noexcept -> void {
+  invoke_state().persist_inflight = false;
+}
+
+inline auto detail::invoke_runtime::invoke_session::should_auto_persist_freeze() const noexcept
+    -> bool {
+  const auto &interrupt = interrupt_state();
+  const auto &policy = interrupt.policy_latch.frozen ? interrupt.policy_latch.policy
+                                                     : interrupt.policy;
+  return (interrupt.freeze_external && policy.auto_persist_external_interrupt) ||
+         (!interrupt.freeze_external && policy.manual_persist_internal_interrupt);
+}
+
 template <typename persist_fn_t>
 inline auto
 detail::invoke_runtime::invoke_session::make_freeze_sender(graph_sender capture_sender,
