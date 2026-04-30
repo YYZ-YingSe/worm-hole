@@ -18,7 +18,6 @@ inline auto detail::invoke_runtime::pregel_runtime::commit_node_output(const att
   session.owner_->reset_pregel_source_caches(attempt_slot.node_id, session.io_storage_);
   const auto branch_contract = attempt_slot.node->meta.output_contract;
   std::optional<std::vector<std::uint32_t>> resolved_branch{};
-  std::optional<wh::core::error_code> post_interrupt_error{};
   std::optional<wh::core::interrupt_signal> post_interrupt_signal{};
 
   if (branch_contract == node_contract::value) {
@@ -42,9 +41,7 @@ inline auto detail::invoke_runtime::pregel_runtime::commit_node_output(const att
     }
     resolved_branch = std::move(branch_status).value();
 
-    auto post_interrupt =
-        session.owner_->evaluate_interrupt_hook(session.context_, invoke.config.interrupt_post_hook,
-                                                attempt_slot.cause.node_key, node_output);
+    auto post_interrupt = session.evaluate_post_interrupt(attempt_slot.cause, node_output);
     if (post_interrupt.has_error()) {
       try_persist_checkpoint();
       session.release_attempt(attempt);
@@ -74,79 +71,7 @@ inline auto detail::invoke_runtime::pregel_runtime::commit_node_output(const att
       return wh::core::result<void>::failure(committed_value.error());
     }
   } else {
-    auto *stream_output = wh::core::any_cast<graph_stream_reader>(&node_output);
-    if (stream_output == nullptr) {
-      session.owner_->publish_node_run_error(
-          invoke.outputs, attempt_slot.node_scope.path, attempt_slot.node_id,
-          wh::core::errc::contract_violation, "node output contract mismatch");
-      session.state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::failed, 1U,
-                                  wh::core::errc::contract_violation);
-      session.append_transition(attempt_slot.node_id,
-                                graph_state_transition_event{
-                                    .kind = graph_state_transition_kind::node_fail,
-                                    .cause = attempt_slot.cause,
-                                    .lifecycle = graph_node_lifecycle_state::failed,
-                                });
-      try_persist_checkpoint();
-      session.release_attempt(attempt);
-      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
-    }
-
-    auto branch_status = session.owner_->evaluate_stream_branch_indexed(
-        attempt_slot.node_id, *stream_output, session.context_, invoke.bound_call_scope);
-    if (branch_status.has_error()) {
-      session.owner_->publish_node_run_error(invoke.outputs, attempt_slot.node_scope.path,
-                                             attempt_slot.node_id, branch_status.error(),
-                                             "branch selector failed");
-      session.state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::failed, 1U,
-                                  branch_status.error());
-      session.append_transition(attempt_slot.node_id,
-                                graph_state_transition_event{
-                                    .kind = graph_state_transition_kind::node_fail,
-                                    .cause = attempt_slot.cause,
-                                    .lifecycle = graph_node_lifecycle_state::failed,
-                                });
-      try_persist_checkpoint();
-      session.release_attempt(attempt);
-      return wh::core::result<void>::failure(branch_status.error());
-    }
-    resolved_branch = std::move(branch_status).value();
-
-    if (invoke.config.interrupt_post_hook) {
-      auto post_output = detail::fork_graph_reader(*stream_output);
-      if (post_output.has_error()) {
-        try_persist_checkpoint();
-        session.release_attempt(attempt);
-        return wh::core::result<void>::failure(post_output.error());
-      }
-      auto post_interrupt = session.owner_->evaluate_interrupt_hook(
-          session.context_, invoke.config.interrupt_post_hook, attempt_slot.cause.node_key,
-          graph_value{std::move(post_output).value()});
-      if (post_interrupt.has_error()) {
-        post_interrupt_error = post_interrupt.error();
-      } else if (post_interrupt.value().has_value()) {
-        post_interrupt_signal.emplace(std::move(post_interrupt).value().value());
-      }
-    }
-
-    auto committed_stream = session.owner_->commit_stream_output(
-        attempt_slot.node_id, session.io_storage_, std::move(*stream_output), resolved_branch);
-    if (committed_stream.has_error()) {
-      session.owner_->publish_node_run_error(invoke.outputs, attempt_slot.node_scope.path,
-                                             attempt_slot.node_id, committed_stream.error(),
-                                             "node output contract mismatch");
-      session.state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::failed, 1U,
-                                  committed_stream.error());
-      session.append_transition(attempt_slot.node_id,
-                                graph_state_transition_event{
-                                    .kind = graph_state_transition_kind::node_fail,
-                                    .cause = attempt_slot.cause,
-                                    .lifecycle = graph_node_lifecycle_state::failed,
-                                });
-      try_persist_checkpoint();
-      session.release_attempt(attempt);
-      return wh::core::result<void>::failure(committed_stream.error());
-    }
+    return wh::core::result<void>::failure(wh::core::errc::not_supported);
   }
 
   session.state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::completed, 0U,
@@ -163,17 +88,10 @@ inline auto detail::invoke_runtime::pregel_runtime::commit_node_output(const att
                                 .cause = attempt_slot.cause,
                                 .lifecycle = graph_node_lifecycle_state::completed,
                             });
-  if (post_interrupt_error.has_value()) {
-    try_persist_checkpoint();
-    session.release_attempt(attempt);
-    return wh::core::result<void>::failure(*post_interrupt_error);
-  }
+
   if (post_interrupt_signal.has_value()) {
-    session.context_.interrupt_info =
-        wh::compose::to_interrupt_context(std::move(*post_interrupt_signal));
-    session.emit_debug(graph_debug_stream_event::decision_kind::interrupt_hit, attempt_slot.node_id,
-                       invoke.step_count);
-    session.request_freeze(false);
+    session.apply_post_interrupt_signal(attempt_slot.node_id, attempt_slot.cause,
+                                        std::move(*post_interrupt_signal));
     session.release_attempt(attempt);
     return wh::core::result<void>::failure(wh::core::errc::canceled);
   }
@@ -202,6 +120,118 @@ inline auto detail::invoke_runtime::pregel_runtime::commit_skip_action(const pre
   session_.emit_debug(graph_debug_stream_event::decision_kind::skipped, action.node_id,
                       action.cause.step);
   return {};
+}
+
+inline auto detail::invoke_runtime::pregel_runtime::commit_routed_output(
+    const attempt_id attempt, std::optional<std::vector<std::uint32_t>> selection)
+    -> wh::core::result<void> {
+  auto &session = session_;
+  auto &invoke = session.invoke_state();
+  auto &attempt_slot = session.slot(attempt);
+  std::optional<wh::core::interrupt_signal> post_interrupt_signal{};
+
+  if (!attempt_slot.route.has_value()) {
+    return wh::core::result<void>::failure(wh::core::errc::not_found);
+  }
+
+  if (std::holds_alternative<route_start_entry_state>(*attempt_slot.route)) {
+    auto *stream_output = invoke.pending_start_entry_output.has_value()
+                              ? wh::core::any_cast<graph_stream_reader>(
+                                    &*invoke.pending_start_entry_output)
+                              : nullptr;
+    if (stream_output == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+
+    auto committed_start =
+        session.owner_->commit_stream_output(session.compiled_graph_index().start_id,
+                                             session.io_storage_, std::move(*stream_output), selection);
+    if (committed_start.has_error()) {
+      session.release_attempt(attempt);
+      return wh::core::result<void>::failure(committed_start.error());
+    }
+
+    invoke.start_entry_selection = selection;
+    invoke.pending_start_entry_output.reset();
+    session.release_attempt(attempt);
+
+    const auto &index = session.compiled_graph_index();
+    session.owner_->seed_pregel_successors(index.start_id, invoke.start_entry_selection,
+                                           pregel_delivery_);
+    for (const auto node_id : index.allow_no_control_ids) {
+      pregel_delivery_.stage_current_node(node_id);
+    }
+    superstep_active_ = false;
+    invoke.start_entry_selection.reset();
+    return {};
+  }
+
+  if (auto *route = std::get_if<route_node_output_state>(&*attempt_slot.route); route != nullptr) {
+    auto *stream_output = wh::core::any_cast<graph_stream_reader>(&route->node_output);
+    if (stream_output == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+    }
+
+    auto post_interrupt = session.evaluate_post_interrupt_stream(attempt_slot.cause, *stream_output);
+    if (post_interrupt.has_error()) {
+      try_persist_checkpoint();
+      session.release_attempt(attempt);
+      return wh::core::result<void>::failure(post_interrupt.error());
+    }
+    if (post_interrupt.value().has_value()) {
+      post_interrupt_signal.emplace(std::move(post_interrupt).value().value());
+    }
+
+    auto committed_stream = session.owner_->commit_stream_output(attempt_slot.node_id, session.io_storage_,
+                                                                 std::move(*stream_output), selection);
+    if (committed_stream.has_error()) {
+      session.owner_->publish_node_run_error(invoke.outputs, attempt_slot.node_scope.path,
+                                             attempt_slot.node_id, committed_stream.error(),
+                                             "node output contract mismatch");
+      session.state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::failed, 1U,
+                                  committed_stream.error());
+      session.append_transition(attempt_slot.node_id,
+                                graph_state_transition_event{
+                                    .kind = graph_state_transition_kind::node_fail,
+                                    .cause = attempt_slot.cause,
+                                    .lifecycle = graph_node_lifecycle_state::failed,
+                                });
+      session.release_attempt(attempt);
+      return wh::core::result<void>::failure(committed_stream.error());
+    }
+
+    session.state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::completed, 0U,
+                                std::nullopt);
+    session.append_transition(attempt_slot.node_id,
+                              graph_state_transition_event{
+                                  .kind = graph_state_transition_kind::route_commit,
+                                  .cause = attempt_slot.cause,
+                                  .lifecycle = graph_node_lifecycle_state::completed,
+                              });
+    session.append_transition(attempt_slot.node_id,
+                              graph_state_transition_event{
+                                  .kind = graph_state_transition_kind::node_leave,
+                                  .cause = attempt_slot.cause,
+                                  .lifecycle = graph_node_lifecycle_state::completed,
+                              });
+
+    if (post_interrupt_signal.has_value()) {
+      session.apply_post_interrupt_signal(attempt_slot.node_id, attempt_slot.cause,
+                                          std::move(*post_interrupt_signal));
+      session.release_attempt(attempt);
+      return wh::core::result<void>::failure(wh::core::errc::canceled);
+    }
+    const auto &interrupt = session.interrupt_state();
+    const bool preserve_wait_inflight_successors =
+        interrupt.freeze_requested && interrupt.freeze_external && interrupt.wait_mode_active;
+    if (!interrupt.freeze_requested || preserve_wait_inflight_successors) {
+      session.owner_->stage_pregel_successors(attempt_slot.node_id, selection, pregel_delivery_);
+    }
+    session.release_attempt(attempt);
+    return {};
+  }
+
+  return wh::core::result<void>::failure(wh::core::errc::not_supported);
 }
 
 } // namespace wh::compose

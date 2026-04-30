@@ -10,6 +10,9 @@
 #include <utility>
 #include <vector>
 
+#include <stdexec/execution.hpp>
+
+#include "wh/compose/graph/detail/child_pump.hpp"
 #include "wh/compose/graph/detail/graph_core.hpp"
 #include "wh/compose/graph/detail/runtime/input.hpp"
 #include "wh/compose/graph/detail/runtime/pending_inputs.hpp"
@@ -17,6 +20,7 @@
 #include "wh/compose/graph/keys.hpp"
 #include "wh/compose/graph/restore_check.hpp"
 #include "wh/compose/graph/stream.hpp"
+#include "wh/compose/node/execution.hpp"
 #include "wh/compose/node/path.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
 #include "wh/compose/runtime/interrupt.hpp"
@@ -24,6 +28,7 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 
 namespace wh::compose::detail::checkpoint_runtime {
 
@@ -207,6 +212,87 @@ struct captured_runtime_io {
   std::vector<checkpoint_reader_lane> merged_reader_lanes{};
   std::optional<graph_value> final_output_reader{};
 };
+
+enum class checkpoint_runtime_kind : std::uint8_t {
+  dag = 0U,
+  pregel,
+};
+
+enum class checkpoint_stream_slot_kind : std::uint8_t {
+  pending_entry = 0U,
+  pending_node,
+  node_output,
+  edge_value,
+  edge_reader,
+  merged_reader,
+  final_output,
+};
+
+struct checkpoint_stream_slot_target {
+  checkpoint_runtime_kind runtime{checkpoint_runtime_kind::dag};
+  checkpoint_stream_slot_kind kind{checkpoint_stream_slot_kind::pending_entry};
+  std::size_t index{0U};
+  bool tolerate_channel_closed{false};
+};
+
+struct checkpoint_stream_save_stage {
+  checkpoint_state checkpoint{};
+  std::vector<checkpoint_stream_slot_target> targets{};
+};
+
+template <typename runtime_t>
+[[nodiscard]] inline auto resolve_runtime_slot_payload(
+    runtime_t &runtime, const checkpoint_stream_slot_target &target) -> graph_value * {
+  switch (target.kind) {
+  case checkpoint_stream_slot_kind::pending_entry:
+    return runtime.pending_inputs.entry.has_value() ? std::addressof(*runtime.pending_inputs.entry)
+                                                    : nullptr;
+  case checkpoint_stream_slot_kind::pending_node:
+    if (target.index >= runtime.pending_inputs.nodes.size()) {
+      return nullptr;
+    }
+    return std::addressof(runtime.pending_inputs.nodes[target.index].input);
+  case checkpoint_stream_slot_kind::node_output:
+    if (target.index >= runtime.node_outputs.size()) {
+      return nullptr;
+    }
+    return std::addressof(runtime.node_outputs[target.index].value);
+  case checkpoint_stream_slot_kind::edge_value:
+    if (target.index >= runtime.edge_values.size()) {
+      return nullptr;
+    }
+    return std::addressof(runtime.edge_values[target.index].value);
+  case checkpoint_stream_slot_kind::edge_reader:
+    if (target.index >= runtime.edge_readers.size()) {
+      return nullptr;
+    }
+    return std::addressof(runtime.edge_readers[target.index].value);
+  case checkpoint_stream_slot_kind::merged_reader:
+    if (target.index >= runtime.merged_readers.size()) {
+      return nullptr;
+    }
+    return std::addressof(runtime.merged_readers[target.index].value);
+  case checkpoint_stream_slot_kind::final_output:
+    return runtime.final_output_reader.has_value() ? std::addressof(*runtime.final_output_reader)
+                                                   : nullptr;
+  }
+  return nullptr;
+}
+
+[[nodiscard]] inline auto resolve_slot_payload(checkpoint_stream_save_stage &stage,
+                                               const checkpoint_stream_slot_target &target)
+    -> graph_value * {
+  if (target.runtime == checkpoint_runtime_kind::dag) {
+    if (!stage.checkpoint.runtime.dag.has_value()) {
+      return nullptr;
+    }
+    return resolve_runtime_slot_payload(*stage.checkpoint.runtime.dag, target);
+  }
+  if (!stage.checkpoint.runtime.pregel.has_value()) {
+    return nullptr;
+  }
+  return resolve_runtime_slot_payload(*stage.checkpoint.runtime.pregel, target);
+}
 
 [[nodiscard]] inline auto capture_runtime_value_slot(const std::uint32_t slot_id,
                                                      graph_value &value)
@@ -419,15 +505,23 @@ edge_target_key_for_slot(const std::span<const std::string> node_keys,
 }
 
 inline auto
-apply_stream_codecs_for_save(checkpoint_state &checkpoint, wh::core::run_context &context,
-                             const checkpoint_stream_codecs *registry,
-                             const std::span<const std::string> node_keys,
-                             const std::span<const detail::graph_core::indexed_edge> indexed_edges,
-                             const std::uint32_t end_node_id) -> wh::core::result<void> {
+apply_stream_codecs_for_save_async(checkpoint_state checkpoint, wh::core::run_context &context,
+                                   const checkpoint_stream_codecs *registry,
+                                   const std::span<const std::string> node_keys,
+                                   const std::span<const detail::graph_core::indexed_edge> indexed_edges,
+                                   const std::uint32_t end_node_id,
+                                   const wh::core::detail::any_resume_scheduler_t &work_scheduler)
+    -> graph_sender {
   const bool has_registry = registry != nullptr;
+  checkpoint_stream_save_stage save_stage{
+      .checkpoint = std::move(checkpoint),
+  };
+  std::vector<graph_sender> senders{};
 
-  const auto convert_one = [&](const std::string_view node_key, graph_value &payload,
-                               const bool tolerate_channel_closed) -> wh::core::result<void> {
+  const auto append_payload = [&](const checkpoint_runtime_kind runtime_kind, graph_value &payload,
+                                  const checkpoint_stream_slot_kind kind, const std::size_t index,
+                                  const std::string_view node_key,
+                                  const bool tolerate_channel_closed) -> wh::core::result<void> {
     auto *reader = wh::core::any_cast<graph_stream_reader>(&payload);
     if (reader == nullptr) {
       return {};
@@ -439,32 +533,34 @@ apply_stream_codecs_for_save(checkpoint_state &checkpoint, wh::core::run_context
     if (converter_iter == registry->end() || !converter_iter->second.to_value) {
       return wh::core::result<void>::failure(wh::core::errc::not_supported);
     }
-    auto converted = converter_iter->second.to_value(std::move(*reader), context);
-    if (converted.has_error()) {
-      if (tolerate_channel_closed && converted.error() == wh::core::errc::channel_closed) {
-        payload = wh::core::any(checkpoint_stream_value_payload{
-            .value = wh::core::any(std::vector<graph_value>{}),
-        });
-        return {};
-      }
-      return wh::core::result<void>::failure(converted.error());
-    }
-    payload = wh::core::any(checkpoint_stream_value_payload{
-        .value = std::move(converted).value(),
+    save_stage.targets.push_back(checkpoint_stream_slot_target{
+        .runtime = runtime_kind,
+        .kind = kind,
+        .index = index,
+        .tolerate_channel_closed = tolerate_channel_closed,
     });
+    senders.push_back(
+        wh::compose::detail::bridge_graph_sender(wh::core::detail::write_sender_scheduler(
+            converter_iter->second.to_value(std::move(*reader), context), work_scheduler)));
     return {};
   };
-  const auto convert_pending_inputs =
-      [&](checkpoint_pending_inputs &pending) -> wh::core::result<void> {
+
+  const auto append_pending_inputs =
+      [&](const checkpoint_runtime_kind runtime_kind,
+          checkpoint_pending_inputs &pending) -> wh::core::result<void> {
     if (pending.entry.has_value()) {
-      auto converted_start = convert_one(graph_start_node_key, *pending.entry, false);
-      if (converted_start.has_error()) {
-        return converted_start;
+      auto converted = append_payload(runtime_kind, *pending.entry,
+                                      checkpoint_stream_slot_kind::pending_entry, 0U,
+                                      graph_start_node_key, false);
+      if (converted.has_error()) {
+        return converted;
       }
     }
-
-    for (auto &node_input : pending.nodes) {
-      auto converted = convert_one(node_input.key, node_input.input, true);
+    for (std::size_t index = 0U; index < pending.nodes.size(); ++index) {
+      auto converted =
+          append_payload(runtime_kind, pending.nodes[index].input,
+                         checkpoint_stream_slot_kind::pending_node, index, pending.nodes[index].key,
+                         true);
       if (converted.has_error()) {
         return converted;
       }
@@ -472,13 +568,16 @@ apply_stream_codecs_for_save(checkpoint_state &checkpoint, wh::core::run_context
     return {};
   };
 
-  const auto convert_slots = [&](auto resolve_key, auto &slots) -> wh::core::result<void> {
-    for (auto &slot : slots) {
-      auto node_key = resolve_key(slot.slot_id);
+  const auto append_slots = [&](const checkpoint_runtime_kind runtime_kind, const auto resolve_key,
+                                auto &slots, const checkpoint_stream_slot_kind kind)
+      -> wh::core::result<void> {
+    for (std::size_t index = 0U; index < slots.size(); ++index) {
+      auto node_key = resolve_key(slots[index].slot_id);
       if (node_key.has_error()) {
         return wh::core::result<void>::failure(node_key.error());
       }
-      auto converted = convert_one(node_key.value(), slot.value, true);
+      auto converted = append_payload(runtime_kind, slots[index].value, kind, index,
+                                      node_key.value(), true);
       if (converted.has_error()) {
         return converted;
       }
@@ -494,8 +593,9 @@ apply_stream_codecs_for_save(checkpoint_state &checkpoint, wh::core::run_context
       [&](const std::uint32_t slot_id) -> wh::core::result<std::string_view> {
     return edge_target_key_for_slot(node_keys, indexed_edges, slot_id);
   };
-  const auto convert_final_output =
-      [&](std::optional<graph_value> &payload) -> wh::core::result<void> {
+  const auto append_final_output =
+      [&](const checkpoint_runtime_kind runtime_kind,
+          std::optional<graph_value> &payload) -> wh::core::result<void> {
     if (!payload.has_value()) {
       return {};
     }
@@ -503,66 +603,115 @@ apply_stream_codecs_for_save(checkpoint_state &checkpoint, wh::core::run_context
     if (node_key.has_error()) {
       return wh::core::result<void>::failure(node_key.error());
     }
-    return convert_one(node_key.value(), *payload, true);
+    return append_payload(runtime_kind, *payload, checkpoint_stream_slot_kind::final_output, 0U,
+                          node_key.value(), true);
   };
 
-  if (checkpoint.runtime.dag.has_value()) {
-    auto &dag = *checkpoint.runtime.dag;
-    auto converted = convert_pending_inputs(dag.pending_inputs);
+  if (save_stage.checkpoint.runtime.dag.has_value()) {
+    auto &dag = *save_stage.checkpoint.runtime.dag;
+    auto converted = append_pending_inputs(checkpoint_runtime_kind::dag, dag.pending_inputs);
     if (converted.has_error()) {
-      return converted;
+      return wh::compose::detail::failure_graph_sender(converted.error());
     }
-    converted = convert_slots(node_key_resolver, dag.node_outputs);
+    converted = append_slots(checkpoint_runtime_kind::dag, node_key_resolver, dag.node_outputs,
+                             checkpoint_stream_slot_kind::node_output);
     if (converted.has_error()) {
-      return converted;
+      return wh::compose::detail::failure_graph_sender(converted.error());
     }
-    converted = convert_slots(edge_key_resolver, dag.edge_values);
+    converted = append_slots(checkpoint_runtime_kind::dag, edge_key_resolver, dag.edge_values,
+                             checkpoint_stream_slot_kind::edge_value);
     if (converted.has_error()) {
-      return converted;
+      return wh::compose::detail::failure_graph_sender(converted.error());
     }
-    converted = convert_slots(edge_key_resolver, dag.edge_readers);
+    converted = append_slots(checkpoint_runtime_kind::dag, edge_key_resolver, dag.edge_readers,
+                             checkpoint_stream_slot_kind::edge_reader);
     if (converted.has_error()) {
-      return converted;
+      return wh::compose::detail::failure_graph_sender(converted.error());
     }
-    converted = convert_slots(node_key_resolver, dag.merged_readers);
+    converted = append_slots(checkpoint_runtime_kind::dag, node_key_resolver, dag.merged_readers,
+                             checkpoint_stream_slot_kind::merged_reader);
     if (converted.has_error()) {
-      return converted;
+      return wh::compose::detail::failure_graph_sender(converted.error());
     }
-    converted = convert_final_output(dag.final_output_reader);
+    converted = append_final_output(checkpoint_runtime_kind::dag, dag.final_output_reader);
     if (converted.has_error()) {
-      return converted;
-    }
-  }
-
-  if (checkpoint.runtime.pregel.has_value()) {
-    auto &pregel = *checkpoint.runtime.pregel;
-    auto converted = convert_pending_inputs(pregel.pending_inputs);
-    if (converted.has_error()) {
-      return converted;
-    }
-    converted = convert_slots(node_key_resolver, pregel.node_outputs);
-    if (converted.has_error()) {
-      return converted;
-    }
-    converted = convert_slots(edge_key_resolver, pregel.edge_values);
-    if (converted.has_error()) {
-      return converted;
-    }
-    converted = convert_slots(edge_key_resolver, pregel.edge_readers);
-    if (converted.has_error()) {
-      return converted;
-    }
-    converted = convert_slots(node_key_resolver, pregel.merged_readers);
-    if (converted.has_error()) {
-      return converted;
-    }
-    converted = convert_final_output(pregel.final_output_reader);
-    if (converted.has_error()) {
-      return converted;
+      return wh::compose::detail::failure_graph_sender(converted.error());
     }
   }
 
-  return {};
+  if (save_stage.checkpoint.runtime.pregel.has_value()) {
+    auto &pregel = *save_stage.checkpoint.runtime.pregel;
+    auto converted = append_pending_inputs(checkpoint_runtime_kind::pregel, pregel.pending_inputs);
+    if (converted.has_error()) {
+      return wh::compose::detail::failure_graph_sender(converted.error());
+    }
+    converted = append_slots(checkpoint_runtime_kind::pregel, node_key_resolver,
+                             pregel.node_outputs, checkpoint_stream_slot_kind::node_output);
+    if (converted.has_error()) {
+      return wh::compose::detail::failure_graph_sender(converted.error());
+    }
+    converted = append_slots(checkpoint_runtime_kind::pregel, edge_key_resolver,
+                             pregel.edge_values, checkpoint_stream_slot_kind::edge_value);
+    if (converted.has_error()) {
+      return wh::compose::detail::failure_graph_sender(converted.error());
+    }
+    converted = append_slots(checkpoint_runtime_kind::pregel, edge_key_resolver,
+                             pregel.edge_readers, checkpoint_stream_slot_kind::edge_reader);
+    if (converted.has_error()) {
+      return wh::compose::detail::failure_graph_sender(converted.error());
+    }
+    converted = append_slots(checkpoint_runtime_kind::pregel, node_key_resolver,
+                             pregel.merged_readers, checkpoint_stream_slot_kind::merged_reader);
+    if (converted.has_error()) {
+      return wh::compose::detail::failure_graph_sender(converted.error());
+    }
+    converted = append_final_output(checkpoint_runtime_kind::pregel, pregel.final_output_reader);
+    if (converted.has_error()) {
+      return wh::compose::detail::failure_graph_sender(converted.error());
+    }
+  }
+
+  if (senders.empty()) {
+    return wh::compose::detail::ready_graph_sender(
+        wh::core::result<graph_value>{wh::core::any(std::move(save_stage.checkpoint))});
+  }
+
+  auto consume_saved_stream =
+      [](checkpoint_stream_save_stage &current_stage, const std::size_t target_index,
+         wh::core::result<graph_value> current) -> wh::core::result<void> {
+    if (target_index >= current_stage.targets.size()) {
+      return wh::core::result<void>::failure(wh::core::errc::internal_error);
+    }
+    const auto &target = current_stage.targets[target_index];
+    auto *payload = resolve_slot_payload(current_stage, target);
+    if (payload == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+    if (current.has_error()) {
+      if (target.tolerate_channel_closed && current.error() == wh::core::errc::channel_closed) {
+        *payload = wh::core::any(checkpoint_stream_value_payload{
+            .value = wh::core::any(std::vector<graph_value>{}),
+        });
+        return {};
+      }
+      return wh::core::result<void>::failure(current.error());
+    }
+    *payload = wh::core::any(checkpoint_stream_value_payload{
+        .value = std::move(current).value(),
+    });
+    return {};
+  };
+
+  auto finish_saved_stream =
+      [](checkpoint_stream_save_stage &&current_stage) -> wh::core::result<graph_value> {
+    return wh::core::any(std::move(current_stage.checkpoint));
+  };
+
+  return wh::compose::detail::bridge_graph_sender(
+      wh::compose::detail::make_child_batch_sender(std::move(senders), std::move(save_stage),
+                                                   std::move(consume_saved_stream),
+                                                   std::move(finish_saved_stream),
+                                                   work_scheduler));
 }
 
 inline auto
@@ -966,11 +1115,13 @@ inline auto prepare_restore(wh::core::run_context &context, const restore_scope 
   }};
 }
 
-inline auto maybe_persist(wh::core::run_context &context, checkpoint_state checkpoint,
-                          const std::span<const std::string> node_keys,
-                          const std::span<const detail::graph_core::indexed_edge> indexed_edges,
-                          const std::uint32_t end_id, const runtime_state::invoke_config &config,
-                          runtime_state::invoke_outputs &outputs) -> wh::core::result<void> {
+inline auto make_persist_sender(
+    wh::core::run_context &context, checkpoint_state checkpoint,
+    const std::span<const std::string> node_keys,
+    const std::span<const detail::graph_core::indexed_edge> indexed_edges,
+    const std::uint32_t end_id, const runtime_state::invoke_config &config,
+    runtime_state::invoke_outputs &outputs,
+    const wh::core::detail::any_resume_scheduler_t &work_scheduler) -> graph_sender {
   auto checkpoint_id_hint = checkpoint.checkpoint_id;
   if (checkpoint_id_hint.empty()) {
     checkpoint_id_hint = "checkpoint";
@@ -979,76 +1130,95 @@ inline auto maybe_persist(wh::core::run_context &context, checkpoint_state check
   auto runtime_backend = resolve_runtime_backend(config);
   if (runtime_backend.has_error()) {
     set_error_detail(outputs, runtime_backend.error(), checkpoint_id_hint, "persist_store_lookup");
-    return wh::core::result<void>::failure(runtime_backend.error());
+    return wh::compose::detail::failure_graph_sender(runtime_backend.error());
   }
   if (runtime_backend.value().store == nullptr && runtime_backend.value().backend == nullptr) {
-    return {};
+    return detail::ready_graph_unit_sender();
   }
 
-  auto stream_persisted = apply_stream_codecs_for_save(
-      checkpoint, context, config.checkpoint_stream_codecs_ptr, node_keys, indexed_edges, end_id);
-  if (stream_persisted.has_error()) {
-    set_error_detail(outputs, stream_persisted.error(), checkpoint_id_hint,
-                     "persist_stream_convert");
-    return stream_persisted;
-  }
+  return wh::compose::detail::bridge_graph_sender(
+      apply_stream_codecs_for_save_async(std::move(checkpoint), context,
+                                         config.checkpoint_stream_codecs_ptr, node_keys,
+                                         indexed_edges, end_id, work_scheduler) |
+      stdexec::let_value(
+          [&context, &config, &outputs, checkpoint_id_hint = std::move(checkpoint_id_hint),
+           runtime_backend = runtime_backend.value()](
+              wh::core::result<graph_value> stream_persisted) mutable -> graph_sender {
+            if (stream_persisted.has_error()) {
+              set_error_detail(outputs, stream_persisted.error(), checkpoint_id_hint,
+                               "persist_stream_convert");
+              return wh::compose::detail::failure_graph_sender(stream_persisted.error());
+            }
 
-  auto pre_save = apply_modifier(context, config.checkpoint_before_save,
-                                 std::addressof(config.checkpoint_before_save_nodes), checkpoint);
-  if (pre_save.has_error()) {
-    set_error_detail(outputs, pre_save.error(), checkpoint_id_hint, "pre_save_modifier");
-    return pre_save;
-  }
+            auto *typed = wh::core::any_cast<checkpoint_state>(&stream_persisted.value());
+            if (typed == nullptr) {
+              set_error_detail(outputs, wh::core::errc::type_mismatch, checkpoint_id_hint,
+                               "persist_stream_convert");
+              return wh::compose::detail::failure_graph_sender(wh::core::errc::type_mismatch);
+            }
 
-  auto owned_checkpoint = wh::core::into_owned(std::move(checkpoint));
-  if (owned_checkpoint.has_error()) {
-    set_error_detail(outputs, owned_checkpoint.error(), checkpoint_id_hint, "persist_snapshot_own");
-    return wh::core::result<void>::failure(owned_checkpoint.error());
-  }
-  auto serializer_roundtrip =
-      roundtrip_with_serializer(std::move(owned_checkpoint).value(), context, config);
-  if (serializer_roundtrip.has_error()) {
-    set_error_detail(outputs, serializer_roundtrip.error(), checkpoint_id_hint,
-                     "persist_serializer_roundtrip");
-    return wh::core::result<void>::failure(serializer_roundtrip.error());
-  }
-  checkpoint = std::move(serializer_roundtrip).value();
+            auto persisted_checkpoint = std::move(*typed);
+            auto pre_save =
+                apply_modifier(context, config.checkpoint_before_save,
+                               std::addressof(config.checkpoint_before_save_nodes),
+                               persisted_checkpoint);
+            if (pre_save.has_error()) {
+              set_error_detail(outputs, pre_save.error(), checkpoint_id_hint, "pre_save_modifier");
+              return wh::compose::detail::failure_graph_sender(pre_save.error());
+            }
 
-  checkpoint_save_options write_options =
-      config.checkpoint_save.value_or(checkpoint_save_options{});
-  if (!write_options.checkpoint_id.has_value()) {
-    write_options.checkpoint_id = checkpoint.checkpoint_id;
-  }
-  checkpoint.checkpoint_id = *write_options.checkpoint_id;
-  checkpoint.branch = write_options.branch;
-  checkpoint.parent_branch = write_options.parent_branch;
+            auto owned_checkpoint = wh::core::into_owned(std::move(persisted_checkpoint));
+            if (owned_checkpoint.has_error()) {
+              set_error_detail(outputs, owned_checkpoint.error(), checkpoint_id_hint,
+                               "persist_snapshot_own");
+              return wh::compose::detail::failure_graph_sender(owned_checkpoint.error());
+            }
+            auto serializer_roundtrip =
+                roundtrip_with_serializer(std::move(owned_checkpoint).value(), context, config);
+            if (serializer_roundtrip.has_error()) {
+              set_error_detail(outputs, serializer_roundtrip.error(), checkpoint_id_hint,
+                               "persist_serializer_roundtrip");
+              return wh::compose::detail::failure_graph_sender(serializer_roundtrip.error());
+            }
 
-  auto post_save_state = checkpoint;
+            persisted_checkpoint = std::move(serializer_roundtrip).value();
+            checkpoint_save_options write_options =
+                config.checkpoint_save.value_or(checkpoint_save_options{});
+            if (!write_options.checkpoint_id.has_value()) {
+              write_options.checkpoint_id = persisted_checkpoint.checkpoint_id;
+            }
+            persisted_checkpoint.checkpoint_id = *write_options.checkpoint_id;
+            persisted_checkpoint.branch = write_options.branch;
+            persisted_checkpoint.parent_branch = write_options.parent_branch;
 
-  if (runtime_backend.value().backend != nullptr) {
-    auto saved = runtime_backend.value().backend->save(std::move(checkpoint),
-                                                       std::move(write_options), context);
-    if (saved.has_error()) {
-      set_error_detail(outputs, saved.error(), checkpoint_id_hint, "save");
-      return wh::core::result<void>::failure(saved.error());
-    }
-  } else {
-    auto saved =
-        runtime_backend.value().store->save(std::move(checkpoint), std::move(write_options));
-    if (saved.has_error()) {
-      set_error_detail(outputs, saved.error(), checkpoint_id_hint, "save");
-      return wh::core::result<void>::failure(saved.error());
-    }
-  }
+            auto post_save_state = persisted_checkpoint;
+            if (runtime_backend.backend != nullptr) {
+              auto saved = runtime_backend.backend->save(std::move(persisted_checkpoint),
+                                                        std::move(write_options), context);
+              if (saved.has_error()) {
+                set_error_detail(outputs, saved.error(), checkpoint_id_hint, "save");
+                return wh::compose::detail::failure_graph_sender(saved.error());
+              }
+            } else {
+              auto saved =
+                  runtime_backend.store->save(std::move(persisted_checkpoint),
+                                              std::move(write_options));
+              if (saved.has_error()) {
+                set_error_detail(outputs, saved.error(), checkpoint_id_hint, "save");
+                return wh::compose::detail::failure_graph_sender(saved.error());
+              }
+            }
 
-  auto post_save =
-      apply_modifier(context, config.checkpoint_after_save,
-                     std::addressof(config.checkpoint_after_save_nodes), post_save_state);
-  if (post_save.has_error()) {
-    set_error_detail(outputs, post_save.error(), checkpoint_id_hint, "post_save_modifier");
-    return post_save;
-  }
-  return {};
+            auto post_save =
+                apply_modifier(context, config.checkpoint_after_save,
+                               std::addressof(config.checkpoint_after_save_nodes), post_save_state);
+            if (post_save.has_error()) {
+              set_error_detail(outputs, post_save.error(), checkpoint_id_hint,
+                               "post_save_modifier");
+              return wh::compose::detail::failure_graph_sender(post_save.error());
+            }
+            return wh::compose::detail::ready_graph_unit_sender();
+          }));
 }
 
 } // namespace wh::compose::detail::checkpoint_runtime

@@ -1,4 +1,5 @@
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -7,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
+#include "helper/test_thread_wait.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/model/chat_model.hpp"
@@ -193,6 +195,53 @@ struct flaky_stream_model_impl {
 using invoke_model = wh::model::chat_model<flaky_invoke_model_impl>;
 using stream_model = wh::model::chat_model<flaky_stream_model_impl>;
 
+struct async_callback_retry_state {
+  std::size_t invoke_calls{0U};
+  std::size_t stream_calls{0U};
+  std::size_t invoke_fail_until{0U};
+  std::size_t stream_fail_until{0U};
+  std::string invoke_text{"async-ok"};
+  std::string stream_text{"async-stream-ok"};
+};
+
+struct async_callback_model_impl {
+  std::shared_ptr<async_callback_retry_state> state{};
+
+  [[nodiscard]] auto descriptor() const -> wh::core::component_descriptor {
+    return wh::core::component_descriptor{"AsyncCallbackRetryModel",
+                                          wh::core::component_kind::model};
+  }
+
+  [[nodiscard]] auto invoke_sender(const wh::model::chat_request &) const {
+    ++state->invoke_calls;
+    if (state->invoke_calls <= state->invoke_fail_until) {
+      return stdexec::just(
+          wh::model::chat_invoke_result::failure(wh::core::errc::unavailable));
+    }
+    return stdexec::just(wh::model::chat_invoke_result{
+        wh::model::chat_response{.message = make_assistant_message(state->invoke_text)}});
+  }
+
+  [[nodiscard]] auto stream_sender(const wh::model::chat_request &) const {
+    ++state->stream_calls;
+    if (state->stream_calls <= state->stream_fail_until) {
+      return stdexec::just(
+          wh::model::chat_message_stream_result::failure(wh::core::errc::unavailable));
+    }
+    return stdexec::just(wh::model::chat_message_stream_result{
+        wh::model::chat_message_stream_reader{
+            wh::schema::stream::make_single_value_stream_reader<wh::schema::message>(
+                make_assistant_message(state->stream_text))}});
+  }
+
+  [[nodiscard]] auto bind_tools(const std::span<const wh::schema::tool_schema_definition>) const
+      -> async_callback_model_impl {
+    return *this;
+  }
+};
+
+using async_callback_model = wh::model::chat_model<async_callback_model_impl>;
+
 } // namespace
 
 TEST_CASE("retry chat model retries invoke failures and preserves tool binding",
@@ -303,7 +352,7 @@ TEST_CASE("retry chat model custom predicate can stop retries immediately",
   REQUIRE(state.invoke_calls == 1U);
 }
 
-TEST_CASE("retry chat model stream probe hides failed attempt fragments from success path",
+TEST_CASE("retry chat model stream retries during read after emitting prior fragments",
           "[core][adk][condition]") {
   flaky_stream_state state{};
   scripted_message_reader::chunk_type first_value{};
@@ -349,9 +398,103 @@ TEST_CASE("retry chat model stream probe hides failed attempt fragments from suc
   request.messages.push_back(make_user_message("hello"));
   auto status = retry.stream(request, context);
   REQUIRE(status.has_value());
-  auto texts = collect_stream_text(status.value());
-  REQUIRE(texts == std::vector<std::string>{"good"});
+  REQUIRE(state.stream_calls == 1U);
+  REQUIRE(retry_events.empty());
+
+  auto reader = std::move(status).value();
+  auto texts = collect_stream_text(reader);
+  REQUIRE(texts == std::vector<std::string>{"bad", "good"});
   REQUIRE(state.stream_calls == 2U);
   REQUIRE(retry_events.size() == 1U);
   REQUIRE(retry_events.front().attempt == 1U);
+}
+
+TEST_CASE("retry chat model async surfaces emit retry callbacks",
+          "[core][adk][async][callbacks]") {
+  auto state = std::make_shared<async_callback_retry_state>();
+  state->invoke_fail_until = 1U;
+  state->stream_fail_until = 1U;
+
+  async_callback_model model{async_callback_model_impl{.state = state}};
+  wh::model::retry_chat_model<async_callback_model> retry{
+      std::move(model), wh::model::retry_chat_model_options{.max_attempts = 3U}};
+
+  std::vector<wh::model::will_retry_error> retry_events{};
+  wh::core::run_context context{};
+  context.callbacks.emplace();
+  auto registered = register_test_callbacks(
+      std::move(context), [](const wh::core::callback_stage) noexcept -> bool { return true; },
+      [&retry_events](const wh::core::callback_stage stage,
+                      const wh::core::callback_event_view event,
+                      const wh::core::callback_run_info &) {
+        if (stage != wh::core::callback_stage::error) {
+          return;
+        }
+        if (const auto *typed = wh::core::any_cast<wh::model::will_retry_error>(&event);
+            typed != nullptr) {
+          retry_events.push_back(*typed);
+        }
+      },
+      "retry-async-callbacks");
+  REQUIRE(registered.has_value());
+  context = std::move(registered).value();
+
+  wh::model::chat_request request{};
+  request.messages.push_back(make_user_message("hello"));
+
+  auto invoked = wh::testing::helper::wait_value_on_test_thread(retry.async_invoke(request, context));
+  REQUIRE(invoked.has_value());
+  REQUIRE(std::get<wh::schema::text_part>(invoked.value().message.parts.front()).text ==
+          "async-ok");
+
+  auto streamed = wh::testing::helper::wait_value_on_test_thread(retry.async_stream(request, context));
+  REQUIRE(streamed.has_value());
+  auto texts = collect_stream_text(streamed.value());
+  REQUIRE(texts == std::vector<std::string>{"async-stream-ok"});
+
+  REQUIRE(state->invoke_calls == 2U);
+  REQUIRE(state->stream_calls == 2U);
+  REQUIRE(retry_events.size() == 2U);
+  REQUIRE(retry_events[0].attempt == 1U);
+  REQUIRE(retry_events[1].attempt == 1U);
+}
+
+TEST_CASE("retry chat model async invoke reports retry_exhausted callback",
+          "[core][adk][async][boundary]") {
+  auto state = std::make_shared<async_callback_retry_state>();
+  state->invoke_fail_until = 8U;
+
+  async_callback_model model{async_callback_model_impl{.state = state}};
+  wh::model::retry_chat_model<async_callback_model> retry{
+      std::move(model), wh::model::retry_chat_model_options{.max_attempts = 2U}};
+
+  std::vector<wh::model::retry_exhausted_error> exhausted{};
+  wh::core::run_context context{};
+  context.callbacks.emplace();
+  auto registered = register_test_callbacks(
+      std::move(context), [](const wh::core::callback_stage) noexcept -> bool { return true; },
+      [&exhausted](const wh::core::callback_stage stage, const wh::core::callback_event_view event,
+                   const wh::core::callback_run_info &) {
+        if (stage != wh::core::callback_stage::error) {
+          return;
+        }
+        if (const auto *typed = wh::core::any_cast<wh::model::retry_exhausted_error>(&event);
+            typed != nullptr) {
+          exhausted.push_back(*typed);
+        }
+      },
+      "retry-async-exhausted");
+  REQUIRE(registered.has_value());
+  context = std::move(registered).value();
+
+  wh::model::chat_request request{};
+  request.messages.push_back(make_user_message("hello"));
+  auto invoked =
+      wh::testing::helper::wait_value_on_test_thread(retry.async_invoke(request, context));
+  REQUIRE(invoked.has_error());
+  REQUIRE(invoked.error() == wh::core::errc::retry_exhausted);
+  REQUIRE(state->invoke_calls == 2U);
+  REQUIRE(exhausted.size() == 1U);
+  REQUIRE(exhausted.front().attempts == 2U);
+  REQUIRE(exhausted.front().last_error == wh::core::errc::unavailable);
 }

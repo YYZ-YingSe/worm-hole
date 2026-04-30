@@ -59,17 +59,14 @@ inline auto detail::invoke_runtime::pregel_runtime::finish() -> wh::core::result
         compose_error_phase::execute, wh::core::errc::contract_violation,
         "end node was not executed");
     invoke.outputs.completed_node_keys = session_.completed_node_keys();
-    try_persist_checkpoint();
     return wh::core::result<graph_value>::failure(wh::core::errc::contract_violation);
   }
   if (!session_.output_valid().test(final_node_id)) {
     session_.owner_->publish_graph_run_error(
         invoke.outputs, session_.runtime_node_path(final_node_id), final_node_key,
         compose_error_phase::execute, wh::core::errc::not_found, "end node output not found");
-    try_persist_checkpoint();
     return wh::core::result<graph_value>::failure(wh::core::errc::not_found);
   }
-  try_persist_checkpoint();
   auto final_output = session_.owner_->take_node_output(final_node_id, session_.io_storage_);
   if (final_output.has_value()) {
     session_.output_valid().clear(final_node_id);
@@ -109,6 +106,12 @@ public:
                           enqueue_fn_t &&enqueue_fn) -> wh::core::result<void> {
     return this->state().commit_node_output(attempt, std::move(node_output),
                                             std::forward<enqueue_fn_t>(enqueue_fn));
+  }
+
+  auto commit_routed_output(const attempt_id attempt,
+                            std::optional<std::vector<std::uint32_t>> selection)
+      -> wh::core::result<void> {
+    return this->state().commit_routed_output(attempt, std::move(selection));
   }
 
   auto prepare_superstep(const bool advance_step) -> wh::core::result<void> {
@@ -178,7 +181,7 @@ public:
       if (this->state().superstep_active() && prepared_actions_.empty()) {
         auto prepared = prepare_superstep(false);
         if (prepared.has_error()) {
-          this->enter_terminal(wh::core::result<graph_value>::failure(prepared.error()));
+          this->request_terminal_status(wh::core::result<graph_value>::failure(prepared.error()));
           break;
         }
       }
@@ -191,16 +194,16 @@ public:
         }
         auto begun = prepare_superstep(true);
         if (begun.has_error()) {
-          this->enter_terminal(wh::core::result<graph_value>::failure(begun.error()));
+          this->request_terminal_status(wh::core::result<graph_value>::failure(begun.error()));
           break;
         }
       }
 
       while (!this->terminal_pending() && prepared_head_ < prepared_actions_.size() &&
-             this->active_child_count() < this->session().max_parallel_nodes()) {
+             this->budgeted_child_count() < this->session().max_parallel_nodes()) {
         auto started = start_prepared_action(std::move(prepared_actions_[prepared_head_++]));
         if (started.has_error()) {
-          this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
+          this->request_terminal_status(wh::core::result<graph_value>::failure(started.error()));
           break;
         }
       }

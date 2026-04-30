@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_runtime_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
@@ -37,6 +38,12 @@ template <typename value_t>
 template <typename value_t>
 [[nodiscard]] auto any_get(const wh::core::any &value) noexcept -> const value_t * {
   return wh::core::any_cast<value_t>(&value);
+}
+
+[[nodiscard]] auto ready_checkpoint_save(wh::core::result<wh::compose::graph_value> status)
+    -> wh::compose::checkpoint_stream_save_sender {
+  return wh::compose::checkpoint_stream_save_sender{
+      wh::core::detail::ready_sender(std::move(status))};
 }
 
 using wh::testing::helper::capture_exact_checkpoint;
@@ -594,13 +601,14 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
   wh::compose::checkpoint_stream_codec converter_pair{
       .to_value =
           wh::compose::checkpoint_stream_save{
-              [](wh::compose::graph_stream_reader &&reader,
-                 wh::core::run_context &) -> wh::core::result<wh::compose::graph_value> {
+              [](wh::compose::graph_stream_reader reader,
+                 wh::core::run_context &) -> wh::compose::checkpoint_stream_save_sender {
                 int sum = 0;
                 for (;;) {
                   auto chunk = reader.read();
                   if (chunk.has_error()) {
-                    return wh::core::result<wh::compose::graph_value>::failure(chunk.error());
+                    return ready_checkpoint_save(
+                        wh::core::result<wh::compose::graph_value>::failure(chunk.error()));
                   }
                   if (chunk.value().eof) {
                     break;
@@ -610,11 +618,13 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
                   }
                   auto typed = read_any<int>(*chunk.value().value);
                   if (typed.has_error()) {
-                    return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+                    return ready_checkpoint_save(
+                        wh::core::result<wh::compose::graph_value>::failure(typed.error()));
                   }
                   sum += typed.value();
                 }
-                return wh::core::any(sum);
+                return ready_checkpoint_save(
+                    wh::core::result<wh::compose::graph_value>{wh::core::any(sum)});
               }},
       .to_stream =
           wh::compose::checkpoint_stream_load{
@@ -640,13 +650,14 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
       wh::compose::checkpoint_stream_codec{
           .to_value =
               wh::compose::checkpoint_stream_save{
-                  [](wh::compose::graph_stream_reader &&reader,
-                     wh::core::run_context &) -> wh::core::result<wh::compose::graph_value> {
+                  [](wh::compose::graph_stream_reader reader,
+                     wh::core::run_context &) -> wh::compose::checkpoint_stream_save_sender {
                     int sum = 0;
                     for (;;) {
                       auto chunk = reader.read();
                       if (chunk.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(chunk.error());
+                        return ready_checkpoint_save(
+                            wh::core::result<wh::compose::graph_value>::failure(chunk.error()));
                       }
                       if (chunk.value().eof) {
                         break;
@@ -656,11 +667,13 @@ TEST_CASE("compose graph runtime stream checkpoint conversion pair round-trips p
                       }
                       auto typed = read_any<int>(*chunk.value().value);
                       if (typed.has_error()) {
-                        return wh::core::result<wh::compose::graph_value>::failure(typed.error());
+                        return ready_checkpoint_save(
+                            wh::core::result<wh::compose::graph_value>::failure(typed.error()));
                       }
                       sum += typed.value();
                     }
-                    return wh::core::any(sum);
+                    return ready_checkpoint_save(
+                        wh::core::result<wh::compose::graph_value>{wh::core::any(sum)});
                   }},
           .to_stream =
               wh::compose::checkpoint_stream_load{

@@ -41,6 +41,10 @@ public:
   auto commit_node_output(attempt_id attempt, graph_value node_output, enqueue_fn_t &&enqueue_fn)
       -> wh::core::result<void>;
 
+  auto commit_routed_output(attempt_id attempt,
+                            std::optional<std::vector<std::uint32_t>> selection)
+      -> wh::core::result<void>;
+
   [[nodiscard]] auto take_ready_action() -> ready_action;
 
   auto rebind_moved_runtime_storage() noexcept -> void { session_.rebind_moved_runtime_storage(); }
@@ -59,6 +63,8 @@ public:
   }
 
   auto try_persist_checkpoint() -> void;
+
+  [[nodiscard]] auto make_persist_sender() -> graph_sender;
 
   auto make_freeze_sender(graph_sender capture_sender, const bool external_interrupt)
       -> graph_sender {

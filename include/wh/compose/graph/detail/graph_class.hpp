@@ -508,10 +508,12 @@ private:
                                   forwarded_checkpoint_map &forwarded_checkpoints) const
       -> wh::core::result<std::optional<detail::checkpoint_runtime::prepared_restore>>;
 
-  auto maybe_persist_checkpoint(wh::core::run_context &context, checkpoint_state checkpoint,
-                                const detail::runtime_state::invoke_config &config,
-                                detail::runtime_state::invoke_outputs &outputs) const
-      -> wh::core::result<void>;
+  [[nodiscard]] auto
+  make_persist_checkpoint_sender(wh::core::run_context &context, checkpoint_state checkpoint,
+                                 const detail::runtime_state::invoke_config &config,
+                                 detail::runtime_state::invoke_outputs &outputs,
+                                 const wh::core::detail::any_resume_scheduler_t &work_scheduler) const
+      -> graph_sender;
 
   [[nodiscard]] auto
   resolve_edge_status_indexed(const indexed_edge &edge,
@@ -661,6 +663,12 @@ private:
       wh::core::run_context &context, attempt_slot *slot,
       const detail::runtime_state::invoke_config &config,
       const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const -> graph_sender;
+
+  [[nodiscard]] auto evaluate_stream_branch_sender_indexed(const std::uint32_t source_node_id,
+                                                           graph_stream_reader source_output,
+                                                           wh::core::run_context &context,
+                                                           const graph_call_scope &call_options) const
+      -> graph_branch_selection_sender;
 
   [[nodiscard]] auto resolve_node_retry_budget(const std::uint32_t node_id) const -> std::size_t;
 

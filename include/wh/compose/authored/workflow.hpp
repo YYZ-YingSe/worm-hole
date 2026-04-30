@@ -1103,22 +1103,24 @@ private:
         auto selected = rewritten.set_selector(
             [selector = plan.branch.selector(), target_rewrites = std::move(target_rewrites)](
                 graph_stream_reader input,
-                wh::core::run_context &context) -> wh::core::result<std::vector<std::string>> {
-              auto routed = selector(std::move(input), context);
-              if (routed.has_error()) {
-                return wh::core::result<std::vector<std::string>>::failure(routed.error());
-              }
-              std::vector<std::string> rewritten_keys{};
-              rewritten_keys.reserve(routed.value().size());
-              for (const auto &key : routed.value()) {
-                const auto iter = target_rewrites.find(key);
-                if (iter == target_rewrites.end()) {
-                  return wh::core::result<std::vector<std::string>>::failure(
-                      wh::core::errc::contract_violation);
-                }
-                rewritten_keys.push_back(iter->second);
-              }
-              return rewritten_keys;
+                wh::core::run_context &context) -> stream_branch_key_sender {
+              return stream_branch_key_sender{
+                  wh::core::detail::map_result_sender<wh::core::result<std::vector<std::string>>>(
+                      selector(std::move(input), context),
+                      [target_rewrites](std::vector<std::string> routed_keys) mutable
+                          -> wh::core::result<std::vector<std::string>> {
+                        std::vector<std::string> rewritten_keys{};
+                        rewritten_keys.reserve(routed_keys.size());
+                        for (const auto &key : routed_keys) {
+                          const auto iter = target_rewrites.find(key);
+                          if (iter == target_rewrites.end()) {
+                            return wh::core::result<std::vector<std::string>>::failure(
+                                wh::core::errc::contract_violation);
+                          }
+                          rewritten_keys.push_back(iter->second);
+                        }
+                        return rewritten_keys;
+                      })};
             });
         if (selected.has_error()) {
           return retain_error(selected.error());

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <stdexec/execution.hpp>
 
 #include "wh/compose/runtime/checkpoint.hpp"
 
@@ -36,8 +37,11 @@ TEST_CASE("checkpoint reports codecs and store lifecycle cover staged committed 
   auto codec = wh::compose::make_default_stream_codec();
   wh::core::run_context context{};
 
-  auto to_value = codec.to_value(
-      wh::compose::make_single_value_stream_reader(std::string{"chunk"}).value(), context);
+  auto waited = stdexec::sync_wait(
+      codec.to_value(wh::compose::make_single_value_stream_reader(std::string{"chunk"}).value(),
+                     context));
+  REQUIRE(waited.has_value());
+  auto to_value = std::get<0>(std::move(*waited));
   REQUIRE(to_value.has_value());
   auto *chunks = wh::core::any_cast<std::vector<wh::compose::graph_value>>(&to_value.value());
   REQUIRE(chunks != nullptr);

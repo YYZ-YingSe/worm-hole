@@ -497,6 +497,14 @@ inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(graph
       start_output_reader = std::move(*reader);
     }
 
+    const auto *branch =
+        owner_->core().compiled_execution_index_.index.stream_branch_for_source(start_node_id);
+    if (branch != nullptr && branch->selector_ids) {
+      invoke.pending_start_entry_output = graph_value{std::move(start_output_reader)};
+      invoke.start_entry_selection.reset();
+      return {};
+    }
+
     start_branch = owner_->evaluate_stream_branch_indexed(start_node_id, start_output_reader,
                                                           context_, invoke.bound_call_scope);
     if (start_branch.has_error()) {
@@ -524,6 +532,7 @@ inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(graph
   invoke.start_entry_selection = std::move(start_branch).value();
   return {};
 }
+
 
 inline auto detail::invoke_runtime::invoke_session::capture_common_checkpoint_state()
     -> wh::core::result<checkpoint_state> {
@@ -742,6 +751,46 @@ inline auto detail::invoke_runtime::invoke_session::freeze_requested() const noe
 
 inline auto detail::invoke_runtime::invoke_session::freeze_external() const noexcept -> bool {
   return interrupt_state().freeze_external;
+}
+
+inline auto detail::invoke_runtime::invoke_session::request_persist_checkpoint() noexcept -> void {
+  auto &invoke = invoke_state();
+  if (invoke.config.checkpoint_store_ptr == nullptr && invoke.config.checkpoint_backend_ptr == nullptr &&
+      !invoke.config.checkpoint_save.has_value()) {
+    return;
+  }
+  invoke.persist_requested = true;
+}
+
+inline auto detail::invoke_runtime::invoke_session::persist_requested() const noexcept -> bool {
+  return invoke_state().persist_requested;
+}
+
+inline auto detail::invoke_runtime::invoke_session::persist_inflight() const noexcept -> bool {
+  return invoke_state().persist_inflight;
+}
+
+inline auto detail::invoke_runtime::invoke_session::begin_persist_checkpoint() noexcept -> bool {
+  auto &invoke = invoke_state();
+  if (!invoke.persist_requested || invoke.persist_inflight) {
+    return false;
+  }
+  invoke.persist_requested = false;
+  invoke.persist_inflight = true;
+  return true;
+}
+
+inline auto detail::invoke_runtime::invoke_session::finish_persist_checkpoint() noexcept -> void {
+  invoke_state().persist_inflight = false;
+}
+
+inline auto detail::invoke_runtime::invoke_session::should_auto_persist_freeze() const noexcept
+    -> bool {
+  const auto &interrupt = interrupt_state();
+  const auto &policy = interrupt.policy_latch.frozen ? interrupt.policy_latch.policy
+                                                     : interrupt.policy;
+  return (interrupt.freeze_external && policy.auto_persist_external_interrupt) ||
+         (!interrupt.freeze_external && policy.manual_persist_internal_interrupt);
 }
 
 template <typename persist_fn_t>

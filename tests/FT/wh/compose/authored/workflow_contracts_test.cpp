@@ -7,6 +7,7 @@
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/authored.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 #include "wh/core/any.hpp"
 
 namespace {
@@ -351,8 +352,10 @@ TEST_CASE("workflow authored stream-branch explicit end route compiles through "
   REQUIRE(
       branch
           .set_selector([](wh::compose::graph_stream_reader,
-                           wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
-            return std::vector<std::string>{"left"};
+                           wh::core::run_context &) -> wh::compose::stream_branch_key_sender {
+            return wh::compose::stream_branch_key_sender{
+                wh::core::detail::ready_sender(
+                    wh::core::result<std::vector<std::string>>{std::vector<std::string>{"left"}})};
           })
           .has_value());
   REQUIRE(route_step.value().add_stream_branch(std::move(branch)).has_value());

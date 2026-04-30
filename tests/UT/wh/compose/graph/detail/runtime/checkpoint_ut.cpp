@@ -2,6 +2,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/graph/detail/runtime/checkpoint.hpp"
@@ -100,8 +101,15 @@ TEST_CASE("runtime checkpoint helpers roundtrip stream runtime payload codecs fo
               .value.template has_value<wh::compose::graph_stream_reader>());
 
   wh::core::run_context context{};
-  REQUIRE(apply_stream_codecs_for_save(checkpoint, context, &codecs, node_keys, indexed_edges, 2U)
-              .has_value());
+  auto save_waited = stdexec::sync_wait(apply_stream_codecs_for_save_async(
+      std::move(checkpoint), context, &codecs, node_keys, indexed_edges, 2U,
+      wh::core::detail::any_resume_scheduler_t{stdexec::inline_scheduler{}}));
+  REQUIRE(save_waited.has_value());
+  auto save_status = std::get<0>(std::move(*save_waited));
+  REQUIRE(save_status.has_value());
+  auto *saved_checkpoint = wh::core::any_cast<wh::compose::checkpoint_state>(&save_status.value());
+  REQUIRE(saved_checkpoint != nullptr);
+  checkpoint = std::move(*saved_checkpoint);
   REQUIRE(wh::core::any_cast<wh::compose::checkpoint_stream_value_payload>(
               &*checkpoint.runtime.dag->pending_inputs.entry) != nullptr);
   REQUIRE(wh::core::any_cast<wh::compose::checkpoint_stream_value_payload>(

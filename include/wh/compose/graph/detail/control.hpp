@@ -327,15 +327,15 @@ inline auto graph::prepare_restore_checkpoint(wh::core::run_context &context,
       core().compiled_execution_index_.index.end_id, config, outputs, forwarded_checkpoints);
 }
 
-inline auto graph::maybe_persist_checkpoint(wh::core::run_context &context,
-                                            checkpoint_state checkpoint,
-                                            const detail::runtime_state::invoke_config &config,
-                                            detail::runtime_state::invoke_outputs &outputs) const
-    -> wh::core::result<void> {
-  return detail::checkpoint_runtime::maybe_persist(
+inline auto graph::make_persist_checkpoint_sender(
+    wh::core::run_context &context, checkpoint_state checkpoint,
+    const detail::runtime_state::invoke_config &config,
+    detail::runtime_state::invoke_outputs &outputs,
+    const wh::core::detail::any_resume_scheduler_t &work_scheduler) const -> graph_sender {
+  return detail::checkpoint_runtime::make_persist_sender(
       context, std::move(checkpoint), core().compiled_execution_index_.index.id_to_key,
       core().compiled_execution_index_.index.indexed_edges,
-      core().compiled_execution_index_.index.end_id, config, outputs);
+      core().compiled_execution_index_.index.end_id, config, outputs, work_scheduler);
 }
 
 } // namespace wh::compose

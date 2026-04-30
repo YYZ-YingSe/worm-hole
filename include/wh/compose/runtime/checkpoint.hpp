@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -15,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+#include <stdexec/execution.hpp>
+
 #include "wh/compose/graph/checkpoint_state.hpp"
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node.hpp"
@@ -22,6 +25,7 @@
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
+#include "wh/core/stdexec.hpp"
 #include "wh/core/type_traits.hpp"
 
 namespace wh::compose {
@@ -194,9 +198,12 @@ struct checkpoint_stream_value_payload {
   graph_value value{};
 };
 
+/// Type-erased async stream-save result boundary used by checkpoint codecs.
+using checkpoint_stream_save_sender = wh::core::detail::result_sender<wh::core::result<graph_value>>;
 /// Converts one stream payload into checkpoint-safe value payload.
-using checkpoint_stream_save = wh::core::callback_function<wh::core::result<graph_value>(
-    graph_stream_reader &&, wh::core::run_context &) const>;
+using checkpoint_stream_save =
+    wh::core::callback_function<checkpoint_stream_save_sender(graph_stream_reader,
+                                                              wh::core::run_context &) const>;
 /// Converts one persisted value payload back into stream payload.
 using checkpoint_stream_load = wh::core::callback_function<wh::core::result<graph_stream_reader>(
     graph_value &&, wh::core::run_context &) const>;
@@ -209,16 +216,67 @@ struct checkpoint_stream_codec {
   checkpoint_stream_load to_stream{nullptr};
 };
 
+namespace detail {
+
+struct checkpoint_collect_state {
+  graph_stream_reader reader{};
+  std::vector<graph_value> collected{};
+};
+
+[[nodiscard]] inline auto
+collect_checkpoint_stream_async(std::shared_ptr<checkpoint_collect_state> state)
+    -> checkpoint_stream_save_sender {
+  // `read_async()` may borrow the reader object. Keep the reader in shared
+  // storage so recursive continuations never outlive the concrete reader.
+  auto next_read = state->reader.read_async();
+  return checkpoint_stream_save_sender{
+      std::move(next_read) |
+      stdexec::let_value(
+          [state = std::move(state)](graph_stream_reader::chunk_result_type next) mutable
+              -> checkpoint_stream_save_sender {
+            if (next.has_error()) {
+              return checkpoint_stream_save_sender{
+                  wh::core::detail::failure_result_sender<wh::core::result<graph_value>>(
+                      next.error())};
+            }
+
+            auto chunk = std::move(next).value();
+            if (chunk.is_terminal_eof()) {
+              auto closed = state->reader.close();
+              if (closed.has_error()) {
+                return checkpoint_stream_save_sender{
+                    wh::core::detail::failure_result_sender<wh::core::result<graph_value>>(
+                        closed.error())};
+              }
+              return checkpoint_stream_save_sender{
+                  wh::core::detail::ready_sender(
+                      wh::core::result<graph_value>{wh::core::any(std::move(state->collected))})};
+            }
+            if (!chunk.is_source_eof()) {
+              if (chunk.error != wh::core::errc::ok) {
+                return checkpoint_stream_save_sender{
+                    wh::core::detail::failure_result_sender<wh::core::result<graph_value>>(
+                        chunk.error)};
+              }
+              if (chunk.value.has_value()) {
+                state->collected.push_back(std::move(*chunk.value));
+              }
+            }
+            return collect_checkpoint_stream_async(std::move(state));
+          })};
+}
+
+} // namespace detail
+
 /// Builds the default stream/value codec used by checkpoint bridge helpers.
 [[nodiscard]] inline auto make_default_stream_codec() -> checkpoint_stream_codec {
   return checkpoint_stream_codec{
-      .to_value = [](graph_stream_reader &&reader,
-                     wh::core::run_context &) -> wh::core::result<graph_value> {
-        auto collected = collect_graph_stream_reader(std::move(reader));
-        if (collected.has_error()) {
-          return wh::core::result<graph_value>::failure(collected.error());
-        }
-        return wh::core::any(std::move(collected).value());
+      .to_value = [](graph_stream_reader reader,
+                     wh::core::run_context &) -> checkpoint_stream_save_sender {
+        return detail::collect_checkpoint_stream_async(
+            std::make_shared<detail::checkpoint_collect_state>(detail::checkpoint_collect_state{
+                .reader = std::move(reader),
+            }));
       },
       .to_stream = [](graph_value &&value,
                       wh::core::run_context &) -> wh::core::result<graph_stream_reader> {

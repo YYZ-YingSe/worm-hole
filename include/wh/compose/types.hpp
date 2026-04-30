@@ -34,6 +34,13 @@ using graph_stream_reader = wh::schema::stream::any_stream_reader<graph_value>;
 using graph_stream_writer = wh::schema::stream::any_stream_writer<graph_value>;
 /// Type-erased async result boundary carrying one graph value.
 using graph_value_sender = wh::core::detail::result_sender<wh::core::result<graph_value>>;
+/// Async result boundary carrying selected graph node ids.
+using graph_branch_ids_sender =
+    wh::core::detail::result_sender<wh::core::result<std::vector<std::uint32_t>>>;
+/// Async result boundary carrying an optional resolved branch selection.
+using graph_branch_selection_sender =
+    wh::core::detail::result_sender<
+        wh::core::result<std::optional<std::vector<std::uint32_t>>>>;
 /// Logical contract for node input/output boundaries.
 enum class node_contract : std::uint8_t {
   /// One scalar/object payload.
@@ -185,9 +192,8 @@ using graph_value_branch_selector_ids =
         const graph_value &, wh::core::run_context &, const graph_call_scope &) const>;
 
 /// Stream-branch selector callback that returns destination node ids directly.
-using graph_stream_branch_selector_ids =
-    wh::core::callback_function<wh::core::result<std::vector<std::uint32_t>>(
-        graph_stream_reader, wh::core::run_context &, const graph_call_scope &) const>;
+using graph_stream_branch_selector_ids = wh::core::callback_function<graph_branch_ids_sender(
+    graph_stream_reader, wh::core::run_context &, const graph_call_scope &) const>;
 
 /// Value-branch declaration from one source node to candidate end-nodes.
 struct graph_value_branch {

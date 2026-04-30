@@ -135,9 +135,10 @@ inline auto graph::evaluate_value_branch_indexed(const std::uint32_t source_node
 }
 
 inline auto graph::evaluate_stream_branch_indexed(const std::uint32_t source_node_id,
-                                                  graph_stream_reader &source_output,
-                                                  wh::core::run_context &context,
-                                                  const graph_call_scope &call_options) const
+                                                  [[maybe_unused]] graph_stream_reader &source_output,
+                                                  [[maybe_unused]] wh::core::run_context &context,
+                                                  [[maybe_unused]] const graph_call_scope
+                                                      &call_options) const
     -> wh::core::result<std::optional<std::vector<std::uint32_t>>> {
   const auto *branch =
       core().compiled_execution_index_.index.stream_branch_for_source(source_node_id);
@@ -150,28 +151,47 @@ inline auto graph::evaluate_stream_branch_indexed(const std::uint32_t source_nod
     selected = branch->end_nodes_sorted;
     return std::optional<std::vector<std::uint32_t>>{std::move(selected)};
   }
+  return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
+      wh::core::errc::not_supported);
+}
 
-  auto routed_input = detail::fork_graph_reader(source_output);
-  if (routed_input.has_error()) {
-    return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
-        routed_input.error());
+inline auto graph::evaluate_stream_branch_sender_indexed(const std::uint32_t source_node_id,
+                                                         graph_stream_reader source_output,
+                                                         wh::core::run_context &context,
+                                                         const graph_call_scope &call_options) const
+    -> graph_branch_selection_sender {
+  const auto *branch =
+      core().compiled_execution_index_.index.stream_branch_for_source(source_node_id);
+  if (branch == nullptr) {
+    return graph_branch_selection_sender{
+        wh::core::detail::ready_sender(
+            wh::core::result<std::optional<std::vector<std::uint32_t>>>{
+                std::optional<std::vector<std::uint32_t>>{}})};
   }
 
-  auto routed_ids = branch->selector_ids(std::move(routed_input).value(), context, call_options);
-  if (routed_ids.has_error()) {
-    return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(routed_ids.error());
+  if (!branch->selector_ids) {
+    return graph_branch_selection_sender{
+        wh::core::detail::ready_sender(
+            wh::core::result<std::optional<std::vector<std::uint32_t>>>{
+                std::optional<std::vector<std::uint32_t>>{branch->end_nodes_sorted}})};
   }
 
-  selected = std::move(routed_ids).value();
-  for (const auto node_id : selected) {
-    if (!branch->contains(node_id)) {
-      return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
-          wh::core::errc::contract_violation);
-    }
-  }
-  std::sort(selected.begin(), selected.end());
-  selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
-  return std::optional<std::vector<std::uint32_t>>{std::move(selected)};
+  return graph_branch_selection_sender{
+      wh::core::detail::map_result_sender<
+          wh::core::result<std::optional<std::vector<std::uint32_t>>>>(
+          branch->selector_ids(std::move(source_output), context, call_options),
+          [branch](std::vector<std::uint32_t> selected)
+              -> wh::core::result<std::optional<std::vector<std::uint32_t>>> {
+            for (const auto node_id : selected) {
+              if (!branch->contains(node_id)) {
+                return wh::core::result<std::optional<std::vector<std::uint32_t>>>::failure(
+                    wh::core::errc::contract_violation);
+              }
+            }
+            std::sort(selected.begin(), selected.end());
+            selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
+            return std::optional<std::vector<std::uint32_t>>{std::move(selected)};
+          })};
 }
 
 inline auto graph::resolve_step_budget(const detail::runtime_state::invoke_config &config,

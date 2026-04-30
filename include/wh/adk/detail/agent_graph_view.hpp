@@ -22,26 +22,6 @@ using agent_output_from_messages =
     wh::core::callback_function<wh::core::result<wh::agent::agent_output>(
         std::vector<wh::schema::message>, wh::core::run_context &) const>;
 
-[[nodiscard]] inline auto read_message_stream(wh::compose::graph_stream_reader reader)
-    -> wh::core::result<std::vector<wh::schema::message>> {
-  auto values = wh::compose::collect_graph_stream_reader(std::move(reader));
-  if (values.has_error()) {
-    return wh::core::result<std::vector<wh::schema::message>>::failure(values.error());
-  }
-
-  std::vector<wh::schema::message> messages{};
-  messages.reserve(values.value().size());
-  for (auto &value : values.value()) {
-    auto *typed = wh::core::any_cast<wh::schema::message>(&value);
-    if (typed == nullptr) {
-      return wh::core::result<std::vector<wh::schema::message>>::failure(
-          wh::core::errc::type_mismatch);
-    }
-    messages.push_back(std::move(*typed));
-  }
-  return messages;
-}
-
 [[nodiscard]] inline auto make_message_stream_reader(std::vector<wh::schema::message> messages)
     -> wh::core::result<wh::compose::graph_stream_reader> {
   std::vector<wh::compose::graph_value> values{};
@@ -63,6 +43,37 @@ using agent_output_from_messages =
   return wh::core::result<wh::schema::message>::failure(wh::core::errc::type_mismatch);
 }
 
+[[nodiscard]] inline auto read_message_values(std::vector<wh::compose::graph_value> values)
+    -> wh::core::result<std::vector<wh::schema::message>> {
+  std::vector<wh::schema::message> messages{};
+  messages.reserve(values.size());
+  for (auto &value : values) {
+    auto message = read_message_value(value);
+    if (message.has_error()) {
+      return wh::core::result<std::vector<wh::schema::message>>::failure(message.error());
+    }
+    messages.push_back(std::move(message).value());
+  }
+  return messages;
+}
+
+[[nodiscard]] inline auto read_message_payload(wh::compose::graph_value &value)
+    -> wh::core::result<std::vector<wh::schema::message>> {
+  if (auto *typed = wh::core::any_cast<std::vector<wh::schema::message>>(&value);
+      typed != nullptr) {
+    return std::move(*typed);
+  }
+  if (auto *collected = wh::core::any_cast<std::vector<wh::compose::graph_value>>(&value);
+      collected != nullptr) {
+    return read_message_values(std::move(*collected));
+  }
+  auto message = read_message_value(value);
+  if (message.has_error()) {
+    return wh::core::result<std::vector<wh::schema::message>>::failure(message.error());
+  }
+  return std::vector<wh::schema::message>{std::move(message).value()};
+}
+
 [[nodiscard]] inline auto make_message_stream_from_value_payload(wh::compose::graph_value &value)
     -> wh::core::result<wh::compose::graph_stream_reader> {
   auto message = read_message_value(value);
@@ -80,11 +91,11 @@ using agent_output_from_messages =
     return wh::compose::graph_value{std::move(*typed)};
   }
 
-  auto message = read_message_value(input);
-  if (message.has_error()) {
-    return wh::core::result<wh::compose::graph_value>::failure(message.error());
+  auto messages = read_message_payload(input);
+  if (messages.has_error()) {
+    return wh::core::result<wh::compose::graph_value>::failure(messages.error());
   }
-  auto output = build_output(std::vector<wh::schema::message>{std::move(message).value()}, context);
+  auto output = build_output(std::move(messages).value(), context);
   if (output.has_error()) {
     return wh::core::result<wh::compose::graph_value>::failure(output.error());
   }
@@ -119,36 +130,15 @@ using agent_output_from_messages =
     return wh::core::result<wh::compose::graph>::failure(native_added.error());
   }
 
-  wh::core::result<void> project_added{};
-  if (native_boundary.output == wh::compose::node_contract::stream) {
-    auto project_output = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
-                                                        wh::compose::node_contract::value>(
-        "__agent_output__",
-        [build_output = std::move(build_output)](
-            wh::compose::graph_stream_reader input, wh::core::run_context &context,
-            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          auto messages = read_message_stream(std::move(input));
-          if (messages.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(messages.error());
-          }
-          auto output = build_output(std::move(messages).value(), context);
-          if (output.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(output.error());
-          }
-          return wh::compose::graph_value{std::move(output).value()};
-        });
-    project_added = lowered.add_lambda(std::move(project_output));
-  } else {
-    auto project_output = wh::compose::make_lambda_node<wh::compose::node_contract::value,
-                                                        wh::compose::node_contract::value>(
-        "__agent_output__",
-        [build_output = std::move(build_output)](
-            wh::compose::graph_value &input, wh::core::run_context &context,
-            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          return make_agent_output_value(input, build_output, context);
-        });
-    project_added = lowered.add_lambda(std::move(project_output));
-  }
+  auto project_output = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                      wh::compose::node_contract::value>(
+      "__agent_output__",
+      [build_output = std::move(build_output)](
+          wh::compose::graph_value &input, wh::core::run_context &context,
+          const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+        return make_agent_output_value(input, build_output, context);
+      });
+  auto project_added = lowered.add_lambda(std::move(project_output));
   if (project_added.has_error()) {
     return wh::core::result<wh::compose::graph>::failure(project_added.error());
   }

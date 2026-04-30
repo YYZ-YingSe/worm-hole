@@ -30,10 +30,15 @@ namespace wh::adk::detail {
 
 namespace react_detail {
 
-inline constexpr std::string_view react_model_messages_node_key = "__react_model_messages__";
-
 struct prepared_tool_round {
   wh::schema::message assistant_message{};
+  std::vector<wh::agent::react_tool_action> actions{};
+};
+
+struct model_output_snapshot {
+  std::vector<wh::schema::message> messages{};
+  wh::schema::message assistant_message{};
+  bool has_tool_call{false};
   std::vector<wh::agent::react_tool_action> actions{};
 };
 
@@ -277,17 +282,12 @@ normalize_tools_registry_for_stream(const wh::compose::tool_registry &registry,
   return normalized;
 }
 
-[[nodiscard]] inline auto collect_apply_tools_decision(wh::compose::graph_stream_reader reader,
-                                                       const wh::agent::toolset &toolset)
+[[nodiscard]] inline auto read_tool_event_values(std::vector<wh::compose::graph_value> values,
+                                                 const wh::agent::toolset &toolset)
     -> wh::core::result<apply_tools_decision> {
-  auto values = wh::compose::collect_graph_stream_reader(std::move(reader));
-  if (values.has_error()) {
-    return wh::core::result<apply_tools_decision>::failure(values.error());
-  }
-
   apply_tools_decision decision{};
-  decision.tool_messages.reserve(values.value().size());
-  for (auto &value : values.value()) {
+  decision.tool_messages.reserve(values.size());
+  for (auto &value : values) {
     auto *event = wh::core::any_cast<wh::compose::tool_event>(&value);
     if (event == nullptr) {
       return wh::core::result<apply_tools_decision>::failure(wh::core::errc::type_mismatch);
@@ -303,6 +303,50 @@ normalize_tools_registry_for_stream(const wh::compose::tool_registry &registry,
     decision.tool_messages.push_back(std::move(message).value());
   }
   return decision;
+}
+
+[[nodiscard]] inline auto read_tool_event_payload(wh::compose::graph_value &payload,
+                                                  const wh::agent::toolset &toolset)
+    -> wh::core::result<apply_tools_decision> {
+  if (auto *values = wh::core::any_cast<std::vector<wh::compose::graph_value>>(&payload);
+      values != nullptr) {
+    return read_tool_event_values(std::move(*values), toolset);
+  }
+  if (auto *event = wh::core::any_cast<wh::compose::tool_event>(&payload); event != nullptr) {
+    std::vector<wh::compose::graph_value> values{};
+    values.emplace_back(std::move(*event));
+    return read_tool_event_values(std::move(values), toolset);
+  }
+  return wh::core::result<apply_tools_decision>::failure(wh::core::errc::type_mismatch);
+}
+
+[[nodiscard]] inline auto make_model_output_snapshot(std::vector<wh::schema::message> messages,
+                                                     const wh::agent::toolset &toolset)
+    -> wh::core::result<model_output_snapshot> {
+  if (messages.empty()) {
+    return wh::core::result<model_output_snapshot>::failure(wh::core::errc::not_found);
+  }
+  auto assistant_message = messages.back();
+  auto actions = collect_tool_actions(assistant_message, toolset);
+  return model_output_snapshot{
+      .messages = std::move(messages),
+      .assistant_message = std::move(assistant_message),
+      .has_tool_call = !actions.empty(),
+      .actions = std::move(actions),
+  };
+}
+
+[[nodiscard]] inline auto read_model_output_snapshot(wh::compose::graph_value &payload,
+                                                     const wh::agent::toolset &toolset)
+    -> wh::core::result<model_output_snapshot> {
+  if (auto *snapshot = wh::core::any_cast<model_output_snapshot>(&payload); snapshot != nullptr) {
+    return std::move(*snapshot);
+  }
+  auto messages = wh::adk::detail::read_message_payload(payload);
+  if (messages.has_error()) {
+    return wh::core::result<model_output_snapshot>::failure(messages.error());
+  }
+  return make_model_output_snapshot(std::move(messages).value(), toolset);
 }
 
 [[nodiscard]] inline auto make_bootstrap_options(const std::size_t max_iterations)
@@ -581,45 +625,37 @@ private:
       return wh::core::result<wh::compose::graph>::failure(model_added.error());
     }
 
-    std::string model_stream_source{std::string{wh::agent::react_model_node_key}};
-    if (model_binding.value().get().output_contract() == wh::compose::node_contract::value) {
-      auto project_model_output = wh::compose::make_lambda_node<wh::compose::node_contract::value,
-                                                                wh::compose::node_contract::stream>(
-          std::string{react_detail::react_model_messages_node_key},
-          [](wh::compose::graph_value &input, wh::core::run_context &,
-             const wh::compose::graph_call_scope &)
-              -> wh::core::result<wh::compose::graph_stream_reader> {
-            return wh::adk::detail::make_message_stream_from_value_payload(input);
-          });
-      auto project_added = lowered.add_lambda(std::move(project_model_output));
-      if (project_added.has_error()) {
-        return wh::core::result<wh::compose::graph>::failure(project_added.error());
-      }
-      model_stream_source = std::string{react_detail::react_model_messages_node_key};
-      auto project_edge =
-          lowered.add_edge(std::string{wh::agent::react_model_node_key}, model_stream_source);
-      if (project_edge.has_error()) {
-        return wh::core::result<wh::compose::graph>::failure(project_edge.error());
-      }
+    auto model_snapshot = wh::compose::make_lambda_node<wh::compose::node_contract::value,
+                                                        wh::compose::node_contract::value>(
+        "model_snapshot",
+        [toolset](
+            wh::compose::graph_value &input, wh::core::run_context &,
+            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
+          auto snapshot = react_detail::read_model_output_snapshot(input, toolset);
+          if (snapshot.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(snapshot.error());
+          }
+          return wh::core::any(std::move(snapshot).value());
+        });
+    auto model_snapshot_added = lowered.add_lambda(std::move(model_snapshot));
+    if (model_snapshot_added.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(model_snapshot_added.error());
     }
 
-    auto prepare_tools = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+    auto prepare_tools = wh::compose::make_lambda_node<wh::compose::node_contract::value,
                                                        wh::compose::node_contract::value>(
         "prepare_tools",
         [toolset](
-            wh::compose::graph_stream_reader input, wh::core::run_context &,
+            wh::compose::graph_value &input, wh::core::run_context &,
             const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          auto messages = wh::adk::detail::read_message_stream(std::move(input));
-          if (messages.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(messages.error());
+          auto snapshot = react_detail::read_model_output_snapshot(input, toolset);
+          if (snapshot.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(snapshot.error());
           }
-          if (messages.value().empty()) {
-            return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::not_found);
-          }
-          const auto &assistant = messages.value().back();
+          auto prepared = std::move(snapshot).value();
           return wh::core::any(react_detail::prepared_tool_round{
-              .assistant_message = assistant,
-              .actions = react_detail::collect_tool_actions(assistant, toolset),
+              .assistant_message = std::move(prepared.assistant_message),
+              .actions = std::move(prepared.actions),
           });
         },
         react_detail::make_prepare_tools_options(toolset));
@@ -646,13 +682,13 @@ private:
       return wh::core::result<wh::compose::graph>::failure(tools_added.error());
     }
 
-    auto apply_tools = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+    auto apply_tools = wh::compose::make_lambda_node<wh::compose::node_contract::value,
                                                      wh::compose::node_contract::value>(
         "apply_tools",
         [toolset](
-            wh::compose::graph_stream_reader input, wh::core::run_context &,
+            wh::compose::graph_value &input, wh::core::run_context &,
             const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          auto decision = react_detail::collect_apply_tools_decision(std::move(input), toolset);
+          auto decision = react_detail::read_tool_event_payload(input, toolset);
           if (decision.has_error()) {
             return wh::core::result<wh::compose::graph_value>::failure(decision.error());
           }
@@ -680,19 +716,16 @@ private:
       return wh::core::result<wh::compose::graph>::failure(emit_direct_added.error());
     }
 
-    auto finalize = wh::compose::make_lambda_node<wh::compose::node_contract::stream,
+    auto finalize = wh::compose::make_lambda_node<wh::compose::node_contract::value,
                                                   wh::compose::node_contract::value>(
         "finalize_history",
-        [](wh::compose::graph_stream_reader input, wh::core::run_context &,
+        [toolset](wh::compose::graph_value &input, wh::core::run_context &,
            const wh::compose::graph_call_scope &) -> wh::core::result<wh::compose::graph_value> {
-          auto messages = wh::adk::detail::read_message_stream(std::move(input));
-          if (messages.has_error()) {
-            return wh::core::result<wh::compose::graph_value>::failure(messages.error());
+          auto snapshot = react_detail::read_model_output_snapshot(input, toolset);
+          if (snapshot.has_error()) {
+            return wh::core::result<wh::compose::graph_value>::failure(snapshot.error());
           }
-          if (messages.value().empty()) {
-            return wh::core::result<wh::compose::graph_value>::failure(wh::core::errc::not_found);
-          }
-          return wh::core::any(messages.value().back());
+          return wh::core::any(std::move(snapshot).value().assistant_message);
         },
         react_detail::make_finalize_history_options());
     auto finalize_added = lowered.add_lambda(std::move(finalize));
@@ -731,6 +764,11 @@ private:
     if (request_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(request_edge.error());
     }
+    auto model_snapshot_edge =
+        lowered.add_edge(std::string{wh::agent::react_model_node_key}, "model_snapshot");
+    if (model_snapshot_edge.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(model_snapshot_edge.error());
+    }
     auto prepare_tools_edge = lowered.add_edge("prepare_tools", "tools");
     if (prepare_tools_edge.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(prepare_tools_edge.error());
@@ -752,36 +790,34 @@ private:
       return wh::core::result<wh::compose::graph>::failure(history_exit.error());
     }
 
-    auto prepare_tools_id = lowered.node_id("prepare_tools");
-    if (prepare_tools_id.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(prepare_tools_id.error());
-    }
-    auto finalize_id = lowered.node_id("finalize_history");
-    if (finalize_id.has_error()) {
-      return wh::core::result<wh::compose::graph>::failure(finalize_id.error());
-    }
-    auto model_branch_added = lowered.add_stream_branch(wh::compose::graph_stream_branch{
-        .from = std::move(model_stream_source),
-        .end_nodes = {"prepare_tools", "finalize_history"},
-        .selector_ids = [prepare_tools_id = prepare_tools_id.value(),
-                         finalize_id = finalize_id.value()](wh::compose::graph_stream_reader input,
-                                                            wh::core::run_context &,
-                                                            const wh::compose::graph_call_scope &)
-            -> wh::core::result<std::vector<std::uint32_t>> {
-          auto messages = wh::adk::detail::read_message_stream(std::move(input));
-          if (messages.has_error()) {
-            return wh::core::result<std::vector<std::uint32_t>>::failure(messages.error());
+    wh::compose::value_branch model_branch{};
+    auto add_prepare_case = model_branch.add_case(
+        "prepare_tools",
+        [](const wh::compose::graph_value &output,
+           wh::core::run_context &) -> wh::core::result<bool> {
+          const auto *snapshot = wh::core::any_cast<react_detail::model_output_snapshot>(&output);
+          if (snapshot == nullptr) {
+            return wh::core::result<bool>::failure(wh::core::errc::type_mismatch);
           }
-          for (const auto &message : messages.value()) {
-            for (const auto &part : message.parts) {
-              if (std::holds_alternative<wh::schema::tool_call_part>(part)) {
-                return std::vector<std::uint32_t>{prepare_tools_id};
-              }
-            }
+          return snapshot->has_tool_call;
+        });
+    if (add_prepare_case.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(add_prepare_case.error());
+    }
+    auto add_finalize_case = model_branch.add_case(
+        "finalize_history",
+        [](const wh::compose::graph_value &output,
+           wh::core::run_context &) -> wh::core::result<bool> {
+          const auto *snapshot = wh::core::any_cast<react_detail::model_output_snapshot>(&output);
+          if (snapshot == nullptr) {
+            return wh::core::result<bool>::failure(wh::core::errc::type_mismatch);
           }
-          return std::vector<std::uint32_t>{finalize_id};
-        },
-    });
+          return !snapshot->has_tool_call;
+        });
+    if (add_finalize_case.has_error()) {
+      return wh::core::result<wh::compose::graph>::failure(add_finalize_case.error());
+    }
+    auto model_branch_added = model_branch.apply(lowered, "model_snapshot");
     if (model_branch_added.has_error()) {
       return wh::core::result<wh::compose::graph>::failure(model_branch_added.error());
     }

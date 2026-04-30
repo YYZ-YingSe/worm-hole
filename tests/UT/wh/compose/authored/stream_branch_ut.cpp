@@ -2,6 +2,7 @@
 
 #include "wh/compose/authored/stream_branch.hpp"
 #include "wh/compose/node/passthrough.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 
 TEST_CASE("stream branch validates targets and selector configuration",
           "[UT][wh/compose/authored/"
@@ -16,8 +17,10 @@ TEST_CASE("stream branch validates targets and selector configuration",
   REQUIRE(
       branch
           .set_selector([](wh::compose::graph_stream_reader,
-                           wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
-            return std::vector<std::string>{"left"};
+                           wh::core::run_context &) -> wh::compose::stream_branch_key_sender {
+            return wh::compose::stream_branch_key_sender{
+                wh::core::detail::ready_sender(
+                    wh::core::result<std::vector<std::string>>{std::vector<std::string>{"left"}})};
           })
           .has_value());
   REQUIRE(static_cast<bool>(branch.selector()));

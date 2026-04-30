@@ -131,7 +131,7 @@ TEST_CASE(
       wh::testing::helper::make_text_message(wh::schema::message_role::assistant, "draft"),
   });
   REQUIRE(stream.has_value());
-  auto messages = wh::adk::detail::read_message_stream(std::move(stream).value());
+  auto messages = wh::testing::helper::read_message_stream(std::move(stream).value());
   REQUIRE(messages.has_value());
   REQUIRE(messages->size() == 1U);
 
@@ -140,7 +140,8 @@ TEST_CASE(
           wh::compose::graph_value{9},
       });
   REQUIRE(invalid_stream.has_value());
-  auto invalid_messages = wh::adk::detail::read_message_stream(std::move(invalid_stream).value());
+  auto invalid_messages =
+      wh::testing::helper::read_message_stream(std::move(invalid_stream).value());
   REQUIRE(invalid_messages.has_error());
   REQUIRE(invalid_messages.error() == wh::core::errc::type_mismatch);
 
@@ -270,8 +271,10 @@ TEST_CASE(
       },
   });
   REQUIRE(tool_events.has_value());
-  auto collected_decision = wh::adk::detail::react_detail::collect_apply_tools_decision(
-      std::move(tool_events).value(), authored.tools());
+  wh::compose::graph_value collected_payload =
+      wh::compose::collect_graph_stream_reader(std::move(tool_events).value()).value();
+  auto collected_decision =
+      wh::adk::detail::react_detail::read_tool_event_payload(collected_payload, authored.tools());
   REQUIRE(collected_decision.has_value());
   REQUIRE(collected_decision->direct_return);
   REQUIRE(collected_decision->tool_messages.size() == 1U);

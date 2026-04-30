@@ -54,6 +54,26 @@ namespace wh::testing::helper {
   return text;
 }
 
+[[nodiscard]] inline auto read_message_stream(wh::compose::graph_stream_reader reader)
+    -> wh::core::result<std::vector<wh::schema::message>> {
+  auto values = wh::compose::collect_graph_stream_reader(std::move(reader));
+  if (values.has_error()) {
+    return wh::core::result<std::vector<wh::schema::message>>::failure(values.error());
+  }
+
+  std::vector<wh::schema::message> messages{};
+  messages.reserve(values->size());
+  for (auto &value : *values) {
+    auto *typed = wh::core::any_cast<wh::schema::message>(&value);
+    if (typed == nullptr) {
+      return wh::core::result<std::vector<wh::schema::message>>::failure(
+          wh::core::errc::type_mismatch);
+    }
+    messages.push_back(std::move(*typed));
+  }
+  return messages;
+}
+
 [[nodiscard]] inline auto make_passthrough_graph(const std::string &name)
     -> wh::core::result<wh::compose::graph> {
   auto node = wh::compose::make_lambda_node(
@@ -185,7 +205,7 @@ namespace wh::testing::helper {
 
   const auto read_stream_messages = [](wh::compose::graph_stream_reader input)
       -> wh::core::result<std::vector<wh::schema::message>> {
-    return wh::adk::detail::read_message_stream(std::move(input));
+    return read_message_stream(std::move(input));
   };
 
   const auto make_output_stream =
