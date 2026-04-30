@@ -664,6 +664,12 @@ private:
       const detail::runtime_state::invoke_config &config,
       const wh::core::detail::any_resume_scheduler_t &graph_scheduler) const -> graph_sender;
 
+  [[nodiscard]] auto evaluate_stream_branch_sender_indexed(const std::uint32_t source_node_id,
+                                                           graph_stream_reader source_output,
+                                                           wh::core::run_context &context,
+                                                           const graph_call_scope &call_options) const
+      -> graph_branch_selection_sender;
+
   [[nodiscard]] auto resolve_node_retry_budget(const std::uint32_t node_id) const -> std::size_t;
 
   [[nodiscard]] auto resolve_node_timeout_budget(const std::uint32_t node_id) const

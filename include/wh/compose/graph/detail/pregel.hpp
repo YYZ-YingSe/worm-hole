@@ -108,6 +108,12 @@ public:
                                             std::forward<enqueue_fn_t>(enqueue_fn));
   }
 
+  auto commit_routed_output(const attempt_id attempt,
+                            std::optional<std::vector<std::uint32_t>> selection)
+      -> wh::core::result<void> {
+    return this->state().commit_routed_output(attempt, std::move(selection));
+  }
+
   auto prepare_superstep(const bool advance_step) -> wh::core::result<void> {
     auto &session = this->session();
     auto &invoke = session.invoke_state();
@@ -194,7 +200,7 @@ public:
       }
 
       while (!this->terminal_pending() && prepared_head_ < prepared_actions_.size() &&
-             this->active_child_count() < this->session().max_parallel_nodes()) {
+             this->budgeted_child_count() < this->session().max_parallel_nodes()) {
         auto started = start_prepared_action(std::move(prepared_actions_[prepared_head_++]));
         if (started.has_error()) {
           this->request_terminal_status(wh::core::result<graph_value>::failure(started.error()));

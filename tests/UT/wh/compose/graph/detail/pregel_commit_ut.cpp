@@ -108,3 +108,67 @@ TEST_CASE(
   REQUIRE_FALSE(status->report.node_run_error.has_value());
   REQUIRE_FALSE(status->report.graph_run_error.has_value());
 }
+
+TEST_CASE(
+    "pregel commit path surfaces canceled when post-node interrupt hook fires on stream output",
+    "[UT][wh/compose/graph/detail/"
+    "pregel_commit.hpp][pregel_runtime::commit_node_output][condition][branch][stream][error]") {
+  auto graph = wh::testing::helper::make_runtime_stream_identity_graph(
+      wh::compose::graph_runtime_mode::pregel, "pregel_commit_stream_interrupt");
+  REQUIRE(graph.has_value());
+
+  auto input = wh::compose::make_single_value_stream_reader(31);
+  REQUIRE(input.has_value());
+
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::stream(std::move(input).value());
+  request.controls.interrupt.post_hook =
+      [](std::string_view node_key, const wh::compose::graph_value &,
+         wh::core::run_context &) -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
+    return std::optional<wh::core::interrupt_signal>{
+        wh::compose::make_interrupt_signal(std::string{"interrupt-"} + std::string{node_key},
+                                           wh::core::make_address({"graph", "interrupt"}))};
+  };
+
+  wh::core::run_context context{};
+  auto waited = stdexec::sync_wait(graph->invoke(context, std::move(request)));
+  REQUIRE(waited.has_value());
+  auto status = std::get<0>(std::move(*waited));
+  REQUIRE(status.has_value());
+  REQUIRE(status->output_status.has_error());
+  REQUIRE(status->output_status.error() == wh::core::errc::canceled);
+  REQUIRE(context.interrupt_info.has_value());
+}
+
+TEST_CASE(
+    "pregel commit path propagates post-node interrupt hook failure on stream output",
+    "[UT][wh/compose/graph/detail/"
+    "pregel_commit.hpp][pregel_runtime::commit_node_output][condition][branch][stream][boundary]"
+    "[error]") {
+  auto graph = wh::testing::helper::make_runtime_stream_identity_graph(
+      wh::compose::graph_runtime_mode::pregel, "pregel_commit_stream_hook_error");
+  REQUIRE(graph.has_value());
+
+  auto input = wh::compose::make_single_value_stream_reader(31);
+  REQUIRE(input.has_value());
+
+  wh::compose::graph_invoke_request request{};
+  request.input = wh::compose::graph_input::stream(std::move(input).value());
+  request.controls.interrupt.post_hook =
+      [](std::string_view, const wh::compose::graph_value &,
+         wh::core::run_context &) -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
+    return wh::core::result<std::optional<wh::core::interrupt_signal>>::failure(
+        wh::core::errc::timeout);
+  };
+
+  wh::core::run_context context{};
+  auto waited = stdexec::sync_wait(graph->invoke(context, std::move(request)));
+  REQUIRE(waited.has_value());
+  auto status = std::get<0>(std::move(*waited));
+  REQUIRE(status.has_value());
+  REQUIRE(status->output_status.has_error());
+  REQUIRE(status->output_status.error() == wh::core::errc::timeout);
+  REQUIRE_FALSE(context.interrupt_info.has_value());
+  REQUIRE_FALSE(status->report.node_run_error.has_value());
+  REQUIRE_FALSE(status->report.graph_run_error.has_value());
+}

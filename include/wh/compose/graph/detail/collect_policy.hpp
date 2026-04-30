@@ -2,6 +2,7 @@
 #pragma once
 
 #include "wh/compose/graph/detail/child_pump.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose::detail {
 

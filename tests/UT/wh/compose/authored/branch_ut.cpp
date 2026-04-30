@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/authored/branch.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 
 TEST_CASE("compose authored branch facade exposes both branch builders",
           "[UT][wh/compose/authored/branch.hpp][stream_branch][boundary]") {
@@ -50,8 +51,10 @@ TEST_CASE("stream branch validates targets and selector installation",
 
   auto valid_selector = branch.set_selector(
       [](wh::compose::graph_stream_reader,
-         wh::core::run_context &) -> wh::core::result<std::vector<std::string>> {
-        return std::vector<std::string>{"left"};
+         wh::core::run_context &) -> wh::compose::stream_branch_key_sender {
+        return wh::compose::stream_branch_key_sender{
+            wh::core::detail::ready_sender(
+                wh::core::result<std::vector<std::string>>{std::vector<std::string>{"left"}})};
       });
   REQUIRE(valid_selector.has_value());
   REQUIRE(static_cast<bool>(branch.selector()));

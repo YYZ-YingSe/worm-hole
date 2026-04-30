@@ -18,9 +18,11 @@
 namespace wh::compose {
 
 /// Stream-branch selector that returns selected destination node keys.
+using stream_branch_key_sender =
+    wh::core::detail::result_sender<wh::core::result<std::vector<std::string>>>;
 using stream_branch_selector =
-    wh::core::callback_function<wh::core::result<std::vector<std::string>>(
-        graph_stream_reader, wh::core::run_context &) const>;
+    wh::core::callback_function<stream_branch_key_sender(graph_stream_reader,
+                                                         wh::core::run_context &) const>;
 
 /// Conditional stream-routing builder that selects one or more target nodes.
 class stream_branch {
@@ -106,24 +108,28 @@ private:
     graph_stream_branch_selector_ids selector_ids{nullptr};
     stream_branch_selector stored_selector{std::forward<selector_t>(selector)};
     if (stored_selector) {
-      selector_ids = [selector_fn = std::move(stored_selector), target_ids = std::move(target_ids)](
-                         graph_stream_reader input, wh::core::run_context &context,
-                         const graph_call_scope &) -> wh::core::result<std::vector<std::uint32_t>> {
-        auto selected_keys = selector_fn(std::move(input), context);
-        if (selected_keys.has_error()) {
-          return wh::core::result<std::vector<std::uint32_t>>::failure(selected_keys.error());
-        }
-        std::vector<std::uint32_t> selected{};
-        selected.reserve(selected_keys.value().size());
-        for (const auto &key : selected_keys.value()) {
-          const auto iter = target_ids.find(key);
-          if (iter == target_ids.end()) {
-            return wh::core::result<std::vector<std::uint32_t>>::failure(
-                wh::core::errc::contract_violation);
-          }
-          selected.push_back(iter->second);
-        }
-        return selected;
+      selector_ids =
+          [selector_fn = std::move(stored_selector),
+           target_ids = std::move(target_ids)](graph_stream_reader input,
+                                               wh::core::run_context &context,
+                                               const graph_call_scope &) -> graph_branch_ids_sender {
+        return graph_branch_ids_sender{
+            wh::core::detail::map_result_sender<wh::core::result<std::vector<std::uint32_t>>>(
+                selector_fn(std::move(input), context),
+                [target_ids](std::vector<std::string> selected_keys) mutable
+                    -> wh::core::result<std::vector<std::uint32_t>> {
+                  std::vector<std::uint32_t> selected{};
+                  selected.reserve(selected_keys.size());
+                  for (const auto &key : selected_keys) {
+                    const auto iter = target_ids.find(key);
+                    if (iter == target_ids.end()) {
+                      return wh::core::result<std::vector<std::uint32_t>>::failure(
+                          wh::core::errc::contract_violation);
+                    }
+                    selected.push_back(iter->second);
+                  }
+                  return selected;
+                })};
       };
     }
 

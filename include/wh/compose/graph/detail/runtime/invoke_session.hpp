@@ -317,6 +317,41 @@ protected:
     return owner_->resolve_node_sync_dispatch(node_id);
   }
 
+  [[nodiscard]] auto evaluate_stream_branch_sender(const std::uint32_t source_node_id,
+                                                   graph_stream_reader source_output) const
+      -> graph_branch_selection_sender {
+    return owner_->evaluate_stream_branch_sender_indexed(
+        source_node_id, std::move(source_output), context_, invoke_.bound_call_scope);
+  }
+
+  [[nodiscard]] auto evaluate_post_interrupt(const graph_state_cause &cause,
+                                             const graph_value &payload) const
+      -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
+    return owner_->evaluate_interrupt_hook(context_, invoke_.config.interrupt_post_hook,
+                                           cause.node_key, payload);
+  }
+
+  [[nodiscard]] auto evaluate_post_interrupt_stream(const graph_state_cause &cause,
+                                                    graph_stream_reader &payload) const
+      -> wh::core::result<std::optional<wh::core::interrupt_signal>> {
+    if (!invoke_.config.interrupt_post_hook) {
+      return std::optional<wh::core::interrupt_signal>{};
+    }
+    auto copied = detail::fork_graph_reader(payload);
+    if (copied.has_error()) {
+      return wh::core::result<std::optional<wh::core::interrupt_signal>>::failure(copied.error());
+    }
+    return owner_->evaluate_interrupt_hook(context_, invoke_.config.interrupt_post_hook,
+                                           cause.node_key, graph_value{std::move(copied).value()});
+  }
+
+  auto apply_post_interrupt_signal(const std::uint32_t node_id, const graph_state_cause &cause,
+                                   wh::core::interrupt_signal signal) -> void {
+    context_.interrupt_info = wh::compose::to_interrupt_context(std::move(signal));
+    emit_debug(graph_debug_stream_event::decision_kind::interrupt_hit, node_id, cause.step);
+    request_freeze(false);
+  }
+
   [[nodiscard]] auto node_key(const std::uint32_t node_id) const -> const std::string & {
     wh_precondition(node_id < compiled_graph_index().id_to_key.size());
     return compiled_graph_index().id_to_key[node_id];

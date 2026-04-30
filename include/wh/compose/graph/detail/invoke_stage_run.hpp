@@ -68,11 +68,17 @@ protected:
 
   auto launch_input_stage(const attempt_id attempt) -> wh::core::result<void> {
     auto sender = static_cast<derived_t &>(*this).build_input_sender(attempt);
-    return this->start_child(std::move(sender), attempt);
+    return this->start_child(std::move(sender), attempt, true);
   }
 
   auto launch_state_stage(const attempt_id attempt, graph_sender sender) -> wh::core::result<void> {
-    return this->start_child(std::move(sender), attempt);
+    return this->start_child(std::move(sender), attempt, true);
+  }
+
+  auto launch_route_stage(const attempt_id attempt, graph_sender sender) -> wh::core::result<void> {
+    auto &attempt_slot = session().slot(attempt);
+    attempt_slot.current_stage = stage::route;
+    return this->start_child(std::move(sender), attempt, false);
   }
 
   auto launch_freeze_stage() -> wh::core::result<void> {
@@ -82,7 +88,8 @@ protected:
     attempt_slot.current_stage = stage::freeze;
     attempt_slot.node_id = attempt.slot;
     return this->start_child(
-        static_cast<derived_t &>(*this).build_freeze_sender(session().freeze_external()), attempt);
+        static_cast<derived_t &>(*this).build_freeze_sender(session().freeze_external()), attempt,
+        false);
   }
 
   auto launch_persist_stage() -> wh::core::result<void> {
@@ -94,7 +101,7 @@ protected:
     auto &attempt_slot = session().slot(attempt);
     attempt_slot.current_stage = stage::persist;
     attempt_slot.node_id = attempt.slot;
-    return this->start_child(state().make_persist_sender(), attempt);
+    return this->start_child(state().make_persist_sender(), attempt, false);
   }
 
   [[nodiscard]] auto terminal_transition_pending() const noexcept -> bool {
@@ -199,7 +206,7 @@ protected:
                                      *attempt_slot.node, live_input, session().context_,
                                      session().invoke_state().bound_call_scope,
                                      std::addressof(session()), attempt_slot),
-                                 attempt);
+                                 attempt, true);
       }
       auto executed = invoke_session::run_sync_node_execution(
           *attempt_slot.node, live_input, session().context_,
@@ -210,7 +217,67 @@ protected:
                                  *attempt_slot.node, live_input, session().context_,
                                  session().invoke_state().bound_call_scope,
                                  std::addressof(session()), attempt_slot),
-                             attempt);
+                             attempt, true);
+  }
+
+  [[nodiscard]] auto route_branch_selection_sender(const std::uint32_t node_id,
+                                                   graph_stream_reader stream_output) const
+      -> graph_sender {
+    return detail::bridge_graph_sender(
+        session().evaluate_stream_branch_sender(node_id, std::move(stream_output)) |
+        stdexec::then([](wh::core::result<std::optional<std::vector<std::uint32_t>>> selection)
+                          -> wh::core::result<graph_value> {
+          if (selection.has_error()) {
+            return wh::core::result<graph_value>::failure(selection.error());
+          }
+          return graph_value{std::move(selection).value()};
+        }));
+  }
+
+  auto begin_stream_route_from_output(const attempt_id attempt, graph_value node_output)
+      -> wh::core::result<void> {
+    auto &attempt_slot = session().slot(attempt);
+    auto *stream_output = wh::core::any_cast<graph_stream_reader>(&node_output);
+    if (stream_output == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::contract_violation);
+    }
+    auto routed_input = detail::fork_graph_reader(*stream_output);
+    if (routed_input.has_error()) {
+      return wh::core::result<void>::failure(routed_input.error());
+    }
+    attempt_slot.route = route_node_output_state{.node_output = std::move(node_output)};
+    return launch_route_stage(attempt, route_branch_selection_sender(attempt_slot.node_id,
+                                                                     std::move(routed_input).value()));
+  }
+
+  auto begin_start_stream_route() -> wh::core::result<void> {
+    auto &invoke = session().invoke_state();
+    if (!invoke.pending_start_entry_output.has_value()) {
+      return {};
+    }
+    const auto start_node_id = session().compiled_graph_index().start_id;
+    auto attempt = session().control_attempt_id();
+    session().release_attempt(attempt);
+    auto &attempt_slot = session().slot(attempt);
+    attempt_slot.node_id = start_node_id;
+    attempt_slot.cause = graph_state_cause{
+        .run_id = invoke.run_id,
+        .step = 0U,
+        .node_key = std::string{graph_start_node_key},
+    };
+    attempt_slot.route = route_start_entry_state{
+        .retain_input = invoke.retain_inputs,
+    };
+    auto *stream_output = wh::core::any_cast<graph_stream_reader>(&*invoke.pending_start_entry_output);
+    if (stream_output == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::type_mismatch);
+    }
+    auto routed_input = detail::fork_graph_reader(*stream_output);
+    if (routed_input.has_error()) {
+      return wh::core::result<void>::failure(routed_input.error());
+    }
+    return launch_route_stage(attempt, route_branch_selection_sender(start_node_id,
+                                                                     std::move(routed_input).value()));
   }
 
   auto launch_node_from_retained_input(const attempt_id attempt) -> wh::core::result<void> {
@@ -307,10 +374,49 @@ protected:
                                                                     : resolved.error()));
       return {};
     }
+    auto output = std::move(resolved).value();
+    auto &attempt_slot = session().slot(attempt);
+    if (attempt_slot.node != nullptr && attempt_slot.node->meta.output_contract == node_contract::stream) {
+      return begin_stream_route_from_output(attempt, std::move(output));
+    }
     return static_cast<derived_t &>(*this).commit_node_output(
-        attempt, std::move(resolved).value(), [this](const std::uint32_t node_id) {
+        attempt, std::move(output), [this](const std::uint32_t node_id) {
           static_cast<derived_t &>(*this).enqueue_committed_node(node_id);
         });
+  }
+
+  auto settle_route(const attempt_id attempt, wh::core::result<graph_value> &&resolved)
+      -> wh::core::result<void> {
+    if (resolved.has_error()) {
+      auto &attempt_slot = session().slot(attempt);
+      if (attempt_slot.node != nullptr) {
+        session().publish_node_error(session().runtime_node_path(attempt_slot.node_id),
+                                     attempt_slot.node_id, resolved.error(),
+                                     "stream branch selector failed");
+        session().state_table_.update(attempt_slot.node_id, graph_node_lifecycle_state::failed, 1U,
+                                      resolved.error());
+        session().append_transition(attempt_slot.node_id,
+                                    graph_state_transition_event{
+                                        .kind = graph_state_transition_kind::node_fail,
+                                        .cause = attempt_slot.cause,
+                                        .lifecycle = graph_node_lifecycle_state::failed,
+                                    });
+      }
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
+      request_terminal_status(wh::core::result<graph_value>::failure(resolved.error()));
+      return {};
+    }
+
+    auto *typed = wh::core::any_cast<std::optional<std::vector<std::uint32_t>>>(&resolved.value());
+    if (typed == nullptr) {
+      state_->try_persist_checkpoint();
+      session().release_attempt(attempt);
+      request_terminal_status(
+          wh::core::result<graph_value>::failure(wh::core::errc::type_mismatch));
+      return {};
+    }
+    return static_cast<derived_t &>(*this).commit_routed_output(attempt, std::move(*typed));
   }
 
   auto settle_node(const attempt_id attempt, wh::core::result<graph_value> &&executed)
@@ -360,6 +466,9 @@ protected:
     auto post_sender = std::move(post).value();
     if (post_sender.has_value()) {
       return launch_state_stage(attempt, std::move(*post_sender));
+    }
+    if (attempt_slot.node->meta.output_contract == node_contract::stream) {
+      return begin_stream_route_from_output(attempt, std::move(output));
     }
     return static_cast<derived_t &>(*this).commit_node_output(
         attempt, std::move(output), [this](const std::uint32_t node_id) {
@@ -457,6 +566,9 @@ protected:
     if (current_stage == stage::post_state) {
       return settle_post_state(attempt, std::move(executed));
     }
+    if (current_stage == stage::route) {
+      return settle_route(attempt, std::move(executed));
+    }
     if (current_stage == stage::freeze) {
       session().release_attempt(attempt);
       if (executed.has_error()) {
@@ -503,6 +615,16 @@ protected:
 
     if (terminal_transition_pending()) {
       advance_terminal_transition();
+      return false;
+    }
+
+    if (session().invoke_state().pending_start_entry_output.has_value()) {
+      if (this->active_child_count() == 0U) {
+        auto started = begin_start_stream_route();
+        if (started.has_error()) {
+          this->enter_terminal(wh::core::result<graph_value>::failure(started.error()));
+        }
+      }
       return false;
     }
 

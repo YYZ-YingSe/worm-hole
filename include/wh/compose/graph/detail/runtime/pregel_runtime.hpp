@@ -35,6 +35,10 @@ public:
   auto commit_node_output(attempt_id attempt, graph_value node_output, enqueue_fn_t &&enqueue_fn)
       -> wh::core::result<void>;
 
+  auto commit_routed_output(attempt_id attempt,
+                            std::optional<std::vector<std::uint32_t>> selection)
+      -> wh::core::result<void>;
+
   auto commit_skip_action(const pregel_action &action) -> wh::core::result<void>;
 
   [[nodiscard]] auto take_ready_action(const std::uint32_t node_id, const std::size_t step)

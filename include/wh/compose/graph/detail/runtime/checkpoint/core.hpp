@@ -676,36 +676,42 @@ apply_stream_codecs_for_save_async(checkpoint_state checkpoint, wh::core::run_co
         wh::core::result<graph_value>{wh::core::any(std::move(save_stage.checkpoint))});
   }
 
-  return wh::compose::detail::bridge_graph_sender(wh::compose::detail::make_child_batch_sender(
-      std::move(senders), std::move(save_stage),
+  auto consume_saved_stream =
       [](checkpoint_stream_save_stage &current_stage, const std::size_t target_index,
          wh::core::result<graph_value> current) -> wh::core::result<void> {
-        if (target_index >= current_stage.targets.size()) {
-          return wh::core::result<void>::failure(wh::core::errc::internal_error);
-        }
-        const auto &target = current_stage.targets[target_index];
-        auto *payload = resolve_slot_payload(current_stage, target);
-        if (payload == nullptr) {
-          return wh::core::result<void>::failure(wh::core::errc::not_found);
-        }
-        if (current.has_error()) {
-          if (target.tolerate_channel_closed && current.error() == wh::core::errc::channel_closed) {
-            *payload = wh::core::any(checkpoint_stream_value_payload{
-                .value = wh::core::any(std::vector<graph_value>{}),
-            });
-            return {};
-          }
-          return wh::core::result<void>::failure(current.error());
-        }
+    if (target_index >= current_stage.targets.size()) {
+      return wh::core::result<void>::failure(wh::core::errc::internal_error);
+    }
+    const auto &target = current_stage.targets[target_index];
+    auto *payload = resolve_slot_payload(current_stage, target);
+    if (payload == nullptr) {
+      return wh::core::result<void>::failure(wh::core::errc::not_found);
+    }
+    if (current.has_error()) {
+      if (target.tolerate_channel_closed && current.error() == wh::core::errc::channel_closed) {
         *payload = wh::core::any(checkpoint_stream_value_payload{
-            .value = std::move(current).value(),
+            .value = wh::core::any(std::vector<graph_value>{}),
         });
         return {};
-      },
+      }
+      return wh::core::result<void>::failure(current.error());
+    }
+    *payload = wh::core::any(checkpoint_stream_value_payload{
+        .value = std::move(current).value(),
+    });
+    return {};
+  };
+
+  auto finish_saved_stream =
       [](checkpoint_stream_save_stage &&current_stage) -> wh::core::result<graph_value> {
-        return wh::core::any(std::move(current_stage.checkpoint));
-      },
-      work_scheduler));
+    return wh::core::any(std::move(current_stage.checkpoint));
+  };
+
+  return wh::compose::detail::bridge_graph_sender(
+      wh::compose::detail::make_child_batch_sender(std::move(senders), std::move(save_stage),
+                                                   std::move(consume_saved_stream),
+                                                   std::move(finish_saved_stream),
+                                                   work_scheduler));
 }
 
 inline auto

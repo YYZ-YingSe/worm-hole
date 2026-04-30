@@ -14,7 +14,7 @@
 #include <exec/trampoline_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
-#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/node/execution.hpp"
 #include "wh/core/compiler.hpp"
 #include "wh/core/error_domain.hpp"
 #include "wh/core/result.hpp"

@@ -121,6 +121,12 @@ public:
                                             std::forward<enqueue_fn_t>(enqueue_fn));
   }
 
+  auto commit_routed_output(const attempt_id attempt,
+                            std::optional<std::vector<std::uint32_t>> selection)
+      -> wh::core::result<void> {
+    return this->state().commit_routed_output(attempt, std::move(selection));
+  }
+
   auto resume() noexcept -> void {
     while (true) {
       if (!this->begin_resume_iteration()) {
@@ -135,7 +141,7 @@ public:
 
       bool no_ready = false;
       while (!this->terminal_pending() &&
-             this->active_child_count() < this->session().max_parallel_nodes()) {
+             this->budgeted_child_count() < this->session().max_parallel_nodes()) {
         auto action = this->state().take_ready_action();
         if (action.kind == ready_action_kind::no_ready) {
           no_ready = true;

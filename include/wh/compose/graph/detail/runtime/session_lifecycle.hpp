@@ -497,6 +497,14 @@ inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(graph
       start_output_reader = std::move(*reader);
     }
 
+    const auto *branch =
+        owner_->core().compiled_execution_index_.index.stream_branch_for_source(start_node_id);
+    if (branch != nullptr && branch->selector_ids) {
+      invoke.pending_start_entry_output = graph_value{std::move(start_output_reader)};
+      invoke.start_entry_selection.reset();
+      return {};
+    }
+
     start_branch = owner_->evaluate_stream_branch_indexed(start_node_id, start_output_reader,
                                                           context_, invoke.bound_call_scope);
     if (start_branch.has_error()) {
@@ -524,6 +532,7 @@ inline auto detail::invoke_runtime::invoke_session::initialize_start_entry(graph
   invoke.start_entry_selection = std::move(start_branch).value();
   return {};
 }
+
 
 inline auto detail::invoke_runtime::invoke_session::capture_common_checkpoint_state()
     -> wh::core::result<checkpoint_state> {

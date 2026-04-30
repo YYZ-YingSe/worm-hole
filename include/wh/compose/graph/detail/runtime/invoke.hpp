@@ -78,6 +78,8 @@ struct invoke_state {
   graph_call_scope bound_call_scope{};
   /// Precomputed start-node branch selection.
   std::optional<std::vector<std::uint32_t>> start_entry_selection{};
+  /// Retained start output used while async stream routing is still resolving.
+  std::optional<graph_value> pending_start_entry_output{};
   /// True once terminal/checkpoint paths requested one persist stage.
   bool persist_requested{false};
   /// True while one persist stage is currently running.
@@ -94,6 +96,7 @@ enum class stage : std::uint8_t {
   prepare,
   node,
   post_state,
+  route,
   freeze,
   persist,
 };
@@ -115,6 +118,16 @@ struct attempt_input {
   std::optional<input_runtime::reader_lowering> lowering{};
 };
 
+struct route_start_entry_state {
+  bool retain_input{false};
+};
+
+struct route_node_output_state {
+  graph_value node_output{};
+};
+
+using route_payload = std::variant<std::monostate, route_start_entry_state, route_node_output_state>;
+
 struct attempt_slot {
   stage current_stage{stage::input};
   std::uint32_t node_id{0U};
@@ -125,6 +138,7 @@ struct attempt_slot {
   std::size_t attempt{0U};
   std::optional<std::chrono::milliseconds> timeout_budget{};
   std::optional<attempt_input> input{};
+  std::optional<route_payload> route{};
   node_runtime runtime{};
   runtime_state::node_scope node_scope{};
   process_runtime::scoped_node_local_process_state node_local_scope{};

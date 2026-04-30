@@ -190,6 +190,7 @@ protected:
 
     alignas(child_op_t) std::byte op_storage_[sizeof(child_op_t)];
     std::optional<wh::core::result<graph_value>> completion{};
+    bool budgeted{true};
     bool engaged_{false};
   };
 
@@ -301,6 +302,10 @@ protected:
     return active_child_count_;
   }
 
+  [[nodiscard]] auto budgeted_child_count() const noexcept -> std::size_t {
+    return budgeted_child_count_;
+  }
+
   [[nodiscard]] auto terminal_pending() const noexcept -> bool {
     return terminal_status_.has_value();
   }
@@ -336,7 +341,8 @@ protected:
 
   auto resume_turn_idle() noexcept -> void { maybe_complete(); }
 
-  auto start_child(graph_sender sender, const attempt_id attempt) -> wh::core::result<void> {
+  auto start_child(graph_sender sender, const attempt_id attempt,
+                   const bool budgeted = true) -> wh::core::result<void> {
     wh_precondition(attempt.has_value());
     wh_precondition(attempt.slot < child_state_count_);
 
@@ -349,7 +355,11 @@ protected:
                         .base = this,
                         .attempt = attempt,
                     });
+      child.budgeted = budgeted;
       ++active_child_count_;
+      if (budgeted) {
+        ++budgeted_child_count_;
+      }
       count_.fetch_add(1U, std::memory_order_relaxed);
       stdexec::start(child.get());
       return {};
@@ -450,8 +460,13 @@ private:
     auto &child = child_states_[slot_id];
     wh_invariant(child.engaged_);
     wh_invariant(active_child_count_ != 0U);
+    const auto budgeted = child.budgeted;
     child.reset();
     --active_child_count_;
+    if (budgeted) {
+      wh_invariant(budgeted_child_count_ != 0U);
+      --budgeted_child_count_;
+    }
   }
 
   auto publish_stop_request() noexcept -> void {
@@ -499,6 +514,7 @@ private:
     }
     ready_children_.reset(0U);
     active_child_count_ = 0U;
+    budgeted_child_count_ = 0U;
     if (join_op_engaged_) {
       join_op()->~join_op_t();
       join_op_engaged_ = false;
@@ -557,6 +573,7 @@ protected:
   std::size_t child_state_count_{0U};
   wh::core::detail::slot_ready_list ready_children_{};
   std::size_t active_child_count_{0U};
+  std::size_t budgeted_child_count_{0U};
   alignas(join_op_t) std::byte join_op_storage_[sizeof(join_op_t)];
   bool join_op_engaged_{false};
   graph_scheduler_t graph_scheduler_;
