@@ -79,6 +79,7 @@ inline auto detail::invoke_runtime::start_initialized_runtime(runtime_t runtime)
     }
     const auto error = *session.init_error_;
     auto owned_runtime = std::make_shared<runtime_t>(std::move(runtime));
+    owned_runtime->rebind_moved_runtime_storage();
     return detail::bridge_graph_sender(
         owned_runtime->make_persist_sender() |
         stdexec::let_value(
@@ -95,6 +96,7 @@ inline auto detail::invoke_runtime::start_initialized_runtime(runtime_t runtime)
     }
     const auto error = *session.init_error_;
     auto owned_runtime = std::make_shared<runtime_t>(std::move(runtime));
+    owned_runtime->rebind_moved_runtime_storage();
     return detail::bridge_graph_sender(
         owned_runtime->make_persist_sender() |
         stdexec::let_value(
