@@ -14,7 +14,9 @@
 #include "helper/compose_graph_test_utils.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace {
 

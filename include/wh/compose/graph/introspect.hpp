@@ -5,7 +5,7 @@
 #include <string>
 
 #include "wh/compose/graph/error.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/path.hpp"
 #include "wh/compose/types.hpp"
 
 namespace wh::compose {

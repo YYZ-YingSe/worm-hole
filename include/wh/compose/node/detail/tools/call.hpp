@@ -8,9 +8,9 @@
 
 #include "wh/compose/node/detail/tools/state.hpp"
 #include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 #include "wh/core/stdexec/detail/receiver_stop_bridge.hpp"
-#include "wh/schema/stream.hpp"
 
 namespace wh::compose {
 namespace detail {

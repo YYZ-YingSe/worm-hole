@@ -2,7 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/pregel.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE("pregel aliases the fixed pregel mode facade",
           "[UT][wh/compose/graph/pregel.hpp][pregel][condition][boundary]") {

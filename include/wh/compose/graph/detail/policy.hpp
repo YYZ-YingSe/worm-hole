@@ -2,7 +2,7 @@
 // helpers.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose {
 inline auto graph::resolve_node_retry_budget(const std::uint32_t node_id) const -> std::size_t {

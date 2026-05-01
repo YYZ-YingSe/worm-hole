@@ -19,7 +19,11 @@
 #include "wh/core/error.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/map_result_sender.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
+#include "wh/core/stdexec/sender_meta.hpp"
 
 namespace wh::compose {
 

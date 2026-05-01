@@ -3,7 +3,7 @@
 
 #include "wh/compose/graph/detail/dag.hpp"
 #include "wh/compose/graph/detail/pregel.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose::detail::invoke_runtime {
 

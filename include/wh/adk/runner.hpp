@@ -14,13 +14,16 @@
 
 #include "wh/adk/event_stream.hpp"
 #include "wh/compose/graph/invoke_types.hpp"
+#include "wh/compose/node/execution.hpp"
 #include "wh/compose/runtime/resume.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
+#include "wh/core/stdexec/variant_sender.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 #include "wh/schema/stream/algorithm.hpp"
 
 namespace wh::adk {

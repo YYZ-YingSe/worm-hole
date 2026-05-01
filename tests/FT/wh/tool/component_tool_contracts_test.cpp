@@ -11,6 +11,7 @@
 
 #include "helper/component_contract_support.hpp"
 #include "helper/test_thread_wait.hpp"
+#include "wh/schema/stream/pipe.hpp"
 #include "wh/tool/catalog.hpp"
 #include "wh/tool/interrupt.hpp"
 #include "wh/tool/tool.hpp"

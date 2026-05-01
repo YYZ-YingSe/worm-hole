@@ -14,12 +14,13 @@
 #include "wh/agent/agent.hpp"
 #include "wh/agent/chat.hpp"
 #include "wh/compose/authored/chain.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/stream.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/map_result_sender.hpp"
 #include "wh/model/chat_model.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::adk::detail {
 

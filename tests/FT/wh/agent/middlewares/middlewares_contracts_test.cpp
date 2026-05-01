@@ -14,7 +14,7 @@
 #include "wh/core/any.hpp"
 #include "wh/core/error.hpp"
 #include "wh/model/chat_model.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace {
 

@@ -8,7 +8,7 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/component_contract_support.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 #include "wh/prompt/simple_chat_template.hpp"
 
 namespace {

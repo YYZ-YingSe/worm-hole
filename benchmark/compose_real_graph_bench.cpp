@@ -1,30 +1,68 @@
 #include <algorithm>
 #include <array>
+#include <coroutine>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
+#include <typeinfo>
 #include <utility>
+#include <unordered_map>
+#include <variant>
 #include <vector>
 
+#include <benchmark/benchmark.h>
+#include <exec/start_detached.hpp>
 #include <exec/static_thread_pool.hpp>
 #include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/add_node_options.hpp"
+#include "wh/compose/graph/compile_options.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/detail/invoke.hpp"
+#include "wh/compose/graph/detail/start.hpp"
+#include "wh/compose/graph/error.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
+#include "wh/compose/graph/policy.hpp"
+#include "wh/compose/graph/stream.hpp"
+#include "wh/compose/node/compiled.hpp"
+#include "wh/compose/node/execution.hpp"
+#include "wh/compose/node/tools_builder.hpp"
+#include "wh/compose/node/tools_contract.hpp"
+#include "wh/compose/types.hpp"
+#include "wh/core/any.hpp"
+#include "wh/core/any/basic_any.hpp"
+#include "wh/core/callback/types.hpp"
+#include "wh/core/component/types.hpp"
+#include "wh/core/error.hpp"
+#include "wh/core/function/function.hpp"
+#include "wh/core/result.hpp"
+#include "wh/core/run_context.hpp"
 #include "wh/core/stdexec/concurrent_sender_vector.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
 #include "wh/document/document.hpp"
 #include "wh/embedding/embedding.hpp"
 #include "wh/indexer/indexer.hpp"
 #include "wh/model/chat_model.hpp"
+#include "wh/prompt/chat_template.hpp"
 #include "wh/prompt/simple_chat_template.hpp"
+#include "wh/prompt/template.hpp"
 #include "wh/retriever/retriever.hpp"
-#include "wh/schema/message.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/document/types.hpp"
+#include "wh/schema/message/types.hpp"
+#include "wh/schema/stream/core/types.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
+#include "wh/schema/tool/types.hpp"
+#include "wh/tool/call_scope.hpp"
 #include "wh/tool/tool.hpp"
-
-#include <benchmark/benchmark.h>
 
 namespace {
 
@@ -186,7 +224,8 @@ public:
     response.meta.usage.completion_tokens = 1;
     response.meta.usage.total_tokens =
         response.meta.usage.prompt_tokens + response.meta.usage.completion_tokens;
-    return wh::model::chat_response{std::move(response), response.meta};
+    auto meta = response.meta;
+    return wh::model::chat_response{std::move(response), std::move(meta)};
   }
 
   [[nodiscard]] auto stream_sender(wh::model::chat_request request) const {

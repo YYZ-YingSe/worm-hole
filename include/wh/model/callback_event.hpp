@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <string>
 
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::model {
 

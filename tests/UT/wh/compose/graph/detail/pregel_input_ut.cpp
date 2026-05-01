@@ -5,10 +5,12 @@
 
 #include "helper/compose_graph_runtime_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/pregel.hpp"
 #include "wh/compose/graph/detail/pregel_entry.hpp"
 #include "wh/compose/graph/detail/pregel_input.hpp"
 #include "wh/compose/graph/detail/pregel_loop.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE("pregel input aggregates predecessor values into one keyed payload per superstep",
           "[UT][wh/compose/graph/detail/"

@@ -26,13 +26,16 @@
 #include "wh/agent/supervisor.hpp"
 #include "wh/agent/swarm.hpp"
 #include "wh/compose/authored/value_branch.hpp"
-#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/add_node_options.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/lambda.hpp"
 #include "wh/compose/node/subgraph.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::adk::detail {
 

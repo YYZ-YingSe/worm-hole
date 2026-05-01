@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/passthrough.hpp"
 
 namespace {
 

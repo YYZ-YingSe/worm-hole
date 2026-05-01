@@ -12,9 +12,10 @@
 
 #include "helper/component_contract_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/path.hpp"
+#include "wh/compose/node/tools.hpp"
 #include "wh/compose/node/detail/tools/tool_event_stream_reader.hpp"
-#include "wh/schema/tool.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace {
 

@@ -10,7 +10,9 @@
 
 #include "helper/compose_graph_runtime_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
-#include "wh/compose/runtime.hpp"
+#include "wh/compose/runtime/checkpoint.hpp"
+#include "wh/compose/runtime/interrupt.hpp"
+#include "wh/compose/runtime/state.hpp"
 #include "wh/core/any.hpp"
 
 namespace {

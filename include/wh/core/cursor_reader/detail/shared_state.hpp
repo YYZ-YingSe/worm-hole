@@ -19,7 +19,6 @@
 #include "wh/core/error.hpp"
 #include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
 
 namespace wh::core::cursor_reader_detail {
 

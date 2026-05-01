@@ -52,7 +52,7 @@
 #include "wh/compose/graph/restore_shape.hpp"
 #include "wh/compose/graph/snapshot.hpp"
 #include "wh/compose/graph/stream.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/authored.hpp"
 #include "wh/compose/reduce/values_merge.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
 #include "wh/compose/runtime/interrupt.hpp"
@@ -63,7 +63,11 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/map_result_sender.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
+#include "wh/core/stdexec/sender_meta.hpp"
 #include "wh/core/type_traits.hpp"
 
 namespace wh::compose {
@@ -435,7 +439,9 @@ private:
                                  const std::string_view message) const -> void;
 
   [[nodiscard]] static constexpr auto
-  should_wrap_as_node_run_error(const wh::core::error_code code) noexcept -> bool;
+  should_wrap_as_node_run_error(const wh::core::error_code code) noexcept -> bool {
+    return code != wh::core::errc::canceled;
+  }
 
   [[nodiscard]] auto make_node_execution_address(const node_path &runtime_path) const
       -> wh::core::address;

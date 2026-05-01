@@ -20,12 +20,14 @@
 
 #include "wh/compose/graph/checkpoint_state.hpp"
 #include "wh/compose/graph/stream.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/path.hpp"
+#include "wh/compose/runtime/state.hpp"
 #include "wh/compose/types.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 #include "wh/core/type_traits.hpp"
 
 namespace wh::compose {
@@ -679,7 +681,8 @@ private:
       replaced_pending_record_id = pending_iter->second.record_id;
     }
     auto report = to_stage_report(record, replaced_pending_record_id);
-    pending_writes_.insert_or_assign(record.checkpoint_id, std::move(record));
+    auto pending_key = record.checkpoint_id;
+    pending_writes_.insert_or_assign(std::move(pending_key), std::move(record));
     return report;
   }
 

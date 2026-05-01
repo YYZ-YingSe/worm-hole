@@ -12,7 +12,7 @@
 
 #include <exec/trampoline_scheduler.hpp>
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/core/compiler.hpp"
 #include "wh/core/stdexec/counting_scope.hpp"
 #include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"

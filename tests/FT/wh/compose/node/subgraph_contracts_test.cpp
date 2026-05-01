@@ -8,7 +8,8 @@
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "wh/compose/authored.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/lambda.hpp"
+#include "wh/compose/node/subgraph.hpp"
 
 namespace {
 

@@ -18,7 +18,7 @@
 #include "wh/adk/types.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 #include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"
 #include "wh/core/stdexec/manual_lifetime.hpp"
 #include "wh/schema/stream/core/stream_base.hpp"

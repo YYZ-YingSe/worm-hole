@@ -8,7 +8,9 @@
 #include "wh/callbacks/interface.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/stream/adapter/transform_stream_reader.hpp"
+#include "wh/schema/stream/core/concepts.hpp"
+#include "wh/schema/stream/core/types.hpp"
 
 namespace wh::output {
 

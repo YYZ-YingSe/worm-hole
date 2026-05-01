@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -13,13 +14,14 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/core/any.hpp"
-#include "wh/core/component.hpp"
+#include "wh/core/component/types.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
+#include "wh/schema/stream/core/any_stream.hpp"
 
 namespace wh::compose {
 

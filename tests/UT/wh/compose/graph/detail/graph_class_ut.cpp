@@ -3,8 +3,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/compose/graph/detail/inline_impl.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
 TEST_CASE(

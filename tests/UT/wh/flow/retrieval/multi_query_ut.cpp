@@ -6,6 +6,7 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/flow/retrieval/multi_query.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 namespace {
 

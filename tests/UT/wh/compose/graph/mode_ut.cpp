@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/mode.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE("mode graph fixes runtime mode and graph name defaults",
           "[UT][wh/compose/graph/mode.hpp][mode_graph][condition][branch][boundary]") {

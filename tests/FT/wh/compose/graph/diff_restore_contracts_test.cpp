@@ -11,10 +11,16 @@
 #include "helper/compose_graph_test_utils.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/static_thread_scheduler.hpp"
-#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/diff.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/detail/invoke.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
 #include "wh/compose/graph/restore_validation.hpp"
-#include "wh/compose/runtime.hpp"
+#include "wh/compose/runtime/checkpoint.hpp"
+#include "wh/compose/runtime/interrupt.hpp"
+#include "wh/compose/runtime/state.hpp"
 #include "wh/core/any.hpp"
 
 namespace {

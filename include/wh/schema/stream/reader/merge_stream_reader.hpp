@@ -26,7 +26,7 @@
 #include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/small_vector.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 #include "wh/core/stdexec/detail/scheduled_resume_turn.hpp"
 #include "wh/core/stdexec/detail/slot_ready_list.hpp"
 #include "wh/core/stdexec/manual_lifetime.hpp"

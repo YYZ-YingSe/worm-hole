@@ -6,7 +6,7 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/lambda.hpp"
 
 namespace {
 

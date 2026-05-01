@@ -3,7 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
 TEST_CASE("compile helpers derive gates snapshots and lowering kinds from graph contracts",

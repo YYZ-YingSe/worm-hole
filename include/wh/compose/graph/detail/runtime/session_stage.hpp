@@ -1,7 +1,7 @@
 // Defines invoke-session node stage pipeline helpers.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/compose/node/detail/runtime_access.hpp"
 #include "wh/core/compiler.hpp"
 

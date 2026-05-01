@@ -12,7 +12,8 @@
 
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/defer_sender.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
 #include "wh/schema/stream/core/status.hpp"
 #include "wh/schema/stream/core/stream_base.hpp"
 #include "wh/schema/stream/core/types.hpp"

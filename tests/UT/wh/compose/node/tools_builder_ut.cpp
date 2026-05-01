@@ -8,7 +8,12 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/static_thread_scheduler.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/detail/invoke.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/tools_builder.hpp"
 
 namespace {

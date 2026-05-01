@@ -7,14 +7,16 @@
 #include <vector>
 
 #include "wh/agent/agent.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/lambda.hpp"
 #include "wh/compose/node/subgraph.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
 #include "wh/model/chat_model.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::adk::detail {
 

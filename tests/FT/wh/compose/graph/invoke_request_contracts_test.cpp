@@ -8,7 +8,9 @@
 
 #include "helper/sender_capture.hpp"
 #include "helper/test_thread_wait.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/inline_impl.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
+#include "wh/compose/graph/stream.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/run_context.hpp"
 

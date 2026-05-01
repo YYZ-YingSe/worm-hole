@@ -3,7 +3,7 @@
 
 #include "wh/compose/graph/detail/runtime/checkpoint/dag.hpp"
 #include "wh/compose/graph/detail/runtime/dag_runtime.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose {
 

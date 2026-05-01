@@ -13,7 +13,9 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/core/compiler.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
+#include "wh/core/stdexec/scheduler_handoff.hpp"
+#include "wh/core/stdexec/try_schedule.hpp"
 
 namespace wh::sync {
 

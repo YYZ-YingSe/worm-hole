@@ -5,7 +5,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
+#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/inline_impl.hpp"
 #include "wh/compose/graph/detail/state_phase.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/lambda.hpp"
 
 namespace {

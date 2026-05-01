@@ -5,7 +5,7 @@
 #include <exec/task.hpp>
 
 #include "wh/compose/graph/stream.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/component.hpp"
 #include "wh/core/error.hpp"
 #include "wh/document/document.hpp"
 #include "wh/embedding/embedding.hpp"
@@ -13,7 +13,7 @@
 #include "wh/model/chat_model.hpp"
 #include "wh/prompt/chat_template.hpp"
 #include "wh/retriever/retriever.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 #include "wh/tool/tool.hpp"
 
 namespace {

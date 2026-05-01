@@ -12,14 +12,17 @@
 
 #include "wh/callbacks/callbacks.hpp"
 #include "wh/core/compiler.hpp"
-#include "wh/core/component.hpp"
+#include "wh/core/component/concepts.hpp"
+#include "wh/core/component/types.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/component_async_entry.hpp"
+#include "wh/core/stdexec/request_result_sender.hpp"
+#include "wh/core/stdexec/resume_policy.hpp"
 #include "wh/prompt/callback_event.hpp"
 #include "wh/prompt/options.hpp"
 #include "wh/prompt/template.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::core {
 struct run_context;

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/contract_check.hpp"
-#include "wh/compose/node/lambda.hpp"
-#include "wh/compose/node/passthrough.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE("contract check helpers describe gates lift lowerings and validate compiled graphs",
           "[UT][wh/compose/graph/detail/"

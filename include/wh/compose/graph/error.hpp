@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/path.hpp"
 #include "wh/compose/types.hpp"
 #include "wh/core/error.hpp"
 

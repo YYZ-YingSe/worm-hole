@@ -11,8 +11,12 @@
 #include "helper/compose_graph_test_utils.hpp"
 #include "helper/sender_capture.hpp"
 #include "helper/sender_env.hpp"
-#include "wh/compose/graph.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
+#include "wh/compose/node/passthrough.hpp"
+#include "wh/compose/node/subgraph.hpp"
 
 namespace {
 

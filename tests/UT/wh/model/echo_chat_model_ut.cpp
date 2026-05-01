@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "wh/model/echo_chat_model.hpp"
+#include "wh/schema/stream/algorithm/collect_stream.hpp"
 
 TEST_CASE("echo chat model echoes last user text for invoke and stream",
           "[UT][wh/model/echo_chat_model.hpp][echo_chat_model][branch][boundary]") {

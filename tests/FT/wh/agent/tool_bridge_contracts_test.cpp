@@ -14,10 +14,11 @@
 #include "helper/sender_capture.hpp"
 #include "wh/adk/agent_tool.hpp"
 #include "wh/adk/detail/history_request.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/inline_impl.hpp"
 #include "wh/compose/node/compiled.hpp"
-#include "wh/schema/stream.hpp"
-#include "wh/schema/stream/reader.hpp"
+#include "wh/compose/node/tools.hpp"
+#include "wh/schema/stream/core/types.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 namespace {
 

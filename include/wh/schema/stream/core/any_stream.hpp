@@ -18,7 +18,6 @@
 #include "wh/core/error.hpp"
 #include "wh/core/error_domain.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
 #include "wh/core/stdexec/erased_receiver_ref.hpp"
 #include "wh/core/stdexec/detail/receiver_stop_bridge.hpp"
 #include "wh/schema/stream/core/concepts.hpp"

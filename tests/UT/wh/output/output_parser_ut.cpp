@@ -3,6 +3,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "wh/output/output_parser.hpp"
+#include "wh/schema/stream/algorithm/collect_stream.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 namespace {
 

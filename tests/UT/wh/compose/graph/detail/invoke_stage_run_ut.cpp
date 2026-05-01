@@ -4,7 +4,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/invoke_stage_run.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE(
     "invoke stage run retries node execution until graph retry budget is exhausted",

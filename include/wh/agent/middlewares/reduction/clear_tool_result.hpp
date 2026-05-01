@@ -11,7 +11,7 @@
 #include "wh/agent/middlewares/surface.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::agent::middlewares::reduction {
 

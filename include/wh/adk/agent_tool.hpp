@@ -17,7 +17,8 @@
 #include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
-#include "wh/schema/tool.hpp"
+#include "wh/core/stdexec/request_result_sender.hpp"
+#include "wh/schema/tool/types.hpp"
 #include "wh/tool/call_scope.hpp"
 
 namespace wh::adk {

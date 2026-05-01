@@ -10,7 +10,7 @@
 
 #include "wh/core/error.hpp"
 #include "wh/model/chat_model.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/stream/pipe.hpp"
 
 namespace wh::model {
 

@@ -15,7 +15,7 @@
 #include "wh/core/any.hpp"
 #include "wh/core/json.hpp"
 #include "wh/core/result.hpp"
-#include "wh/schema/tool.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace wh::agent::middlewares::filesystem {
 

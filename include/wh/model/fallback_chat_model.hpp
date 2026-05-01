@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "wh/core/component.hpp"
+#include "wh/core/component/types.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/model/chat_model.hpp"

@@ -13,7 +13,7 @@
 #include "wh/core/run_context.hpp"
 #include "wh/model/chat_model.hpp"
 #include "wh/model/retry.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 #include "wh/schema/stream/core/types.hpp"
 #include "wh/schema/stream/reader.hpp"
 

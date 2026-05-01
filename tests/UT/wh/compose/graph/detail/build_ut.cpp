@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper/agent_authoring_support.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
 TEST_CASE(

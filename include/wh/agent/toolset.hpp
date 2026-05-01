@@ -16,7 +16,6 @@
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
 #include "wh/tool/tool.hpp"
 
 namespace wh::agent {

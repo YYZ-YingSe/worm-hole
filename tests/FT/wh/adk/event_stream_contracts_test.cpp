@@ -10,7 +10,8 @@
 #include "helper/sender_capture.hpp"
 #include "wh/adk/detail/event_message_stream_reader.hpp"
 #include "wh/adk/event_stream.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/stream/pipe.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 namespace {
 

@@ -2,6 +2,7 @@
 
 #include "wh/model/echo_chat_model.hpp"
 #include "wh/model/fallback_chat_model.hpp"
+#include "wh/schema/stream/algorithm/collect_stream.hpp"
 
 TEST_CASE("fallback chat model loads bound tools and returns invoke and stream outputs",
           "[UT][wh/model/fallback_chat_model.hpp][fallback_chat_model::invoke][branch][boundary]") {

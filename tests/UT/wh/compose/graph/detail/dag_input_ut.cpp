@@ -6,8 +6,10 @@
 
 #include "helper/compose_graph_runtime_support.hpp"
 #include "helper/compose_graph_test_utils.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/dag.hpp"
 #include "wh/compose/graph/detail/dag_input.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE("dag input builds merged value-map fan-in for require-all predecessors",
           "[UT][wh/compose/graph/detail/"

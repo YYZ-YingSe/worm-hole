@@ -20,7 +20,7 @@
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/model/chat_model.hpp"
-#include "wh/schema/tool.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace wh::agent::middlewares::skill {
 

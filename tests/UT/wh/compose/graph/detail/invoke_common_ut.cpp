@@ -5,7 +5,9 @@
 #include <exec/static_thread_pool.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/invoke_common.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE("invoke common trace token formatter keeps stable compact ids",
           "[UT][wh/compose/graph/detail/"

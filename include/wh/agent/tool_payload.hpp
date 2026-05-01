@@ -12,7 +12,8 @@
 #include "wh/compose/node/tools_contract.hpp"
 #include "wh/core/json.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 #include "wh/internal/serialization.hpp"
 #include "wh/schema/serialization/api.hpp"
 

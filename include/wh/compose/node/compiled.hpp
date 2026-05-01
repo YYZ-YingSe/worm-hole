@@ -15,7 +15,7 @@
 #include "wh/compose/node/detail/gate.hpp"
 #include "wh/compose/node/execution.hpp"
 #include "wh/compose/types.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 
 namespace wh::compose {
 

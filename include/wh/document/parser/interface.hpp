@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "wh/core/component.hpp"
+#include "wh/core/component/concepts.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/document/document.hpp"

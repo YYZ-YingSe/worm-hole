@@ -31,7 +31,7 @@
 #include "wh/compose/graph/invoke_types.hpp"
 #include "wh/compose/graph/restore_shape.hpp"
 #include "wh/compose/graph/snapshot.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/authored.hpp"
 #include "wh/compose/types.hpp"
 
 namespace wh::compose::detail {

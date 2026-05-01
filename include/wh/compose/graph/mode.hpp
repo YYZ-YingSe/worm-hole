@@ -9,7 +9,10 @@
 #include <vector>
 
 #include "wh/compose/graph/compile_options.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/detail/invoke.hpp"
 
 namespace wh::compose {
 

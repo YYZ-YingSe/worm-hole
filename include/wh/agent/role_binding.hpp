@@ -11,7 +11,7 @@
 #include <utility>
 
 #include "wh/agent/agent.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 

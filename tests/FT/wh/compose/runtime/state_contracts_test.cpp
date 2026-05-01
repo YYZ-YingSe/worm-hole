@@ -6,10 +6,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/compose/graph/detail/invoke.hpp"
-#include "wh/compose/node.hpp"
-#include "wh/compose/runtime.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
+#include "wh/compose/graph/stream.hpp"
+#include "wh/compose/node/component.hpp"
+#include "wh/compose/node/passthrough.hpp"
+#include "wh/compose/runtime/checkpoint.hpp"
+#include "wh/compose/runtime/interrupt.hpp"
+#include "wh/compose/runtime/state.hpp"
 
 namespace {
 
