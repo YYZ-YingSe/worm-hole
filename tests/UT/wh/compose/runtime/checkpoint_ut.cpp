@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
+#include "wh/compose/node/tools_contract.hpp"
 #include "wh/compose/runtime/checkpoint.hpp"
 
 namespace {

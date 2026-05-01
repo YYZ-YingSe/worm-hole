@@ -10,7 +10,8 @@
 #include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/execution.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/defer_sender.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 
 namespace wh::compose {
 

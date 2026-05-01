@@ -19,7 +19,9 @@
 #include "wh/core/bounded_queue/status.hpp"
 #include "wh/core/compiler.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
+#include "wh/core/stdexec/scheduler_handoff.hpp"
+#include "wh/core/stdexec/try_schedule.hpp"
 
 namespace wh::core {
 

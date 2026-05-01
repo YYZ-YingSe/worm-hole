@@ -10,7 +10,7 @@
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::agent {
 

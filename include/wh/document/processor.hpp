@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "wh/callbacks/callbacks.hpp"
-#include "wh/core/component.hpp"
+#include "wh/core/component/types.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"

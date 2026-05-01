@@ -11,7 +11,7 @@
 #include "helper/sender_env.hpp"
 #include "helper/static_thread_scheduler.hpp"
 #include "wh/core/cursor_reader.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/stream/pipe.hpp"
 
 TEST_CASE("cursor reader public facade retains one source across fixed readers",
           "[core][cursor_reader][functional][concurrency]") {

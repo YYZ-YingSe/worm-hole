@@ -14,11 +14,16 @@
 
 #include <stdexec/execution.hpp>
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/inline_impl.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
 #include "wh/compose/graph/stream.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/authored.hpp"
+#include "wh/compose/node/compiled.hpp"
 #include "wh/compose/node/detail/runtime_access.hpp"
+#include "wh/compose/node/execution.hpp"
 #include "wh/compose/node/lambda.hpp"
+#include "wh/compose/node/path.hpp"
+#include "wh/compose/runtime/state.hpp"
 #include "wh/core/stdexec/resume_scheduler.hpp"
 
 namespace wh::testing::helper {

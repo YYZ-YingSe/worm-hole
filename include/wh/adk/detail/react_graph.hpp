@@ -23,7 +23,8 @@
 #include "wh/compose/node/tools_builder.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/result.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/map_result_sender.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
 #include "wh/model/chat_model.hpp"
 
 namespace wh::adk::detail {

@@ -12,13 +12,13 @@
 #include <vector>
 
 #include "wh/agent/instruction.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/core/any.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::agent {
 

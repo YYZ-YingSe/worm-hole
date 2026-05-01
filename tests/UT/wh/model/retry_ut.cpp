@@ -1,14 +1,28 @@
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <memory>
+#include <span>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
 #include "helper/test_thread_wait.hpp"
+#include "wh/core/component/types.hpp"
+#include "wh/core/error.hpp"
+#include "wh/core/result.hpp"
+#include "wh/core/run_context.hpp"
 #include "wh/model/echo_chat_model.hpp"
 #include "wh/model/retry.hpp"
+#include "wh/schema/message/types.hpp"
+#include "wh/schema/stream/algorithm/collect_stream.hpp"
+#include "wh/schema/stream/core/any_stream.hpp"
+#include "wh/schema/stream/core/types.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace {
 

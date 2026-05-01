@@ -12,7 +12,6 @@
 #include "wh/core/error.hpp"
 #include "wh/core/error_domain.hpp"
 #include "wh/core/intrusive_ptr.hpp"
-#include "wh/core/stdexec.hpp"
 #include "wh/core/type_traits.hpp"
 #include "wh/schema/stream/adapter/detail/adapter_support.hpp"
 #include "wh/schema/stream/core/concepts.hpp"

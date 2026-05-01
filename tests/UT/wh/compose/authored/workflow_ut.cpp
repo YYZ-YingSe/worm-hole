@@ -1,11 +1,27 @@
+#include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exec/trampoline_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/authored/workflow.hpp"
+#include "wh/compose/field/mapping.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/node/authored.hpp"
 #include "wh/compose/node/passthrough.hpp"
+#include "wh/compose/types.hpp"
+#include "wh/core/any.hpp"
+#include "wh/core/any/basic_any.hpp"
+#include "wh/core/error.hpp"
+#include "wh/core/result.hpp"
+#include "wh/core/run_context.hpp"
 
 TEST_CASE("workflow exposes stable input keys and step handles",
           "[UT][wh/compose/authored/"

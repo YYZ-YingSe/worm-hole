@@ -10,7 +10,10 @@
 #include <utility>
 #include <vector>
 
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/stream.hpp"
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"

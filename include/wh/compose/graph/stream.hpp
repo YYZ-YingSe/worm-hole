@@ -11,6 +11,12 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/type_traits.hpp"
+#include "wh/schema/stream/algorithm/collect_stream.hpp"
+#include "wh/schema/stream/adapter/transform_stream_reader.hpp"
+#include "wh/schema/stream/pipe.hpp"
+#include "wh/schema/stream/reader/copy_stream_reader.hpp"
+#include "wh/schema/stream/reader/merge_stream_reader.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 
 namespace wh::compose {
 

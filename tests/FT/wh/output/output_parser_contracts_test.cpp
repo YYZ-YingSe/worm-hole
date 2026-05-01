@@ -4,7 +4,8 @@
 
 #include "wh/core/error.hpp"
 #include "wh/output/output_parser.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/stream/core/types.hpp"
+#include "wh/schema/stream/pipe.hpp"
 
 namespace {
 

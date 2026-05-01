@@ -1,7 +1,7 @@
 // Defines DAG/runtime input lowering, edge adaptation, and input assembly helpers.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose {
 inline auto graph::resolve_edge_status_indexed(const indexed_edge &edge,

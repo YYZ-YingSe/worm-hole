@@ -3,7 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexec/execution.hpp>
 
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/graph.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
 TEST_CASE("graph class compiles passthrough nodes and exposes snapshots",

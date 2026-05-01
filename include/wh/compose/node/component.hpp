@@ -13,7 +13,7 @@
 #include "wh/compose/node/detail/context.hpp"
 #include "wh/compose/node/detail/contract.hpp"
 #include "wh/compose/types.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/map_result_sender.hpp"
 #include "wh/document/document.hpp"
 #include "wh/document/parser/interface.hpp"
 #include "wh/embedding/embedding.hpp"

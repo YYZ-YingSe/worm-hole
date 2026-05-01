@@ -4,7 +4,7 @@
 
 #include "wh/compose/graph/detail/invoke_join.hpp"
 #include "wh/compose/graph/detail/runtime/invoke_session.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/core/compiler.hpp"
 
 namespace wh::compose {

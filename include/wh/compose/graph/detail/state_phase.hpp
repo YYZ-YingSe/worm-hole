@@ -2,7 +2,8 @@
 // payloads.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/detail/rewrite_policy.hpp"
 
 namespace wh::compose {
 

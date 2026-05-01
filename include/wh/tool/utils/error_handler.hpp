@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "wh/core/error.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 #include "wh/tool/tool.hpp"
 
 namespace wh::tool::utils {

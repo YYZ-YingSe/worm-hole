@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "wh/schema/stream/algorithm/collect_stream.hpp"
 #include "wh/tool/utils/error_handler.hpp"
 
 namespace {

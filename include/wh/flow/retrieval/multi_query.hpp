@@ -22,11 +22,14 @@
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
 #include "wh/core/stdexec/concurrent_sender_vector.hpp"
+#include "wh/core/stdexec/map_result_sender.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
+#include "wh/core/stdexec/variant_sender.hpp"
 #include "wh/model/chat_model.hpp"
 #include "wh/retriever/retriever.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::flow::retrieval {
 

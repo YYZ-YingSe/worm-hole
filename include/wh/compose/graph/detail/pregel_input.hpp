@@ -1,7 +1,7 @@
 // Defines Pregel-specific input assembly and step-local delivery helpers.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose {
 

@@ -2,7 +2,7 @@
 #pragma once
 
 #include "wh/compose/graph/detail/contract_check.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose {
 

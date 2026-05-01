@@ -15,7 +15,7 @@
 #include "wh/agent/agent.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/type_traits.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::adk {
 

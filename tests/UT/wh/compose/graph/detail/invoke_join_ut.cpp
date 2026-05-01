@@ -10,7 +10,9 @@
 
 #include "helper/compose_graph_test_utils.hpp"
 #include "helper/manual_scheduler.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/invoke_join.hpp"
+#include "wh/compose/node.hpp"
 
 namespace {
 

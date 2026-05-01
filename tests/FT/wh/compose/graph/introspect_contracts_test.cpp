@@ -5,7 +5,7 @@
 
 #include "wh/compose/graph/error.hpp"
 #include "wh/compose/graph/introspect.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/node/path.hpp"
 
 TEST_CASE("compose introspect and error helpers preserve phase path and root-cause",
           "[core][compose][introspect][condition]") {

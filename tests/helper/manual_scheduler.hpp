@@ -7,7 +7,7 @@
 
 #include <stdexec/execution.hpp>
 
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/scheduler_handoff.hpp"
 
 namespace wh::testing::helper {
 

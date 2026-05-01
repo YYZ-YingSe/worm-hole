@@ -2,7 +2,7 @@
 
 #include "wh/compose/graph/detail/invoke_stage_run.hpp"
 #include "wh/compose/graph/detail/runtime/pregel_runtime.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose {
 

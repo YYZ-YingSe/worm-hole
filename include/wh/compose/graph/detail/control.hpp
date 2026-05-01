@@ -1,17 +1,12 @@
 // Defines graph runtime control, publish, restore, and validation helpers.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 
 namespace wh::compose {
 inline auto graph::next_invoke_run_id() noexcept -> std::uint64_t {
   static std::atomic<std::uint64_t> sequence{1U};
   return sequence.fetch_add(1U, std::memory_order_relaxed);
-}
-
-inline constexpr auto graph::should_wrap_as_node_run_error(const wh::core::error_code code) noexcept
-    -> bool {
-  return code != wh::core::errc::canceled;
 }
 
 inline auto graph::validate_call_scope_for_runtime(const graph_call_scope &call_scope) const

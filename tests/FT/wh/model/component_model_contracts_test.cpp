@@ -8,7 +8,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper/component_contract_support.hpp"
-#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/stream.hpp"
 #include "wh/compose/node/compiled.hpp"
 #include "wh/compose/node/component.hpp"
 #include "wh/model/echo_chat_model.hpp"

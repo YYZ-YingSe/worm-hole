@@ -1,15 +1,34 @@
 #include <array>
+#include <cstddef>
 #include <memory>
+#include <optional>
+#include <ostream>
 #include <span>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_tostring.hpp>
+#include <exec/completion_behavior.hpp>
+#include <exec/completion_signatures.hpp>
 #include <stdexec/execution.hpp>
 
+#include "wh/core/callback/types.hpp"
+#include "wh/core/component/types.hpp"
+#include "wh/core/error.hpp"
+#include "wh/core/result.hpp"
+#include "wh/core/run_context.hpp"
 #include "wh/model/chat_model.hpp"
+#include "wh/model/options.hpp"
+#include "wh/schema/message/types.hpp"
+#include "wh/schema/stream/core/any_stream.hpp"
+#include "wh/schema/stream/core/types.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace {
 

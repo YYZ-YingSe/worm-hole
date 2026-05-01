@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "wh/compose/authored/parallel.hpp"
+#include "wh/compose/node/component.hpp"
 #include "wh/compose/node/lambda.hpp"
 #include "wh/compose/node/passthrough.hpp"
 #include "wh/compose/node/subgraph.hpp"

@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "wh/core/component.hpp"
+#include "wh/core/component/types.hpp"
 #include "wh/document/parser/option.hpp"
 
 namespace wh::document {

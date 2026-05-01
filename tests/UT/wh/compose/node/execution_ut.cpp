@@ -5,8 +5,10 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/static_thread_scheduler.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/call_options.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/execution.hpp"
 #include "wh/compose/runtime/state.hpp"
 

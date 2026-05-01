@@ -2,10 +2,11 @@
 
 #include <memory>
 
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/detail/invoke.hpp"
 #include "wh/compose/graph/detail/run_sender.hpp"
 #include "wh/compose/graph/detail/runtime/dag_runtime.hpp"
 #include "wh/compose/graph/detail/runtime/pregel_runtime.hpp"
-#include "wh/compose/graph/graph.hpp"
 #include "wh/compose/node/detail/runtime_access.hpp"
 
 namespace wh::compose {

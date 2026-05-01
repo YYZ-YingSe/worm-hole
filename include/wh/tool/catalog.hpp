@@ -7,7 +7,7 @@
 
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
-#include "wh/schema/tool.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace wh::tool {
 

@@ -10,7 +10,9 @@
 #include "wh/compose/graph/detail/start.hpp"
 #include "wh/compose/node/lambda.hpp"
 #include "wh/compose/node/passthrough.hpp"
-#include "wh/compose/runtime.hpp"
+#include "wh/compose/runtime/checkpoint.hpp"
+#include "wh/compose/runtime/interrupt.hpp"
+#include "wh/compose/runtime/state.hpp"
 #include "wh/core/stdexec/resume_scheduler.hpp"
 
 namespace wh::testing::helper {

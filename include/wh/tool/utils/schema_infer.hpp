@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "wh/core/function.hpp"
-#include "wh/schema/tool.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace wh::tool::utils {
 

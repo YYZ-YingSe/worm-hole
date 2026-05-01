@@ -13,7 +13,7 @@
 #include "wh/compose/node/authored.hpp"
 #include "wh/compose/node/detail/context.hpp"
 #include "wh/compose/node/detail/lambda_concepts.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/map_result_sender.hpp"
 #include "wh/internal/type_name.hpp"
 
 namespace wh::compose {

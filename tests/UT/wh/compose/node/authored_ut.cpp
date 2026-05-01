@@ -4,7 +4,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/authored.hpp"
 #include "wh/compose/node/component.hpp"
 #include "wh/compose/node/lambda.hpp"

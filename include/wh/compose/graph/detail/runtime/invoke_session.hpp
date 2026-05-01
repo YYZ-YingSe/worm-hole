@@ -30,7 +30,7 @@
 #include "wh/core/compiler.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 
 namespace wh::compose::detail::invoke_runtime {
 

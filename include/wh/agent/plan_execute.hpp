@@ -13,7 +13,7 @@
 
 #include "wh/agent/role_binding.hpp"
 #include "wh/core/result.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 
 namespace wh::agent {
 

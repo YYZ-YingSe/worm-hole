@@ -13,7 +13,8 @@
 #include "wh/core/function.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
 #include "wh/model/chat_model.hpp"
 
 namespace wh::agent::middlewares {

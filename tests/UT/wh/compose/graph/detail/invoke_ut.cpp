@@ -4,7 +4,9 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_runtime_support.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/invoke.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/lambda.hpp"
 
 TEST_CASE("graph invoke report promotes node run error into graph run error",

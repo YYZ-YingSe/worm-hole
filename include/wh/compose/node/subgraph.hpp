@@ -8,6 +8,8 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/start.hpp"
 #include "wh/compose/graph/like.hpp"
 #include "wh/compose/node/authored.hpp"
 

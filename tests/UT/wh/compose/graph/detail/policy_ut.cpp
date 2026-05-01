@@ -4,7 +4,9 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_runtime_support.hpp"
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/policy.hpp"
+#include "wh/compose/node.hpp"
 
 TEST_CASE("policy helpers enforce step-budget rules across dag and pregel invoke paths",
           "[UT][wh/compose/graph/detail/"

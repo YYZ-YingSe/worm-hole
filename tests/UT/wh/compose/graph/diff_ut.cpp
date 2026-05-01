@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/diff.hpp"
+#include "wh/compose/node.hpp"
 #include "wh/compose/node/passthrough.hpp"
 
 TEST_CASE("graph diff facade rejects uncompiled graphs and diffs compiled snapshots",

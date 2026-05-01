@@ -3,7 +3,8 @@
 #include <stdexec/execution.hpp>
 
 #include "helper/compose_graph_test_utils.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/graph/stream.hpp"
+#include "wh/compose/node/execution.hpp"
 
 namespace {
 

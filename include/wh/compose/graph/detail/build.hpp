@@ -1,7 +1,12 @@
 // Defines out-of-line graph builder and mutation helpers.
 #pragma once
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/node/component.hpp"
+#include "wh/compose/node/lambda.hpp"
+#include "wh/compose/node/passthrough.hpp"
+#include "wh/compose/node/subgraph.hpp"
+#include "wh/compose/node/tools.hpp"
 
 namespace wh::compose {
 

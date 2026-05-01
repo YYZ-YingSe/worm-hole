@@ -11,8 +11,8 @@
 #include <utility>
 #include <vector>
 
-#include "wh/core/component.hpp"
-#include "wh/schema/tool.hpp"
+#include "wh/core/component/types.hpp"
+#include "wh/schema/tool/types.hpp"
 
 namespace wh::model {
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "wh/compose/graph/detail/runtime/dag_runtime.hpp"
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/core/compiler.hpp"
 
 namespace wh::compose {

@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "wh/compose/graph.hpp"
 #include "wh/compose/graph/detail/graph_core.hpp"
 #include "wh/compose/node/passthrough.hpp"
 

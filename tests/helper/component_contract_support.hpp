@@ -14,7 +14,7 @@
 
 #include "wh/core/any.hpp"
 #include "wh/core/compiler.hpp"
-#include "wh/core/component.hpp"
+#include "wh/core/component/types.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/document/document.hpp"
 #include "wh/embedding/embedding.hpp"
@@ -22,8 +22,9 @@
 #include "wh/model/chat_model.hpp"
 #include "wh/model/fallback_chat_model.hpp"
 #include "wh/retriever/retriever.hpp"
-#include "wh/schema/message.hpp"
+#include "wh/schema/message/types.hpp"
 #include "wh/schema/stream/core/types.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 #include "wh/tool/tool.hpp"
 
 namespace wh::testing::helper {

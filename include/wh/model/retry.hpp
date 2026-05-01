@@ -19,10 +19,13 @@
 #include "wh/core/intrusive_ptr.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/ready_result_sender.hpp"
+#include "wh/core/stdexec/request_result_sender.hpp"
+#include "wh/core/stdexec/result_sender.hpp"
+#include "wh/core/stdexec/resume_policy.hpp"
 #include "wh/model/chat_model.hpp"
 #include "wh/schema/stream/adapter/detail/adapter_support.hpp"
-#include "wh/schema/stream/reader.hpp"
+#include "wh/schema/stream/core/any_stream.hpp"
 
 #include <stdexec/execution.hpp>
 
@@ -733,9 +736,10 @@ template <typename model_t>
 
   const auto attempt = state->next_attempt + 1U;
   state->next_attempt = attempt;
+  auto attempt_sender = wh::core::detail::normalize_result_sender<wh::model::chat_invoke_result>(
+      detail::make_retry_async_invoke_sender(*state->model, state->request, state->context));
   return sender_t{
-      wh::core::detail::normalize_result_sender<wh::model::chat_invoke_result>(
-          detail::make_retry_async_invoke_sender(*state->model, state->request, state->context)) |
+      std::move(attempt_sender) |
       stdexec::let_value([state = std::move(state),
                           attempt](wh::model::chat_invoke_result &status) mutable -> sender_t {
         if (status.has_value()) {
@@ -766,9 +770,11 @@ template <typename model_t>
 
   const auto attempt = state->next_attempt + 1U;
   state->next_attempt = attempt;
-  return sender_t{
+  auto attempt_sender =
       wh::core::detail::normalize_result_sender<wh::model::chat_message_stream_result>(
-          detail::make_retry_async_stream_sender(*state->model, state->request, state->context)) |
+          detail::make_retry_async_stream_sender(*state->model, state->request, state->context));
+  return sender_t{
+      std::move(attempt_sender) |
       stdexec::let_value([state = std::move(state),
                           attempt](wh::model::chat_message_stream_result &status) mutable
                          -> sender_t {

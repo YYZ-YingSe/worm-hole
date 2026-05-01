@@ -55,10 +55,10 @@ auto start_nested_graph(const graph &graph, wh::core::run_context &context, grap
 
 #include <new>
 
-#include "wh/compose/graph/graph.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
 #include "wh/compose/node/detail/runtime_access.hpp"
 #include "wh/core/compiler.hpp"
-#include "wh/core/stdexec.hpp"
+#include "wh/core/stdexec/resume_scheduler.hpp"
 
 namespace wh::compose {
 

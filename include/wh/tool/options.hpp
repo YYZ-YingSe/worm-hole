@@ -7,7 +7,7 @@
 #include <string_view>
 #include <utility>
 
-#include "wh/core/component.hpp"
+#include "wh/core/component/types.hpp"
 
 namespace wh::tool {
 

@@ -6,8 +6,17 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/compose/authored.hpp"
-#include "wh/compose/graph.hpp"
-#include "wh/compose/node.hpp"
+#include "wh/compose/graph/detail/build.hpp"
+#include "wh/compose/graph/detail/compile.hpp"
+#include "wh/compose/graph/detail/graph_class.hpp"
+#include "wh/compose/graph/detail/invoke.hpp"
+#include "wh/compose/graph/detail/start.hpp"
+#include "wh/compose/graph/invoke_types.hpp"
+#include "wh/compose/node/component.hpp"
+#include "wh/compose/node/lambda.hpp"
+#include "wh/compose/node/passthrough.hpp"
+#include "wh/compose/node/subgraph.hpp"
+#include "wh/compose/node/tools.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/run_context.hpp"
@@ -17,8 +26,10 @@
 #include "wh/model/chat_model.hpp"
 #include "wh/prompt/chat_template.hpp"
 #include "wh/retriever/retriever.hpp"
-#include "wh/schema/message.hpp"
-#include "wh/schema/stream.hpp"
+#include "wh/schema/message/types.hpp"
+#include "wh/schema/stream/core/status.hpp"
+#include "wh/schema/stream/core/types.hpp"
+#include "wh/schema/stream/reader/values_stream_reader.hpp"
 #include "wh/tool/tool.hpp"
 
 namespace {
