@@ -81,8 +81,9 @@ inline auto detail::invoke_runtime::start_initialized_runtime(runtime_t runtime)
     const auto error = *session.init_error_;
     auto owned_runtime = std::make_shared<runtime_t>(std::move(runtime));
     owned_runtime->rebind_moved_runtime_storage();
+    auto persist_sender = owned_runtime->make_persist_sender();
     return detail::bridge_graph_sender(
-        owned_runtime->make_persist_sender() |
+        std::move(persist_sender) |
         stdexec::let_value(
             [owned_runtime = std::move(owned_runtime),
              error](wh::core::result<graph_value>) mutable -> graph_sender {
@@ -98,8 +99,9 @@ inline auto detail::invoke_runtime::start_initialized_runtime(runtime_t runtime)
     const auto error = *session.init_error_;
     auto owned_runtime = std::make_shared<runtime_t>(std::move(runtime));
     owned_runtime->rebind_moved_runtime_storage();
+    auto persist_sender = owned_runtime->make_persist_sender();
     return detail::bridge_graph_sender(
-        owned_runtime->make_persist_sender() |
+        std::move(persist_sender) |
         stdexec::let_value(
             [owned_runtime = std::move(owned_runtime),
              error](wh::core::result<graph_value>) mutable -> graph_sender {
