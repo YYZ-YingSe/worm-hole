@@ -33,8 +33,12 @@ class vtable_handler;
   template <typename return_t, bool is_noexcept, typename... param_types>                          \
   class simple_vtable<return_t(param_types...) CV REF noexcept(is_noexcept)> {                     \
   public:                                                                                          \
+    static constexpr bool cloneable = true;                                                        \
     virtual auto operator()(ref_non_trivials<param_types>...) CV REF noexcept(is_noexcept)         \
         -> return_t = 0;                                                                           \
+    virtual auto clone_itself(void *destination) const -> void = 0;                                \
+    virtual auto relocate_itself(void *destination) noexcept -> void = 0;                          \
+    virtual auto destroy_itself() const noexcept -> void = 0;                                      \
                                                                                                    \
   protected:                                                                                       \
     ~simple_vtable() = default;                                                                    \
@@ -45,8 +49,11 @@ class vtable_handler;
   template <typename return_t, bool is_noexcept, typename... param_types>                          \
   class destructible_vtable<return_t(param_types...) CV REF noexcept(is_noexcept)> {               \
   public:                                                                                          \
+    static constexpr bool cloneable = false;                                                       \
     virtual auto operator()(ref_non_trivials<param_types>...) CV REF noexcept(is_noexcept)         \
         -> return_t = 0;                                                                           \
+    virtual auto relocate_itself(void *destination) noexcept -> void = 0;                          \
+    virtual auto destroy_itself() const noexcept -> void = 0;                                      \
     virtual ~destructible_vtable() = default;                                                      \
   }
 
@@ -55,9 +62,12 @@ class vtable_handler;
   template <typename return_t, bool is_noexcept, typename... param_types>                          \
   class cloneable_vtable<return_t(param_types...) CV REF noexcept(is_noexcept)> {                  \
   public:                                                                                          \
+    static constexpr bool cloneable = true;                                                        \
     virtual auto operator()(ref_non_trivials<param_types>...) CV REF noexcept(is_noexcept)         \
         -> return_t = 0;                                                                           \
     virtual auto clone_itself(void *destination) const -> void = 0;                                \
+    virtual auto relocate_itself(void *destination) noexcept -> void = 0;                          \
+    virtual auto destroy_itself() const noexcept -> void = 0;                                      \
     virtual ~cloneable_vtable() = default;                                                         \
   }
 
@@ -97,12 +107,19 @@ class vtable_handler;
     explicit vtable_handler(args_t &&...args) noexcept(is_nothrow_constructible<args_t...>)        \
         : manager_(std::forward<args_t>(args)...) {}                                               \
     vtable_handler(const vtable_handler &other) = default;                                         \
-    vtable_handler(vtable_handler &&other) noexcept = delete;                                      \
+    vtable_handler(vtable_handler &&other) noexcept = default;                                     \
     auto operator=(const vtable_handler &) -> vtable_handler & = delete;                           \
     auto operator=(vtable_handler &&) noexcept -> vtable_handler & = delete;                       \
     ~vtable_handler() = default;                                                                   \
     auto clone_itself(void *destination) const -> void {                                           \
       ::new (destination) vtable_handler(*this);                                                   \
+    }                                                                                              \
+    auto relocate_itself(void *destination) noexcept -> void {                                     \
+      ::new (destination) vtable_handler(std::move(*this));                                        \
+      this->~vtable_handler();                                                                     \
+    }                                                                                              \
+    auto destroy_itself() const noexcept -> void {                                                 \
+      this->~vtable_handler();                                                                     \
     }                                                                                              \
     auto operator()(ref_non_trivials<param_types>... params) CV REF noexcept(is_noexcept)          \
         -> return_t final {                                                                        \

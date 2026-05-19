@@ -96,6 +96,15 @@ protected:
     (access(source)).clone_itself(destination.address());
   }
 
+  static auto move(buffer_type &source, buffer_type &destination) noexcept -> void {
+    if (is_empty(source)) {
+      set_to_empty(destination);
+      return;
+    }
+    access(source).relocate_itself(destination.address());
+    set_to_empty(source);
+  }
+
   static auto destroy(const buffer_type &target) noexcept -> void {
     if constexpr (error_handler::check_before_destroy) {
       if (is_empty(target)) {
@@ -103,7 +112,26 @@ protected:
         return;
       }
     }
-    access(target).~vtable_type();
+    access(target).destroy_itself();
+  }
+
+  static auto swap(buffer_type &lhs, buffer_type &rhs) noexcept -> void {
+    if (is_empty(lhs)) {
+      if (is_empty(rhs)) {
+        return;
+      }
+      move(rhs, lhs);
+      return;
+    }
+    if (is_empty(rhs)) {
+      move(lhs, rhs);
+      return;
+    }
+
+    buffer_type tmp{nullptr};
+    move(lhs, tmp);
+    move(rhs, lhs);
+    move(tmp, rhs);
   }
 
   /// Returns whether storage currently holds no callable.
@@ -181,15 +209,45 @@ protected:
         return;
       }
     }
-    destination = source;
+    access(source).clone_itself(destination.address());
+  }
+
+  static auto move(buffer_type &source, buffer_type &destination) noexcept -> void {
+    if (is_empty(source)) {
+      set_to_empty(destination);
+      return;
+    }
+    access(source).relocate_itself(destination.address());
+    set_to_empty(source);
   }
 
   static auto destroy(const buffer_type &target) noexcept -> void {
     if constexpr (error_handler::check_before_destroy) {
       if (is_empty(target)) {
         error_handler::on_destroy();
+        return;
       }
     }
+    access(target).destroy_itself();
+  }
+
+  static auto swap(buffer_type &lhs, buffer_type &rhs) noexcept -> void {
+    if (is_empty(lhs)) {
+      if (is_empty(rhs)) {
+        return;
+      }
+      move(rhs, lhs);
+      return;
+    }
+    if (is_empty(rhs)) {
+      move(lhs, rhs);
+      return;
+    }
+
+    buffer_type tmp{nullptr};
+    move(lhs, tmp);
+    move(rhs, lhs);
+    move(tmp, rhs);
   }
 
   /// Returns whether storage currently holds no callable.
@@ -232,7 +290,9 @@ protected:
   using parent::copy;
   using parent::destroy;
   using parent::is_empty;
+  using parent::move;
   using parent::set_to_empty;
+  using parent::swap;
   using typename parent::buffer_type;
   using typename parent::error_handler;
 
@@ -298,7 +358,9 @@ protected:
   using parent::copy;
   using parent::destroy;
   using parent::is_empty;
+  using parent::move;
   using parent::set_to_empty;
+  using parent::swap;
   using typename parent::buffer_type;
   using typename parent::error_handler;
 

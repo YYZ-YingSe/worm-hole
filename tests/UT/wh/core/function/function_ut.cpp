@@ -19,6 +19,60 @@ struct mutable_adder {
   [[nodiscard]] auto operator()(int value) const -> int { return base + value; }
 };
 
+struct address_probe_state {
+  int copied{0};
+  int destructed{0};
+  int wrong_destructor_address{0};
+};
+
+struct self_address_callable {
+  address_probe_state *state{};
+  const void *self{};
+
+  explicit self_address_callable(address_probe_state *next_state) : state(next_state), self(this) {}
+  self_address_callable(const self_address_callable &other) : state(other.state), self(this) {
+    ++state->copied;
+  }
+  self_address_callable(self_address_callable &&) noexcept = delete;
+  auto operator=(const self_address_callable &) -> self_address_callable & = delete;
+  auto operator=(self_address_callable &&) noexcept -> self_address_callable & = delete;
+
+  ~self_address_callable() {
+    ++state->destructed;
+    if (self != this) {
+      ++state->wrong_destructor_address;
+    }
+  }
+
+  [[nodiscard]] auto operator()() const -> int { return 7; }
+};
+
+struct move_address_callable {
+  address_probe_state *state{};
+  const void *self{};
+
+  explicit move_address_callable(address_probe_state *next_state) : state(next_state), self(this) {}
+  move_address_callable(const move_address_callable &) = delete;
+  auto operator=(const move_address_callable &) -> move_address_callable & = delete;
+  move_address_callable(move_address_callable &&other) noexcept : state(other.state), self(this) {
+    other.state = nullptr;
+    other.self = nullptr;
+  }
+  auto operator=(move_address_callable &&) noexcept -> move_address_callable & = delete;
+
+  ~move_address_callable() {
+    if (state == nullptr) {
+      return;
+    }
+    ++state->destructed;
+    if (self != this) {
+      ++state->wrong_destructor_address;
+    }
+  }
+
+  [[nodiscard]] auto operator()() const -> int { return 11; }
+};
+
 } // namespace
 
 TEST_CASE("standard_function supports callable construction swap nullptr "
@@ -79,4 +133,60 @@ TEST_CASE("function facade aligns copyability and const-callable construction ru
 
   wh::core::move_only_function<int()> move_only{std::move(lower)};
   REQUIRE(move_only() == 7);
+}
+
+TEST_CASE("callback_function move relocates targets through legal construction",
+          "[UT][wh/core/function/function.hpp][callback_function][move][lifetime]") {
+  address_probe_state state{};
+
+  {
+    self_address_callable source_target{&state};
+    wh::core::callback_function<int() const> source{source_target};
+    REQUIRE(source() == 7);
+    REQUIRE(state.copied == 1);
+
+    auto moved = std::move(source);
+    REQUIRE_FALSE(static_cast<bool>(source));
+    REQUIRE(static_cast<bool>(moved));
+    REQUIRE(moved() == 7);
+    REQUIRE(state.copied == 1);
+
+    auto copied_after_move = moved;
+    REQUIRE(copied_after_move() == 7);
+    REQUIRE(state.copied == 2);
+
+    wh::core::callback_function<int() const> assigned{nullptr};
+    assigned = std::move(moved);
+    REQUIRE_FALSE(static_cast<bool>(moved));
+    REQUIRE(static_cast<bool>(assigned));
+    REQUIRE(assigned() == 7);
+    REQUIRE(state.copied == 2);
+  }
+
+  REQUIRE(state.destructed >= 1);
+  REQUIRE(state.wrong_destructor_address == 0);
+}
+
+TEST_CASE("move_only_function move constructs inline targets at their new address",
+          "[UT][wh/core/function/function.hpp][move_only_function][move][lifetime]") {
+  address_probe_state state{};
+
+  {
+    wh::core::move_only_function<int()> source{move_address_callable{&state}};
+    REQUIRE(source() == 11);
+
+    auto moved = std::move(source);
+    REQUIRE_FALSE(static_cast<bool>(source));
+    REQUIRE(static_cast<bool>(moved));
+    REQUIRE(moved() == 11);
+
+    wh::core::move_only_function<int()> assigned{nullptr};
+    assigned = std::move(moved);
+    REQUIRE_FALSE(static_cast<bool>(moved));
+    REQUIRE(static_cast<bool>(assigned));
+    REQUIRE(assigned() == 11);
+  }
+
+  REQUIRE(state.destructed >= 1);
+  REQUIRE(state.wrong_destructor_address == 0);
 }

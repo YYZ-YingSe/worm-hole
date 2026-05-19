@@ -24,7 +24,8 @@ class manager_helper {
 protected:
   using max_buffer = any_storage<buffer_size>;
 
-  static constexpr bool using_soo = max_buffer::template can_construct<target_t>();
+  static constexpr bool using_soo = max_buffer::template can_construct<target_t>() &&
+                                    std::is_nothrow_move_constructible_v<std::decay_t<target_t>>;
 
 public:
   using ownership_policy = std::conditional_t<using_soo, local_ownership<target_t, allocator_t>,
@@ -76,6 +77,11 @@ private:
   /// Returns reference to encoded storage payload.
   [[nodiscard]] auto stored_object() const noexcept -> const stored_type & {
     return local_buffer_.template interpret_as<const stored_type &>();
+  }
+
+  /// Returns mutable reference to encoded storage payload.
+  [[nodiscard]] auto stored_object() noexcept -> stored_type & {
+    return local_buffer_.template interpret_as<stored_type &>();
   }
 
   /// Returns pointer to encoded storage payload.
@@ -142,11 +148,11 @@ public:
   }
 
   ~object_manager() {
-    if constexpr (error_policy::check_before_destroy) {
-      if (is_invalid()) {
+    if (is_invalid()) {
+      if constexpr (error_policy::check_before_destroy) {
         error_policy::on_destroy();
-        return;
       }
+      return;
     }
     ownership_policy::destroy(allocator(), stored_object_ptr());
   }
@@ -167,7 +173,12 @@ public:
 
   object_manager(object_manager &&other) noexcept
       : allocator_type(std::move(other)), ownership_policy(std::move(other)),
-        error_policy(std::move(other)), local_buffer_(std::move(other.local_buffer_)) {
+        error_policy(std::move(other)) {
+    if (other.is_invalid()) {
+      invalidate();
+      return;
+    }
+    ownership_policy::move(allocator(), other.stored_object(), stored_object_ptr());
     other.invalidate();
   }
 
@@ -179,37 +190,82 @@ public:
   }
 
   auto operator=(object_manager &&other) noexcept -> object_manager & {
-    if constexpr (error_policy::check_before_destroy) {
-      if (is_invalid()) {
-        error_policy::on_destroy();
-      } else {
-        ownership_policy::destroy(allocator(), stored_object_ptr());
-      }
-    } else {
+    if (this == std::addressof(other)) {
+      return *this;
+    }
+
+    if (!is_invalid()) {
       ownership_policy::destroy(allocator(), stored_object_ptr());
+    } else {
+      if constexpr (error_policy::check_before_destroy) {
+        error_policy::on_destroy();
+      }
     }
 
     allocator_type::operator=(std::move(other));
-    local_buffer_ = std::move(other.local_buffer_);
+    if (other.is_invalid()) {
+      invalidate();
+      return *this;
+    }
+    ownership_policy::move(allocator(), other.stored_object(), stored_object_ptr());
     other.invalidate();
 
     return *this;
   }
 
+  /// Replaces this manager from another live manager without touching allocator state.
+  auto move_payload_from(object_manager &other) noexcept -> void {
+    if (!is_invalid()) {
+      ownership_policy::destroy(allocator(), stored_object_ptr());
+    } else {
+      if constexpr (error_policy::check_before_destroy) {
+        error_policy::on_destroy();
+      }
+    }
+
+    if (other.is_invalid()) {
+      invalidate();
+      return;
+    }
+    ownership_policy::move(allocator(), other.stored_object(), stored_object_ptr());
+    other.invalidate();
+  }
+
+  auto exchange_with(object_manager &other) noexcept -> void {
+    if (this == std::addressof(other)) {
+      return;
+    }
+
+    if (is_invalid()) {
+      if (other.is_invalid()) {
+        return;
+      }
+      ownership_policy::move(allocator(), other.stored_object(), stored_object_ptr());
+      other.invalidate();
+      return;
+    }
+    if (other.is_invalid()) {
+      ownership_policy::move(other.allocator(), stored_object(), other.stored_object_ptr());
+      invalidate();
+      return;
+    }
+
+    object_manager tmp{std::move(*this)};
+    move_payload_from(other);
+    other.move_payload_from(tmp);
+  }
+
   /// Swaps stored state with another object manager.
-  template <typename other_t, typename other_error = std::decay_t<other_t>>
+  auto swap(object_manager &other) noexcept -> void
     requires(helper::is_copy_constructible)
-  auto swap(other_t &&other) noexcept -> void {
+  {
     if constexpr (ownership_policy::allocator_traits::propagate_on_container_swap::value ||
-                  std::decay_t<other_t>::allocator_traits::propagate_on_container_swap::value) {
+                  ownership_policy::allocator_traits::propagate_on_container_swap::value) {
       using std::swap;
       swap(allocator(), other.allocator());
     }
 
-    buffer_type tmp_buffer{nullptr};
-    tmp_buffer = std::move(other.local_buffer_);
-    other.local_buffer_ = std::move(local_buffer_);
-    local_buffer_ = std::move(tmp_buffer);
+    exchange_with(other);
   }
 
   /// Marks storage as invalid without deallocating.
