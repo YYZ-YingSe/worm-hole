@@ -164,3 +164,41 @@ TEST_CASE("tools contract defaults expose null callbacks and empty rerun state",
   REQUIRE_FALSE(call_options.sequential.has_value());
   REQUIRE(call_options.rerun == nullptr);
 }
+
+TEST_CASE("tool_entry moves preserve endpoint presence without cross-slot pollution",
+          "[UT][wh/compose/node/tools_contract.hpp][tool_entry][move][lifetime]") {
+  wh::compose::tool_entry entry{};
+  entry.async_invoke = [](wh::compose::tool_call,
+                          wh::tool::call_scope) -> wh::compose::tools_invoke_sender {
+    return []() -> exec::task<wh::core::result<wh::compose::graph_value>> {
+      co_return wh::core::result<wh::compose::graph_value>{wh::compose::graph_value{1}};
+    }();
+  };
+
+  REQUIRE_FALSE(static_cast<bool>(entry.invoke));
+  REQUIRE_FALSE(static_cast<bool>(entry.stream));
+  REQUIRE(static_cast<bool>(entry.async_invoke));
+  REQUIRE_FALSE(static_cast<bool>(entry.async_stream));
+
+  auto moved = std::move(entry);
+  REQUIRE_FALSE(static_cast<bool>(moved.invoke));
+  REQUIRE_FALSE(static_cast<bool>(moved.stream));
+  REQUIRE(static_cast<bool>(moved.async_invoke));
+  REQUIRE_FALSE(static_cast<bool>(moved.async_stream));
+  REQUIRE_FALSE(static_cast<bool>(entry.async_invoke));
+  REQUIRE_FALSE(static_cast<bool>(entry.async_stream));
+
+  wh::compose::tool_registry registry{};
+  registry.insert_or_assign("ls", std::move(moved));
+  const auto &registered = registry.at("ls");
+  REQUIRE_FALSE(static_cast<bool>(registered.invoke));
+  REQUIRE_FALSE(static_cast<bool>(registered.stream));
+  REQUIRE(static_cast<bool>(registered.async_invoke));
+  REQUIRE_FALSE(static_cast<bool>(registered.async_stream));
+
+  auto copied = registered;
+  REQUIRE_FALSE(static_cast<bool>(copied.invoke));
+  REQUIRE_FALSE(static_cast<bool>(copied.stream));
+  REQUIRE(static_cast<bool>(copied.async_invoke));
+  REQUIRE_FALSE(static_cast<bool>(copied.async_stream));
+}

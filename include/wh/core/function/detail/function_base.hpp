@@ -46,8 +46,8 @@ protected:
 
   function_base(const function_base &other) { storage_t::copy(other.local_buffer_, local_buffer_); }
 
-  function_base(function_base &&other) noexcept : local_buffer_(std::move(other.local_buffer_)) {
-    storage_t::set_to_empty(other.local_buffer_);
+  function_base(function_base &&other) noexcept {
+    storage_t::move(other.local_buffer_, local_buffer_);
   }
 
   explicit function_base(std::nullptr_t) noexcept { storage_t::set_to_empty(local_buffer_); }
@@ -58,9 +58,11 @@ protected:
   }
 
   auto operator=(function_base &&other) noexcept -> function_base & {
+    if (this == &other) {
+      return *this;
+    }
     storage_t::destroy(local_buffer_);
-    local_buffer_ = std::move(other.local_buffer_);
-    storage_t::set_to_empty(other.local_buffer_);
+    storage_t::move(other.local_buffer_, local_buffer_);
 
     return *this;
   }
@@ -74,11 +76,7 @@ protected:
 
   /// Swaps callable storage state with another instance.
   auto swap(function_base &other) noexcept -> void {
-    typename storage_t::buffer_type tmp_buffer{nullptr};
-
-    tmp_buffer = std::move(other.local_buffer_);
-    other.local_buffer_ = std::move(local_buffer_);
-    local_buffer_ = std::move(tmp_buffer);
+    storage_t::swap(local_buffer_, other.local_buffer_);
   }
 };
 

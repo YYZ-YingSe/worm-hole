@@ -103,6 +103,13 @@ protected:
     allocator_traits::construct(alloc, destination, source);
   }
 
+  static auto move(allocator_type &alloc, stored_type &source,
+                   stored_type *destination) noexcept(can_nothrow_construct<stored_type &&>)
+      -> void {
+    allocator_traits::construct(alloc, destination, std::move(source));
+    allocator_traits::destroy(alloc, std::addressof(source));
+  }
+
   static auto destroy(allocator_type &alloc, stored_type *target) noexcept -> void {
     allocator_traits::destroy(alloc, target);
   }
@@ -179,6 +186,12 @@ protected:
     create(alloc, destination, *source);
   }
 
+  static auto move(allocator_type &, stored_type &source, stored_type *destination) noexcept
+      -> void {
+    *destination = source;
+    source = nullptr;
+  }
+
   static auto destroy(allocator_type &alloc, stored_type *target) noexcept -> void {
     allocator_traits::destroy(alloc, *target);
     allocator_traits::deallocate(alloc, *target, 1U);
@@ -223,6 +236,12 @@ protected:
   static auto copy(allocator_type &, const stored_type &source, stored_type *destination) noexcept
       -> void {
     *destination = wrapped_target::copy(source);
+  }
+
+  static auto move(allocator_type &, stored_type &source, stored_type *destination) noexcept
+      -> void {
+    *destination = source;
+    source = nullptr;
   }
 
   static auto destroy(allocator_type &alloc, stored_type *target) noexcept -> void {
