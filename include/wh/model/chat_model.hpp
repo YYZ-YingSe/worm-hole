@@ -304,22 +304,24 @@ stream_sender(const impl_t &impl, const wh::core::component_descriptor &descript
         if (state.has_value()) {
           emit_callback(sink, wh::callbacks::stage::start, state->second, state->first);
         }
-        return wh::core::detail::inspect_result_sender(
+        auto child_sender =
             wh::core::detail::resume_if<Resume>(make_stream_sender(impl, request),
-                                                std::move(scheduler)),
-            [&impl, request = std::move(request), sink = std::move(sink),
-             state = std::move(state)](chat_message_stream_result &status) mutable {
-              if (!state.has_value()) {
-                return;
-              }
-              auto &[run_info, event] = *state;
-              if (status.has_error()) {
-                emit_callback(sink, wh::callbacks::stage::error, event, run_info);
-                return;
-              }
-              finish_stream_event(impl, request, event);
-              emit_callback(sink, wh::callbacks::stage::end, event, run_info);
-            });
+                                                std::move(scheduler));
+        auto inspector = [&impl, request = std::move(request), sink = std::move(sink),
+                          state = std::move(state)](chat_message_stream_result &status) mutable {
+          if (!state.has_value()) {
+            return;
+          }
+          auto &[run_info, event] = *state;
+          if (status.has_error()) {
+            emit_callback(sink, wh::callbacks::stage::error, event, run_info);
+            return;
+          }
+          finish_stream_event(impl, request, event);
+          emit_callback(sink, wh::callbacks::stage::end, event, run_info);
+        };
+        return wh::core::detail::inspect_result_sender(std::move(child_sender),
+                                                       std::move(inspector));
       });
 }
 
