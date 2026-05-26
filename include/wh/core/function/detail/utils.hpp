@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/type_traits.hpp"
 
 namespace wh::core::fn_detail {
@@ -21,10 +22,7 @@ inline constexpr std::size_t member_pointer_size = sizeof(void (undefined_class:
 /// Rounds `size` up to the requested alignment.
 template <std::size_t alignment>
 [[nodiscard]] inline consteval auto add_padding_to_size(std::size_t size) -> std::size_t {
-  if (size == 0U) {
-    return 0U;
-  }
-  return alignment * (((size - 1U) / alignment) + 1U);
+  return wh::core::align_up_to<alignment>(size);
 }
 
 /// Forwarding helper: keep scalars by value, forward non-scalars by rvalue-ref.

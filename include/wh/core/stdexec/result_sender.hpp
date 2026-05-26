@@ -13,6 +13,7 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
 #include "wh/core/stdexec/erased_receiver_ref.hpp"
@@ -24,11 +25,7 @@ namespace wh::core::detail {
 namespace result_sender_detail {
 
 inline constexpr std::size_t erased_inline_size = 6U * sizeof(void *);
-inline constexpr std::size_t erased_inline_align = alignof(std::max_align_t);
-
-template <typename value_t>
-inline constexpr bool stored_inline_v =
-    sizeof(value_t) <= erased_inline_size && alignof(value_t) <= erased_inline_align;
+inline constexpr std::size_t erased_inline_align = wh::core::default_inline_storage_alignment;
 
 using receiver_policy = wh::core::detail::erased_receiver_scheduler_policy<
     wh::core::detail::missing_scheduler_mode::fallback_inline>;
@@ -75,7 +72,7 @@ private:
   }
 
   template <typename operation_t, typename factory_t> auto emplace(factory_t &&factory) -> void {
-    if constexpr (stored_inline_v<operation_t>) {
+    if constexpr (wh::core::fits_inline_storage<operation_t>(InlineSize, InlineAlign)) {
       object_ = inline_buffer_;
       ::new (object_) operation_t{std::forward<factory_t>(factory)()};
       uses_heap_ = false;
@@ -138,7 +135,7 @@ public:
   template <typename sender_t>
   auto emplace(sender_t &&sender) -> void {
     using stored_sender_t = std::remove_cvref_t<sender_t>;
-    if constexpr (stored_inline_v<stored_sender_t>) {
+    if constexpr (wh::core::fits_inline_storage<stored_sender_t>(InlineSize, InlineAlign)) {
       object_ = inline_buffer_;
       std::construct_at(static_cast<stored_sender_t *>(object_), std::forward<sender_t>(sender));
       uses_heap_ = false;

@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
+
 namespace wh::core::detail {
 
 // Untyped storage keeps operation-state member layouts free of internal-linkage
@@ -23,23 +25,23 @@ public:
   auto operator=(manual_storage &&) -> manual_storage & = delete;
 
   template <typename value_t, typename... arg_ts>
-  [[nodiscard]] auto
-  construct(arg_ts &&...args) noexcept(std::is_nothrow_constructible_v<value_t, arg_ts...>)
+  auto construct(arg_ts &&...args) noexcept(std::is_nothrow_constructible_v<value_t, arg_ts...>)
       -> value_t & {
     validate_type<value_t>();
     return *std::launder(::new (static_cast<void *>(buffer_))
-                             value_t{std::forward<arg_ts>(args)...});
+                             value_t(std::forward<arg_ts>(args)...));
   }
 
   template <typename value_t, typename factory_t, typename... arg_ts>
-  [[nodiscard]] auto construct_from(factory_t &&factory, arg_ts &&...args) -> value_t & {
+  auto construct_from(factory_t &&factory, arg_ts &&...args) -> value_t & {
     validate_type<value_t>();
-    return *std::launder(::new (static_cast<void *>(buffer_)) value_t{
-        std::forward<factory_t>(factory)(std::forward<arg_ts>(args)...)});
+    return *std::launder(::new (static_cast<void *>(buffer_))
+                             value_t(std::forward<factory_t>(factory)(
+                                 std::forward<arg_ts>(args)...)));
   }
 
   template <typename value_t, typename factory_t>
-  [[nodiscard]] auto construct_with(factory_t &&factory) -> value_t & {
+  auto construct_with(factory_t &&factory) -> value_t & {
     return construct_from<value_t>(std::forward<factory_t>(factory));
   }
 
@@ -69,7 +71,7 @@ private:
   template <typename value_t> static consteval auto validate_type() -> void {
     static_assert(std::is_object_v<value_t>, "manual_storage only supports object types");
     static_assert(sizeof(value_t) <= Size, "manual_storage buffer is too small for value type");
-    static_assert(alignof(value_t) <= Align,
+    static_assert(wh::core::fits_storage_alignment(Align, alignof(value_t)),
                   "manual_storage alignment is too small for value type");
   }
 
@@ -87,20 +89,19 @@ public:
   auto operator=(manual_lifetime &&) -> manual_lifetime & = delete;
 
   template <typename... arg_ts>
-  [[nodiscard]] auto
-  construct(arg_ts &&...args) noexcept(std::is_nothrow_constructible_v<value_t, arg_ts...>)
+  auto construct(arg_ts &&...args) noexcept(std::is_nothrow_constructible_v<value_t, arg_ts...>)
       -> value_t & {
     return storage_.template construct<value_t>(std::forward<arg_ts>(args)...);
   }
 
   template <typename factory_t, typename... arg_ts>
-  [[nodiscard]] auto construct_from(factory_t &&factory, arg_ts &&...args) -> value_t & {
+  auto construct_from(factory_t &&factory, arg_ts &&...args) -> value_t & {
     return storage_.template construct_from<value_t>(std::forward<factory_t>(factory),
                                                      std::forward<arg_ts>(args)...);
   }
 
   template <typename factory_t>
-  [[nodiscard]] auto construct_with(factory_t &&factory) -> value_t & {
+  auto construct_with(factory_t &&factory) -> value_t & {
     return storage_.template construct_with<value_t>(std::forward<factory_t>(factory));
   }
 

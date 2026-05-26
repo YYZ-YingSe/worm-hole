@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
+
 namespace wh::core::fn_detail {
 
 /// Raw aligned storage used by function wrappers for vtable/object payload.
@@ -14,7 +16,7 @@ template <std::size_t size_v> union any_storage {
   /// Pointer sentinel used by empty-state checks.
   void *head_{nullptr};
   /// Backing byte storage for in-place object construction.
-  alignas(void *) std::byte data_[std::max<std::size_t>(size_v, 1U)];
+  alignas(wh::core::pointer_alignment) std::byte data_[std::max<std::size_t>(size_v, 1U)];
 
   any_storage() noexcept = default;
 
@@ -55,8 +57,7 @@ template <std::size_t size_v> union any_storage {
 
   /// Returns whether the requested type can fit in this storage.
   template <typename type_t> [[nodiscard]] static consteval auto can_construct() -> bool {
-    return (sizeof(type_t) <= size_v) && (alignof(type_t) <= alignof(void *)) &&
-           (alignof(void *) % alignof(type_t) == 0U);
+    return wh::core::fits_pointer_aligned_storage<type_t>(size_v);
   }
 };
 

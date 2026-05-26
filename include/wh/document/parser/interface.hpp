@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/component/concepts.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/result.hpp"
@@ -111,6 +112,8 @@ public:
 
 private:
   static constexpr std::size_t inline_storage_size_ = sizeof(void *) * 6U;
+  static constexpr std::size_t inline_storage_align_ =
+      wh::core::default_inline_storage_alignment;
 
   struct parser_vtable {
     wh::core::component_descriptor (*descriptor)(const parser &);
@@ -124,7 +127,7 @@ private:
 
   template <typename stored_t>
   static constexpr bool use_inline_storage_ =
-      sizeof(stored_t) <= inline_storage_size_ && alignof(stored_t) <= alignof(std::max_align_t) &&
+      wh::core::fits_inline_storage<stored_t>(inline_storage_size_, inline_storage_align_) &&
       std::is_nothrow_move_constructible_v<stored_t>;
 
   template <typename stored_t>
@@ -178,7 +181,7 @@ private:
     vtable_->destroy(*this);
   }
 
-  alignas(std::max_align_t) std::byte inline_storage_[inline_storage_size_]{};
+  alignas(inline_storage_align_) std::byte inline_storage_[inline_storage_size_]{};
   void *heap_storage_{nullptr};
   bool inline_storage_used_{false};
   const parser_vtable *vtable_{nullptr};

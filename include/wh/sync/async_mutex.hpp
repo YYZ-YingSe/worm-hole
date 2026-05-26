@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <new>
 #include <optional>
 #include <type_traits>
@@ -13,6 +14,7 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/core/compiler.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 #include "wh/core/stdexec/resume_scheduler.hpp"
 #include "wh/core/stdexec/scheduler_handoff.hpp"
 #include "wh/core/stdexec/try_schedule.hpp"
@@ -234,6 +236,8 @@ template <typename receiver_t> struct async_mutex::lock_operation final : async_
 
   using handoff_op_t =
       stdexec::connect_result_t<stdexec::schedule_result_t<scheduler_t>, handoff_receiver>;
+  using handoff_storage_t = wh::core::detail::manual_storage<sizeof(handoff_op_t),
+                                                             alignof(handoff_op_t)>;
   using completion_bits_t = wh::sync::detail::completion_bits;
   using stop_callback_t = stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
   using handoff_completion_t = std::variant<handoff_value_tag, handoff_stopped_tag>;
@@ -245,27 +249,28 @@ template <typename receiver_t> struct async_mutex::lock_operation final : async_
   std::optional<stop_callback_t> stop_callback_{};
   // Lazy handoff_op: only constructed when scheduler handoff is needed.
   // Avoids connect(schedule(scheduler), ...) cost on the fast path.
-  alignas(handoff_op_t) std::byte handoff_storage_[sizeof(handoff_op_t)];
+  handoff_storage_t handoff_storage_{};
   bool handoff_constructed_{false};
   std::optional<handoff_completion_t> handoff_completion_{};
   std::atomic<bool> handoff_completion_ready_{false};
   std::atomic<bool> handoff_start_returned_{true};
 
   auto *handoff_ptr() noexcept {
-    return std::launder(reinterpret_cast<handoff_op_t *>(handoff_storage_));
+    return std::addressof(handoff_storage_.template get<handoff_op_t>());
   }
 
   auto reset_handoff() noexcept -> void {
     if (!handoff_constructed_) {
       return;
     }
-    handoff_ptr()->~handoff_op_t();
+    handoff_storage_.template destruct<handoff_op_t>();
     handoff_constructed_ = false;
   }
 
   void construct_handoff() {
-    ::new (static_cast<void *>(handoff_storage_))
-        handoff_op_t(stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this}));
+    handoff_storage_.template construct_with<handoff_op_t>([this]() {
+      return stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this});
+    });
     handoff_constructed_ = true;
   }
 

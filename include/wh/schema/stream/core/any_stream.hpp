@@ -15,6 +15,7 @@
 
 #include <stdexec/execution.hpp>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/error_domain.hpp"
 #include "wh/core/result.hpp"
@@ -35,12 +36,15 @@ template <typename value_t, std::size_t storage_size = 64U> class any_stream_wri
 namespace detail {
 
 template <std::size_t storage_size> struct erased_storage {
-  alignas(std::max_align_t) std::array<std::byte, storage_size> data{};
+  static_assert(storage_size > 0U, "stream erased storage size must be greater than zero");
+
+  alignas(wh::core::default_inline_storage_alignment) std::array<std::byte, storage_size> data{};
 };
 
 template <typename model_t, std::size_t storage_size>
 inline constexpr bool fits_erased_storage_v =
-    sizeof(model_t) <= storage_size && alignof(model_t) <= alignof(erased_storage<storage_size>) &&
+    wh::core::fits_inline_storage<model_t>(storage_size,
+                                           wh::core::default_inline_storage_alignment) &&
     std::is_nothrow_move_constructible_v<model_t>;
 
 template <typename model_t, std::size_t storage_size>

@@ -2,7 +2,9 @@
 // before exposing Win32 declarations to public project headers.
 #pragma once
 
-#if defined(_WIN32)
+#include "wh/core/compiler.hpp"
+
+#if WH_OS_WINDOWS
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN

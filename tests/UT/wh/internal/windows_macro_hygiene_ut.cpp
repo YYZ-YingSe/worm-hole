@@ -1,9 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/run_context.hpp"
 #include "wh/internal/serialization.hpp"
 
-#if defined(_WIN32) && defined(GetObject)
+#if WH_OS_WINDOWS && defined(GetObject)
 #error "Win32 GetObject macro leaked into project headers"
 #endif
 

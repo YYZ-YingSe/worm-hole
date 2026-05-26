@@ -8,19 +8,19 @@
 #include <sstream>
 #include <string>
 
-#if defined(_WIN32)
+#include "wh/core/compiler.hpp"
+
+#if WH_HAS_WINDOWS_STACKTRACE_CAPTURE
 #include "wh/internal/windows_sdk.hpp"
-#elif defined(__unix__) || defined(__APPLE__)
+#elif WH_HAS_EXECINFO_STACKTRACE_CAPTURE
 #include <execinfo.h>
 #endif
-
-#include "wh/core/compiler.hpp"
 
 namespace wh::internal {
 
 /// Captures a best-effort textual call stack for fatal diagnostics.
 [[nodiscard]] inline auto capture_call_stack() -> std::string {
-#if defined(_WIN32)
+#if WH_HAS_WINDOWS_STACKTRACE_CAPTURE
   std::array<void *, 64U> frames{};
   const auto captured = static_cast<std::size_t>(
       ::CaptureStackBackTrace(0U, static_cast<DWORD>(frames.size()), frames.data(), nullptr));
@@ -41,7 +41,7 @@ namespace wh::internal {
     return "stack-unavailable";
   }
   return stack;
-#elif defined(__unix__) || defined(__APPLE__)
+#elif WH_HAS_EXECINFO_STACKTRACE_CAPTURE
   std::array<void *, 64U> frames{};
   const auto captured = ::backtrace(frames.data(), static_cast<int>(frames.size()));
   if (captured <= 0) {
