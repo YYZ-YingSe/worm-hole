@@ -181,50 +181,74 @@
 #define wh_empty_bases
 #endif
 
-#if WH_COMPILER_GNU_LIKE && WH_HAS_CPP_ATTRIBUTE(gnu::always_inline)
+#if WH_COMPILER_GNU_LIKE
+#if WH_HAS_CPP_ATTRIBUTE(gnu::always_inline)
 #define WH_ATTRIBUTE_ALWAYS_INLINE [[gnu::always_inline]]
-#elif WH_COMPILER_GNU_LIKE && WH_HAS_ATTRIBUTE(always_inline)
+#elif WH_HAS_ATTRIBUTE(always_inline)
 #define WH_ATTRIBUTE_ALWAYS_INLINE __attribute__((always_inline))
 #else
 #define WH_ATTRIBUTE_ALWAYS_INLINE
 #endif
+#else
+#define WH_ATTRIBUTE_ALWAYS_INLINE
+#endif
 
-#if WH_COMPILER_GNU_LIKE && WH_HAS_CPP_ATTRIBUTE(gnu::noinline)
+#if WH_COMPILER_GNU_LIKE
+#if WH_HAS_CPP_ATTRIBUTE(gnu::noinline)
 #define WH_ATTRIBUTE_NOINLINE [[gnu::noinline]]
-#elif WH_COMPILER_GNU_LIKE && WH_HAS_ATTRIBUTE(noinline)
+#elif WH_HAS_ATTRIBUTE(noinline)
 #define WH_ATTRIBUTE_NOINLINE __attribute__((noinline))
 #else
 #define WH_ATTRIBUTE_NOINLINE
 #endif
+#else
+#define WH_ATTRIBUTE_NOINLINE
+#endif
 
-#if WH_COMPILER_GNU_LIKE && WH_HAS_CPP_ATTRIBUTE(gnu::hot)
+#if WH_COMPILER_GNU_LIKE
+#if WH_HAS_CPP_ATTRIBUTE(gnu::hot)
 #define WH_ATTRIBUTE_HOT [[gnu::hot]]
-#elif WH_COMPILER_GNU_LIKE && WH_HAS_ATTRIBUTE(hot)
+#elif WH_HAS_ATTRIBUTE(hot)
 #define WH_ATTRIBUTE_HOT __attribute__((hot))
 #else
 #define WH_ATTRIBUTE_HOT
 #endif
+#else
+#define WH_ATTRIBUTE_HOT
+#endif
 
-#if WH_COMPILER_GNU_LIKE && WH_HAS_CPP_ATTRIBUTE(gnu::cold)
+#if WH_COMPILER_GNU_LIKE
+#if WH_HAS_CPP_ATTRIBUTE(gnu::cold)
 #define WH_ATTRIBUTE_COLD [[gnu::cold]]
-#elif WH_COMPILER_GNU_LIKE && WH_HAS_ATTRIBUTE(cold)
+#elif WH_HAS_ATTRIBUTE(cold)
 #define WH_ATTRIBUTE_COLD __attribute__((cold))
 #else
 #define WH_ATTRIBUTE_COLD
 #endif
+#else
+#define WH_ATTRIBUTE_COLD
+#endif
 
-#if WH_COMPILER_GNU_LIKE && WH_HAS_CPP_ATTRIBUTE(gnu::pure)
+#if WH_COMPILER_GNU_LIKE
+#if WH_HAS_CPP_ATTRIBUTE(gnu::pure)
 #define WH_ATTRIBUTE_PURE [[gnu::pure]]
-#elif WH_COMPILER_GNU_LIKE && WH_HAS_ATTRIBUTE(pure)
+#elif WH_HAS_ATTRIBUTE(pure)
 #define WH_ATTRIBUTE_PURE __attribute__((pure))
 #else
 #define WH_ATTRIBUTE_PURE
 #endif
+#else
+#define WH_ATTRIBUTE_PURE
+#endif
 
-#if WH_COMPILER_GNU_LIKE && WH_HAS_CPP_ATTRIBUTE(gnu::const)
+#if WH_COMPILER_GNU_LIKE
+#if WH_HAS_CPP_ATTRIBUTE(gnu::const)
 #define WH_ATTRIBUTE_CONST [[gnu::const]]
-#elif WH_COMPILER_GNU_LIKE && WH_HAS_ATTRIBUTE(const)
+#elif WH_HAS_ATTRIBUTE(const)
 #define WH_ATTRIBUTE_CONST __attribute__((const))
+#else
+#define WH_ATTRIBUTE_CONST
+#endif
 #else
 #define WH_ATTRIBUTE_CONST
 #endif
