@@ -356,7 +356,7 @@ public:
   }
 
   void clear() noexcept {
-    if constexpr (!std::is_trivially_destructible_v<value_t>) {
+    if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
       std::destroy_n(data_, size_);
     }
     size_ = 0U;
@@ -426,7 +426,7 @@ public:
     }
 
     if (new_size <= size_) {
-      if constexpr (!std::is_trivially_destructible_v<value_t>) {
+      if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
         std::destroy_n(data_ + new_size, size_ - new_size);
       }
       size_ = new_size;
@@ -446,7 +446,7 @@ public:
     }
 
     if (new_size <= size_) {
-      if constexpr (!std::is_trivially_destructible_v<value_t>) {
+      if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
         std::destroy_n(data_ + new_size, size_ - new_size);
       }
       size_ = new_size;
@@ -464,7 +464,7 @@ public:
     }
 
     if (new_size <= size_) {
-      if constexpr (!std::is_trivially_destructible_v<value_t>) {
+      if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
         std::destroy_n(data_ + new_size, size_ - new_size);
       }
       size_ = new_size;
@@ -748,7 +748,7 @@ public:
     const std::size_t erase_count = last_index - first_index;
     const std::size_t move_count = size_ - last_index;
 
-    if constexpr (std::is_trivially_copyable_v<value_t>) {
+    if constexpr (wh::core::can_memmove_value_v<value_t>) {
       if (move_count > 0U) {
         std::memmove(data_ + first_index, data_ + last_index, sizeof(value_t) * move_count);
       }
@@ -757,7 +757,7 @@ public:
     }
 
     const std::size_t new_size = size_ - erase_count;
-    if constexpr (!std::is_trivially_destructible_v<value_t>) {
+    if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
       std::destroy_n(data_ + new_size, erase_count);
     }
     size_ = new_size;
@@ -770,7 +770,7 @@ public:
     }
 
     --size_;
-    if constexpr (!std::is_trivially_destructible_v<value_t>) {
+    if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
       std::destroy_at(data_ + size_);
     }
   }
@@ -790,7 +790,7 @@ public:
       return output;
     }
 
-    if constexpr (std::is_trivially_copyable_v<value_t>) {
+    if constexpr (wh::core::can_memcpy_value_v<value_t>) {
       std::memcpy(output.data_, values.data(), sizeof(value_t) * count);
       output.size_ = count;
       return output;
@@ -803,7 +803,7 @@ public:
 
 private:
   static constexpr bool should_trivially_relocate =
-      std::is_trivially_copyable_v<value_t> && std::is_move_constructible_v<value_t>;
+      wh::core::can_trivially_relocate_value_v<value_t>;
 
   alignas(value_t) std::array<std::byte, sizeof(value_t) * inline_capacity> inline_buffer_{};
   pointer data_;
@@ -836,7 +836,7 @@ private:
   }
 
   auto shift_right_one(const std::size_t index) -> void {
-    if constexpr (std::is_trivially_copyable_v<value_t>) {
+    if constexpr (wh::core::can_memmove_value_v<value_t>) {
       const std::size_t tail_count = size_ - index;
       std::memmove(data_ + index + 1U, data_ + index, sizeof(value_t) * tail_count);
       ++size_;
@@ -866,7 +866,7 @@ private:
   }
 
   void shift_left_one(const std::size_t index) {
-    if constexpr (std::is_trivially_copyable_v<value_t>) {
+    if constexpr (wh::core::can_memmove_value_v<value_t>) {
       const std::size_t move_count = size_ - index - 1U;
       if (move_count > 0U) {
         std::memmove(data_ + index, data_ + index + 1U, sizeof(value_t) * move_count);
@@ -876,7 +876,7 @@ private:
     }
 
     --size_;
-    if constexpr (!std::is_trivially_destructible_v<value_t>) {
+    if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
       std::destroy_at(data_ + size_);
     }
   }
@@ -895,7 +895,7 @@ private:
         throw std::length_error("small_vector allocation failed");
       }
 
-      if constexpr (std::is_trivially_copyable_v<value_t>) {
+      if constexpr (wh::core::can_memcpy_value_v<value_t>) {
         if (index > 0U) {
           std::memcpy(new_data, data_, sizeof(value_t) * index);
         }
@@ -932,7 +932,7 @@ private:
         }
       }
 
-      if constexpr (!std::is_trivially_destructible_v<value_t>) {
+      if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
         std::destroy_n(data_, size_);
       }
       release_heap_if_needed();
@@ -951,7 +951,7 @@ private:
       return data_ + index;
     }
 
-    if constexpr (std::is_trivially_copyable_v<value_t>) {
+    if constexpr (wh::core::can_memmove_value_v<value_t>) {
       std::memmove(data_ + index + count, data_ + index, sizeof(value_t) * tail_count);
 
       const std::size_t overlap_count = (std::min)(count, tail_count);
@@ -1040,7 +1040,7 @@ private:
         throw std::length_error("small_vector allocation failed");
       }
 
-      if constexpr (std::contiguous_iterator<forward_it> && std::is_trivially_copyable_v<value_t> &&
+      if constexpr (std::contiguous_iterator<forward_it> && wh::core::can_memcpy_value_v<value_t> &&
                     std::same_as<std::remove_cv_t<std::iter_value_t<forward_it>>, value_t>) {
         if (index > 0U) {
           std::memcpy(new_data, data_, sizeof(value_t) * index);
@@ -1075,7 +1075,7 @@ private:
         }
       }
 
-      if constexpr (!std::is_trivially_destructible_v<value_t>) {
+      if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
         std::destroy_n(data_, size_);
       }
       release_heap_if_needed();
@@ -1094,7 +1094,7 @@ private:
       return data_ + index;
     }
 
-    if constexpr (std::contiguous_iterator<forward_it> && std::is_trivially_copyable_v<value_t> &&
+    if constexpr (std::contiguous_iterator<forward_it> && wh::core::can_memmove_value_v<value_t> &&
                   std::same_as<std::remove_cv_t<std::iter_value_t<forward_it>>, value_t>) {
       const value_t *const source_begin = std::to_address(first);
       const value_t *const source_end = source_begin + count;
@@ -1259,7 +1259,7 @@ private:
       throw;
     }
 
-    if constexpr (!std::is_trivially_destructible_v<value_t>) {
+    if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
       std::destroy_n(data_, size_);
     }
 
@@ -1420,7 +1420,7 @@ private:
 
   template <std::input_iterator input_it>
   auto append_copy_range(input_it first, input_it last) -> void {
-    if constexpr (std::contiguous_iterator<input_it> && std::is_trivially_copyable_v<value_t> &&
+    if constexpr (std::contiguous_iterator<input_it> && wh::core::can_memcpy_value_v<value_t> &&
                   std::same_as<std::remove_cv_t<std::iter_value_t<input_it>>, value_t>) {
       const std::size_t count = static_cast<std::size_t>(last - first);
       if (count > 0U) {
@@ -1473,7 +1473,7 @@ private:
 
   template <std::input_iterator input_it>
   auto append_move_range(input_it first, input_it last) -> void {
-    if constexpr (std::contiguous_iterator<input_it> && std::is_trivially_copyable_v<value_t> &&
+    if constexpr (std::contiguous_iterator<input_it> && wh::core::can_memmove_value_v<value_t> &&
                   std::same_as<std::remove_cv_t<std::iter_value_t<input_it>>, value_t>) {
       const std::size_t count = static_cast<std::size_t>(last - first);
       if (count > 0U) {

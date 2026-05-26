@@ -18,6 +18,7 @@
 #include "wh/core/compiler.hpp"
 #include "wh/core/error.hpp"
 #include "wh/core/error_domain.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 namespace wh::core::detail {
 
 template <typename owner_t, stdexec::scheduler scheduler_t> class scheduled_resume_turn {
@@ -64,6 +65,7 @@ template <typename owner_t, stdexec::scheduler scheduler_t> class scheduled_resu
   using sender_t = decltype(stdexec::starts_on(
       exec::trampoline_scheduler{}, stdexec::schedule(std::declval<const scheduler_type &>())));
   using op_t = stdexec::connect_result_t<sender_t, receiver>;
+  using op_storage_t = wh::core::detail::manual_storage<sizeof(op_t), alignof(op_t)>;
 
 public:
   template <typename scheduler_u>
@@ -115,7 +117,7 @@ public:
       return;
     }
     wh_invariant(!running_);
-    op()->~op_t();
+    op_storage_.template destruct<op_t>();
     op_engaged_ = false;
     start_returned_ = false;
     turn_completed_ = false;
@@ -123,11 +125,11 @@ public:
 
 private:
   [[nodiscard]] auto op() noexcept -> op_t * {
-    return std::launder(reinterpret_cast<op_t *>(op_storage_));
+    return std::addressof(op_storage_.template get<op_t>());
   }
 
   [[nodiscard]] auto op() const noexcept -> const op_t * {
-    return std::launder(reinterpret_cast<const op_t *>(op_storage_));
+    return std::addressof(op_storage_.template get<op_t>());
   }
 
   template <typename error_t>
@@ -195,9 +197,11 @@ private:
     if (op_engaged_) {
       return;
     }
-    ::new (static_cast<void *>(op())) op_t(stdexec::connect(
-        stdexec::starts_on(exec::trampoline_scheduler{}, stdexec::schedule(scheduler_)),
-        receiver{this, owner}));
+    op_storage_.template construct_with<op_t>([this, owner]() {
+      return stdexec::connect(
+          stdexec::starts_on(exec::trampoline_scheduler{}, stdexec::schedule(scheduler_)),
+          receiver{this, owner});
+    });
     op_engaged_ = true;
     start_returned_ = false;
     turn_completed_ = false;
@@ -236,7 +240,7 @@ private:
     wh_invariant(turn_completed_);
     wh_invariant(start_returned_);
     wh_invariant(!running_);
-    op()->~op_t();
+    op_storage_.template destruct<op_t>();
     op_engaged_ = false;
     start_returned_ = false;
     turn_completed_ = false;
@@ -265,7 +269,7 @@ private:
   }
 
   scheduler_type scheduler_;
-  alignas(op_t) std::byte op_storage_[sizeof(op_t)];
+  op_storage_t op_storage_{};
   std::mutex mutex_{};
   std::atomic<std::uint64_t> pending_work_{0U};
   bool op_engaged_{false};

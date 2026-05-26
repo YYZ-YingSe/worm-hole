@@ -13,6 +13,7 @@
 #include <typeinfo>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/result.hpp"
 #include "wh/internal/type_name.hpp"
 
@@ -172,13 +173,13 @@ template <typename value_t>
 } // namespace detail
 
 template <std::size_t inline_size = 3U * sizeof(void *),
-          std::size_t inline_align = alignof(std::max_align_t)>
+          std::size_t inline_align = wh::core::default_inline_storage_alignment>
 class basic_any {
 private:
   template <typename value_t>
   static constexpr bool fits_inline_v =
-      (inline_size != 0U) && (alignof(value_t) <= inline_align) &&
-      (sizeof(value_t) <= inline_size) && std::is_nothrow_move_constructible_v<value_t>;
+      (inline_size != 0U) && wh::core::fits_inline_storage<value_t>(inline_size, inline_align) &&
+      std::is_nothrow_move_constructible_v<value_t>;
 
   static constexpr std::size_t storage_size = (inline_size == 0U) ? 1U : inline_size;
 
@@ -222,7 +223,7 @@ private:
     static auto destroy(basic_any &self) noexcept -> void {
       switch (self.policy_) {
       case any_policy::inline_owner:
-        if constexpr (!std::is_trivially_destructible_v<value_t>) {
+        if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
           inline_ptr(self)->~value_t();
         }
         break;
@@ -253,7 +254,7 @@ private:
       if constexpr (fits_inline_v<value_t>) {
         auto *typed = inline_ptr(source);
         ::new (static_cast<void *>(target.storage_.buffer)) value_t(std::move(*typed));
-        if constexpr (!std::is_trivially_destructible_v<value_t>) {
+        if constexpr (!wh::core::can_skip_destroy_v<value_t>) {
           typed->~value_t();
         }
         target.policy_ = any_policy::inline_owner;

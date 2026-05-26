@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <memory>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -19,6 +20,7 @@
 #include "wh/core/bounded_queue/status.hpp"
 #include "wh/core/compiler.hpp"
 #include "wh/core/result.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 #include "wh/core/stdexec/resume_scheduler.hpp"
 #include "wh/core/stdexec/scheduler_handoff.hpp"
 #include "wh/core/stdexec/try_schedule.hpp"
@@ -448,6 +450,8 @@ private:
     struct try_handoff_receiver;
     using stop_callback_t = stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
     using handoff_op_t = stdexec::connect_result_t<handoff_sender_t, handoff_receiver>;
+    using handoff_op_storage_t = detail::manual_storage<sizeof(handoff_op_t),
+                                                        alignof(handoff_op_t)>;
     using try_handoff_storage_t = detail::try_handoff_storage<scheduler_t, try_handoff_receiver>;
     using completion_bits_t = detail::completion_bits;
     struct handoff_value_tag {};
@@ -460,7 +464,7 @@ private:
     value_type value;
     // Lazy handoff_op: only constructed when scheduler handoff is needed.
     // Avoids connect(schedule(scheduler), ...) cost on the fast path.
-    alignas(handoff_op_t) std::byte handoff_op_storage_[sizeof(handoff_op_t)];
+    handoff_op_storage_t handoff_op_storage_{};
     bool handoff_op_constructed_{false};
     wh_no_unique_address try_handoff_storage_t try_handoff_{};
     completion_bits_t completion_bits_{};
@@ -470,20 +474,21 @@ private:
     std::atomic<bool> handoff_start_returned_{true};
 
     auto *handoff_op_ptr() noexcept {
-      return std::launder(reinterpret_cast<handoff_op_t *>(handoff_op_storage_));
+      return std::addressof(handoff_op_storage_.template get<handoff_op_t>());
     }
 
     auto reset_handoff_op() noexcept -> void {
       if (!handoff_op_constructed_) {
         return;
       }
-      handoff_op_ptr()->~handoff_op_t();
+      handoff_op_storage_.template destruct<handoff_op_t>();
       handoff_op_constructed_ = false;
     }
 
     void construct_handoff_op() {
-      ::new (static_cast<void *>(handoff_op_storage_))
-          handoff_op_t(stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this}));
+      handoff_op_storage_.template construct_with<handoff_op_t>([this]() {
+        return stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this});
+      });
       handoff_op_constructed_ = true;
     }
 
@@ -834,6 +839,8 @@ private:
     struct try_handoff_receiver;
     using stop_callback_t = stdexec::stop_callback_for_t<stop_token_t, stop_callback>;
     using handoff_op_t = stdexec::connect_result_t<handoff_sender_t, handoff_receiver>;
+    using handoff_op_storage_t = detail::manual_storage<sizeof(handoff_op_t),
+                                                        alignof(handoff_op_t)>;
     using try_handoff_storage_t = detail::try_handoff_storage<scheduler_t, try_handoff_receiver>;
     using completion_bits_t = detail::completion_bits;
     struct handoff_value_tag {};
@@ -844,7 +851,7 @@ private:
     receiver_t receiver;
     scheduler_t scheduler;
     // Lazy handoff_op: only constructed when scheduler handoff is needed.
-    alignas(handoff_op_t) std::byte handoff_op_storage_[sizeof(handoff_op_t)];
+    handoff_op_storage_t handoff_op_storage_{};
     bool handoff_op_constructed_{false};
     wh_no_unique_address try_handoff_storage_t try_handoff_{};
     completion_bits_t completion_bits_{};
@@ -854,20 +861,21 @@ private:
     std::atomic<bool> handoff_start_returned_{true};
 
     auto *handoff_op_ptr() noexcept {
-      return std::launder(reinterpret_cast<handoff_op_t *>(handoff_op_storage_));
+      return std::addressof(handoff_op_storage_.template get<handoff_op_t>());
     }
 
     auto reset_handoff_op() noexcept -> void {
       if (!handoff_op_constructed_) {
         return;
       }
-      handoff_op_ptr()->~handoff_op_t();
+      handoff_op_storage_.template destruct<handoff_op_t>();
       handoff_op_constructed_ = false;
     }
 
     void construct_handoff_op() {
-      ::new (static_cast<void *>(handoff_op_storage_))
-          handoff_op_t(stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this}));
+      handoff_op_storage_.template construct_with<handoff_op_t>([this]() {
+        return stdexec::connect(stdexec::schedule(scheduler), handoff_receiver{this});
+      });
       handoff_op_constructed_ = true;
     }
 

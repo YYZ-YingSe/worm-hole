@@ -14,6 +14,7 @@
 #include <stdexec/execution.hpp>
 
 #include "wh/core/compiler.hpp"
+#include "wh/core/stdexec/manual_lifetime.hpp"
 #include "wh/core/stdexec/result_sender.hpp"
 
 namespace wh::core::detail {
@@ -22,6 +23,8 @@ template <typename factory_t> class defer_sender_impl {
   template <typename receiver_t> class operation {
     using child_sender_t = std::remove_cvref_t<std::invoke_result_t<factory_t &>>;
     using child_op_t = stdexec::connect_result_t<child_sender_t, receiver_t>;
+    using child_op_storage_t = wh::core::detail::manual_storage<sizeof(child_op_t),
+                                                                alignof(child_op_t)>;
 
   public:
     template <typename stored_factory_t>
@@ -34,19 +37,20 @@ template <typename factory_t> class defer_sender_impl {
 
     ~operation() {
       if (child_started_) {
-        std::destroy_at(child_op());
+        child_op_storage_.template destruct<child_op_t>();
       }
     }
 
   private:
     [[nodiscard]] auto child_op() noexcept -> child_op_t * {
-      return std::launder(reinterpret_cast<child_op_t *>(&child_op_storage_));
+      return std::addressof(child_op_storage_.template get<child_op_t>());
     }
 
     auto start_child() noexcept -> void {
       try {
-        ::new (static_cast<void *>(child_op()))
-            child_op_t(stdexec::connect(std::invoke(factory_), std::move(receiver_)));
+        child_op_storage_.template construct_with<child_op_t>([this]() {
+          return stdexec::connect(std::invoke(factory_), std::move(receiver_));
+        });
         child_started_ = true;
       } catch (...) {
         stdexec::set_error(std::move(receiver_), std::current_exception());
@@ -57,7 +61,7 @@ template <typename factory_t> class defer_sender_impl {
 
     receiver_t receiver_;
     wh_no_unique_address factory_t factory_;
-    alignas(child_op_t) std::byte child_op_storage_[sizeof(child_op_t)];
+    child_op_storage_t child_op_storage_{};
     bool child_started_{false};
   };
 

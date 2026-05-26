@@ -38,11 +38,11 @@ protected:
                          cloneable_vtable<signature_t>>;
 
   static constexpr std::size_t size_value =
-      add_padding_to_size<alignof(void *)>(sizeof(vtable_type)) +
+      add_padding_to_size<wh::core::pointer_alignment>(sizeof(vtable_type)) +
       std::max<std::size_t>(buffer_size, sizeof(void *));
 
   static constexpr std::size_t alignment_value =
-      std::max<std::size_t>(alignof(vtable_type), alignof(void *));
+      std::max<std::size_t>(alignof(vtable_type), wh::core::pointer_alignment);
 
   static constexpr std::size_t padded_size = add_padding_to_size<alignment_value>(size_value);
 

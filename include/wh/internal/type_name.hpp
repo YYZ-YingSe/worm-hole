@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "wh/core/compiler.hpp"
 #include "wh/core/type_traits.hpp"
 
 namespace wh::internal {
@@ -59,11 +60,11 @@ template <typename t> using remove_cvref_t = wh::core::remove_cvref_t<t>;
 
 /// Returns compiler-specific pretty-function string for type extraction.
 template <typename t> [[nodiscard]] constexpr std::string_view raw_type_name() noexcept {
-#if defined(__clang__)
+#if WH_COMPILER_CLANG
   return __PRETTY_FUNCTION__;
-#elif defined(__GNUC__)
+#elif WH_COMPILER_GCC
   return __PRETTY_FUNCTION__;
-#elif defined(_MSC_VER)
+#elif WH_COMPILER_MSVC
   return __FUNCSIG__;
 #else
   return "";
@@ -74,16 +75,16 @@ template <typename t> [[nodiscard]] constexpr std::string_view raw_type_name() n
 template <typename t> [[nodiscard]] constexpr std::string_view extract_pretty_name() noexcept {
   std::string_view raw = raw_type_name<t>();
 
-#if defined(__clang__)
+#if WH_COMPILER_CLANG
   constexpr std::string_view prefix =
       "std::string_view wh::internal::detail::raw_type_name() [t = ";
   constexpr std::string_view suffix = "]";
-#elif defined(__GNUC__)
+#elif WH_COMPILER_GCC
   constexpr std::string_view prefix =
       "constexpr std::string_view wh::internal::detail::raw_type_name() [with "
       "t = ";
   constexpr std::string_view suffix = "; std::string_view = std::basic_string_view<char>]";
-#elif defined(_MSC_VER)
+#elif WH_COMPILER_MSVC
   constexpr std::string_view prefix =
       "class std::basic_string_view<char,struct std::char_traits<char> > "
       "__cdecl "
