@@ -19,6 +19,8 @@ struct noexcept_adder {
   [[nodiscard]] auto operator()(int value) const noexcept -> int { return base + value; }
 };
 
+[[nodiscard]] auto noexcept_free_adder(int value) noexcept -> int { return value + 9; }
+
 struct mutable_adder {
   int base{0};
 
@@ -158,6 +160,16 @@ TEST_CASE("function facade supports noexcept-qualified signatures",
   const const_noexcept_callback_t callback{noexcept_adder{4}};
   STATIC_REQUIRE(noexcept(callback(1)));
   REQUIRE(callback(3) == 7);
+}
+
+TEST_CASE("function facade accepts noexcept function pointers through public policy queries",
+          "[UT][wh/core/function/function.hpp][callback_function][noexcept][condition]") {
+  using const_callback_t = wh::core::callback_function<int(int) const>;
+  STATIC_REQUIRE(std::is_assignable_v<const_callback_t &, int (*)(int) noexcept>);
+
+  const_callback_t callback{nullptr};
+  callback = &noexcept_free_adder;
+  REQUIRE(callback(2) == 11);
 }
 
 TEST_CASE("callback_function move relocates targets through legal construction",
