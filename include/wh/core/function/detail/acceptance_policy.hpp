@@ -52,10 +52,15 @@ class acceptance_policy_base;
       return false;                                                                                \
     }                                                                                              \
                                                                                                    \
+  public:                                                                                          \
+    static constexpr bool accepts_non_copyables = accept_non_copyables_v;                          \
+    static constexpr bool accepts_pointers = accept_pointers_v;                                    \
+    template <typename fun_t> static constexpr bool accepts = is_eligible_impl<fun_t>();           \
+                                                                                                   \
   protected:                                                                                       \
-    static constexpr bool accept_non_copyables = accept_non_copyables_v;                           \
-    static constexpr bool accept_pointers = accept_pointers_v;                                     \
-    template <typename fun_t> static constexpr bool is_eligible = is_eligible_impl<fun_t>();       \
+    static constexpr bool accept_non_copyables = accepts_non_copyables;                            \
+    static constexpr bool accept_pointers = accepts_pointers;                                      \
+    template <typename fun_t> static constexpr bool is_eligible = accepts<fun_t>;                  \
     acceptance_policy_base() = default;                                                            \
     ~acceptance_policy_base() = default;                                                           \
   }

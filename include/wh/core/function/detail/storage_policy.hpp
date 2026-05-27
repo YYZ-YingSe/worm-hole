@@ -34,7 +34,7 @@ protected:
   using error_handler = error_policy;
   using acceptance = acceptance_policy<signature_t>;
   using vtable_type =
-      std::conditional_t<acceptance::accept_non_copyables, destructible_vtable<signature_t>,
+      std::conditional_t<acceptance::accepts_non_copyables, destructible_vtable<signature_t>,
                          cloneable_vtable<signature_t>>;
 
   static constexpr std::size_t size_value =
@@ -84,7 +84,7 @@ protected:
   }
 
   static auto copy(const buffer_type &source, buffer_type &destination) -> void
-    requires(!acceptance::accept_non_copyables)
+    requires(!acceptance::accepts_non_copyables)
   {
     if constexpr (error_handler::check_before_copy) {
       if (is_empty(source)) {
@@ -200,7 +200,7 @@ protected:
 
   static auto copy(const buffer_type &source,
                    buffer_type &destination) noexcept(noexcept(error_handler::on_copy())) -> void
-    requires(!acceptance::accept_non_copyables)
+    requires(!acceptance::accepts_non_copyables)
   {
     if constexpr (error_handler::check_before_copy) {
       if (is_empty(source)) {
@@ -283,7 +283,7 @@ private:
   template <typename fun_t>
   using handler =
       fn_detail::vtable_handler<signature_t, std::decay_t<fun_t>, vtable_type, ownership_policy,
-                                buffer_size, acceptance::accept_pointers, allocator_t>;
+                                buffer_size, acceptance::accepts_pointers, allocator_t>;
 
 protected:
   using parent::access;
@@ -306,12 +306,15 @@ protected:
   };
 
   template <typename fun_t>
-  static constexpr bool is_invocable_v = acceptance::template is_eligible<fun_t>;
+  static constexpr bool is_invocable_v = acceptance::template accepts<fun_t>;
 
   template <typename fun_t, typename... args_t>
   [[nodiscard]] static consteval auto can_create_from() -> bool {
-    return acceptance::template is_eligible<fun_t> &&
-           traits<fun_t>::template is_constructible<args_t...>;
+    if constexpr (!acceptance::template accepts<fun_t>) {
+      return false;
+    } else {
+      return traits<fun_t>::template is_constructible<args_t...>;
+    }
   }
 
   template <typename fun_t, typename... args_t>
@@ -374,15 +377,16 @@ protected:
   };
 
   template <typename fun_t>
-  static constexpr bool is_invocable_v = acceptance::template is_eligible<fun_t>;
+  static constexpr bool is_invocable_v = acceptance::template accepts<fun_t>;
 
   template <typename fun_t, typename... args_t>
   [[nodiscard]] static consteval auto can_create_from() -> bool {
     if constexpr (sizeof...(args_t) != 1U) {
       return false;
+    } else if constexpr (!acceptance::template accepts<fun_t>) {
+      return false;
     } else {
-      return acceptance::template is_eligible<fun_t> &&
-             traits<fun_t>::template is_constructible<std::remove_reference_t<fun_t> *>;
+      return traits<fun_t>::template is_constructible<std::remove_reference_t<fun_t> *>;
     }
   }
 
