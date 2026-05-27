@@ -13,6 +13,12 @@ struct adder {
   [[nodiscard]] auto operator()(int value) const -> int { return base + value; }
 };
 
+struct noexcept_adder {
+  int base{0};
+
+  [[nodiscard]] auto operator()(int value) const noexcept -> int { return base + value; }
+};
+
 struct mutable_adder {
   int base{0};
 
@@ -133,6 +139,25 @@ TEST_CASE("function facade aligns copyability and const-callable construction ru
 
   wh::core::move_only_function<int()> move_only{std::move(lower)};
   REQUIRE(move_only() == 7);
+}
+
+TEST_CASE("function facade supports noexcept-qualified signatures",
+          "[UT][wh/core/function/function.hpp][function][noexcept][condition]") {
+  using noexcept_function_t = wh::core::standard_function<int(int) noexcept>;
+  STATIC_REQUIRE(std::is_constructible_v<noexcept_function_t, noexcept_adder>);
+  STATIC_REQUIRE_FALSE(std::is_constructible_v<noexcept_function_t, adder>);
+
+  noexcept_function_t function{noexcept_adder{5}};
+  STATIC_REQUIRE(noexcept(function(1)));
+  REQUIRE(function(2) == 7);
+
+  using const_noexcept_callback_t = wh::core::callback_function<int(int) const noexcept>;
+  STATIC_REQUIRE(std::is_constructible_v<const_noexcept_callback_t, noexcept_adder>);
+  STATIC_REQUIRE_FALSE(std::is_constructible_v<const_noexcept_callback_t, adder>);
+
+  const const_noexcept_callback_t callback{noexcept_adder{4}};
+  STATIC_REQUIRE(noexcept(callback(1)));
+  REQUIRE(callback(3) == 7);
 }
 
 TEST_CASE("callback_function move relocates targets through legal construction",

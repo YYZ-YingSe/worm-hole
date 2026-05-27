@@ -82,22 +82,25 @@ template <typename type_t>
 using is_function = std::bool_constant<is_function_v<type_t>>;
 
 // Generates `function<>` specializations for each CV/ref-qualified signature.
-#define WH_DEFINE_FUNCTION(CV, REF, INV_QUALS)                                                     \
+// The noexcept and non-noexcept forms are intentionally separate because MSVC
+// does not reliably deduce bool NTTPs from `noexcept(is_noexcept)` in partial
+// specializations.
+#define WH_DEFINE_FUNCTION_FOR(CV, REF, INV_QUALS, NOEXCEPT_SPEC)                                  \
   template <template <typename, template <typename, template <typename> class> class,              \
                       template <typename> class, class, std::size_t,                               \
                       template <typename> class> class storage_policy_t,                           \
             template <typename, template <typename> class> class ownership_policy_t,               \
             template <typename> class acceptance_policy_t, typename error_policy_t,                \
             std::size_t buffer_size_v, template <typename> class allocator_t, typename return_t,   \
-            bool is_noexcept, typename... param_types>                                             \
-  class function<return_t(param_types...) CV REF noexcept(is_noexcept), storage_policy_t,          \
+            typename... param_types>                                                              \
+  class function<return_t(param_types...) CV REF NOEXCEPT_SPEC, storage_policy_t,                  \
                  ownership_policy_t, acceptance_policy_t, error_policy_t, buffer_size_v,           \
                  allocator_t>                                                                      \
       : private fn_detail::function_base<storage_policy_t<                                         \
-            return_t(param_types...) CV REF noexcept(is_noexcept), ownership_policy_t,             \
+            return_t(param_types...) CV REF NOEXCEPT_SPEC, ownership_policy_t,                     \
             acceptance_policy_t, error_policy_t, buffer_size_v, allocator_t>> {                    \
   private:                                                                                         \
-    using signature_type = return_t(param_types...) CV REF noexcept(is_noexcept);                  \
+    using signature_type = return_t(param_types...) CV REF NOEXCEPT_SPEC;                          \
     using base = fn_detail::function_base<                                                         \
         storage_policy_t<signature_type, ownership_policy_t, acceptance_policy_t, error_policy_t,  \
                          buffer_size_v, allocator_t>>;                                             \
@@ -161,7 +164,7 @@ using is_function = std::bool_constant<is_function_v<type_t>>;
     [[nodiscard]] explicit operator bool() const noexcept {                                        \
       return !storage::is_empty(local_buffer_);                                                    \
     }                                                                                              \
-    auto operator()(param_types... params) CV REF noexcept(is_noexcept) -> return_t {              \
+    auto operator()(param_types... params) CV REF NOEXCEPT_SPEC -> return_t {                      \
       if constexpr (storage::error_handler::check_before_call) {                                   \
         if (storage::is_empty(local_buffer_)) {                                                    \
           storage::error_handler::on_invoke();                                                     \
@@ -178,6 +181,10 @@ using is_function = std::bool_constant<is_function_v<type_t>>;
     }                                                                                              \
   }
 
+#define WH_DEFINE_FUNCTION(CV, REF, INV_QUALS)                                                     \
+  WH_DEFINE_FUNCTION_FOR(CV, REF, INV_QUALS, );                                                     \
+  WH_DEFINE_FUNCTION_FOR(CV, REF, INV_QUALS, noexcept)
+
 // Instantiate all CV/ref-qualified signature variants.
 // (no CV, no REF) -> &
 // (const, no REF) -> const &
@@ -193,5 +200,6 @@ WH_DEFINE_FUNCTION(const, &, const &);
 WH_DEFINE_FUNCTION(const, &&, const &&);
 
 #undef WH_DEFINE_FUNCTION
+#undef WH_DEFINE_FUNCTION_FOR
 
 } // namespace wh::core

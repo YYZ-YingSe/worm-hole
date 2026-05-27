@@ -1,4 +1,5 @@
 #include <memory>
+#include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,6 +11,12 @@ struct adder {
   int base{0};
 
   [[nodiscard]] auto operator()(int value) const -> int { return base + value; }
+};
+
+struct noexcept_adder {
+  int base{0};
+
+  [[nodiscard]] auto operator()(int value) const noexcept -> int { return base + value; }
 };
 
 struct move_only_adder {
@@ -27,6 +34,9 @@ struct move_only_adder {
 using clone_handler = wh::core::fn_detail::vtable_handler<
     int(int), adder, wh::core::fn_detail::cloneable_vtable<int(int)>, wh::core::fn::deep_copy,
     sizeof(void *), false, std::allocator>;
+using noexcept_clone_handler = wh::core::fn_detail::vtable_handler<
+    int(int) noexcept, noexcept_adder, wh::core::fn_detail::cloneable_vtable<int(int) noexcept>,
+    wh::core::fn::deep_copy, sizeof(void *), false, std::allocator>;
 using move_handler = wh::core::fn_detail::vtable_handler<
     int(int), move_only_adder, wh::core::fn_detail::destructible_vtable<int(int)>,
     wh::core::fn::reference_counting, sizeof(void *), false, std::allocator>;
@@ -36,6 +46,8 @@ using pointer_handler = wh::core::fn_detail::vtable_handler<
 
 static_assert(std::has_virtual_destructor_v<wh::core::fn_detail::cloneable_vtable<int(int)>>);
 static_assert(std::has_virtual_destructor_v<wh::core::fn_detail::destructible_vtable<int(int)>>);
+static_assert(std::has_virtual_destructor_v<
+              wh::core::fn_detail::cloneable_vtable<int(int) noexcept>>);
 
 } // namespace
 
@@ -56,6 +68,13 @@ TEST_CASE("cloneable vtable handlers invoke and clone copyable call targets",
   auto &cloned = storage.interpret_as<clone_handler &>();
   REQUIRE(cloned(4) == 6);
   std::destroy_at(&cloned);
+}
+
+TEST_CASE("vtable handlers preserve noexcept-qualified invocation",
+          "[UT][wh/core/function/detail/vtable.hpp][vtable_handler][noexcept][condition]") {
+  noexcept_clone_handler handler{noexcept_adder{3}};
+  STATIC_REQUIRE(noexcept(handler(4)));
+  REQUIRE(handler(4) == 7);
 }
 
 TEST_CASE("destructible vtable handlers support move-only and pointer-backed targets",
