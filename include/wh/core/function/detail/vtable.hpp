@@ -29,12 +29,14 @@ template <typename signature_t, typename invocable_t, typename vtable_t,
 class vtable_handler;
 
 // Generates pure-invoke vtable specializations per CV/ref-qualified signature.
-#define WH_DEFINE_SIMPLE_VTABLE(CV, REF)                                                           \
-  template <typename return_t, bool is_noexcept, typename... param_types>                          \
-  class simple_vtable<return_t(param_types...) CV REF noexcept(is_noexcept)> {                     \
+// Keep noexcept and non-noexcept forms explicit: MSVC rejects deduction of a
+// bool parameter from `noexcept(is_noexcept)` in partial specializations.
+#define WH_DEFINE_SIMPLE_VTABLE_FOR(CV, REF, NOEXCEPT_SPEC)                                        \
+  template <typename return_t, typename... param_types>                                             \
+  class simple_vtable<return_t(param_types...) CV REF NOEXCEPT_SPEC> {                             \
   public:                                                                                          \
     static constexpr bool cloneable = true;                                                        \
-    virtual auto operator()(ref_non_trivials<param_types>...) CV REF noexcept(is_noexcept)         \
+    virtual auto operator()(ref_non_trivials<param_types>...) CV REF NOEXCEPT_SPEC                 \
         -> return_t = 0;                                                                           \
     virtual auto clone_itself(void *destination) const -> void = 0;                                \
     virtual auto relocate_itself(void *destination) noexcept -> void = 0;                          \
@@ -44,26 +46,34 @@ class vtable_handler;
     ~simple_vtable() = default;                                                                    \
   }
 
+#define WH_DEFINE_SIMPLE_VTABLE(CV, REF)                                                           \
+  WH_DEFINE_SIMPLE_VTABLE_FOR(CV, REF, );                                                          \
+  WH_DEFINE_SIMPLE_VTABLE_FOR(CV, REF, noexcept)
+
 // Generates invoke+virtual-dtor vtable specializations.
-#define WH_DEFINE_DESTRUCTIBLE_VTABLE(CV, REF)                                                     \
-  template <typename return_t, bool is_noexcept, typename... param_types>                          \
-  class destructible_vtable<return_t(param_types...) CV REF noexcept(is_noexcept)> {               \
+#define WH_DEFINE_DESTRUCTIBLE_VTABLE_FOR(CV, REF, NOEXCEPT_SPEC)                                  \
+  template <typename return_t, typename... param_types>                                             \
+  class destructible_vtable<return_t(param_types...) CV REF NOEXCEPT_SPEC> {                       \
   public:                                                                                          \
     static constexpr bool cloneable = false;                                                       \
-    virtual auto operator()(ref_non_trivials<param_types>...) CV REF noexcept(is_noexcept)         \
+    virtual auto operator()(ref_non_trivials<param_types>...) CV REF NOEXCEPT_SPEC                 \
         -> return_t = 0;                                                                           \
     virtual auto relocate_itself(void *destination) noexcept -> void = 0;                          \
     virtual auto destroy_itself() const noexcept -> void = 0;                                      \
     virtual ~destructible_vtable() = default;                                                      \
   }
 
+#define WH_DEFINE_DESTRUCTIBLE_VTABLE(CV, REF)                                                     \
+  WH_DEFINE_DESTRUCTIBLE_VTABLE_FOR(CV, REF, );                                                    \
+  WH_DEFINE_DESTRUCTIBLE_VTABLE_FOR(CV, REF, noexcept)
+
 // Generates invoke+clone vtable specializations.
-#define WH_DEFINE_CLONEABLE_VTABLE(CV, REF)                                                        \
-  template <typename return_t, bool is_noexcept, typename... param_types>                          \
-  class cloneable_vtable<return_t(param_types...) CV REF noexcept(is_noexcept)> {                  \
+#define WH_DEFINE_CLONEABLE_VTABLE_FOR(CV, REF, NOEXCEPT_SPEC)                                     \
+  template <typename return_t, typename... param_types>                                             \
+  class cloneable_vtable<return_t(param_types...) CV REF NOEXCEPT_SPEC> {                          \
   public:                                                                                          \
     static constexpr bool cloneable = true;                                                        \
-    virtual auto operator()(ref_non_trivials<param_types>...) CV REF noexcept(is_noexcept)         \
+    virtual auto operator()(ref_non_trivials<param_types>...) CV REF NOEXCEPT_SPEC                 \
         -> return_t = 0;                                                                           \
     virtual auto clone_itself(void *destination) const -> void = 0;                                \
     virtual auto relocate_itself(void *destination) noexcept -> void = 0;                          \
@@ -71,13 +81,17 @@ class vtable_handler;
     virtual ~cloneable_vtable() = default;                                                         \
   }
 
+#define WH_DEFINE_CLONEABLE_VTABLE(CV, REF)                                                        \
+  WH_DEFINE_CLONEABLE_VTABLE_FOR(CV, REF, );                                                       \
+  WH_DEFINE_CLONEABLE_VTABLE_FOR(CV, REF, noexcept)
+
 // Generates concrete vtable handlers bridging invocation to object_manager.
-#define WH_DEFINE_VTABLE_HANDLER(CV, REF, INV_QUALS)                                               \
+#define WH_DEFINE_VTABLE_HANDLER_FOR(CV, REF, INV_QUALS, NOEXCEPT_SPEC, IS_NOEXCEPT)               \
   template <typename invocable_t, typename vtable_t,                                               \
             template <typename, template <typename> class> class ownership_policy,                 \
             std::size_t buffer_size, bool accept_pointers, template <typename> class allocator_t,  \
-            typename return_t, bool is_noexcept, typename... param_types>                          \
-  class vtable_handler<return_t(param_types...) CV REF noexcept(is_noexcept), invocable_t,         \
+            typename return_t, typename... param_types>                                            \
+  class vtable_handler<return_t(param_types...) CV REF NOEXCEPT_SPEC, invocable_t,                 \
                        vtable_t, ownership_policy, buffer_size, accept_pointers, allocator_t>      \
       final : public vtable_t {                                                                    \
   private:                                                                                         \
@@ -121,15 +135,15 @@ class vtable_handler;
     auto destroy_itself() const noexcept -> void {                                                 \
       this->~vtable_handler();                                                                     \
     }                                                                                              \
-    auto operator()(ref_non_trivials<param_types>... params) CV REF noexcept(is_noexcept)          \
+    auto operator()(ref_non_trivials<param_types>... params) CV REF NOEXCEPT_SPEC                  \
         -> return_t final {                                                                        \
       using fun_inv_quals = invocable_t INV_QUALS;                                                 \
-      if constexpr (is_invocable<fun_inv_quals, return_t, is_noexcept, param_types...>::value) {   \
+      if constexpr (is_invocable<fun_inv_quals, return_t, IS_NOEXCEPT, param_types...>::value) {   \
         return std::invoke(std::forward<fun_inv_quals>(manager_.access()),                         \
                            std::forward<ref_non_trivials<param_types>>(params)...);                \
       } else if constexpr (accept_pointers && is_dereferencable_v<invocable_t>) {                  \
         using deref_inv_quals = dereferenced_t<invocable_t> INV_QUALS;                             \
-        if constexpr (is_invocable<deref_inv_quals, return_t, is_noexcept,                         \
+        if constexpr (is_invocable<deref_inv_quals, return_t, IS_NOEXCEPT,                         \
                                    param_types...>::value) {                                       \
           return std::invoke(std::forward<deref_inv_quals>(*manager_.access()),                    \
                              std::forward<ref_non_trivials<param_types>>(params)...);              \
@@ -142,6 +156,10 @@ class vtable_handler;
       }                                                                                            \
     }                                                                                              \
   }
+
+#define WH_DEFINE_VTABLE_HANDLER(CV, REF, INV_QUALS)                                               \
+  WH_DEFINE_VTABLE_HANDLER_FOR(CV, REF, INV_QUALS, , false);                                       \
+  WH_DEFINE_VTABLE_HANDLER_FOR(CV, REF, INV_QUALS, noexcept, true)
 
 // Instantiate all CV/ref-qualified signature variants.
 WH_DEFINE_SIMPLE_VTABLE(, );
@@ -183,5 +201,9 @@ WH_DEFINE_VTABLE_HANDLER(const, &&, const &&);
 #undef WH_DEFINE_DESTRUCTIBLE_VTABLE
 #undef WH_DEFINE_CLONEABLE_VTABLE
 #undef WH_DEFINE_VTABLE_HANDLER
+#undef WH_DEFINE_SIMPLE_VTABLE_FOR
+#undef WH_DEFINE_DESTRUCTIBLE_VTABLE_FOR
+#undef WH_DEFINE_CLONEABLE_VTABLE_FOR
+#undef WH_DEFINE_VTABLE_HANDLER_FOR
 
 } // namespace wh::core::fn_detail
